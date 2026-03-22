@@ -93,6 +93,14 @@ export class SphereRenderer {
 
     const geometry = new THREE.BoxGeometry(9000, 9000, 9000)
     this.skyboxMesh = new THREE.Mesh(geometry, materials)
+
+    // The cubemap faces were generated with astronomical Z-up convention (ICRS/J2000),
+    // meaning the North Celestial Pole (NCP) is at the +Z face. Three.js is Y-up, so
+    // the NCP must be at +Y to align with Earth's geographic north pole on the sphere.
+    // A -90° rotation around X maps +Z → +Y, placing the NCP overhead and the galactic
+    // plane correctly through the equatorial side faces.
+    this.skyboxMesh.rotation.x = -Math.PI / 2
+
     this.scene.add(this.skyboxMesh)
   }
 
