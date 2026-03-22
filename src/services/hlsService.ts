@@ -75,15 +75,14 @@ export class HLSService {
       }
 
       if (Hls.isSupported()) {
-        this.hls = new Hls(mobile ? {
-          // Mobile: minimal buffer to keep memory usage low
-          maxBufferLength: 8,
-          maxMaxBufferLength: 15,
-          startLevel: 0,           // Start at lowest quality, ramp up via ABR
-        } : {
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          startLevel: -1,          // Auto-detect on first load
+        this.hls = new Hls({
+          // Buffer the entire video so loops are instant from memory.
+          // The GPU texture leak that caused mobile crashes is fixed
+          // (VideoTexture reuses one texture), so full buffering is safe.
+          maxBufferLength: 600,
+          maxMaxBufferLength: 600,
+          backBufferLength: Infinity,
+          startLevel: mobile ? 0 : -1,
         })
 
         this.hls.loadSource(hlsUrl)
