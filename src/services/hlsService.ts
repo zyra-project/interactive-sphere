@@ -79,13 +79,11 @@ export class HLSService {
           // Mobile: minimal buffer to keep memory usage low
           maxBufferLength: 8,
           maxMaxBufferLength: 15,
-          startLevel: 0,           // Start at lowest quality level
-          capLevelToPlayerSize: true,
+          startLevel: 0,           // Start at lowest quality, ramp up via ABR
         } : {
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
           startLevel: -1,          // Auto-detect on first load
-          capLevelToPlayerSize: false,
         })
 
         this.hls.loadSource(hlsUrl)
