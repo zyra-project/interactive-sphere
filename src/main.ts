@@ -235,8 +235,17 @@ class InteractiveSphere {
     // Force first frame decode before attaching to the sphere — keeps
     // the default Earth texture visible until we have real video data
     // instead of flashing a black ball.  Muted autoplay is allowed.
+    // Wait for an actual decoded frame via requestVideoFrameCallback
+    // (or a short timeout as fallback) before pausing.
     try {
       await video.play()
+      await new Promise<void>((resolve) => {
+        if ('requestVideoFrameCallback' in video) {
+          (video as any).requestVideoFrameCallback(() => resolve())
+        } else {
+          setTimeout(resolve, 150)
+        }
+      })
       video.pause()
       video.currentTime = 0
     } catch {
