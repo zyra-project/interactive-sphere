@@ -37,10 +37,12 @@ class InteractiveSphere {
   async initialize(): Promise<void> {
     try {
       this.setLoading(true)
+      this.setLoadingStatus('Starting up\u2026', 5)
 
       const container = document.getElementById('container')
       if (!container) throw new Error('Container element not found')
 
+      this.setLoadingStatus('Creating renderer\u2026', 15)
       this.renderer = new SphereRenderer(container)
       const segments = this.isMobile ? 32 : 64
       this.renderer.createSphere({
@@ -66,17 +68,22 @@ class InteractiveSphere {
       }
 
       // Fetch datasets, then load from URL if specified
+      this.setLoadingStatus('Loading datasets\u2026', 30)
       await this.loadDatasets()
 
       const datasetId = this.getDatasetIdFromUrl()
       if (datasetId) {
         // Load a simple texture first, then replace with dataset
+        this.setLoadingStatus('Loading Earth texture\u2026', 50)
         await this.loadDefaultTexture()
+        this.setLoadingStatus('Loading dataset\u2026', 65)
         await this.loadDataset(datasetId)
       } else {
         // No dataset — load enhanced Earth with all maps
+        this.setLoadingStatus('Loading Earth textures\u2026', 50)
         await this.renderer.loadDefaultEarthMaterials()
 
+        this.setLoadingStatus('Adding atmosphere\u2026', 85)
         this.renderer.loadCloudOverlay(
           'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/clouds_8192.jpg'
         )
@@ -542,6 +549,28 @@ class InteractiveSphere {
 
   private setLoading(isLoading: boolean): void {
     this.appState.isLoading = isLoading
+    if (!isLoading) {
+      const screen = document.getElementById('loading-screen')
+      if (screen) {
+        this.setLoadingStatus('Ready', 100)
+        // Brief pause so the "100%" fill is visible before fading
+        setTimeout(() => {
+          screen.classList.add('fade-out')
+          screen.addEventListener('transitionend', () => {
+            screen.style.display = 'none'
+          }, { once: true })
+        }, 300)
+      }
+    }
+  }
+
+  private setLoadingStatus(message: string, progress?: number): void {
+    const statusEl = document.getElementById('loading-status')
+    if (statusEl) statusEl.textContent = message
+    if (progress !== undefined) {
+      const fill = document.getElementById('loading-progress-fill')
+      if (fill) (fill as HTMLElement).style.width = `${progress}%`
+    }
   }
 
   private setError(error: string): void {
