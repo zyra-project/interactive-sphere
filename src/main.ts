@@ -31,6 +31,7 @@ class InteractiveSphere {
   private videoTexture: THREE.VideoTexture | null = null
   private playbackUpdateId: number | null = null
   private scrubbing = false
+  private captionTrack: TextTrack | null = null
   private displayInterval: { intervalMs: number; showTime: boolean } | null = null
   private loopPauseTimer: ReturnType<typeof setTimeout> | null = null
   private loadingHideTimer: ReturnType<typeof setTimeout> | null = null
@@ -302,6 +303,10 @@ class InteractiveSphere {
     this.updatePlayButton(true)
     this.startPlaybackLoop()
 
+    if (dataset.closedCaptionLink) {
+      this.loadCaptions(video, dataset.closedCaptionLink)
+    }
+
     console.log('[App] Video dataset loaded, duration:', manifest.duration, 's')
   }
 
@@ -351,6 +356,97 @@ class InteractiveSphere {
     if (this.playbackUpdateId !== null) {
       cancelAnimationFrame(this.playbackUpdateId)
       this.playbackUpdateId = null
+    }
+  }
+
+  // --- Closed captions ---
+
+  private async loadCaptions(video: HTMLVideoElement, captionUrl: string): Promise<void> {
+    try {
+      // sos.noaa.gov blocks cross-origin requests; route through the existing proxy
+      const fetchUrl = captionUrl.includes('sos.noaa.gov')
+        ? `https://video-proxy.zyra-project.org/captions?url=${encodeURIComponent(captionUrl)}`
+        : captionUrl
+
+      const response = await fetch(fetchUrl)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const srt = await response.text()
+
+      const cues = this.parseSRT(srt)
+      if (cues.length === 0) {
+        console.warn('[App] Caption file contained no parseable cues')
+        return
+      }
+
+      const track = video.addTextTrack('captions', 'Closed Captions', 'en')
+      track.mode = 'hidden'
+      for (const cue of cues) {
+        track.addCue(new VTTCue(cue.start, cue.end, cue.text))
+      }
+
+      track.addEventListener('cuechange', () => {
+        const overlay = document.getElementById('caption-overlay')
+        if (!overlay) return
+        const activeCues = track.activeCues
+        if (!activeCues || activeCues.length === 0 || track.mode !== 'showing') {
+          overlay.textContent = ''
+          overlay.style.display = 'none'
+        } else {
+          overlay.textContent = Array.from(activeCues).map(c => (c as VTTCue).text).join('\n')
+          overlay.style.display = 'block'
+        }
+      })
+
+      this.captionTrack = track
+
+      const ccBtn = document.getElementById('cc-btn')
+      if (ccBtn) ccBtn.classList.remove('hidden')
+
+      console.log(`[App] Loaded ${cues.length} caption cues`)
+    } catch (error) {
+      console.warn('[App] Failed to load captions:', error)
+    }
+  }
+
+  private parseSRT(srt: string): Array<{ start: number; end: number; text: string }> {
+    const cues: Array<{ start: number; end: number; text: string }> = []
+    const blocks = srt.trim().split(/\r?\n\s*\r?\n/)
+    for (const block of blocks) {
+      const lines = block.trim().split(/\r?\n/)
+      let timingIdx = -1
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes('-->')) { timingIdx = i; break }
+      }
+      if (timingIdx < 0) continue
+      const parts = lines[timingIdx].split('-->')
+      if (parts.length !== 2) continue
+      const start = this.parseSRTTime(parts[0].trim())
+      const end = this.parseSRTTime(parts[1].trim())
+      const text = lines.slice(timingIdx + 1).join('\n').trim()
+      if (text) cues.push({ start, end, text })
+    }
+    return cues
+  }
+
+  private parseSRTTime(t: string): number {
+    const m = t.match(/(\d+):(\d+):(\d+)[,.](\d+)/)
+    if (!m) return 0
+    return parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]) + parseInt(m[4]) / 1000
+  }
+
+  private toggleCaptions(): void {
+    if (!this.captionTrack) return
+    const ccBtn = document.getElementById('cc-btn')
+    const overlay = document.getElementById('caption-overlay')
+    const turning = this.captionTrack.mode !== 'showing'
+    this.captionTrack.mode = turning ? 'showing' : 'hidden'
+    if (ccBtn) {
+      ccBtn.style.color = turning ? '#4da6ff' : ''
+      ccBtn.style.borderColor = turning ? '#4da6ff' : ''
+    }
+    if (!turning && overlay) {
+      overlay.textContent = ''
+      overlay.style.display = 'none'
     }
   }
 
@@ -638,6 +734,19 @@ class InteractiveSphere {
       clearTimeout(this.loopPauseTimer)
       this.loopPauseTimer = null
     }
+    // Reset captions
+    this.captionTrack = null
+    const ccBtn = document.getElementById('cc-btn')
+    if (ccBtn) {
+      ccBtn.classList.add('hidden')
+      ccBtn.style.color = ''
+      ccBtn.style.borderColor = ''
+    }
+    const overlay = document.getElementById('caption-overlay')
+    if (overlay) {
+      overlay.textContent = ''
+      overlay.style.display = 'none'
+    }
   }
 
   setupEventListeners(): void {
@@ -660,6 +769,7 @@ class InteractiveSphere {
     document.getElementById('play-btn')?.addEventListener('click', () => this.togglePlayPause())
     document.getElementById('step-fwd-btn')?.addEventListener('click', () => this.stepFrame(1))
     document.getElementById('ff-btn')?.addEventListener('click', () => this.fastForward())
+    document.getElementById('cc-btn')?.addEventListener('click', () => this.toggleCaptions())
 
     // Mute/unmute toggle
     const muteBtn = document.getElementById('mute-btn')

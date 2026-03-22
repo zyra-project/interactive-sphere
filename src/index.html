@@ -732,6 +732,26 @@
             padding: 3rem 0;
         }
 
+        /* --- Closed caption overlay --- */
+        #caption-overlay {
+            display: none;
+            position: absolute;
+            bottom: 5.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 80%;
+            text-align: center;
+            font-size: 1.05rem;
+            line-height: 1.45;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8);
+            background: rgba(0, 0, 0, 0.62);
+            padding: 0.3rem 0.8rem;
+            border-radius: 4px;
+            pointer-events: none;
+            white-space: pre-line;
+        }
+
         @media (max-width: 768px) {
             #browse-overlay {
                 width: 100%;
@@ -815,6 +835,7 @@
                         <button id="step-fwd-btn" class="transport-btn" title="Step forward one frame">&#x23E9;&#xFE0E;</button>
                         <button id="ff-btn" class="transport-btn" title="Fast-forward to end">&#x23ED;&#xFE0E;</button>
                         <button id="mute-btn" class="transport-btn" title="Unmute audio" style="margin-left: 0.25rem;">&#x1F507;&#xFE0E;</button>
+                        <button id="cc-btn" class="transport-btn hidden" title="Toggle closed captions" style="margin-left: 0.1rem; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;">CC</button>
                         <button id="auto-rotate-btn" class="transport-btn" title="Toggle auto-rotation" style="margin-left: 0.1rem;">&#x21BB;</button>
                     </div>
                     <input type="range" id="scrubber" min="0" max="1000" value="0" style="width: 100%; margin: 0;">
@@ -822,6 +843,7 @@
 
                 <button id="auto-rotate-standalone" class="transport-btn" title="Toggle auto-rotation" style="position: absolute; bottom: 0.75rem; right: 0.75rem; pointer-events: auto; min-width: 28px; padding: 0.35rem 0.5rem; font-size: 0.75rem; background: rgba(13, 13, 18, 0.88) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 6px;">&#x21BB;</button>
 
+                <div id="caption-overlay"></div>
                 <div id="error-message" class="hidden"></div>
             </div>
         </div>
