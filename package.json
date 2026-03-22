@@ -1,0 +1,24 @@
+{
+  "name": "interactive-sphere",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Interactive WebGL globe with adaptive bitrate environmental data streaming",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "hls.js": "^1.4.0",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/three": "^0.160.0",
+    "sharp": "^0.34.5",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
+  }
+}

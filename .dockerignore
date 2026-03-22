@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+_work
+.git
+.vscode
+.idea
+.playwright-mcp
+*.log
+blackmarble-suomi-npp-texture-edited-8192x4096.jpg
+earth_normalmap_flat_8192x4096_Normal.jpg
+earth_specularmap_flat_8192x4096_SpecGloss.jpg
