@@ -1,18 +1,23 @@
 # Interactive Sphere - POC Setup
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-sphere.zyra--project.org-4da6ff)](https://sphere.zyra-project.org)
+
 This is the proof-of-concept for Interactive Sphere, a WebGL-based globe that streams environmental data from the [Science On a Sphere](https://sos.noaa.gov/) project.
 
 ## ✨ POC Scope
 
-This proves that we can:
-- ✅ Fetch 600+ datasets from SOS metadata API
+What's been built:
+- ✅ Fetch and filter datasets from SOS metadata API (image/video only)
 - ✅ Render interactive 3D sphere with Three.js
-- ✅ Load and display static images on the sphere
-- ✅ Display dataset metadata and filtering
-- ✅ Handle touch controls (rotation, zoom) on mobile
-- 🔄 Video streaming (placeholder UI, full HLS in Phase 2)
-- 🔄 Time synchronization (basic framework)
-- 🔄 Playback controls (UI framework)
+- ✅ Enhanced Earth materials (normal maps, specular, night lights, sun lighting, clouds, atmosphere)
+- ✅ Load and display static images with resolution fallback (4096/2048/1024)
+- ✅ HLS video streaming via Vimeo proxy with playback controls
+- ✅ Time synchronization with ISO 8601 parsing and scrubber
+- ✅ Dataset browser with search, category filtering, expandable cards with thumbnails
+- ✅ Collapsible browse panel (desktop sidebar with toggle)
+- ✅ Touch controls (rotation, zoom, inertia) on mobile and desktop
+- ✅ Frosted-glass UI design language (see [STYLE_GUIDE.md](STYLE_GUIDE.md))
+- ✅ Audio mute/unmute for video datasets
 
 ## 🚀 Quick Start
 
@@ -92,7 +97,7 @@ interactive-sphere/
 ## 🎮 Using the POC
 
 1. **Open the app** - A 3D globe will load with default material
-2. **Select a dataset** - Choose from 600+ videos and images (grouped by type)
+2. **Select a dataset** - Choose from 160+ videos and images (grouped by type)
 3. **Click "Load Selected Dataset"**
    - Images: Will display on the sphere immediately
    - Videos: Will show a placeholder (full HLS streaming in Phase 2)
@@ -173,31 +178,27 @@ window.app.appState.currentDataset
 | Frame rate | 60fps | TBD |
 | Mobile load | < 5s | TBD |
 
-## 🎯 What's Next (Phase 2+)
+## 🎯 What's Next
 
-### Phase 2: Video Streaming
-- Integrate HLS.js for Vimeo proxy
-- Extract video frames and map to sphere
-- Implement adaptive bitrate selection
-- Add frame buffering
+See **[ROADMAP.md](ROADMAP.md)** for the full prioritized roadmap. Key remaining items:
 
-### Phase 3: Time Synchronization
-- Implement time mapping algorithm
-- Parse ISO 8601 durations
-- Display synchronized timestamps
-- Period-based playback
+### Reach More People
+- Accessibility overhaul (ARIA labels, keyboard navigation, screen reader support)
+- Mobile HLS adaptive quality (match stream quality to actual bandwidth)
 
-### Phase 4: UI Polish
-- Playback controls (play/pause/scrub)
-- Dataset browser with search
-- Legend panel for color scales
-- Mobile-optimized UI
+### Keep Them Engaged
+- Smoother dataset transitions and loading states
+- Persistent error messages (stay visible until dismissed)
 
-### Phase 5: Optimization
-- Performance profiling and optimization
-- Caching strategies (ServiceWorker)
-- GPU memory management
-- Error handling and fallbacks
+### Code Health
+- Break up large files (`sphereRenderer.ts`, `main.ts`)
+- Test coverage for orchestration logic in `main.ts`
+- Replace magic numbers with named constants
+- Log level control for production builds
+
+### Longer Term
+- Offline and low-connectivity support for classrooms
+- Embeddable iframe mode for educators
 
 ## 📚 Key Files to Review
 

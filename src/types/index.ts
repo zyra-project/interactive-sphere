@@ -5,7 +5,7 @@
 /**
  * Supported dataset formats
  */
-export type DatasetFormat = 'video/mp4' | 'image/png' | 'image/jpg' | 'tour/json'
+export type DatasetFormat = 'video/mp4' | 'image/png' | 'image/jpg' | 'images/jpg' | 'tour/json'
 
 /**
  * Core dataset metadata from SOS API
