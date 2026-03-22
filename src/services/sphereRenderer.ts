@@ -545,7 +545,14 @@ export class SphereRenderer {
   private lastTouchY = 0
   private lastPinchDistance = 0
 
+  private isTouchOnUI(e: TouchEvent): boolean {
+    const target = e.target as HTMLElement
+    return !!target?.closest?.('#ui .ui-panel, #playback-controls')
+  }
+
   private onTouchStart(e: TouchEvent): void {
+    if (this.isTouchOnUI(e)) return
+
     if (e.touches.length === 1) {
       this.controls.isRotating = true
       this.velocityX = 0
@@ -562,6 +569,7 @@ export class SphereRenderer {
   }
 
   private onTouchMove(e: TouchEvent): void {
+    if (this.isTouchOnUI(e)) return
     e.preventDefault()
 
     if (e.touches.length === 1 && this.controls.isRotating && this.sphere) {
