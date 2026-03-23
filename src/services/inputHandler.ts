@@ -7,6 +7,18 @@
 import * as THREE from 'three'
 import type { ControlsState } from '../types'
 
+// --- Input constants ---
+const DAMPING = 0.88
+const SENSITIVITY = 0.005
+const AUTO_ROTATE_SPEED = 0.0015
+const INERTIA_THRESHOLD = 0.0001
+const ZOOM_MIN = 1.15
+const ZOOM_MAX = 3.6
+const ZOOM_STEP_FACTOR = 0.12
+const SPHERE_SURFACE_RADIUS = 1.0
+const PINCH_SENSITIVITY = 0.002
+const CAMERA_DEFAULT_Z = 1.8
+
 export class InputHandler {
   private camera: THREE.PerspectiveCamera
   private webglRenderer: THREE.WebGLRenderer
@@ -21,8 +33,6 @@ export class InputHandler {
 
   private velocityX = 0
   private velocityY = 0
-  private readonly DAMPING = 0.88
-  private readonly SENSITIVITY = 0.005
 
   private raycaster = new THREE.Raycaster()
   private mouseNDC = new THREE.Vector2()
@@ -91,8 +101,8 @@ export class InputHandler {
 
   private onMouseMove(e: MouseEvent): void {
     if (this.controls.isRotating && this.sphere) {
-      this.velocityX = e.movementX * this.SENSITIVITY
-      this.velocityY = e.movementY * this.SENSITIVITY
+      this.velocityX = e.movementX * SENSITIVITY
+      this.velocityY = e.movementY * SENSITIVITY
 
       this.sphere.rotation.y += this.velocityX
       this.sphere.rotation.x += this.velocityY
@@ -117,9 +127,9 @@ export class InputHandler {
     e.preventDefault()
 
     const currentZ = this.camera.position.z
-    const distFromSurface = currentZ - 1.0
-    const step = distFromSurface * 0.12 * (e.deltaY > 0 ? 1 : -1)
-    this.camera.position.z = Math.max(1.15, Math.min(3.6, currentZ + step))
+    const distFromSurface = currentZ - SPHERE_SURFACE_RADIUS
+    const step = distFromSurface * ZOOM_STEP_FACTOR * (e.deltaY > 0 ? 1 : -1)
+    this.camera.position.z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, currentZ + step))
   }
 
   // --- Touch handlers ---
@@ -153,8 +163,8 @@ export class InputHandler {
 
     if (e.touches.length === 1 && this.controls.isRotating && this.sphere) {
       const touch = e.touches[0]
-      this.velocityX = (touch.clientX - this.lastTouchX) * this.SENSITIVITY
-      this.velocityY = (touch.clientY - this.lastTouchY) * this.SENSITIVITY
+      this.velocityX = (touch.clientX - this.lastTouchX) * SENSITIVITY
+      this.velocityY = (touch.clientY - this.lastTouchY) * SENSITIVITY
 
       this.sphere.rotation.y += this.velocityX
       this.sphere.rotation.x += this.velocityY
@@ -168,9 +178,9 @@ export class InputHandler {
         e.touches[1].clientX - e.touches[0].clientX,
         e.touches[1].clientY - e.touches[0].clientY
       )
-      const pinchDelta = (distance - this.lastPinchDistance) * 0.002
-      const distFromSurface = this.camera.position.z - 1.0
-      this.camera.position.z = Math.max(1.15, Math.min(3.6, this.camera.position.z - distFromSurface * pinchDelta))
+      const pinchDelta = (distance - this.lastPinchDistance) * PINCH_SENSITIVITY
+      const distFromSurface = this.camera.position.z - SPHERE_SURFACE_RADIUS
+      this.camera.position.z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.camera.position.z - distFromSurface * pinchDelta))
       this.lastPinchDistance = distance
     }
   }
@@ -195,7 +205,7 @@ export class InputHandler {
       this.sphere.rotation.set(0, 0, 0)
     }
     this.controls.zoomLevel = 1
-    this.camera.position.z = 1.8
+    this.camera.position.z = CAMERA_DEFAULT_Z
   }
 
   // --- Lat/lng raycasting ---
@@ -225,19 +235,19 @@ export class InputHandler {
     if (!this.sphere) return
 
     if (this.controls.autoRotate) {
-      this.sphere.rotation.y += 0.0015
+      this.sphere.rotation.y += AUTO_ROTATE_SPEED
     }
 
     // Inertia when not dragging
     if (!this.controls.isRotating) {
       const speed = Math.abs(this.velocityX) + Math.abs(this.velocityY)
-      if (speed > 0.0001) {
+      if (speed > INERTIA_THRESHOLD) {
         this.sphere.rotation.y += this.velocityX
         this.sphere.rotation.x += this.velocityY
         this.sphere.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.sphere.rotation.x))
 
-        this.velocityX *= this.DAMPING
-        this.velocityY *= this.DAMPING
+        this.velocityX *= DAMPING
+        this.velocityY *= DAMPING
       } else {
         this.velocityX = 0
         this.velocityY = 0

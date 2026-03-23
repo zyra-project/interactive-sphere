@@ -7,6 +7,12 @@
 import type { Dataset } from '../types'
 import { dataService } from '../services/dataService'
 
+// --- Browse UI constants ---
+const CARD_DESCRIPTION_MAX_LENGTH = 120
+const MAX_CARD_CATEGORIES = 3
+const MAX_CARD_KEYWORDS = 12
+const SEARCH_FOCUS_DELAY_MS = 200
+
 /** Callbacks the browse UI uses to communicate with the main app. */
 export interface BrowseCallbacks {
   onSelectDataset: (id: string) => void
@@ -136,7 +142,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
       renderCards()
     })
     if (!callbacks.isMobile) {
-      setTimeout(() => searchInput.focus(), 200)
+      setTimeout(() => searchInput.focus(), SEARCH_FOCUS_DELAY_MS)
     }
   }
   if (searchClear && searchInput) {
@@ -231,9 +237,9 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
     }
 
     grid.innerHTML = filtered.map(d => {
-      const cats = d.enriched?.categories ? Object.keys(d.enriched.categories).slice(0, 3) : []
+      const cats = d.enriched?.categories ? Object.keys(d.enriched.categories).slice(0, MAX_CARD_CATEGORIES) : []
       const rawDesc = d.enriched?.description ?? d.abstractTxt ?? ''
-      const shortDesc = rawDesc.length > 120 ? rawDesc.substring(0, 120).trim() + '\u2026' : rawDesc
+      const shortDesc = rawDesc.length > CARD_DESCRIPTION_MAX_LENGTH ? rawDesc.substring(0, CARD_DESCRIPTION_MAX_LENGTH).trim() + '\u2026' : rawDesc
 
       const catsHtml = cats.length
         ? `<div class="browse-card-cats">${cats.map(c => `<span class="browse-card-cat">${escapeHtml(c)}</span>`).join('')}</div>`
@@ -264,7 +270,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
       if (catalogUrl) metaHtml += `<div class="browse-card-meta"><a href="${escapeAttr(catalogUrl)}" target="_blank" rel="noopener" style="color: #4da6ff; text-decoration: none; font-size: 0.65rem;">View in SOS catalog \u2197</a></div>`
 
       const keywordsHtml = keywords.length
-        ? `<div class="browse-card-keywords">${keywords.slice(0, 12).map(k => `<span class="browse-card-keyword" data-keyword="${escapeAttr(k)}">${escapeHtml(k)}</span>`).join('')}</div>`
+        ? `<div class="browse-card-keywords">${keywords.slice(0, MAX_CARD_KEYWORDS).map(k => `<span class="browse-card-keyword" data-keyword="${escapeAttr(k)}">${escapeHtml(k)}</span>`).join('')}</div>`
         : ''
 
       const thumbHtml = d.thumbnailLink

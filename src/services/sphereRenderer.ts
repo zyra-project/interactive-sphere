@@ -10,6 +10,18 @@ import type { SphereOptions } from '../types'
 import { EarthMaterials } from './earthMaterials'
 import { InputHandler } from './inputHandler'
 
+// --- Scene constants ---
+const CAMERA_FOV = 75
+const CAMERA_NEAR = 0.1
+const CAMERA_FAR = 10000
+const CAMERA_INITIAL_Z = 1.8
+const SKYBOX_SIZE = 9000
+const STAR_BRIGHTNESS = 0.02
+const SHADOW_MAP_SIZE = 2048
+const AMBIENT_LIGHT_DEFAULT = 0.6
+const DIRECTIONAL_LIGHT_DEFAULT = 0.8
+const MAX_PIXEL_RATIO = 2
+
 export class SphereRenderer {
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
@@ -33,8 +45,8 @@ export class SphereRenderer {
     // Camera setup
     const width = container.clientWidth
     const height = container.clientHeight
-    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 10000)
-    this.camera.position.z = 1.8
+    this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, width / height, CAMERA_NEAR, CAMERA_FAR)
+    this.camera.position.z = CAMERA_INITIAL_Z
 
     // Renderer setup
     this.renderer = new THREE.WebGLRenderer({
@@ -43,7 +55,7 @@ export class SphereRenderer {
       preserveDrawingBuffer: true
     })
     this.renderer.setSize(width, height)
-    this.renderer.setPixelRatio(this.isMobile ? 1 : Math.min(window.devicePixelRatio, 2))
+    this.renderer.setPixelRatio(this.isMobile ? 1 : Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
     this.renderer.shadowMap.enabled = !this.isMobile
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     // Accessibility: mark canvas as decorative image with description
@@ -74,11 +86,11 @@ export class SphereRenderer {
       return new THREE.MeshBasicMaterial({
         map: tex,
         side: THREE.BackSide,
-        color: new THREE.Color(0.02, 0.02, 0.02) // Dim the stars
+        color: new THREE.Color(STAR_BRIGHTNESS, STAR_BRIGHTNESS, STAR_BRIGHTNESS)
       })
     })
 
-    const geometry = new THREE.BoxGeometry(9000, 9000, 9000)
+    const geometry = new THREE.BoxGeometry(SKYBOX_SIZE, SKYBOX_SIZE, SKYBOX_SIZE)
     this.skyboxMesh = new THREE.Mesh(geometry, materials)
 
     // The cubemap faces were generated with astronomical Z-up convention (ICRS/J2000),
@@ -90,14 +102,14 @@ export class SphereRenderer {
   }
 
   private setupLighting(): void {
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+    this.ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT_DEFAULT)
     this.scene.add(this.ambientLight)
 
-    this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+    this.directionalLight = new THREE.DirectionalLight(0xffffff, DIRECTIONAL_LIGHT_DEFAULT)
     this.directionalLight.position.set(5, 5, 5)
     this.directionalLight.castShadow = true
-    this.directionalLight.shadow.mapSize.width = 2048
-    this.directionalLight.shadow.mapSize.height = 2048
+    this.directionalLight.shadow.mapSize.width = SHADOW_MAP_SIZE
+    this.directionalLight.shadow.mapSize.height = SHADOW_MAP_SIZE
     this.scene.add(this.directionalLight)
   }
 

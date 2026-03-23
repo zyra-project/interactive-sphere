@@ -24,6 +24,11 @@ export interface VideoProxyResponse {
 
 const VIDEO_PROXY_BASE = 'https://video-proxy.zyra-project.org/video'
 
+// --- HLS buffer constants ---
+const MOBILE_BUFFER_LENGTH = 30
+const DESKTOP_BUFFER_LENGTH = 600
+const MAX_ERROR_RETRIES = 3
+
 export class HLSService {
   private hls: Hls | null = null
   video: HTMLVideoElement | null = null
@@ -78,11 +83,11 @@ export class HLSService {
         // Mobile browsers have strict MSE memory quotas. Buffering 600 s of
         // HD video overflows them, causing fatal MEDIA_ERRORs on most phones.
         // 30 s is enough for smooth looped playback on mobile.
-        const bufferLength = mobile ? 30 : 600
+        const bufferLength = mobile ? MOBILE_BUFFER_LENGTH : DESKTOP_BUFFER_LENGTH
         this.hls = new Hls({
           maxBufferLength: bufferLength,
           maxMaxBufferLength: bufferLength,
-          backBufferLength: mobile ? 30 : Infinity,
+          backBufferLength: mobile ? MOBILE_BUFFER_LENGTH : Infinity,
           // Let ABR choose the best level on all devices (-1 = auto).
           // Previously mobile was pinned to level 0 (lowest quality).
           startLevel: -1,
@@ -118,7 +123,7 @@ export class HLSService {
 
         let networkRecoveries = 0
         let mediaRecoveries = 0
-        const MAX_RECOVERIES = 3
+        const MAX_RECOVERIES = MAX_ERROR_RETRIES
 
         this.hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {

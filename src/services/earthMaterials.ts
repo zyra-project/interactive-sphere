@@ -7,6 +7,36 @@
 import * as THREE from 'three'
 import { fetchImageWithProgress } from '../utils/fetchProgress'
 
+// --- Earth material constants ---
+const NORMAL_MAP_SCALE = 0.4
+const EARTH_SHININESS = 40
+const NIGHT_LIGHT_STRENGTH = 0.5
+
+// --- Atmosphere constants ---
+const ATMOSPHERE_INNER_RADIUS = 1.003
+const ATMOSPHERE_OUTER_RADIUS = 1.012
+const ATMOSPHERE_SEGMENTS = 64
+
+// --- Cloud constants ---
+const CLOUD_RADIUS = 1.005
+const CLOUD_SEGMENTS = 64
+const CLOUD_OPACITY = 0.9
+const CLOUD_ALPHA_GAMMA = 0.55
+
+// --- Sun visual constants ---
+const GLOW_TEXTURE_SIZE = 256
+const SUN_CORE_SCALE = 4
+const SUN_GLOW_SCALE = 12
+const SUN_GLOW_OPACITY = 0.35
+const SUN_SPRITE_DISTANCE = 30
+const SUN_LIGHT_DISTANCE = 50
+
+// --- Sun lighting constants ---
+const SUN_LIGHT_INTENSITY = 1.8
+const SUN_AMBIENT_INTENSITY = 0.08
+const DEFAULT_DIRECTIONAL_INTENSITY = 0.8
+const DEFAULT_AMBIENT_INTENSITY = 0.6
+
 export class EarthMaterials {
   private scene: THREE.Scene
   private ambientLight: THREE.AmbientLight
@@ -90,10 +120,10 @@ export class EarthMaterials {
     const material = new THREE.MeshPhongMaterial({
       map: diffuse,
       normalMap: normal,
-      normalScale: new THREE.Vector2(0.4, 0.4),
+      normalScale: new THREE.Vector2(NORMAL_MAP_SCALE, NORMAL_MAP_SCALE),
       specularMap: specular,
       specular: new THREE.Color(0xaaaaaa),
-      shininess: 40,
+      shininess: EARTH_SHININESS,
       emissiveMap: nightLights,
       emissive: new THREE.Color(0xffffff),
     })
@@ -128,7 +158,7 @@ export class EarthMaterials {
         `#ifdef USE_EMISSIVEMAP
            vec4 emissiveColor = texture2D( emissiveMap, vEmissiveMapUv );
            float nightFactor = smoothstep( 0.0, -0.2, vNdotL );
-           totalEmissiveRadiance *= emissiveColor.rgb * nightFactor * 0.5;
+           totalEmissiveRadiance *= emissiveColor.rgb * nightFactor * ${NIGHT_LIGHT_STRENGTH};
          #endif`
       )
     }
@@ -248,7 +278,7 @@ export class EarthMaterials {
 
     const sunDir = this.earthShaderUniforms.uSunDir || { value: new THREE.Vector3(1, 0, 0) }
 
-    const innerGeo = new THREE.SphereGeometry(1.003, 64, 64)
+    const innerGeo = new THREE.SphereGeometry(ATMOSPHERE_INNER_RADIUS, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS)
     const innerMat = new THREE.ShaderMaterial({
       vertexShader: atmosphereVertexShader,
       fragmentShader: innerFragShader,
@@ -261,7 +291,7 @@ export class EarthMaterials {
     this.atmosphereInner = new THREE.Mesh(innerGeo, innerMat)
     this.scene.add(this.atmosphereInner)
 
-    const outerGeo = new THREE.SphereGeometry(1.012, 64, 64)
+    const outerGeo = new THREE.SphereGeometry(ATMOSPHERE_OUTER_RADIUS, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS)
     const outerMat = new THREE.ShaderMaterial({
       vertexShader: atmosphereVertexShader,
       fragmentShader: outerFragShader,
@@ -316,7 +346,7 @@ export class EarthMaterials {
   private createSunVisual(): void {
     this.removeSunVisual()
 
-    const coreTexture = this.createGlowTexture(256, 0.08, [255, 250, 230])
+    const coreTexture = this.createGlowTexture(GLOW_TEXTURE_SIZE, 0.08, [255, 250, 230])
     const coreMaterial = new THREE.SpriteMaterial({
       map: coreTexture,
       blending: THREE.AdditiveBlending,
@@ -325,19 +355,19 @@ export class EarthMaterials {
       opacity: 1.0
     })
     this.sunSprite = new THREE.Sprite(coreMaterial)
-    this.sunSprite.scale.set(4, 4, 1)
+    this.sunSprite.scale.set(SUN_CORE_SCALE, SUN_CORE_SCALE, 1)
     this.scene.add(this.sunSprite)
 
-    const glowTexture = this.createGlowTexture(256, 0.02, [255, 210, 140])
+    const glowTexture = this.createGlowTexture(GLOW_TEXTURE_SIZE, 0.02, [255, 210, 140])
     const glowMaterial = new THREE.SpriteMaterial({
       map: glowTexture,
       blending: THREE.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      opacity: 0.35
+      opacity: SUN_GLOW_OPACITY
     })
     this.sunGlowSprite = new THREE.Sprite(glowMaterial)
-    this.sunGlowSprite.scale.set(12, 12, 1)
+    this.sunGlowSprite.scale.set(SUN_GLOW_SCALE, SUN_GLOW_SCALE, 1)
     this.scene.add(this.sunGlowSprite)
   }
 
@@ -370,9 +400,9 @@ export class EarthMaterials {
     )
 
     this.directionalLight.color.set(0xfff5e0)
-    this.directionalLight.intensity = 1.8
+    this.directionalLight.intensity = SUN_LIGHT_INTENSITY
 
-    this.ambientLight.intensity = 0.08
+    this.ambientLight.intensity = SUN_AMBIENT_INTENSITY
     this.ambientLight.color.set(0x334466)
 
     this.createSunVisual()
@@ -382,8 +412,8 @@ export class EarthMaterials {
     this.sunMode = false
     this.directionalLight.position.set(5, 5, 5)
     this.directionalLight.color.set(0xffffff)
-    this.directionalLight.intensity = 0.8
-    this.ambientLight.intensity = 0.6
+    this.directionalLight.intensity = DEFAULT_DIRECTIONAL_INTENSITY
+    this.ambientLight.intensity = DEFAULT_AMBIENT_INTENSITY
     this.ambientLight.color.set(0xffffff)
     this.removeSunVisual()
   }
@@ -413,7 +443,7 @@ export class EarthMaterials {
 
       for (let i = 0; i < data.length; i += 4) {
         const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255
-        const alpha = Math.pow(lum, 0.55)
+        const alpha = Math.pow(lum, CLOUD_ALPHA_GAMMA)
         data[i] = 255
         data[i + 1] = 255
         data[i + 2] = 255
@@ -425,12 +455,12 @@ export class EarthMaterials {
       const texture = new THREE.CanvasTexture(canvas)
       texture.colorSpace = THREE.SRGBColorSpace
 
-      const geometry = new THREE.SphereGeometry(1.005, 64, 64)
+      const geometry = new THREE.SphereGeometry(CLOUD_RADIUS, CLOUD_SEGMENTS, CLOUD_SEGMENTS)
       const material = new THREE.MeshPhongMaterial({
         map: texture,
         transparent: true,
         depthWrite: false,
-        opacity: 0.9
+        opacity: CLOUD_OPACITY
       })
 
       // On the night side, darken clouds so they obscure city lights below
@@ -499,13 +529,13 @@ export class EarthMaterials {
     if (!sphere || !this.sunMode) return
 
     const worldDir = this.sunLocalDir.clone().applyQuaternion(sphere.quaternion)
-    this.directionalLight.position.copy(worldDir.clone().multiplyScalar(50))
+    this.directionalLight.position.copy(worldDir.clone().multiplyScalar(SUN_LIGHT_DISTANCE))
 
     if (this.earthShaderUniforms.uSunDir) {
       this.earthShaderUniforms.uSunDir.value.copy(worldDir).normalize()
     }
 
-    const spritePos = worldDir.multiplyScalar(30)
+    const spritePos = worldDir.multiplyScalar(SUN_SPRITE_DISTANCE)
     if (this.sunSprite) this.sunSprite.position.copy(spritePos)
     if (this.sunGlowSprite) this.sunGlowSprite.position.copy(spritePos)
   }

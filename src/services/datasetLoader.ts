@@ -14,6 +14,13 @@ import { escapeHtml, escapeAttr } from '../ui/browseUI'
 import type { PlaybackState } from '../ui/playbackController'
 import { updatePlayButton, loadCaptions } from '../ui/playbackController'
 
+// --- Dataset loader constants ---
+const DESCRIPTION_MAX_LENGTH = 600
+const DESCRIPTION_MIN_CUT = 200
+const VIDEO_LOAD_TIMEOUT_MS = 20000
+const FIRST_FRAME_FALLBACK_MS = 150
+const SCRUBBER_MAX = '1000'
+
 /** Callbacks the dataset loader uses to communicate with the main app. */
 export interface DatasetLoaderCallbacks {
   showPlaybackControls: (show: boolean) => void
@@ -119,7 +126,7 @@ export async function loadVideoDataset(
       setTimeout(() => {
         video.removeEventListener('canplay', onCanPlay)
         reject(new Error('Video took too long to load — check your connection and try again'))
-      }, 20000)
+      }, VIDEO_LOAD_TIMEOUT_MS)
     }
   })
 
@@ -146,7 +153,7 @@ export async function loadVideoDataset(
       if ('requestVideoFrameCallback' in video) {
         (video as any).requestVideoFrameCallback(() => resolve())
       } else {
-        setTimeout(resolve, 150)
+        setTimeout(resolve, FIRST_FRAME_FALLBACK_MS)
       }
     })
     video.pause()
@@ -160,7 +167,7 @@ export async function loadVideoDataset(
 
   const scrubber = document.getElementById('scrubber') as HTMLInputElement
   if (scrubber) {
-    scrubber.max = '1000'
+    scrubber.max = SCRUBBER_MAX
     scrubber.value = '0'
   }
 
@@ -203,9 +210,9 @@ export function displayDatasetInfo(
   const description = e?.description || dataset.abstractTxt
   if (description) {
     let text = description
-    if (text.length > 600) {
-      const cut = text.lastIndexOf('.', 600)
-      text = text.substring(0, cut > 200 ? cut + 1 : 600) + '…'
+    if (text.length > DESCRIPTION_MAX_LENGTH) {
+      const cut = text.lastIndexOf('.', DESCRIPTION_MAX_LENGTH)
+      text = text.substring(0, cut > DESCRIPTION_MIN_CUT ? cut + 1 : DESCRIPTION_MAX_LENGTH) + '…'
     }
     html += `<p class="info-description">${text}</p>`
   }

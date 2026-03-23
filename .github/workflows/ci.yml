@@ -67,7 +67,7 @@ jobs:
     needs: [build]
     environment:
       name: production
-      url: https://nteractive-sphere.pages.dev
+      url: https://sphere.zyra-project.org/
     steps:
       - uses: actions/checkout@v4
         with:

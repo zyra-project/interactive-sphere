@@ -24,6 +24,16 @@ import {
   loadImageDataset, loadVideoDataset, displayDatasetInfo,
 } from './services/datasetLoader'
 
+// --- App constants ---
+const SPHERE_SEGMENTS_MOBILE = 32
+const SPHERE_SEGMENTS_DESKTOP = 64
+const EARTH_TEXTURE_WEIGHT = 0.8
+const CLOUD_TEXTURE_WEIGHT = 0.2
+const LOADING_BASE_PROGRESS = 20
+const LOADING_TEXTURE_RANGE = 70
+const LOADING_HIDE_DELAY_MS = 300
+const ERROR_DISPLAY_TIMEOUT_MS = 5000
+
 class InteractiveSphere {
   private appState: AppState = {
     datasets: [],
@@ -56,7 +66,7 @@ class InteractiveSphere {
 
       this.setLoadingStatus('Creating renderer\u2026', 15)
       this.renderer = new SphereRenderer(container)
-      const segments = this.isMobile ? 32 : 64
+      const segments = this.isMobile ? SPHERE_SEGMENTS_MOBILE : SPHERE_SEGMENTS_DESKTOP
       this.renderer.createSphere({
         radius: 1,
         widthSegments: segments,
@@ -97,8 +107,8 @@ class InteractiveSphere {
         let earthFraction = 0
         let cloudFraction = 0
         const updateProgress = () => {
-          const combined = earthFraction * 0.8 + cloudFraction * 0.2
-          this.setLoadingStatus('Loading Earth textures\u2026', 20 + Math.round(combined * 70))
+          const combined = earthFraction * EARTH_TEXTURE_WEIGHT + cloudFraction * CLOUD_TEXTURE_WEIGHT
+          this.setLoadingStatus('Loading Earth textures\u2026', LOADING_BASE_PROGRESS + Math.round(combined * LOADING_TEXTURE_RANGE))
         }
         await Promise.all([
           this.renderer.loadDefaultEarthMaterials((f) => { earthFraction = f; updateProgress() }),
@@ -321,7 +331,7 @@ class InteractiveSphere {
               screen.style.display = 'none'
             }
           }, { once: true })
-        }, 300)
+        }, LOADING_HIDE_DELAY_MS)
       }
     }
   }
@@ -347,7 +357,7 @@ class InteractiveSphere {
         if (!errorEl.classList.contains('hidden')) {
           errorEl.classList.add('hidden')
         }
-      }, 5000)
+      }, ERROR_DISPLAY_TIMEOUT_MS)
     }
     console.error('[App] Error:', error)
   }
@@ -548,8 +558,8 @@ class InteractiveSphere {
       let earthFraction = 0
       let cloudFraction = 0
       const updateProgress = () => {
-        const combined = earthFraction * 0.8 + cloudFraction * 0.2
-        this.setLoadingStatus('Loading Earth\u2026', 20 + Math.round(combined * 70))
+        const combined = earthFraction * EARTH_TEXTURE_WEIGHT + cloudFraction * CLOUD_TEXTURE_WEIGHT
+        this.setLoadingStatus('Loading Earth\u2026', LOADING_BASE_PROGRESS + Math.round(combined * LOADING_TEXTURE_RANGE))
       }
       await Promise.all([
         this.renderer.loadDefaultEarthMaterials((f) => { earthFraction = f; updateProgress() }),

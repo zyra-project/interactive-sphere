@@ -2,6 +2,15 @@
  * Time utilities for parsing and formatting temporal data
  */
 
+// --- Time constants ---
+const EARTH_AXIAL_TILT = 23.44
+const SPRING_EQUINOX_DAY = 81
+const DAYS_PER_YEAR = 365
+const SOLAR_DEGREES_PER_HOUR = 15
+const MINUTES_SNAP_INTERVAL = 10
+const DAYS_PER_YEAR_APPROX = 365.25
+const DAYS_PER_MONTH_APPROX = 30.44
+
 /**
  * Parse ISO 8601 datetime string to Date or period object
  * Examples:
@@ -30,8 +39,8 @@ export function parseISO8601Duration(value: string): Date | { type: string; days
   const [, years, months, weeks, days, hours, minutes, seconds] = match
   let totalDays = 0
 
-  if (years) totalDays += parseInt(years) * 365.25
-  if (months) totalDays += parseInt(months) * 30.44
+  if (years) totalDays += parseInt(years) * DAYS_PER_YEAR_APPROX
+  if (months) totalDays += parseInt(months) * DAYS_PER_MONTH_APPROX
   if (weeks) totalDays += parseInt(weeks) * 7
   if (days) totalDays += parseInt(days)
   if (hours) totalDays += parseInt(hours) / 24
@@ -57,7 +66,7 @@ export function formatDate(date: Date, includeTime = false): string {
   if (includeTime) {
     // Snap minutes to nearest 10
     const snapped = new Date(date)
-    snapped.setMinutes(Math.round(snapped.getMinutes() / 10) * 10, 0, 0)
+    snapped.setMinutes(Math.round(snapped.getMinutes() / MINUTES_SNAP_INTERVAL) * MINUTES_SNAP_INTERVAL, 0, 0)
     return snapped.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -147,7 +156,7 @@ const SNAP_INTERVALS = [
   { label: '12h',   ms: 12 * 60 * 60 * 1000 },
   { label: '1d',    ms: 24 * 60 * 60 * 1000 },
   { label: '1w',    ms: 7 * 24 * 60 * 60 * 1000 },
-  { label: '1M',    ms: 30.44 * 24 * 60 * 60 * 1000 },
+  { label: '1M',    ms: DAYS_PER_MONTH_APPROX * 24 * 60 * 60 * 1000 },
 ]
 
 /**
@@ -188,11 +197,11 @@ export function getSunPosition(date: Date): { lat: number; lng: number } {
   const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24))
 
   // Solar declination (axial tilt = 23.44°, spring equinox ≈ day 80)
-  const declination = 23.44 * Math.sin((2 * Math.PI / 365) * (dayOfYear - 81))
+  const declination = EARTH_AXIAL_TILT * Math.sin((2 * Math.PI / DAYS_PER_YEAR) * (dayOfYear - SPRING_EQUINOX_DAY))
 
   // Subsolar longitude from UTC time
   const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600
-  const lng = (12 - utcHours) * 15 // 15°/hour, solar noon at UTC 12:00 = 0° longitude
+  const lng = (12 - utcHours) * SOLAR_DEGREES_PER_HOUR
 
   return { lat: declination, lng }
 }

@@ -7,6 +7,12 @@
 import type { HLSService } from '../services/hlsService'
 import type { AppState, Dataset } from '../types'
 
+// --- Playback constants ---
+const LOOP_RESTART_DELAY_MS = 2000
+const VIDEO_END_THRESHOLD = 0.05
+const SCRUBBER_MAX = 1000
+const DEFAULT_FRAME_STEP = 1 / 30
+
 export interface PlaybackState {
   playbackUpdateId: number | null
   scrubbing: boolean
@@ -46,7 +52,7 @@ export function startPlaybackLoop(
         }
 
         // Auto-loop: pause at end, then restart after 2 seconds
-        if (!video.paused && video.currentTime >= video.duration - 0.05 && !state.loopPauseTimer) {
+        if (!video.paused && video.currentTime >= video.duration - VIDEO_END_THRESHOLD && !state.loopPauseTimer) {
           video.pause()
           state.loopPauseTimer = setTimeout(() => {
             state.loopPauseTimer = null
@@ -54,13 +60,13 @@ export function startPlaybackLoop(
               video.currentTime = 0
               video.play().catch(() => {})
             }
-          }, 2000)
+          }, LOOP_RESTART_DELAY_MS)
         }
 
         const scrubber = document.getElementById('scrubber') as HTMLInputElement
         if (scrubber && !scrubber.matches(':active')) {
           const fraction = video.duration > 0 ? video.currentTime / video.duration : 0
-          scrubber.value = String(Math.round(fraction * 1000))
+          scrubber.value = String(Math.round(fraction * SCRUBBER_MAX))
         }
 
         updateVideoTimeLabel(video.currentTime)
@@ -126,7 +132,7 @@ export function fastForward(
   if (!hlsService) return
   const video = hlsService.getVideo()
   if (video && video.duration) {
-    video.currentTime = Math.max(0, video.duration - 0.05)
+    video.currentTime = Math.max(0, video.duration - VIDEO_END_THRESHOLD)
     hlsService.pause()
     appState.isPlaying = false
     updatePlayButton(true)
@@ -159,7 +165,7 @@ export function stepFrame(
     const totalMs = new Date(dataset.endTime).getTime() - new Date(dataset.startTime).getTime()
     step = (state.displayInterval.intervalMs / totalMs) * video.duration
   } else {
-    step = 1 / 30
+    step = DEFAULT_FRAME_STEP
   }
 
   video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + direction * step))
@@ -172,7 +178,7 @@ export function onScrub(
   state: PlaybackState,
 ): void {
   if (!hlsService) return
-  const fraction = value / 1000
+  const fraction = value / SCRUBBER_MAX
   const video = hlsService.getVideo()
   if (video && video.duration) {
     video.currentTime = fraction * video.duration
