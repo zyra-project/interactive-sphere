@@ -876,7 +876,9 @@ class InteractiveSphere {
         browseToggle.setAttribute('aria-label', collapsed ? 'Open dataset browser' : 'Close dataset browser')
         browseToggle.setAttribute('aria-expanded', String(!collapsed))
         this.announce(collapsed ? 'Dataset browser closed' : 'Dataset browser opened')
-        if (!collapsed) {
+        if (collapsed) {
+          browseToggle.focus()
+        } else {
           const searchInput = document.getElementById('browse-search') as HTMLInputElement | null
           if (searchInput && !this.isMobile) searchInput.focus()
         }
