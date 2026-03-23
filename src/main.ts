@@ -41,6 +41,9 @@ class InteractiveSphere {
       this.setLoading(true)
       this.setLoadingStatus('Starting up\u2026', 5)
 
+      // Pre-flight: check for WebGL support before attempting to create the renderer
+      if (!this.checkWebGLSupport()) return
+
       const container = document.getElementById('container')
       if (!container) throw new Error('Container element not found')
 
@@ -731,6 +734,52 @@ class InteractiveSphere {
     if (standalone) {
       standalone.classList.toggle('hidden', show)
     }
+  }
+
+  /**
+   * Test whether the browser can create a WebGL context.
+   * If not, replace the loading screen with an actionable error message.
+   */
+  private checkWebGLSupport(): boolean {
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    if (gl) return true
+
+    const screen = document.getElementById('loading-screen')
+    if (screen) {
+      screen.innerHTML = `
+        <div style="max-width:480px;padding:2rem;text-align:center;color:#e0e0e0;font-family:system-ui,sans-serif;">
+          <div style="font-size:2.5rem;margin-bottom:0.75rem;" aria-hidden="true">&#x1F30D;</div>
+          <h1 style="font-size:1.1rem;margin:0 0 0.75rem;color:#fff;">WebGL is not available</h1>
+          <p style="font-size:0.8rem;line-height:1.5;color:#aaa;margin:0 0 1.25rem;">
+            This application requires WebGL to render the interactive globe.
+            Your browser's GPU acceleration appears to be disabled.
+          </p>
+          <details style="text-align:left;font-size:0.75rem;color:#999;line-height:1.6;">
+            <summary style="cursor:pointer;color:#4da6ff;margin-bottom:0.5rem;">How to fix this</summary>
+            <ol style="padding-left:1.25rem;margin:0;">
+              <li>Open <strong style="color:#fff;">chrome://flags</strong> in your address bar</li>
+              <li>Search for <strong style="color:#fff;">Override software rendering list</strong></li>
+              <li>Set it to <strong style="color:#fff;">Enabled</strong> and relaunch Chrome</li>
+            </ol>
+            <p style="margin:0.75rem 0 0.25rem;color:#888;">Alternatively, launch Chrome from the terminal with:</p>
+            <code style="display:block;background:#1a1a2e;padding:0.5rem 0.75rem;border-radius:4px;color:#4da6ff;font-size:0.7rem;overflow-x:auto;">
+              google-chrome --enable-webgl --ignore-gpu-blocklist
+            </code>
+            <p style="margin:0.75rem 0 0;color:#888;">
+              If the problem persists, check <strong style="color:#fff;">chrome://gpu</strong>
+              for driver issues. Installing or updating your GPU drivers
+              (e.g. <code style="color:#ccc;">sudo apt install nvidia-driver-xxx</code>
+              or <code style="color:#ccc;">mesa-utils</code>) usually resolves this.
+            </p>
+          </details>
+        </div>`
+      screen.style.display = 'flex'
+      screen.style.alignItems = 'center'
+      screen.style.justifyContent = 'center'
+      screen.classList.remove('fade-out')
+    }
+    return false
   }
 
   private setLoading(isLoading: boolean): void {
