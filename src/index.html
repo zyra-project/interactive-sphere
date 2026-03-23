@@ -94,7 +94,7 @@
 
         #info-toggle {
             font-size: 0.65rem;
-            color: #888;
+            color: #999;
             flex-shrink: 0;
         }
 
@@ -153,7 +153,7 @@
             font-size: 0.6rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            color: #666;
+            color: #999;
             margin-top: 0.75rem;
             margin-bottom: 0.25rem;
         }
@@ -380,7 +380,7 @@
 
         #loading-status {
             font-size: 0.7rem;
-            color: #555;
+            color: #999;
             letter-spacing: 0.08em;
             min-height: 1.2em;
             transition: opacity 0.3s ease;
@@ -491,7 +491,6 @@
             padding: 0.6rem 0.875rem;
             color: #fff;
             font-size: 0.875rem;
-            outline: none;
             transition: border-color 0.2s;
             box-sizing: border-box;
             margin-bottom: 0.875rem;
@@ -499,7 +498,7 @@
         }
 
         #browse-search::placeholder {
-            color: #555;
+            color: #888;
         }
 
         #browse-search:focus {
@@ -542,7 +541,7 @@
 
         #browse-count {
             font-size: 0.65rem;
-            color: #555;
+            color: #999;
             flex-shrink: 0;
             margin-bottom: 0.5rem;
             letter-spacing: 0.05em;
@@ -646,7 +645,7 @@
 
         .browse-card-meta {
             font-size: 0.65rem;
-            color: #888;
+            color: #999;
             margin-bottom: 0.2rem;
         }
 
@@ -707,7 +706,7 @@
 
         .browse-card-cat {
             font-size: 0.6rem;
-            color: #888;
+            color: #999;
             background: rgba(255, 255, 255, 0.06);
             padding: 0.1rem 0.35rem;
             border-radius: 3px;
@@ -715,7 +714,7 @@
 
         .browse-card-desc {
             font-size: 0.7rem;
-            color: #777;
+            color: #999;
             line-height: 1.4;
             margin: 0;
             display: -webkit-box;
@@ -727,9 +726,64 @@
         .browse-no-results {
             grid-column: 1 / -1;
             text-align: center;
-            color: #555;
+            color: #999;
             font-size: 0.85rem;
             padding: 3rem 0;
+        }
+
+        /* --- Accessibility --- */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -100%;
+            left: 1rem;
+            z-index: 10000;
+            padding: 0.5rem 1rem;
+            background: #0066cc;
+            color: #fff;
+            border-radius: 0 0 6px 6px;
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: top 0.2s;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Focus indicators — frosted-glass design language */
+        :focus-visible {
+            outline: 2px solid rgba(77, 166, 255, 0.7);
+            outline-offset: 2px;
+            box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
+        }
+
+        .transport-btn:focus-visible {
+            outline: 2px solid #4da6ff;
+            outline-offset: 1px;
+            box-shadow: 0 0 12px rgba(77, 166, 255, 0.5);
+        }
+
+        .browse-card:focus-visible {
+            border-color: rgba(77, 166, 255, 0.6);
+            box-shadow: 0 0 12px rgba(77, 166, 255, 0.4);
+            outline: none;
+        }
+
+        .browse-chip:focus-visible {
+            outline: 2px solid #4da6ff;
+            outline-offset: 1px;
         }
 
         /* --- Closed caption overlay --- */
@@ -778,76 +832,83 @@
     </style>
 </head>
 <body>
-    <div id="loading-screen">
-        <div class="loading-globe">
+    <a href="#container" class="skip-link">Skip to globe visualization</a>
+
+    <div id="loading-screen" aria-live="assertive" aria-busy="true">
+        <div class="loading-globe" aria-hidden="true">
             <div class="loading-globe-inner"></div>
             <div class="loading-ring"></div>
             <div class="loading-ring-2"></div>
         </div>
-        <div class="loading-title">SOS Explorer</div>
+        <h1 class="loading-title">SOS Explorer</h1>
         <div class="loading-subtitle">Science On a Sphere</div>
-        <div class="loading-progress-track">
+        <div class="loading-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Loading progress">
             <div id="loading-progress-fill" class="loading-progress-fill"></div>
         </div>
-        <div id="loading-status">Initializing&hellip;</div>
+        <div id="loading-status" role="status">Initializing&hellip;</div>
     </div>
     <!-- Browse overlay — only shown when no ?dataset= URL param -->
-    <div id="browse-overlay" class="hidden">
-        <button id="browse-toggle" title="Toggle search panel">&#9666;</button>
+    <aside id="browse-overlay" class="hidden" aria-label="Dataset browser">
+        <button id="browse-toggle" title="Toggle search panel" aria-label="Open dataset browser" aria-expanded="false">&#9666;</button>
         <div id="browse-inner">
             <div id="browse-header">
-                <div class="browse-title">SOS Explorer</div>
+                <h2 class="browse-title">SOS Explorer</h2>
                 <div class="browse-subtitle">Browse environmental datasets from NOAA Science On a Sphere</div>
             </div>
-            <input type="search" id="browse-search" placeholder="Search datasets…" autocomplete="off" spellcheck="false" />
-            <div id="browse-category-bar"></div>
-            <div id="browse-count"></div>
-            <div id="browse-grid"></div>
+            <div role="search">
+                <label for="browse-search" class="sr-only">Search datasets</label>
+                <input type="search" id="browse-search" placeholder="Search datasets…" autocomplete="off" spellcheck="false" aria-describedby="browse-count" />
+            </div>
+            <div id="browse-category-bar" role="group" aria-label="Filter by category"></div>
+            <div id="browse-count" aria-live="polite"></div>
+            <div id="browse-grid" role="list"></div>
         </div>
-    </div>
+    </aside>
 
     <div id="app">
-        <div id="container">
+        <div id="container" role="main" aria-label="Globe visualization" tabindex="-1">
             <div id="status" class="hidden"></div>
             <div id="ui">
                 <div id="time-label" class="hidden">
                     <span id="time-display">--</span>
                 </div>
 
-                <button id="home-btn" class="hidden" title="Browse datasets" style="position: absolute; top: 0.75rem; left: 0.75rem; pointer-events: auto; padding: 0.3rem 0.55rem; font-size: 0.85rem; background: rgba(13, 13, 18, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: #bbb; min-width: 36px; min-height: 36px; line-height: 1;">&#8962;</button>
+                <button id="home-btn" class="hidden" title="Browse datasets" aria-label="Browse datasets" style="position: absolute; top: 0.75rem; left: 0.75rem; pointer-events: auto; padding: 0.3rem 0.55rem; font-size: 0.85rem; background: rgba(13, 13, 18, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: #bbb; min-width: 36px; min-height: 36px; line-height: 1;">&#8962;</button>
 
-                <div id="latlng-display" class="hidden" style="position: absolute; top: 0.75rem; left: 3.5rem; font-size: 0.72rem; letter-spacing: 0.03em; padding: 0.4rem 0.7rem; background: rgba(13, 13, 18, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-variant-numeric: tabular-nums; pointer-events: none;"></div>
+                <div id="latlng-display" class="hidden" aria-hidden="true" style="position: absolute; top: 0.75rem; left: 3.5rem; font-size: 0.72rem; letter-spacing: 0.03em; padding: 0.4rem 0.7rem; background: rgba(13, 13, 18, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-variant-numeric: tabular-nums; pointer-events: none;"></div>
 
 
-                <div id="info-panel" class="ui-panel hidden">
-                    <div id="info-header">
+                <section id="info-panel" class="ui-panel hidden" aria-label="Dataset information">
+                    <div id="info-header" role="button" tabindex="0" aria-expanded="false" aria-controls="info-body">
                         <span id="info-title"></span>
-                        <span id="info-toggle">&#9660;</span>
+                        <span id="info-toggle" aria-hidden="true">&#9660;</span>
                     </div>
                     <div id="info-body"></div>
-                </div>
+                </section>
 
-                <div id="playback-controls" class="ui-panel hidden" style="position: absolute; bottom: 0.75rem; right: 0.75rem; padding: 0.5rem 0.6rem; display: inline-flex; flex-direction: column; align-items: stretch;">
+                <div id="playback-controls" class="ui-panel hidden" role="toolbar" aria-label="Playback controls" style="position: absolute; bottom: 0.75rem; right: 0.75rem; padding: 0.5rem 0.6rem; display: inline-flex; flex-direction: column; align-items: stretch;">
                     <div style="display: flex; gap: 0.2rem; margin-bottom: 0.35rem; justify-content: center;">
-                        <button id="rewind-btn" class="transport-btn" title="Rewind to start">&#x23EE;&#xFE0E;</button>
-                        <button id="step-back-btn" class="transport-btn" title="Step back one frame">&#x23EA;&#xFE0E;</button>
-                        <button id="play-btn" class="transport-btn" title="Play / Pause">&#x25B6;&#xFE0E;</button>
-                        <button id="step-fwd-btn" class="transport-btn" title="Step forward one frame">&#x23E9;&#xFE0E;</button>
-                        <button id="ff-btn" class="transport-btn" title="Fast-forward to end">&#x23ED;&#xFE0E;</button>
-                        <button id="mute-btn" class="transport-btn" title="Unmute audio" style="margin-left: 0.25rem;">&#x1F507;&#xFE0E;</button>
-                        <button id="cc-btn" class="transport-btn hidden" title="Toggle closed captions" style="margin-left: 0.1rem; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;">CC</button>
-                        <button id="auto-rotate-btn" class="transport-btn" title="Toggle auto-rotation" style="margin-left: 0.1rem;">&#x21BB;</button>
+                        <button id="rewind-btn" class="transport-btn" title="Rewind to start" aria-label="Rewind to start">&#x23EE;&#xFE0E;</button>
+                        <button id="step-back-btn" class="transport-btn" title="Step back one frame" aria-label="Step back one frame">&#x23EA;&#xFE0E;</button>
+                        <button id="play-btn" class="transport-btn" title="Play / Pause" aria-label="Play">&#x25B6;&#xFE0E;</button>
+                        <button id="step-fwd-btn" class="transport-btn" title="Step forward one frame" aria-label="Step forward one frame">&#x23E9;&#xFE0E;</button>
+                        <button id="ff-btn" class="transport-btn" title="Fast-forward to end" aria-label="Fast-forward to end">&#x23ED;&#xFE0E;</button>
+                        <button id="mute-btn" class="transport-btn" title="Unmute audio" aria-label="Unmute audio" style="margin-left: 0.25rem;">&#x1F507;&#xFE0E;</button>
+                        <button id="cc-btn" class="transport-btn hidden" title="Toggle closed captions" aria-label="Toggle closed captions" style="margin-left: 0.1rem; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;">CC</button>
+                        <button id="auto-rotate-btn" class="transport-btn" title="Toggle auto-rotation" aria-label="Toggle auto-rotation" style="margin-left: 0.1rem;">&#x21BB;</button>
                     </div>
-                    <input type="range" id="scrubber" min="0" max="1000" value="0" style="width: 100%; margin: 0;">
+                    <input type="range" id="scrubber" min="0" max="1000" value="0" aria-label="Playback position" style="width: 100%; margin: 0;">
                 </div>
 
-                <button id="auto-rotate-standalone" class="transport-btn" title="Toggle auto-rotation" style="position: absolute; bottom: 0.75rem; right: 0.75rem; pointer-events: auto; min-width: 28px; padding: 0.35rem 0.5rem; font-size: 0.75rem; background: rgba(13, 13, 18, 0.88) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 6px;">&#x21BB;</button>
+                <button id="auto-rotate-standalone" class="transport-btn" title="Toggle auto-rotation" aria-label="Toggle auto-rotation" style="position: absolute; bottom: 0.75rem; right: 0.75rem; pointer-events: auto; min-width: 28px; padding: 0.35rem 0.5rem; font-size: 0.75rem; background: rgba(13, 13, 18, 0.88) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 6px;">&#x21BB;</button>
 
-                <div id="caption-overlay"></div>
-                <div id="error-message" class="hidden"></div>
+                <div id="caption-overlay" aria-live="polite"></div>
+                <div id="error-message" class="hidden" role="alert"></div>
             </div>
         </div>
     </div>
+
+    <div id="a11y-announcer" aria-live="polite" aria-atomic="true" class="sr-only"></div>
 
     <script type="module" src="./main.ts"></script>
 </body>

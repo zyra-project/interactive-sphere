@@ -3,7 +3,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install system dependencies
-RUN apk add --no-cache git git-lfs
+RUN apk add --no-cache git git-lfs bash
 
 # Install dependencies first (cached layer)
 COPY package.json package-lock.json ./

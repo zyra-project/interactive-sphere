@@ -34,8 +34,8 @@ border-radius: 6px;               /* 8px for larger panels */
 | `--border-hover`   | `rgba(77, 166, 255, 0.4)`     | Hover/active borders               |
 | `--text-primary`   | `#e8eaf0`                     | Titles, headings                   |
 | `--text-secondary` | `#bbb` / `#ccc`               | Body text, labels                  |
-| `--text-muted`     | `#888` / `#aaa`               | Metadata, timestamps               |
-| `--text-dim`       | `#555`                         | Counts, status text                |
+| `--text-muted`     | `#999` / `#aaa`               | Metadata, timestamps (min 4.5:1 contrast) |
+| `--text-dim`       | `#999`                         | Counts, status text (min 4.5:1 contrast)  |
 | `--accent`         | `#4da6ff`                      | Active states, links, highlights   |
 | `--accent-bg`      | `rgba(77, 166, 255, 0.12)`    | Keyword/tag backgrounds            |
 | `--accent-text`    | `#6ab8ff`                      | Keyword/tag text                   |
@@ -167,3 +167,32 @@ grid-column: 1 / -1;             /* span full width */
 - Hover transitions: `background 0.15s`, `color 0.15s`, `border-color 0.15s`
 - Drawer expand: `max-height 0.3s ease`
 - Loading screen fade: `opacity 0.8s ease`
+
+## Accessibility (Section 508 / WCAG 2.1 AA)
+
+### Color Contrast
+- All text must meet WCAG 2.1 AA contrast ratios: **4.5:1** for normal text, **3:1** for large text (18px+ or 14px bold)
+- Minimum muted text color on dark panels (`~#161619`): `#999` (~4.6:1 ratio)
+- Never use `#555`, `#666`, or `#777` for text — these fail AA contrast on dark backgrounds
+
+### Focus Indicators
+Focus indicators use the accent blue in a glow style that matches the frosted-glass design:
+
+```css
+:focus-visible {
+  outline: 2px solid rgba(77, 166, 255, 0.7);
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
+}
+```
+
+- Browse cards use border highlight instead of outline (since they already have visible borders)
+- Never add `outline: none` to interactive elements without providing an alternative focus style
+
+### ARIA Patterns
+- All emoji-only buttons must have `aria-label` (screen readers cannot interpret emoji)
+- Dynamic state changes (play/pause, mute/unmute, panel open/close) must update `aria-label`
+- Use `aria-expanded` on collapsible headers and toggle buttons
+- Use `aria-pressed` on toggle filter chips
+- Use `role="alert"` for error messages, `aria-live="polite"` for status updates
+- Use a hidden announcer (`#a11y-announcer`) for transient status — never put `aria-live` on rapidly updating elements (e.g., time display at 60fps)

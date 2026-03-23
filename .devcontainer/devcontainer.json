@@ -11,7 +11,8 @@
     "source=${localWorkspaceFolder}/tsconfig.json,target=/app/tsconfig.json,type=bind"
   ],
   "containerEnv": {
-    "CHOKIDAR_USEPOLLING": "true"
+    "CHOKIDAR_USEPOLLING": "true",
+    "SHELL": "/bin/bash"
   },
   "postStartCommand": "cd /app && npm run dev -- --host 0.0.0.0",
   "customizations": {
@@ -19,10 +20,11 @@
       "extensions": [
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
-        "bradlc.vscode-tailwindcss"
+        "bradlc.vscode-tailwindcss",
+        "anthropic.claude-code"
       ],
       "settings": {
-        "typescript.tsdk": "node_modules/typescript/lib"
+        "typescript.tsdk": "/app/node_modules/typescript/lib"
       }
     }
   }

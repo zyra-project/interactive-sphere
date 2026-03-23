@@ -62,7 +62,12 @@ export class SphereRenderer {
     // Shadow maps are GPU-expensive and barely perceptible on small screens
     this.renderer.shadowMap.enabled = !this.isMobile
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    container.appendChild(this.renderer.domElement)
+    // Accessibility: mark canvas as decorative image with description
+    const canvas = this.renderer.domElement
+    canvas.setAttribute('role', 'img')
+    canvas.setAttribute('aria-label', 'Interactive 3D globe visualization')
+    canvas.id = 'globe-canvas'
+    container.appendChild(canvas)
 
     // Lighting setup
     this.setupLighting()
@@ -900,6 +905,13 @@ export class SphereRenderer {
   toggleAutoRotate(): boolean {
     this.controls.autoRotate = !this.controls.autoRotate
     return this.controls.autoRotate
+  }
+
+  /**
+   * Update the canvas aria-label to describe current content
+   */
+  setCanvasDescription(text: string): void {
+    this.renderer.domElement.setAttribute('aria-label', text)
   }
 
   /**

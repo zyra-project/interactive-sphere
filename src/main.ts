@@ -483,6 +483,9 @@ class InteractiveSphere {
       if (show) {
         timeDisplay.textContent = this.appState.timeLabel
         timeLabel.classList.remove('hidden')
+        // Update scrubber accessible text with current time
+        const scrubber = document.getElementById('scrubber')
+        if (scrubber) scrubber.setAttribute('aria-valuetext', this.appState.timeLabel)
       } else {
         timeLabel.classList.add('hidden')
       }
@@ -567,6 +570,19 @@ class InteractiveSphere {
     const playBtn = document.getElementById('play-btn')
     if (playBtn) {
       playBtn.textContent = paused ? '\u25B6\uFE0E' : '\u23F8\uFE0E'
+      playBtn.setAttribute('aria-label', paused ? 'Play' : 'Pause')
+    }
+    this.announce(paused ? 'Playback paused' : 'Playback started')
+  }
+
+  // --- Accessibility announcer ---
+
+  private announce(message: string): void {
+    const el = document.getElementById('a11y-announcer')
+    if (el) {
+      // Clear then set to ensure re-announcement of same message
+      el.textContent = ''
+      requestAnimationFrame(() => { el.textContent = message })
     }
   }
 
@@ -661,10 +677,18 @@ class InteractiveSphere {
       })
     })
 
-    // Toggle expand/collapse on header click
-    infoHeader.onclick = () => {
-      infoPanel.classList.toggle('expanded')
+    // Toggle expand/collapse on header click or keyboard
+    const toggleInfoPanel = () => {
+      const expanded = infoPanel.classList.toggle('expanded')
+      infoHeader.setAttribute('aria-expanded', String(expanded))
     }
+    infoHeader.onclick = toggleInfoPanel
+    infoHeader.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        toggleInfoPanel()
+      }
+    })
   }
 
   private showPlaybackControls(show: boolean): void {
@@ -683,6 +707,7 @@ class InteractiveSphere {
     if (!isLoading) {
       const screen = document.getElementById('loading-screen')
       if (screen) {
+        screen.setAttribute('aria-busy', 'false')
         this.setLoadingStatus('Ready', 100)
         // Brief pause so the "100%" fill is visible before fading
         this.loadingHideTimer = setTimeout(() => {
@@ -704,6 +729,8 @@ class InteractiveSphere {
     const statusEl = document.getElementById('loading-status')
     if (statusEl) statusEl.textContent = message
     if (progress !== undefined) {
+      const track = document.querySelector('.loading-progress-track')
+      if (track) track.setAttribute('aria-valuenow', String(Math.round(progress)))
       const fill = document.getElementById('loading-progress-fill')
       if (fill) (fill as HTMLElement).style.width = `${progress}%`
     }
@@ -766,6 +793,13 @@ class InteractiveSphere {
       browseToggle.addEventListener('click', () => {
         const collapsed = browseOverlay.classList.toggle('collapsed')
         browseToggle.innerHTML = collapsed ? '&#9656;' : '&#9666;'
+        browseToggle.setAttribute('aria-label', collapsed ? 'Open dataset browser' : 'Close dataset browser')
+        browseToggle.setAttribute('aria-expanded', String(!collapsed))
+        this.announce(collapsed ? 'Dataset browser closed' : 'Dataset browser opened')
+        if (!collapsed) {
+          const searchInput = document.getElementById('browse-search') as HTMLInputElement | null
+          if (searchInput && !this.isMobile) searchInput.focus()
+        }
       })
     }
 
@@ -785,6 +819,7 @@ class InteractiveSphere {
         if (!video) return
         video.muted = !video.muted
         muteBtn.textContent = video.muted ? '\u{1F507}\uFE0E' : '\u{1F50A}\uFE0E'
+        muteBtn.setAttribute('aria-label', video.muted ? 'Unmute audio' : 'Mute audio')
         muteBtn.style.color = video.muted ? '#aaa' : '#4da6ff'
         muteBtn.style.borderColor = video.muted ? '#555' : '#4da6ff'
       })
@@ -803,6 +838,7 @@ class InteractiveSphere {
           b.style.color = active ? '#4da6ff' : '#aaa'
           b.style.borderColor = active ? '#4da6ff' : '#555'
         }
+        this.announce(active ? 'Auto-rotation enabled' : 'Auto-rotation disabled')
       })
     }
 
@@ -816,7 +852,10 @@ class InteractiveSphere {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement) return
+      // Don't intercept keyboard shortcuts when focus is on form elements or browse cards
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      const browseOverlay = document.getElementById('browse-overlay')
+      if (browseOverlay && !browseOverlay.classList.contains('hidden') && browseOverlay.contains(e.target as Node)) return
 
       if (e.code === 'Space') {
         e.preventDefault()
@@ -877,15 +916,19 @@ class InteractiveSphere {
     const chipBar = document.getElementById('browse-category-bar')
     if (chipBar) {
       chipBar.innerHTML = categories
-        .map(cat => `<button class="browse-chip${cat === 'All' ? ' active' : ''}" data-cat="${this.escapeAttr(cat)}">${this.escapeHtml(cat)}</button>`)
+        .map(cat => `<button class="browse-chip${cat === 'All' ? ' active' : ''}" data-cat="${this.escapeAttr(cat)}" aria-pressed="${cat === 'All'}">${this.escapeHtml(cat)}</button>`)
         .join('')
 
       chipBar.addEventListener('click', (e) => {
         const btn = (e.target as HTMLElement).closest('.browse-chip') as HTMLElement | null
         if (!btn) return
         activeCategory = btn.dataset.cat ?? 'All'
-        chipBar.querySelectorAll('.browse-chip').forEach(c => c.classList.remove('active'))
+        chipBar.querySelectorAll('.browse-chip').forEach(c => {
+          c.classList.remove('active')
+          c.setAttribute('aria-pressed', 'false')
+        })
         btn.classList.add('active')
+        btn.setAttribute('aria-pressed', 'true')
         renderCards()
       })
     }
@@ -977,15 +1020,15 @@ class InteractiveSphere {
           : ''
 
         const thumbHtml = d.thumbnailLink
-          ? `<img class="browse-card-thumb" src="${this.escapeAttr(d.thumbnailLink)}" alt="" loading="lazy">`
+          ? `<img class="browse-card-thumb" src="${this.escapeAttr(d.thumbnailLink)}" alt="${this.escapeAttr(d.title)} thumbnail" loading="lazy">`
           : ''
 
-        return `<div class="browse-card" data-id="${this.escapeAttr(d.id)}">
+        return `<div class="browse-card" data-id="${this.escapeAttr(d.id)}" role="listitem" tabindex="0" aria-label="${this.escapeAttr(d.title)}" aria-expanded="false">
           ${thumbHtml}
           <div class="browse-card-body">
             <div class="browse-card-header">
               <span class="browse-card-title">${this.escapeHtml(d.title)}</span>
-              <button class="browse-card-load" data-id="${this.escapeAttr(d.id)}">Load</button>
+              <button class="browse-card-load" data-id="${this.escapeAttr(d.id)}" aria-label="Load ${this.escapeAttr(d.title)}">Load</button>
             </div>
             ${catsHtml}${shortDescHtml}
             <div class="browse-card-details">
@@ -995,10 +1038,22 @@ class InteractiveSphere {
         </div>`
       }).join('')
 
-      // Wire up click handlers — expand/collapse on card click, load on button click
+      // Wire up click + keyboard handlers — expand/collapse on card, load on button
       grid.querySelectorAll<HTMLElement>('.browse-card').forEach(card => {
+        const toggleExpand = () => {
+          const wasExpanded = card.classList.contains('expanded')
+          grid.querySelectorAll<HTMLElement>('.browse-card.expanded').forEach(c => {
+            c.classList.remove('expanded')
+            c.setAttribute('aria-expanded', 'false')
+          })
+          if (!wasExpanded) {
+            card.classList.add('expanded')
+            card.setAttribute('aria-expanded', 'true')
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }
+        }
+
         card.addEventListener('click', (e) => {
-          // If the load button was clicked, load the dataset
           const loadBtn = (e.target as HTMLElement).closest('.browse-card-load') as HTMLElement | null
           if (loadBtn) {
             e.stopPropagation()
@@ -1006,15 +1061,16 @@ class InteractiveSphere {
             if (id) this.selectDatasetFromBrowse(id)
             return
           }
-          // Don't collapse when clicking links
           if ((e.target as HTMLElement).tagName === 'A') return
+          toggleExpand()
+        })
 
-          // Toggle expanded state; collapse any other expanded card
-          const wasExpanded = card.classList.contains('expanded')
-          grid.querySelectorAll('.browse-card.expanded').forEach(c => c.classList.remove('expanded'))
-          if (!wasExpanded) {
-            card.classList.add('expanded')
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            // Don't toggle when focus is on the Load button (let it click naturally)
+            if ((e.target as HTMLElement).closest('.browse-card-load')) return
+            e.preventDefault()
+            toggleExpand()
           }
         })
       })
@@ -1030,10 +1086,24 @@ class InteractiveSphere {
 
   private async selectDatasetFromBrowse(id: string): Promise<void> {
     this.hideBrowseUI()
+    this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
     await this.loadDataset(id)
     this.setLoading(false)
+    // Announce and move focus to playback area
+    const dataset = this.appState.currentDataset
+    if (dataset) {
+      this.announce(`Loaded dataset: ${dataset.title}`)
+      this.renderer?.setCanvasDescription(`3D globe showing ${dataset.title}`)
+    }
+    const playBtn = document.getElementById('play-btn')
+    const infoHeader = document.getElementById('info-header')
+    if (playBtn && !playBtn.closest('.hidden')) {
+      playBtn.focus()
+    } else if (infoHeader) {
+      infoHeader.focus()
+    }
   }
 
   private showLoadingScreen(message = 'Loading dataset\u2026', progress = 0): void {
@@ -1094,6 +1164,7 @@ class InteractiveSphere {
     }
     this.setLoading(false)
     this.showBrowseUI()
+    this.renderer?.setCanvasDescription('Interactive 3D globe showing Earth')
   }
 
   dispose(): void {
