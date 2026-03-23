@@ -185,7 +185,7 @@ export class SphereRenderer {
           `#ifdef USE_EMISSIVEMAP
              vec4 emissiveColor = texture2D( emissiveMap, vEmissiveMapUv );
              float nightFactor = smoothstep( 0.0, -0.2, vNdotL );
-             totalEmissiveRadiance *= emissiveColor.rgb * nightFactor;
+             totalEmissiveRadiance *= emissiveColor.rgb * nightFactor * 0.5;
            #endif`
         )
       }
@@ -832,6 +832,40 @@ export class SphereRenderer {
         depthWrite: false,
         opacity: 0.9
       })
+
+      // On the night side, darken clouds so they obscure city lights below
+      if (this.earthShaderUniforms?.uSunDir) {
+        const sunDir = this.earthShaderUniforms.uSunDir
+        material.onBeforeCompile = (shader) => {
+          shader.uniforms.uSunDir = sunDir
+
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <common>',
+            `#include <common>
+             uniform vec3 uSunDir;
+             varying float vCloudNdotL;`
+          )
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <worldpos_vertex>',
+            `#include <worldpos_vertex>
+             vec3 wN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);
+             vCloudNdotL = dot(wN, uSunDir);`
+          )
+
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <common>',
+            `#include <common>
+             varying float vCloudNdotL;`
+          )
+          // On the dark side, shift cloud color from white toward dark gray
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+             float nightMask = smoothstep(0.0, -0.2, vCloudNdotL);
+             diffuseColor.rgb *= mix(vec3(1.0), vec3(0.08), nightMask);`
+          )
+        }
+      }
 
       // Remove previous cloud mesh if any
       if (this.cloudMesh) {
