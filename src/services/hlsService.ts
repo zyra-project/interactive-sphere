@@ -189,6 +189,17 @@ export class HLSService {
     return this.video?.playbackRate ?? 1
   }
 
+  /**
+   * Returns true if the loaded stream has at least one audio track.
+   * Works for both HLS.js and native HLS/direct MP4 paths.
+   */
+  get hasAudio(): boolean {
+    if (this.hls && this.hls.audioTracks.length > 0) return true
+    const tracks = (this.video as HTMLVideoElement & { audioTracks?: { length: number } })?.audioTracks
+    if (tracks && tracks.length > 0) return true
+    return false
+  }
+
   destroy(): void {
     if (this.hls) {
       this.hls.destroy()

@@ -259,6 +259,12 @@ class InteractiveSphere {
       }
     })
 
+    // Show mute button only when the stream has audio
+    const muteBtn = document.getElementById('mute-btn') as HTMLElement | null
+    if (muteBtn) {
+      muteBtn.style.display = this.hlsService.hasAudio ? '' : 'none'
+    }
+
     // Infer display interval from time range + video duration
     if (dataset.startTime && dataset.endTime) {
       const start = new Date(dataset.startTime)
