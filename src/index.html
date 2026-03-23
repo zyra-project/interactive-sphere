@@ -950,8 +950,53 @@
                 padding: 1rem 1rem 0;
             }
 
+            #browse-header {
+                margin-bottom: 0.75rem;
+            }
+
             .browse-title {
                 font-size: 1.1rem;
+            }
+
+            .browse-subtitle {
+                display: none;
+            }
+
+            .browse-search-wrap {
+                margin-bottom: 0.5rem;
+            }
+
+            /* Horizontal-scroll chip bars — prevent vertical overflow on mobile */
+            #browse-category-bar {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;          /* Firefox */
+                padding-bottom: 0.5rem;
+                /* Fade hints at edges to signal horizontal scroll */
+                mask-image: linear-gradient(to right, transparent 0, black 0.5rem, black calc(100% - 1rem), transparent 100%);
+                -webkit-mask-image: linear-gradient(to right, transparent 0, black 0.5rem, black calc(100% - 1rem), transparent 100%);
+            }
+            #browse-category-bar::-webkit-scrollbar { display: none; }
+
+            #browse-subcategory-bar {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                padding-bottom: 0.5rem;
+                mask-image: linear-gradient(to right, transparent 0, black 0.5rem, black calc(100% - 1rem), transparent 100%);
+                -webkit-mask-image: linear-gradient(to right, transparent 0, black 0.5rem, black calc(100% - 1rem), transparent 100%);
+            }
+            #browse-subcategory-bar::-webkit-scrollbar { display: none; }
+
+            .browse-subchip {
+                padding: 0.3rem 0.65rem;
+            }
+
+            #browse-toolbar {
+                flex-wrap: wrap;
+                margin-bottom: 0.35rem;
             }
 
             #browse-grid {
@@ -961,14 +1006,6 @@
 
             .browse-card {
                 padding: 0.625rem;
-            }
-
-            #browse-toolbar {
-                flex-wrap: wrap;
-            }
-
-            .browse-subchip {
-                padding: 0.3rem 0.65rem;
             }
         }
     </style>
