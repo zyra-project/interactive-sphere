@@ -67,16 +67,18 @@ jobs:
     needs: [build]
     environment:
       name: production
-      url: https://sos-interactive-sphere.pages.dev
+      url: https://nteractive-sphere.pages.dev
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx wrangler@3 pages deploy dist/ --project-name sos-interactive-sphere --branch main --commit-hash ${{ github.sha }}
+      - run: npx wrangler@3 pages deploy dist/ --project-name interactive-sphere --branch main --commit-hash ${{ github.sha }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
