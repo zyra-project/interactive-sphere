@@ -83,7 +83,9 @@ export class HLSService {
           maxBufferLength: bufferLength,
           maxMaxBufferLength: bufferLength,
           backBufferLength: mobile ? 30 : Infinity,
-          startLevel: mobile ? 0 : -1,
+          // Let ABR choose the best level on all devices (-1 = auto).
+          // Previously mobile was pinned to level 0 (lowest quality).
+          startLevel: -1,
         })
 
         this.hls.loadSource(hlsUrl)
@@ -92,6 +94,20 @@ export class HLSService {
         this.hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
           const levels = this.hls!.levels.map(l => `${l.width}x${l.height}`)
           console.log(`[HLS] Manifest parsed, ${data.levels.length} quality levels:`, levels)
+
+          // Cap the max ABR level to the device's screen resolution.
+          // Decoding 4K video on a 720p phone wastes memory and can crash
+          // mobile MSE implementations. The video element is 1x1px (for
+          // first-frame decode), so capLevelToPlayerSize won't work here.
+          if (mobile) {
+            const maxScreenDim = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1)
+            const cap = this.hls!.levels.reduce((best, level, i) => {
+              return level.height <= maxScreenDim ? i : best
+            }, 0)
+            this.hls!.autoLevelCapping = cap
+            console.log(`[HLS] Mobile ABR capped at level ${cap} (${this.hls!.levels[cap].width}x${this.hls!.levels[cap].height}) for screen ${maxScreenDim}px`)
+          }
+
           resolve()
         })
 
@@ -117,6 +133,13 @@ export class HLSService {
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
               if (mediaRecoveries < MAX_RECOVERIES) {
                 mediaRecoveries++
+                // If the device can't handle the current level, cap ABR
+                // one level below to prevent repeatedly hitting the same wall.
+                if (this.hls && this.hls.currentLevel > 0) {
+                  const safeLevel = this.hls.currentLevel - 1
+                  console.warn(`[HLS] Media error at level ${this.hls.currentLevel}, capping to ${safeLevel}`)
+                  this.hls.autoLevelCapping = safeLevel
+                }
                 this.hls?.recoverMediaError()
               } else {
                 reject(new Error(`HLS media error after ${MAX_RECOVERIES} retries: ${data.details}`))

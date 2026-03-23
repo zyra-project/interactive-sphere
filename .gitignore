@@ -8,6 +8,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Test / coverage artifacts
+coverage/
+
 # IDE
 .vscode/
 .idea/
@@ -33,3 +36,6 @@ yarn-error.log*
 
 # Runtime
 .turbo/
+
+# Test / coverage artifacts
+coverage/
