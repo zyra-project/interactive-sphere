@@ -231,6 +231,7 @@ export function generateResponse(
   intent: DocentIntent,
   datasets: Dataset[],
   currentDataset: Dataset | null,
+  precomputedSearchResults?: Array<{ dataset: Dataset; score: number }>,
 ): DocentResponse {
   switch (intent.type) {
     case 'greeting':
@@ -285,7 +286,7 @@ export function generateResponse(
     }
 
     case 'search': {
-      const results = searchDatasets(datasets, intent.query)
+      const results = precomputedSearchResults ?? searchDatasets(datasets, intent.query)
       if (results.length === 0) {
         // Try broader — single best word match
         const words = intent.query.split(/\s+/)

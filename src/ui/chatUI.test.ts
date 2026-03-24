@@ -10,6 +10,14 @@ import {
 } from './chatUI'
 import type { ChatCallbacks } from './chatUI'
 
+vi.mock('../services/docentService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/docentService')>()
+  return {
+    ...actual,
+    processMessage: vi.fn(),
+  }
+})
+
 // Minimal DOM setup
 function setupDOM(): void {
   document.body.innerHTML = `
@@ -35,13 +43,17 @@ function setupDOM(): void {
   `
 }
 
-function makeCallbacks(): ChatCallbacks {
+type MockCallbacks = {
+  [K in keyof ChatCallbacks]: ChatCallbacks[K] & ReturnType<typeof vi.fn>
+}
+
+function makeCallbacks(): MockCallbacks {
   return {
     onLoadDataset: vi.fn(),
     getDatasets: vi.fn().mockReturnValue([]),
     getCurrentDataset: vi.fn().mockReturnValue(null),
     announce: vi.fn(),
-  }
+  } as MockCallbacks
 }
 
 beforeEach(() => {
@@ -71,7 +83,6 @@ describe('initChatUI', () => {
         { id: 'test1', role: 'user', text: 'hello', timestamp: 1 },
         { id: 'test2', role: 'docent', text: 'Hi!', timestamp: 2 },
       ],
-      lastActiveDatasetId: null,
     }
     sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
 
@@ -127,7 +138,6 @@ describe('clearChat', () => {
   it('clears all messages', () => {
     const session = {
       messages: [{ id: 'x', role: 'user', text: 'hi', timestamp: 1 }],
-      lastActiveDatasetId: null,
     }
     sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
     initChatUI(makeCallbacks())
@@ -161,7 +171,6 @@ describe('session persistence', () => {
       messages: [
         { id: 'm1', role: 'user', text: 'test message', timestamp: 1 },
       ],
-      lastActiveDatasetId: null,
     }
     sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
 
@@ -176,5 +185,138 @@ describe('session persistence', () => {
     sessionStorage.setItem('sos-docent-chat', 'not-json')
     initChatUI(makeCallbacks())
     expect(getMessages()).toHaveLength(0)
+  })
+})
+
+describe('handleSend streaming', () => {
+  it('appends streaming deltas to docent message', async () => {
+    const { processMessage } = await import('../services/docentService')
+    const mockedProcessMessage = vi.mocked(processMessage)
+
+    mockedProcessMessage.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Hello ' }
+      yield { type: 'delta' as const, text: 'world!' }
+      yield { type: 'done' as const, fallback: false }
+    })
+
+    const cb = makeCallbacks()
+    cb.getDatasets.mockReturnValue([])
+    cb.getCurrentDataset.mockReturnValue(null)
+    initChatUI(cb)
+    openChat()
+
+    const input = document.getElementById('chat-input') as HTMLTextAreaElement
+    input.value = 'test message'
+
+    const sendBtn = document.getElementById('chat-send') as HTMLButtonElement
+    sendBtn.click()
+
+    // Wait for async stream processing
+    await vi.waitFor(() => {
+      const msgs = getMessages()
+      expect(msgs).toHaveLength(2) // user + docent
+      expect(msgs[1].text).toBe('Hello world!')
+    })
+  })
+
+  it('calls onLoadDataset for auto-load chunks', async () => {
+    const { processMessage } = await import('../services/docentService')
+    const mockedProcessMessage = vi.mocked(processMessage)
+
+    mockedProcessMessage.mockImplementation(async function* () {
+      yield {
+        type: 'auto-load' as const,
+        action: { type: 'load-dataset' as const, datasetId: 'DS_001', datasetTitle: 'Test Dataset' },
+        alternatives: [],
+      }
+      yield { type: 'done' as const, fallback: false }
+    })
+
+    const cb = makeCallbacks()
+    cb.getDatasets.mockReturnValue([])
+    cb.getCurrentDataset.mockReturnValue(null)
+    initChatUI(cb)
+    openChat()
+
+    const input = document.getElementById('chat-input') as HTMLTextAreaElement
+    input.value = 'show oceans'
+
+    const sendBtn = document.getElementById('chat-send') as HTMLButtonElement
+    sendBtn.click()
+
+    await vi.waitFor(() => {
+      expect(cb.onLoadDataset).toHaveBeenCalledWith('DS_001')
+    })
+  })
+
+  it('disables send button while streaming', async () => {
+    const { processMessage } = await import('../services/docentService')
+    const mockedProcessMessage = vi.mocked(processMessage)
+
+    let resolve: (() => void) | undefined
+    const gate = new Promise<void>(r => { resolve = r })
+
+    mockedProcessMessage.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Thinking...' }
+      await gate
+      yield { type: 'done' as const, fallback: false }
+    })
+
+    const cb = makeCallbacks()
+    cb.getDatasets.mockReturnValue([])
+    cb.getCurrentDataset.mockReturnValue(null)
+    initChatUI(cb)
+    openChat()
+
+    const input = document.getElementById('chat-input') as HTMLTextAreaElement
+    input.value = 'test'
+
+    const sendBtn = document.getElementById('chat-send') as HTMLButtonElement
+    sendBtn.click()
+
+    // Send button should be disabled while streaming
+    await vi.waitFor(() => {
+      expect(sendBtn.disabled).toBe(true)
+    })
+
+    // Release the gate
+    resolve!()
+
+    // After streaming, send button should be re-enabled
+    await vi.waitFor(() => {
+      expect(sendBtn.disabled).toBe(false)
+    })
+  })
+
+  it('renders action buttons from action chunks', async () => {
+    const { processMessage } = await import('../services/docentService')
+    const mockedProcessMessage = vi.mocked(processMessage)
+
+    mockedProcessMessage.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Here are results:' }
+      yield {
+        type: 'action' as const,
+        action: { type: 'load-dataset' as const, datasetId: 'DS_002', datasetTitle: 'Climate Data' },
+      }
+      yield { type: 'done' as const, fallback: false }
+    })
+
+    const cb = makeCallbacks()
+    cb.getDatasets.mockReturnValue([])
+    cb.getCurrentDataset.mockReturnValue(null)
+    initChatUI(cb)
+    openChat()
+
+    const input = document.getElementById('chat-input') as HTMLTextAreaElement
+    input.value = 'climate data'
+
+    const sendBtn = document.getElementById('chat-send') as HTMLButtonElement
+    sendBtn.click()
+
+    await vi.waitFor(() => {
+      const actionBtns = document.querySelectorAll('.chat-action-btn')
+      expect(actionBtns.length).toBeGreaterThan(0)
+      expect(actionBtns[0].getAttribute('data-dataset-id')).toBe('DS_002')
+    })
   })
 })

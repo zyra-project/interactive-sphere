@@ -154,7 +154,6 @@ export interface ChatMessage {
  */
 export interface ChatSession {
   messages: ChatMessage[]
-  lastActiveDatasetId: string | null
 }
 
 /**

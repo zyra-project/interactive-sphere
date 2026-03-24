@@ -29,6 +29,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     headers['Vary'] = 'Origin'
   }
 
+  // Verify the AI binding is available — if not, the endpoint is misconfigured
+  if (!context.env.AI) {
+    return new Response(
+      JSON.stringify({ error: 'AI binding not configured' }),
+      { status: 503, headers: { ...headers, 'Content-Type': 'application/json' } },
+    )
+  }
+
   return new Response(
     JSON.stringify({
       object: 'list',

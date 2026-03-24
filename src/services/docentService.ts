@@ -90,12 +90,14 @@ export async function* processMessage(
 
   // --- Phase 3/4: Run local engine instantly for immediate results ---
   const intent = parseIntent(input)
-  const localResponse = generateResponse(intent, datasets, currentDataset)
+  // Pre-compute search results once to avoid duplicate scoring work
+  const searchResults = intent.type === 'search' ? searchDatasets(datasets, intent.query) : undefined
+  const localResponse = generateResponse(intent, datasets, currentDataset, searchResults)
   const yieldedIds = new Set<string>()
 
   // Phase 2: Check for auto-load on search intents
-  if (intent.type === 'search') {
-    const results = searchDatasets(datasets, intent.query)
+  if (intent.type === 'search' && searchResults) {
+    const results = searchResults
     const autoResult = evaluateAutoLoad(results)
     if (autoResult) {
       const action: ChatAction = {

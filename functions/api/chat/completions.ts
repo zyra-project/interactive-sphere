@@ -45,6 +45,12 @@ function isRateLimited(ip: string): boolean {
   const entry = rateLimitMap.get(ip)
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    // Prune expired entries to prevent unbounded growth
+    if (rateLimitMap.size > 1000) {
+      for (const [key, val] of rateLimitMap) {
+        if (now > val.resetAt) rateLimitMap.delete(key)
+      }
+    }
     return false
   }
   entry.count++

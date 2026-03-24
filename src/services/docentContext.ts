@@ -116,7 +116,7 @@ export function buildSystemPrompt(datasets: Dataset[], currentDataset: Dataset |
 /**
  * Build a turn-aware system prompt.
  * Turn 0: includes the full dataset catalog.
- * Turn >= 1: omits the catalog to save tokens, referencing the first turn's catalog instead.
+ * Turn >= 1: includes a compact ID-only dataset reference to save tokens.
  */
 export function buildSystemPromptForTurn(
   datasets: Dataset[],

@@ -107,7 +107,6 @@ export function clearChat(): void {
 function saveSession(): void {
   const session: ChatSession = {
     messages: messages.slice(-MAX_PERSISTED_MESSAGES),
-    lastActiveDatasetId: callbacks?.getCurrentDataset()?.id ?? null,
   }
   try {
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
