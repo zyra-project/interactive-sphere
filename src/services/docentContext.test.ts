@@ -5,7 +5,10 @@ import {
   buildCurrentDatasetContext,
   buildDatasetLookup,
   buildSystemPrompt,
+  buildSystemPromptForTurn,
   buildMessageHistory,
+  buildCompressedHistory,
+  summarizeOlderMessages,
   getLoadDatasetTool,
 } from './docentContext'
 
@@ -124,17 +127,113 @@ describe('buildMessageHistory', () => {
     expect(history[1].role).toBe('assistant')
   })
 
-  it('trims to max 20 messages', () => {
-    const messages: ChatMessage[] = Array.from({ length: 30 }, (_, i) => ({
+  it('trims to max 50 messages', () => {
+    const messages: ChatMessage[] = Array.from({ length: 60 }, (_, i) => ({
       id: String(i),
       role: 'user' as const,
       text: `msg ${i}`,
       timestamp: i,
     }))
     const history = buildMessageHistory(messages)
-    expect(history.length).toBeLessThanOrEqual(20)
+    expect(history.length).toBeLessThanOrEqual(50)
     // Should keep the most recent
-    expect(history[history.length - 1].content).toBe('msg 29')
+    expect(history[history.length - 1].content).toBe('msg 59')
+  })
+})
+
+describe('buildSystemPromptForTurn', () => {
+  it('includes dataset lookup on turn 0', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0)
+    expect(prompt).toContain('TEST_001')
+    expect(prompt).toContain('Sea Surface Temperature')
+  })
+
+  it('omits dataset lookup on turn >= 1', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 1)
+    expect(prompt).not.toContain('TEST_001')
+    expect(prompt).toContain('Refer to the dataset catalog')
+    expect(prompt).toContain(String(datasets.length))
+  })
+
+  it('still includes current dataset context on follow-up turns', () => {
+    const prompt = buildSystemPromptForTurn(datasets, makeDataset(), 3)
+    expect(prompt).toContain('Sea Surface Temperature')
+    expect(prompt).toContain('Currently loaded')
+  })
+})
+
+describe('summarizeOlderMessages', () => {
+  it('extracts topics from user messages', () => {
+    const messages: ChatMessage[] = [
+      { id: '1', role: 'user', text: 'Tell me about hurricanes', timestamp: 1 },
+      { id: '2', role: 'docent', text: 'Here are hurricane datasets', timestamp: 2 },
+    ]
+    const summary = summarizeOlderMessages(messages)
+    expect(summary).toContain('hurricanes')
+  })
+
+  it('extracts loaded dataset titles from actions', () => {
+    const messages: ChatMessage[] = [
+      { id: '1', role: 'user', text: 'oceans', timestamp: 1 },
+      {
+        id: '2', role: 'docent', text: 'Here', timestamp: 2,
+        actions: [{ type: 'load-dataset', datasetId: 'T1', datasetTitle: 'Sea Surface Temp' }],
+      },
+    ]
+    const summary = summarizeOlderMessages(messages)
+    expect(summary).toContain('Sea Surface Temp')
+  })
+
+  it('returns empty string for no messages', () => {
+    expect(summarizeOlderMessages([])).toBe('')
+  })
+})
+
+describe('buildCompressedHistory', () => {
+  it('returns all messages verbatim when under threshold', () => {
+    const messages: ChatMessage[] = [
+      { id: '1', role: 'user', text: 'hello', timestamp: 1 },
+      { id: '2', role: 'docent', text: 'Hi!', timestamp: 2 },
+    ]
+    const history = buildCompressedHistory(messages)
+    expect(history).toHaveLength(2)
+    expect(history[0].content).toBe('hello')
+  })
+
+  it('summarizes older messages and keeps recent verbatim', () => {
+    const messages: ChatMessage[] = Array.from({ length: 12 }, (_, i) => ({
+      id: String(i),
+      role: (i % 2 === 0 ? 'user' : 'docent') as 'user' | 'docent',
+      text: `msg ${i}`,
+      timestamp: i,
+    }))
+    const history = buildCompressedHistory(messages)
+    // 6 recent messages + 1 summary = 7
+    expect(history).toHaveLength(7)
+    expect(history[0].role).toBe('system')
+    expect(history[0].content).toContain('Conversation summary')
+    // Last message should be the most recent
+    expect(history[history.length - 1].content).toBe('msg 11')
+  })
+
+  it('includes dataset titles in summary from older actions', () => {
+    const messages: ChatMessage[] = [
+      { id: '0', role: 'user', text: 'oceans', timestamp: 0 },
+      {
+        id: '1', role: 'docent', text: 'Here', timestamp: 1,
+        actions: [{ type: 'load-dataset', datasetId: 'T1', datasetTitle: 'Ocean Currents' }],
+      },
+      // 6 more recent messages
+      ...Array.from({ length: 6 }, (_, i) => ({
+        id: String(i + 2),
+        role: (i % 2 === 0 ? 'user' : 'docent') as 'user' | 'docent',
+        text: `recent ${i}`,
+        timestamp: i + 2,
+      })),
+    ]
+    const history = buildCompressedHistory(messages)
+    const summaryMsg = history.find(m => m.role === 'system')
+    expect(summaryMsg?.content).toContain('Ocean Currents')
   })
 })
 

@@ -6,6 +6,7 @@ import {
   searchDatasets,
   findByCategory,
   findRelated,
+  evaluateAutoLoad,
   generateResponse,
   processUserMessage,
   createMessageId,
@@ -204,6 +205,46 @@ describe('findRelated', () => {
   it('excludes the current dataset', () => {
     const results = findRelated(allDatasets, makeDataset())
     expect(results.every(d => d.id !== 'TEST_001')).toBe(true)
+  })
+})
+
+// --- evaluateAutoLoad ---
+
+describe('evaluateAutoLoad', () => {
+  it('returns null for empty results', () => {
+    expect(evaluateAutoLoad([])).toBeNull()
+  })
+
+  it('returns null when top score is below threshold', () => {
+    const results = [{ dataset: makeDataset(), score: 0.5 }]
+    expect(evaluateAutoLoad(results)).toBeNull()
+  })
+
+  it('auto-loads when single high-confidence result', () => {
+    const results = [{ dataset: makeDataset(), score: 0.8 }]
+    const result = evaluateAutoLoad(results)
+    expect(result).not.toBeNull()
+    expect(result!.autoLoad.id).toBe('TEST_001')
+    expect(result!.alternatives).toHaveLength(0)
+  })
+
+  it('auto-loads when gap to second result is large enough', () => {
+    const results = [
+      { dataset: makeDataset(), score: 0.85 },
+      { dataset: hurricaneDataset, score: 0.4 },
+    ]
+    const result = evaluateAutoLoad(results)
+    expect(result).not.toBeNull()
+    expect(result!.alternatives).toHaveLength(1)
+    expect(result!.alternatives[0].id).toBe('TEST_002')
+  })
+
+  it('returns null when top two scores are too close', () => {
+    const results = [
+      { dataset: makeDataset(), score: 0.8 },
+      { dataset: hurricaneDataset, score: 0.7 },
+    ]
+    expect(evaluateAutoLoad(results)).toBeNull()
   })
 })
 

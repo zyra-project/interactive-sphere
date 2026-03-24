@@ -74,6 +74,20 @@ describe('processMessage — local fallback', () => {
       .join('')
     expect(text).toContain('Sea Surface Temperature')
   })
+
+  it('yields local actions before text when LLM is disabled', async () => {
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('ocean temperature', [], datasets, null, disabledConfig)) {
+      chunks.push(chunk)
+    }
+
+    const firstAction = chunks.findIndex(c => c.type === 'action')
+    const firstDelta = chunks.findIndex(c => c.type === 'delta')
+    // Actions should come before text deltas
+    if (firstAction !== -1 && firstDelta !== -1) {
+      expect(firstAction).toBeLessThan(firstDelta)
+    }
+  })
 })
 
 describe('processMessage — LLM path', () => {
@@ -161,9 +175,72 @@ describe('processMessage — LLM path', () => {
     }
 
     const actions = chunks.filter(c => c.type === 'action')
-    expect(actions.length).toBe(1)
-    const action = actions[0] as { type: 'action'; action: { datasetId: string } }
-    expect(action.action.datasetId).toBe('TEST_001')
+    // Local engine may yield the same action — deduplication ensures only one
+    const uniqueIds = new Set(actions.map(c => (c as { type: 'action'; action: { datasetId: string } }).action.datasetId))
+    expect(uniqueIds.has('TEST_001')).toBe(true)
+  })
+
+  it('deduplicates LLM tool calls against local actions', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    mockedStream.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Found it!' }
+      yield {
+        type: 'tool_call' as const,
+        call: {
+          name: 'load_dataset',
+          arguments: { dataset_id: 'TEST_001', dataset_title: 'Sea Surface Temperature' },
+        },
+      }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('ocean temperature', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // Count all actions with TEST_001
+    const test001Actions = chunks.filter(c =>
+      c.type === 'action' && (c as { type: 'action'; action: { datasetId: string } }).action.datasetId === 'TEST_001'
+    )
+    expect(test001Actions.length).toBe(1)
+  })
+
+  it('yields local actions before LLM deltas', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    mockedStream.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Here are some results.' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('ocean temperature', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    const firstAction = chunks.findIndex(c => c.type === 'action')
+    const firstDelta = chunks.findIndex(c => c.type === 'delta')
+    if (firstAction !== -1 && firstDelta !== -1) {
+      expect(firstAction).toBeLessThan(firstDelta)
+    }
   })
 })
 

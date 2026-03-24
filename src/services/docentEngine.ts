@@ -16,6 +16,8 @@ const KEYWORD_WEIGHT = 3
 const CATEGORY_WEIGHT = 2
 const DESCRIPTION_WEIGHT = 1
 const TAG_WEIGHT = 2
+const AUTO_LOAD_THRESHOLD = 0.7
+const AUTO_LOAD_GAP = 0.25
 
 /** Intent types the engine can detect */
 export type DocentIntent =
@@ -156,6 +158,23 @@ export function findRelated(datasets: Dataset[], current: Dataset, limit = MAX_R
 
   const combined = [...byRelated, ...scored.map(s => s.dataset)]
   return combined.slice(0, limit)
+}
+
+/**
+ * Evaluate whether the top search result is confident enough to auto-load.
+ * Returns the auto-load candidate and remaining alternatives, or null.
+ */
+export function evaluateAutoLoad(
+  results: Array<{ dataset: Dataset; score: number }>,
+): { autoLoad: Dataset; alternatives: Dataset[] } | null {
+  if (results.length === 0) return null
+  const top = results[0]
+  if (top.score < AUTO_LOAD_THRESHOLD) return null
+  if (results.length >= 2 && top.score - results[1].score < AUTO_LOAD_GAP) return null
+  return {
+    autoLoad: top.dataset,
+    alternatives: results.slice(1).map(r => r.dataset),
+  }
 }
 
 /**

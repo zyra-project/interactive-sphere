@@ -279,7 +279,7 @@ async function handleSend(): Promise<void> {
 
     let firstChunk = true
     for await (const chunk of stream) {
-      if (firstChunk && (chunk.type === 'delta' || chunk.type === 'action')) {
+      if (firstChunk && chunk.type !== 'done') {
         hideTyping()
         firstChunk = false
       }
@@ -296,6 +296,21 @@ async function handleSend(): Promise<void> {
           updateStreamingMessage(docentMsg)
           scrollToBottom()
           break
+
+        case 'auto-load': {
+          // Auto-load the top result immediately
+          callbacks.onLoadDataset(chunk.action.datasetId)
+          if (!docentMsg.text) {
+            docentMsg.text = `I've loaded **${chunk.action.datasetTitle}** onto the globe.`
+          }
+          if (!docentMsg.actions) docentMsg.actions = []
+          for (const alt of chunk.alternatives) {
+            docentMsg.actions.push(alt)
+          }
+          updateStreamingMessage(docentMsg)
+          scrollToBottom()
+          break
+        }
 
         case 'done':
           break

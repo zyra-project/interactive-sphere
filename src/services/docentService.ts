@@ -8,8 +8,8 @@
 import type { Dataset, ChatMessage, ChatAction, DocentConfig } from '../types'
 import { streamChat, checkAvailability } from './llmProvider'
 import type { StreamChunk } from './llmProvider'
-import { buildSystemPrompt, buildMessageHistory, getLoadDatasetTool } from './docentContext'
-import { processUserMessage } from './docentEngine'
+import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool } from './docentContext'
+import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad, processUserMessage } from './docentEngine'
 import { logger } from '../utils/logger'
 
 // --- Constants ---
@@ -30,6 +30,7 @@ const DEFAULT_CONFIG: DocentConfig = {
 export type DocentStreamChunk =
   | { type: 'delta'; text: string }
   | { type: 'action'; action: ChatAction }
+  | { type: 'auto-load'; action: ChatAction; alternatives: ChatAction[] }
   | { type: 'done'; fallback: boolean }
 
 /**
@@ -76,7 +77,8 @@ export async function testConnection(config: DocentConfig): Promise<boolean> {
 /**
  * Process a user message and yield streaming response chunks.
  *
- * Tries LLM first. On failure, falls back to the local engine.
+ * Hybrid approach: runs local engine instantly for immediate actions,
+ * then streams LLM text in parallel. Falls back to local-only if LLM is unavailable.
  */
 export async function* processMessage(
   input: string,
@@ -87,14 +89,51 @@ export async function* processMessage(
 ): AsyncGenerator<DocentStreamChunk> {
   const cfg = config ?? loadConfig()
 
-  // Try LLM if enabled
+  // --- Phase 3/4: Run local engine instantly for immediate results ---
+  const intent = parseIntent(input)
+  const localResponse = generateResponse(intent, datasets, currentDataset)
+  const yieldedIds = new Set<string>()
+
+  // Phase 2: Check for auto-load on search intents
+  if (intent.type === 'search') {
+    const results = searchDatasets(datasets, intent.query)
+    const autoResult = evaluateAutoLoad(results)
+    if (autoResult) {
+      const action: ChatAction = {
+        type: 'load-dataset',
+        datasetId: autoResult.autoLoad.id,
+        datasetTitle: autoResult.autoLoad.title,
+      }
+      const alternatives: ChatAction[] = autoResult.alternatives.map(d => ({
+        type: 'load-dataset',
+        datasetId: d.id,
+        datasetTitle: d.title,
+      }))
+      yieldedIds.add(action.datasetId)
+      for (const alt of alternatives) yieldedIds.add(alt.datasetId)
+      yield { type: 'auto-load', action, alternatives }
+    }
+  }
+
+  // Yield local actions immediately (skip any already yielded by auto-load)
+  if (localResponse.actions) {
+    for (const action of localResponse.actions) {
+      if (!yieldedIds.has(action.datasetId)) {
+        yieldedIds.add(action.datasetId)
+        yield { type: 'action', action }
+      }
+    }
+  }
+
+  // --- Try LLM for richer text ---
   if (cfg.enabled && cfg.apiUrl) {
-    let llmProducedOutput = false
+    let llmProducedText = false
     try {
-      const systemPrompt = buildSystemPrompt(datasets, currentDataset)
+      const turnIndex = Math.floor(history.length / 2)
+      const systemPrompt = buildSystemPromptForTurn(datasets, currentDataset, turnIndex)
       const llmMessages = [
         { role: 'system' as const, content: systemPrompt },
-        ...buildMessageHistory(history),
+        ...buildCompressedHistory(history),
         { role: 'user' as const, content: input },
       ]
       const tools = [getLoadDatasetTool()]
@@ -104,15 +143,15 @@ export async function* processMessage(
       for await (const chunk of stream) {
         switch (chunk.type) {
           case 'delta':
-            llmProducedOutput = true
+            llmProducedText = true
             yield { type: 'delta', text: chunk.text }
             break
 
           case 'tool_call':
             if (chunk.call.name === 'load_dataset') {
               const args = chunk.call.arguments as { dataset_id?: string; dataset_title?: string }
-              if (args.dataset_id) {
-                llmProducedOutput = true
+              if (args.dataset_id && !yieldedIds.has(String(args.dataset_id))) {
+                yieldedIds.add(String(args.dataset_id))
                 yield {
                   type: 'action',
                   action: {
@@ -130,7 +169,7 @@ export async function* processMessage(
             break
 
           case 'done':
-            if (llmProducedOutput) {
+            if (llmProducedText) {
               yield { type: 'done', fallback: false }
               return
             }
@@ -138,8 +177,7 @@ export async function* processMessage(
         }
       }
 
-      // If we got here without output, fall through to local
-      if (llmProducedOutput) {
+      if (llmProducedText) {
         yield { type: 'done', fallback: false }
         return
       }
@@ -148,14 +186,8 @@ export async function* processMessage(
     }
   }
 
-  // Local fallback
-  logger.info('[Docent] Using local engine')
-  const response = processUserMessage(input, datasets, currentDataset)
-  yield { type: 'delta', text: response.text }
-  if (response.actions) {
-    for (const action of response.actions) {
-      yield { type: 'action', action }
-    }
-  }
+  // Local text fallback (actions already yielded above)
+  logger.info('[Docent] Using local engine for text')
+  yield { type: 'delta', text: localResponse.text }
   yield { type: 'done', fallback: true }
 }

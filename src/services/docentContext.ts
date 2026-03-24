@@ -9,7 +9,8 @@ import type { Dataset, ChatMessage } from '../types'
 import type { LLMMessage, LLMTool } from './llmProvider'
 
 // --- Constants ---
-const MAX_HISTORY_MESSAGES = 20
+const MAX_HISTORY_MESSAGES = 50
+const RECENT_EXCHANGE_COUNT = 3 // keep last N exchanges (user+docent pairs) verbatim
 
 /**
  * Build a compact summary of available dataset categories with counts.
@@ -93,11 +94,31 @@ export function buildDatasetLookup(datasets: Dataset[], limit = 80): string {
 
 /**
  * Build the full system prompt for the LLM.
+ * Backward-compatible wrapper — always includes the full catalog.
  */
 export function buildSystemPrompt(datasets: Dataset[], currentDataset: Dataset | null): string {
+  return buildSystemPromptForTurn(datasets, currentDataset, 0)
+}
+
+/**
+ * Build a turn-aware system prompt.
+ * Turn 0: includes the full dataset catalog.
+ * Turn >= 1: omits the catalog to save tokens, referencing the first turn's catalog instead.
+ */
+export function buildSystemPromptForTurn(
+  datasets: Dataset[],
+  currentDataset: Dataset | null,
+  turnIndex: number,
+): string {
   const categorySummary = buildCategorySummary(datasets)
   const currentContext = buildCurrentDatasetContext(currentDataset)
-  const datasetLookup = buildDatasetLookup(datasets)
+
+  const catalogSection = turnIndex === 0
+    ? `## Dataset Reference
+Here are some featured datasets you can recommend (ID | Title [Categories]):
+${buildDatasetLookup(datasets)}`
+    : `## Dataset Reference
+Refer to the dataset catalog provided at the start of this conversation. ${datasets.length} datasets are available.`
 
   return `You are a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
 
@@ -110,9 +131,7 @@ ${currentContext}
 The collection has ${datasets.length} datasets across these categories:
 ${categorySummary}
 
-## Dataset Reference
-Here are some featured datasets you can recommend (ID | Title [Categories]):
-${datasetLookup}
+${catalogSection}
 
 ## How to Recommend Datasets
 When you want to suggest loading a dataset onto the globe, use the load_dataset tool with the dataset's ID and title. You can recommend multiple datasets in a single response.
@@ -138,6 +157,72 @@ export function buildMessageHistory(messages: ChatMessage[]): LLMMessage[] {
     role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
     content: msg.text,
   }))
+}
+
+/**
+ * Summarize older messages into a compact string.
+ * Extracts topics from user messages and loaded datasets from docent actions.
+ */
+export function summarizeOlderMessages(messages: ChatMessage[]): string {
+  const topics: string[] = []
+  const loadedDatasets: string[] = []
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      const short = msg.text.length > 60 ? msg.text.substring(0, 60) + '…' : msg.text
+      topics.push(short)
+    } else if (msg.actions?.length) {
+      for (const a of msg.actions) {
+        if (a.type === 'load-dataset' && !loadedDatasets.includes(a.datasetTitle)) {
+          loadedDatasets.push(a.datasetTitle)
+        }
+      }
+    }
+  }
+
+  const parts: string[] = []
+  if (topics.length > 0) parts.push(`Topics discussed: ${topics.join('; ')}`)
+  if (loadedDatasets.length > 0) parts.push(`Datasets suggested: ${loadedDatasets.join(', ')}`)
+  return parts.length > 0
+    ? `[Conversation summary: ${parts.join('. ')}.]\n`
+    : ''
+}
+
+/**
+ * Build a compressed message history for the LLM.
+ * Last N exchanges are kept verbatim; older messages are summarized.
+ */
+export function buildCompressedHistory(messages: ChatMessage[]): LLMMessage[] {
+  const trimmed = messages.slice(-MAX_HISTORY_MESSAGES)
+
+  // How many recent messages to keep verbatim (N exchanges = 2N messages)
+  const recentCount = RECENT_EXCHANGE_COUNT * 2
+
+  if (trimmed.length <= recentCount) {
+    return trimmed.map(msg => ({
+      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+      content: msg.text,
+    }))
+  }
+
+  const older = trimmed.slice(0, -recentCount)
+  const recent = trimmed.slice(-recentCount)
+
+  const result: LLMMessage[] = []
+
+  const summary = summarizeOlderMessages(older)
+  if (summary) {
+    result.push({ role: 'system', content: summary })
+  }
+
+  for (const msg of recent) {
+    result.push({
+      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+      content: msg.text,
+    })
+  }
+
+  return result
 }
 
 /**
