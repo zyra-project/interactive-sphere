@@ -200,7 +200,7 @@ export async function* processMessage(
           case 'done':
             if (llmProducedText) {
               // Parse <<LOAD:ID>> markers from text (for providers without tool support)
-              const loadMarkers = accumulatedText.matchAll(/<<LOAD:([^>]+)>>/g)
+              const loadMarkers = accumulatedText.matchAll(/<?<LOAD:([^>]+)>>?/g)
               for (const match of loadMarkers) {
                 const idStr = match[1].trim()
                 const dataset = datasets.find(d => d.id === idStr)
@@ -225,7 +225,7 @@ export async function* processMessage(
 
       if (llmProducedText) {
         // Parse <<LOAD:ID>> markers from text (for providers without tool support)
-        const loadMarkers = accumulatedText.matchAll(/<<LOAD:([^>]+)>>/g)
+        const loadMarkers = accumulatedText.matchAll(/<?<LOAD:([^>]+)>>?/g)
         for (const match of loadMarkers) {
           const idStr = match[1].trim()
           const dataset = datasets.find(d => d.id === idStr)

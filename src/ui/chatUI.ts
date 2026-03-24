@@ -341,7 +341,7 @@ async function handleSend(): Promise<void> {
         case 'done':
           // Strip <<LOAD:...>> markers from displayed text
           if (docentMsg.text) {
-            docentMsg.text = docentMsg.text.replace(/<<LOAD:[^>]+>>\n?/g, '').trim()
+            docentMsg.text = docentMsg.text.replace(/<?<LOAD:[^>]+>>?\n?/g, '').trim()
             updateStreamingMessage(docentMsg)
           }
           if (chunk.fallback && docentMsg.text) {
