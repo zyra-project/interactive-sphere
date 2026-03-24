@@ -8,19 +8,29 @@ WebGL globe (Three.js + Vite + TypeScript) that renders NOAA Science On a Sphere
 
 ```
 src/
-  index.html          — Single-page app shell, minimal UI overlays
-  main.ts             — App entry point, dataset loading, playback controls
-  types/index.ts      — All TypeScript interfaces
+  index.html               — Single-page app shell
+  main.ts                  — App entry point, dataset loading orchestration
+  types/index.ts           — All TypeScript interfaces
   services/
-    sphereRenderer.ts — Three.js scene, sphere, skybox, cloud overlay, controls
-    dataService.ts    — Fetches & cross-references SOS metadata, caches datasets
-    hlsService.ts     — HLS.js video streaming, manifest fetching, playback
+    sphereRenderer.ts      — Three.js scene, sphere, skybox
+    earthMaterials.ts      — Earth textures, atmosphere, sun lighting, clouds
+    inputHandler.ts        — Mouse/touch controls, rotation, zoom, inertia
+    datasetLoader.ts       — Dataset loading and texture application
+    dataService.ts         — Fetches & cross-references SOS metadata, caches datasets
+    hlsService.ts          — HLS.js video streaming with adaptive bitrate
     videoFrameExtractor.ts — Extracts video frames to canvas for sphere texture
+  ui/
+    browseUI.ts            — Dataset browser, search, category/sub-category filtering
+    playbackController.ts  — Video playback state and controls
   utils/
-    time.ts           — ISO 8601 parsing, date formatting, video-to-date mapping
+    time.ts                — ISO 8601 parsing, date formatting, video-to-date mapping
+    fetchProgress.ts       — Fetch with byte-level progress reporting
 public/
   assets/
     Earth_Diffuse_6K.jpg         — Default Earth texture
+    Earth_Normal_2K.jpg          — Normal map for surface detail
+    Earth_Specular_2K.jpg        — Specular map for ocean reflections
+    Earth_Lights_6K.jpg          — Night-side city lights
     sos_dataset_metadata.json    — Enriched metadata (520 datasets from NOAA catalog)
     skybox/                      — Milky Way cube map (6 faces, 2048x2048 JPEG)
 ```
@@ -87,9 +97,4 @@ See **[STYLE_GUIDE.md](STYLE_GUIDE.md)** for the complete visual design language
 - Sphere rotation uses inertia/damping physics (not mechanical)
 - Skybox is a BoxGeometry mesh (not scene.background) so it rotates with the globe
 - Cloud overlay uses non-linear alpha curve (power 0.55) for fine detail
-- The `_work/` directory contains planning docs, screenshots, and working files — not served
-- All screenshots, scratch files, and temporary outputs go in `_work/`, never the project root
-
-## Working Files
-
-All scratch files, planning docs, and source assets go in `_work/`, not the project root.
+- Test files are co-located with source files (e.g., `main.test.ts`, `dataService.test.ts`)

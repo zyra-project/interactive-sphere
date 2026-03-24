@@ -8,14 +8,14 @@ This roadmap reflects what it takes to fulfill the mission: get science in front
 
 These items directly determine whether someone can find and use the project at all.
 
-### 1. Dataset search and filtering
-NOAA's SOS catalog has 600+ datasets. Right now there is no way to discover them. We need a searchable, filterable interface — browsable by keyword and category — that appears when no `dataset=` URL parameter is specified. A student looking for "hurricanes" or "sea ice" should find something immediately, not face a blank sphere.
+### ~~1. Dataset search and filtering~~ ✅
+Searchable, filterable dataset browser with keyword search, category and sub-category navigation, expandable cards with thumbnails.
 
-### 2. Accessibility overhaul
-The project is for everyone. That means ARIA labels on all controls, full keyboard navigation, and screen reader support. None of this should be bolted on later — it belongs in the foundation.
+### 2. Accessibility — screen reader support
+ARIA labels and keyboard navigation are in place. The remaining gap is deeper screen reader support — ensuring the full browsing and playback experience is navigable with assistive technology.
 
-### 3. Mobile HLS adaptive quality
-We currently force the lowest quality stream on mobile. Devices and networks have improved; the viewer should adapt to actual bandwidth rather than assuming the worst. This directly affects the majority of users in the developing world and in classrooms where phones are the primary device.
+### ~~3. Mobile HLS adaptive quality~~ ✅
+ABR now selects the best stream for the device and network. Mobile is capped by resolution but no longer pinned to the lowest quality.
 
 ---
 
@@ -23,14 +23,14 @@ We currently force the lowest quality stream on mobile. Devices and networks hav
 
 Once someone arrives, these items determine whether they stay and learn.
 
-### 4. Better loading states and transitions
-Switching datasets currently involves abrupt visual changes. Smoother transitions and clear loading indicators help users understand what's happening and reduce the sense that something is broken.
+### ~~4. Better loading states and transitions~~ ✅
+Smooth fade-out transitions, granular progress indicators, and download progress reporting are now in place.
 
 ### 5. Persistent error messages
 Error messages currently auto-dismiss after 5 seconds. Users shouldn't have to catch errors on a timer. Messages should stay visible until dismissed.
 
-### 6. Category-based browsing
-Oceans. Atmosphere. Weather events. Ice and sea level. Land use. Grouping datasets into meaningful categories helps users explore related content and understand the scope of what's available — turning a single visit into a deeper investigation.
+### ~~6. Category-based browsing~~ ✅
+Full category and sub-category navigation in the browse panel.
 
 ---
 
@@ -38,14 +38,14 @@ Oceans. Atmosphere. Weather events. Ice and sea level. Land use. Grouping datase
 
 Sustainable progress requires a codebase that doesn't slow us down.
 
-### 7. Break up large files
-`sphereRenderer.ts` is 928 lines. `main.ts` is 651 lines. Both have grown past the point where they're easy to reason about. Splitting them into focused modules will make everything else on this list easier to ship.
+### ~~7. Break up large files~~ ✅
+`sphereRenderer.ts` has been split into `earthMaterials.ts`, `inputHandler.ts`, and `datasetLoader.ts`. Playback controls extracted to `ui/playbackController.ts`. Browse UI extracted to `ui/browseUI.ts`.
 
-### 8. Test coverage for orchestration logic
-`main.ts` coordinates the core application flow and currently has no automated tests. Adding coverage here will catch regressions before they reach users.
+### ~~8. Test coverage for orchestration logic~~ ✅
+`main.test.ts` and test files for all major modules are in place.
 
-### 9. Replace magic numbers with named constants
-Scattered numeric literals make the code harder to read and modify safely. Named constants document intent.
+### ~~9. Replace magic numbers with named constants~~ ✅
+Named constants throughout — `main.ts`, `inputHandler.ts`, `playbackController.ts`, `browseUI.ts`.
 
 ### 10. Log level control
 Production builds should not emit console logs. Adding log level control lets us keep useful debugging without exposing internals.
@@ -62,7 +62,7 @@ Small things that affect the quality of the experience.
 - **Fix sphere rotation inertia between dataset switches** — inertia should reset when a new dataset loads, not carry over from the previous one.
 - **Make related datasets in the info panel linkable** — if we're showing related content, it should be navigable.
 - **Show date ranges for image datasets** — not just start dates; users should know the full temporal extent of what they're viewing.
-- **Remove `videoFrameExtractor.ts`** — dead code that adds noise and confusion.
+- **Remove `videoFrameExtractor.ts`** — unused module that adds noise.
 - **Fix Vimeo URL regex** — currently fails on URLs with query parameters.
 
 ---
