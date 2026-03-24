@@ -165,13 +165,16 @@ class InteractiveSphere {
   private async loadDataset(datasetId: string): Promise<void> {
     const gen = this.loadGeneration
     logger.debug('[App] loadDataset start:', datasetId)
-    const oldVideoTexture = this.videoTexture
-    const oldHlsService = this.hlsService
-    this.videoTexture = null
-    this.hlsService = null
     stopPlaybackLoop(this.playback)
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
+
+    // Tear down the previous video *before* starting the new load so the old
+    // HLS stream stops downloading and the old MediaSource is released.  Two
+    // concurrent HLS.js instances fight over bandwidth and can exhaust the
+    // browser's MediaSource / SourceBuffer limits, stalling the new load.
+    if (this.videoTexture) { this.videoTexture.dispose(); this.videoTexture = null }
+    if (this.hlsService) { this.hlsService.destroy(); this.hlsService = null }
 
     this.renderer?.removeCloudOverlay()
     this.renderer?.removeNightLights()
@@ -196,10 +199,6 @@ class InteractiveSphere {
       // Clean up any partially-created resources from the failed load
       this.cleanupVideo()
       this.setError(error instanceof Error ? error.message : 'Failed to load dataset')
-    } finally {
-      // Always clean up old resources
-      if (oldVideoTexture) oldVideoTexture.dispose()
-      if (oldHlsService) oldHlsService.destroy()
     }
   }
 
