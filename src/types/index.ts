@@ -123,3 +123,36 @@ export interface ControlsState {
   autoRotate: boolean
   zoomLevel: number
 }
+
+/**
+ * Chat message roles
+ */
+export type ChatRole = 'user' | 'docent'
+
+/**
+ * An action the docent can embed in a message (e.g. "Load this dataset")
+ */
+export interface ChatAction {
+  type: 'load-dataset'
+  datasetId: string
+  datasetTitle: string
+}
+
+/**
+ * A single chat message
+ */
+export interface ChatMessage {
+  id: string
+  role: ChatRole
+  text: string
+  actions?: ChatAction[]
+  timestamp: number
+}
+
+/**
+ * Persisted chat session state (stored in sessionStorage)
+ */
+export interface ChatSession {
+  messages: ChatMessage[]
+  lastActiveDatasetId: string | null
+}
