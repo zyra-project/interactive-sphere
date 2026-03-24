@@ -148,7 +148,11 @@ ${categorySummary}
 ${catalogSection}
 
 ## How to Recommend Datasets
-When you want to suggest loading a dataset onto the globe, use the load_dataset tool with the dataset's ID and title. You can recommend multiple datasets in a single response.
+To suggest loading a dataset onto the globe, include a marker in your response text on its own line:
+<<LOAD:DATASET_ID>>
+For example: <<LOAD:INTERNAL_SOS_5>>
+
+You may also use the load_dataset tool if available. You can recommend multiple datasets in a single response.
 
 ## Guidelines
 - Be conversational and enthusiastic about science, but concise
@@ -158,7 +162,7 @@ When you want to suggest loading a dataset onto the globe, use the load_dataset 
 - Suggest related datasets when relevant — help users discover connections between Earth systems
 - If you don't know something specific, be honest, but try to point toward relevant data
 - Keep responses under 150 words unless the user asks for detail
-- Use the load_dataset tool to let users load datasets with one click`
+- Place <<LOAD:ID>> markers after your explanation, not before`
 }
 
 /**

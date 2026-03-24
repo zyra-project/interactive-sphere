@@ -129,6 +129,7 @@ export async function* processMessage(
   // --- Try LLM for richer text ---
   if (cfg.enabled && cfg.apiUrl) {
     let llmProducedText = false
+    let accumulatedText = ''
     try {
       const turnIndex = Math.floor(history.length / 2)
       const systemPrompt = buildSystemPromptForTurn(datasets, currentDataset, turnIndex)
@@ -145,6 +146,7 @@ export async function* processMessage(
         switch (chunk.type) {
           case 'delta':
             llmProducedText = true
+            accumulatedText += chunk.text
             yield { type: 'delta', text: chunk.text }
             break
 
@@ -197,6 +199,23 @@ export async function* processMessage(
 
           case 'done':
             if (llmProducedText) {
+              // Parse <<LOAD:ID>> markers from text (for providers without tool support)
+              const loadMarkers = accumulatedText.matchAll(/<<LOAD:([^>]+)>>/g)
+              for (const match of loadMarkers) {
+                const idStr = match[1].trim()
+                const dataset = datasets.find(d => d.id === idStr)
+                if (dataset && !yieldedIds.has(dataset.id)) {
+                  yieldedIds.add(dataset.id)
+                  yield {
+                    type: 'action',
+                    action: {
+                      type: 'load-dataset',
+                      datasetId: dataset.id,
+                      datasetTitle: dataset.title,
+                    },
+                  }
+                }
+              }
               yield { type: 'done', fallback: false }
               return
             }
@@ -205,6 +224,23 @@ export async function* processMessage(
       }
 
       if (llmProducedText) {
+        // Parse <<LOAD:ID>> markers from text (for providers without tool support)
+        const loadMarkers = accumulatedText.matchAll(/<<LOAD:([^>]+)>>/g)
+        for (const match of loadMarkers) {
+          const idStr = match[1].trim()
+          const dataset = datasets.find(d => d.id === idStr)
+          if (dataset && !yieldedIds.has(dataset.id)) {
+            yieldedIds.add(dataset.id)
+            yield {
+              type: 'action',
+              action: {
+                type: 'load-dataset',
+                datasetId: dataset.id,
+                datasetTitle: dataset.title,
+              },
+            }
+          }
+        }
         yield { type: 'done', fallback: false }
         return
       }

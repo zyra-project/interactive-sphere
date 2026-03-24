@@ -18,7 +18,7 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 
 const DEFAULT_LEVEL: LogLevel =
   typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV
-    ? 'info'
+    ? 'debug'
     : 'warn'
 
 function currentLevel(): LogLevel {
