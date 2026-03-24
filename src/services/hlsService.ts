@@ -236,7 +236,8 @@ export class HLSService {
     }
     if (this.video) {
       this.video.pause()
-      this.video.src = ''
+      this.video.removeAttribute('src')
+      this.video.load()
       this.video.remove()
       this.video = null
     }

@@ -155,6 +155,11 @@ function wireEvents(): void {
   document.getElementById('chat-send')?.addEventListener('click', handleSend)
   document.getElementById('chat-settings-btn')?.addEventListener('click', toggleSettings)
 
+  // Prevent wheel events from bubbling to the globe's zoom handler
+  document.getElementById('chat-panel')?.addEventListener('wheel', (e) => {
+    e.stopPropagation()
+  })
+
   const input = document.getElementById('chat-input') as HTMLTextAreaElement | null
   if (input) {
     input.addEventListener('keydown', (e) => {

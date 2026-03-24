@@ -54,6 +54,7 @@ class InteractiveSphere {
   private videoTexture: THREE.VideoTexture | null = null
   private playback: PlaybackState = createPlaybackState()
   private loadingHideTimer: ReturnType<typeof setTimeout> | null = null
+  private loadGeneration = 0 // guards against concurrent dataset loads
 
   async initialize(): Promise<void> {
     try {
@@ -162,25 +163,29 @@ class InteractiveSphere {
   }
 
   private async loadDataset(datasetId: string): Promise<void> {
-    try {
-      const oldVideoTexture = this.videoTexture
-      const oldHlsService = this.hlsService
-      this.videoTexture = null
-      this.hlsService = null
-      stopPlaybackLoop(this.playback)
-      this.appState.isPlaying = false
-      resetPlaybackState(this.playback)
+    const oldVideoTexture = this.videoTexture
+    const oldHlsService = this.hlsService
+    this.videoTexture = null
+    this.hlsService = null
+    stopPlaybackLoop(this.playback)
+    this.appState.isPlaying = false
+    resetPlaybackState(this.playback)
 
-      this.renderer?.removeCloudOverlay()
-      this.renderer?.removeNightLights()
-      this.renderer?.disableSunLighting()
+    this.renderer?.removeCloudOverlay()
+    this.renderer?.removeNightLights()
+    this.renderer?.disableSunLighting()
+
+    try {
       await this.displayDataset(datasetId)
       this.showHomeButton()
-
+    } catch (error) {
+      // Clean up any partially-created resources from the failed load
+      this.cleanupVideo()
+      this.setError(error instanceof Error ? error.message : 'Failed to load dataset')
+    } finally {
+      // Always clean up old resources
       if (oldVideoTexture) oldVideoTexture.dispose()
       if (oldHlsService) oldHlsService.destroy()
-    } catch (error) {
-      this.setError(error instanceof Error ? error.message : 'Failed to load dataset')
     }
   }
 
@@ -388,11 +393,13 @@ class InteractiveSphere {
   }
 
   private async selectDatasetFromChat(id: string): Promise<void> {
+    const gen = ++this.loadGeneration
     hideBrowseUI()
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
     await this.loadDataset(id)
+    if (gen !== this.loadGeneration) return // a newer load superseded this one
     this.setLoading(false)
     showChatTrigger()
     const dataset = this.appState.currentDataset
@@ -522,12 +529,14 @@ class InteractiveSphere {
   // --- Navigation ---
 
   private async selectDatasetFromBrowse(id: string): Promise<void> {
+    const gen = ++this.loadGeneration
     hideBrowseUI()
     closeChat()
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
     await this.loadDataset(id)
+    if (gen !== this.loadGeneration) return // a newer load superseded this one
     this.setLoading(false)
     showChatTrigger()
     const dataset = this.appState.currentDataset
