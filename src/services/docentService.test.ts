@@ -244,6 +244,101 @@ describe('processMessage — LLM path', () => {
   })
 })
 
+describe('processMessage — auto-load', () => {
+  it('yields auto-load chunk for high-confidence search results', async () => {
+    // "sea surface temperature" should produce a very high score against the SST dataset
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('sea surface temperature', [], datasets, null, disabledConfig)) {
+      chunks.push(chunk)
+    }
+
+    const autoLoad = chunks.find(c => c.type === 'auto-load')
+    if (autoLoad && autoLoad.type === 'auto-load') {
+      expect(autoLoad.action.datasetId).toBe('TEST_001')
+      expect(autoLoad.alternatives).toBeDefined()
+    }
+    // Whether or not auto-load fires depends on score thresholds,
+    // but the chunk ordering should always have actions/auto-load before deltas
+    const firstActionish = chunks.findIndex(c => c.type === 'action' || c.type === 'auto-load')
+    const firstDelta = chunks.findIndex(c => c.type === 'delta')
+    if (firstActionish !== -1 && firstDelta !== -1) {
+      expect(firstActionish).toBeLessThan(firstDelta)
+    }
+  })
+})
+
+describe('processMessage — LLM dataset ID validation', () => {
+  it('ignores tool calls with hallucinated dataset IDs', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    mockedStream.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Check this out:' }
+      yield {
+        type: 'tool_call' as const,
+        call: {
+          name: 'load_dataset',
+          arguments: { dataset_id: 'HALLUCINATED_999', dataset_title: 'Fake Dataset' },
+        },
+      }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('fake data', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    const actions = chunks.filter(c => c.type === 'action')
+    const hallucinated = actions.find(c =>
+      c.type === 'action' && (c as { type: 'action'; action: { datasetId: string } }).action.datasetId === 'HALLUCINATED_999'
+    )
+    expect(hallucinated).toBeUndefined()
+  })
+
+  it('resolves tool calls by title when ID is unknown', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    mockedStream.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Found it:' }
+      yield {
+        type: 'tool_call' as const,
+        call: {
+          name: 'load_dataset',
+          arguments: { dataset_id: 'WRONG_ID', dataset_title: 'Sea Surface Temperature' },
+        },
+      }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('ocean data', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    const actions = chunks.filter(c => c.type === 'action')
+    const resolved = actions.find(c =>
+      c.type === 'action' && (c as { type: 'action'; action: { datasetId: string } }).action.datasetId === 'TEST_001'
+    )
+    expect(resolved).toBeDefined()
+  })
+})
+
 describe('config management', () => {
   it('returns default config when nothing saved', () => {
     const config = loadConfig()

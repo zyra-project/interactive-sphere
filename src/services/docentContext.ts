@@ -77,7 +77,7 @@ export function buildCurrentDatasetContext(dataset: Dataset | null): string {
 
 /**
  * Build a lookup string of datasets the LLM can reference by ID.
- * Compact format to save tokens: "ID | Title"
+ * Compact format to save tokens: "ID | Title [Categories]"
  */
 export function buildDatasetLookup(datasets: Dataset[], limit = 80): string {
   // Prioritize: datasets with rich metadata, higher weight
@@ -90,6 +90,19 @@ export function buildDatasetLookup(datasets: Dataset[], limit = 80): string {
     const cats = Object.keys(d.enriched?.categories ?? {}).slice(0, 2).join(', ')
     return `${d.id} | ${d.title}${cats ? ` [${cats}]` : ''}`
   }).join('\n')
+}
+
+/**
+ * Build a compact ID-only lookup for follow-up turns.
+ * Much shorter than the full lookup — just "ID | Title" with no categories.
+ */
+export function buildCompactDatasetLookup(datasets: Dataset[], limit = 80): string {
+  const sorted = [...datasets]
+    .filter(d => d.enriched?.description)
+    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+    .slice(0, limit)
+
+  return sorted.map(d => `${d.id} | ${d.title}`).join('\n')
 }
 
 /**
@@ -117,8 +130,9 @@ export function buildSystemPromptForTurn(
     ? `## Dataset Reference
 Here are some featured datasets you can recommend (ID | Title [Categories]):
 ${buildDatasetLookup(datasets)}`
-    : `## Dataset Reference
-Refer to the dataset catalog provided at the start of this conversation. ${datasets.length} datasets are available.`
+    : `## Dataset Reference (compact)
+Available datasets (ID | Title):
+${buildCompactDatasetLookup(datasets)}`
 
   return `You are a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
 

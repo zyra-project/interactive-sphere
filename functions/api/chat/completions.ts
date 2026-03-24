@@ -91,7 +91,7 @@ export const onRequestOptions: PagesFunction<Env> = async (context) => {
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const origin = context.request.headers.get('Origin')
-  if (origin && !isAllowedOrigin(origin, context.request.url)) {
+  if (!origin || !isAllowedOrigin(origin, context.request.url)) {
     return new Response(null, { status: 403 })
   }
   const cors = corsHeaders(origin)

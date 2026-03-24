@@ -148,11 +148,14 @@ describe('buildSystemPromptForTurn', () => {
     expect(prompt).toContain('Sea Surface Temperature')
   })
 
-  it('omits dataset lookup on turn >= 1', () => {
+  it('uses compact dataset lookup on turn >= 1', () => {
     const prompt = buildSystemPromptForTurn(datasets, null, 1)
-    expect(prompt).not.toContain('TEST_001')
-    expect(prompt).toContain('Refer to the dataset catalog')
-    expect(prompt).toContain(String(datasets.length))
+    // Compact lookup still includes IDs and titles
+    expect(prompt).toContain('TEST_001')
+    expect(prompt).toContain('Sea Surface Temperature')
+    // But omits category annotations
+    expect(prompt).not.toContain('[Ocean]')
+    expect(prompt).toContain('compact')
   })
 
   it('still includes current dataset context on follow-up turns', () => {

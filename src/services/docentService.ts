@@ -7,9 +7,8 @@
 
 import type { Dataset, ChatMessage, ChatAction, DocentConfig } from '../types'
 import { streamChat, checkAvailability } from './llmProvider'
-import type { StreamChunk } from './llmProvider'
 import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool } from './docentContext'
-import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad, processUserMessage } from './docentEngine'
+import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
 import { logger } from '../utils/logger'
 
 // --- Constants ---
@@ -150,14 +149,36 @@ export async function* processMessage(
           case 'tool_call':
             if (chunk.call.name === 'load_dataset') {
               const args = chunk.call.arguments as { dataset_id?: string; dataset_title?: string }
-              if (args.dataset_id && !yieldedIds.has(String(args.dataset_id))) {
-                yieldedIds.add(String(args.dataset_id))
+              let resolvedId: string | undefined
+              let resolvedTitle: string | undefined
+
+              if (args.dataset_id) {
+                const idStr = String(args.dataset_id)
+                if (datasets.some(d => d.id === idStr)) {
+                  resolvedId = idStr
+                } else {
+                  logger.warn('[Docent] Ignoring tool_call with unknown dataset_id:', idStr)
+                }
+              }
+
+              // Fallback: resolve by title if ID is missing or invalid
+              if (!resolvedId && args.dataset_title) {
+                const titleLower = String(args.dataset_title).trim().toLowerCase()
+                const match = datasets.find(d => d.title.trim().toLowerCase() === titleLower)
+                if (match) {
+                  resolvedId = match.id
+                  resolvedTitle = match.title
+                }
+              }
+
+              if (resolvedId && !yieldedIds.has(resolvedId)) {
+                yieldedIds.add(resolvedId)
                 yield {
                   type: 'action',
                   action: {
                     type: 'load-dataset',
-                    datasetId: String(args.dataset_id),
-                    datasetTitle: String(args.dataset_title ?? args.dataset_id),
+                    datasetId: resolvedId,
+                    datasetTitle: resolvedTitle ?? String(args.dataset_title ?? resolvedId),
                   },
                 }
               }

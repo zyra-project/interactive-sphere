@@ -1,17 +1,17 @@
 # Docent Chat Interaction Loop — Optimization Plan
 
-## Current Architecture
+## Current Architecture (post-optimization)
 
-The docent chat follows a sequential flow:
+The docent chat follows this flow:
 
 1. User types a message → `chatUI.ts` (`handleSend`)
-2. `docentService.ts` (`processMessage`) builds a full system prompt via `docentContext.ts` — including the **entire dataset catalog every turn** — sends it to the LLM via `llmProvider.ts`, and yields streaming chunks
-3. If the LLM fails or is disabled, falls back to `docentEngine.ts` (local intent parsing + dataset scoring)
-4. `chatUI.ts` renders text deltas and action cards as they arrive
-5. Tool calls (action cards) only emit **after all text tokens** — they accumulate in `llmProvider.ts` and emit on `finish_reason`
-6. History is a naive slice of the last 20 messages sent as full text
+2. `docentService.ts` (`processMessage`) runs the local engine first for instant actions, builds a **turn-aware** system prompt via `docentContext.ts` (full catalog with categories on turn 0, compact ID-only lookup on follow-ups), and streams LLM text via `llmProvider.ts`
+3. `docentEngine.ts` (local intent parsing + dataset scoring) runs every turn and surfaces actions immediately; also used as text fallback if the LLM fails or is disabled
+4. `llmProvider.ts` streams text deltas and tool calls as they arrive from the LLM
+5. `chatUI.ts` renders text deltas and action cards incrementally — **local actions appear before the LLM finishes streaming**
+6. History is stored as a compact summary of older turns plus the most recent 3 exchanges, rather than a naive 20-message slice
 
-**Key bottleneck**: everything is sequential. The local engine and LLM never run in parallel, the catalog is resent every turn, and action cards are blocked on the full LLM response.
+**Remaining optimization opportunities**: the first turn still pays the full catalog cost, and there is room for further coordination between LLM tool calls and local actions (e.g., speculative local text with LLM override).
 
 ---
 
