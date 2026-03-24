@@ -79,12 +79,10 @@ export function buildCurrentDatasetContext(dataset: Dataset | null): string {
  * Build a lookup string of datasets the LLM can reference by ID.
  * Compact format to save tokens: "ID | Title [Categories]"
  */
-export function buildDatasetLookup(datasets: Dataset[], limit = 80): string {
-  // Prioritize: datasets with rich metadata, higher weight
+export function buildDatasetLookup(datasets: Dataset[]): string {
+  // Include ALL datasets so the LLM knows the full catalog
   const sorted = [...datasets]
-    .filter(d => d.enriched?.description)
     .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
-    .slice(0, limit)
 
   return sorted.map(d => {
     const cats = Object.keys(d.enriched?.categories ?? {}).slice(0, 2).join(', ')
@@ -96,11 +94,9 @@ export function buildDatasetLookup(datasets: Dataset[], limit = 80): string {
  * Build a compact ID-only lookup for follow-up turns.
  * Much shorter than the full lookup — just "ID | Title" with no categories.
  */
-export function buildCompactDatasetLookup(datasets: Dataset[], limit = 80): string {
+export function buildCompactDatasetLookup(datasets: Dataset[]): string {
   const sorted = [...datasets]
-    .filter(d => d.enriched?.description)
     .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
-    .slice(0, limit)
 
   return sorted.map(d => `${d.id} | ${d.title}`).join('\n')
 }

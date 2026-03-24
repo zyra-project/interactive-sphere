@@ -86,10 +86,10 @@ describe('buildDatasetLookup', () => {
     expect(lookup).toContain('Sea Surface Temperature')
   })
 
-  it('respects limit', () => {
-    const lookup = buildDatasetLookup(datasets, 1)
+  it('includes all datasets', () => {
+    const lookup = buildDatasetLookup(datasets)
     const lines = lookup.split('\n').filter(Boolean)
-    expect(lines.length).toBeLessThanOrEqual(1)
+    expect(lines.length).toBe(datasets.length)
   })
 
   it('includes category annotations', () => {
