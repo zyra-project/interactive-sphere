@@ -10,6 +10,7 @@ import { SphereRenderer } from './services/sphereRenderer'
 import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
 import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
+import { logger } from './utils/logger'
 import type { AppState } from './types'
 
 // Extracted modules
@@ -32,7 +33,6 @@ const CLOUD_TEXTURE_WEIGHT = 0.2
 const LOADING_BASE_PROGRESS = 20
 const LOADING_TEXTURE_RANGE = 70
 const LOADING_HIDE_DELAY_MS = 300
-const ERROR_DISPLAY_TIMEOUT_MS = 5000
 
 class InteractiveSphere {
   private appState: AppState = {
@@ -144,7 +144,7 @@ class InteractiveSphere {
         resolve()
       }
       img.onerror = () => {
-        console.warn('[App] Default Earth texture not found, using solid color')
+        logger.warn('[App] Default Earth texture not found, using solid color')
         resolve()
       }
       img.src = '/assets/Earth_Diffuse_6K.jpg'
@@ -185,7 +185,7 @@ class InteractiveSphere {
 
     this.appState.currentDataset = dataset
 
-    console.log('[App] Loading dataset:', {
+    logger.info('[App] Loading dataset:', {
       id: dataset.id,
       title: dataset.title,
       format: dataset.format,
@@ -351,15 +351,18 @@ class InteractiveSphere {
     this.appState.error = error
     const errorEl = document.getElementById('error-message')
     if (errorEl) {
-      errorEl.textContent = error
+      const textEl = document.getElementById('error-text')
+      if (textEl) textEl.textContent = error
       errorEl.classList.toggle('hidden', !error)
-      setTimeout(() => {
-        if (!errorEl.classList.contains('hidden')) {
+      const dismissBtn = document.getElementById('error-dismiss')
+      if (dismissBtn) {
+        dismissBtn.onclick = () => {
           errorEl.classList.add('hidden')
+          this.appState.error = null
         }
-      }, ERROR_DISPLAY_TIMEOUT_MS)
+      }
     }
-    console.error('[App] Error:', error)
+    logger.error('[App] Error:', error)
   }
 
   private announce(message: string): void {

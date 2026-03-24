@@ -11,8 +11,8 @@ These items directly determine whether someone can find and use the project at a
 ### ~~1. Dataset search and filtering~~ ✅
 Searchable, filterable dataset browser with keyword search, category and sub-category navigation, expandable cards with thumbnails.
 
-### 2. Accessibility — screen reader support
-ARIA labels and keyboard navigation are in place. The remaining gap is deeper screen reader support — ensuring the full browsing and playback experience is navigable with assistive technology.
+### ~~2. Accessibility — screen reader support~~ ✅
+Legend modal now has `role="dialog"`, `aria-modal`, focus management, and focus restore. Browse card keywords are keyboard-accessible with `role="button"`. "No results" messages are announced via `role="status"`. Legend alt text is dataset-specific.
 
 ### ~~3. Mobile HLS adaptive quality~~ ✅
 ABR now selects the best stream for the device and network. Mobile is capped by resolution but no longer pinned to the lowest quality.
@@ -26,8 +26,8 @@ Once someone arrives, these items determine whether they stay and learn.
 ### ~~4. Better loading states and transitions~~ ✅
 Smooth fade-out transitions, granular progress indicators, and download progress reporting are now in place.
 
-### 5. Persistent error messages
-Error messages currently auto-dismiss after 5 seconds. Users shouldn't have to catch errors on a timer. Messages should stay visible until dismissed.
+### ~~5. Persistent error messages~~ ✅
+Error messages now stay visible until the user explicitly dismisses them via a close button.
 
 ### ~~6. Category-based browsing~~ ✅
 Full category and sub-category navigation in the browse panel.
@@ -47,11 +47,11 @@ Sustainable progress requires a codebase that doesn't slow us down.
 ### ~~9. Replace magic numbers with named constants~~ ✅
 Named constants throughout — `main.ts`, `inputHandler.ts`, `playbackController.ts`, `browseUI.ts`.
 
-### 10. Log level control
-Production builds should not emit console logs. Adding log level control lets us keep useful debugging without exposing internals.
+### ~~10. Log level control~~ ✅
+All 28 console calls now route through a `logger` utility with level gating (debug/info/warn/error/silent). Dev builds default to 'info', production to 'warn'. Override at runtime via `window.__LOG_LEVEL__`.
 
-### 11. Debounce the window resize handler
-The current handler fires on every resize event. Debouncing it reduces unnecessary recalculations and improves performance on resize-heavy interactions.
+### ~~11. Debounce the window resize handler~~ ✅
+The resize handler is now debounced (150 ms) to reduce unnecessary recalculations during drag-resize.
 
 ---
 
@@ -62,7 +62,7 @@ Small things that affect the quality of the experience.
 - **Fix sphere rotation inertia between dataset switches** — inertia should reset when a new dataset loads, not carry over from the previous one.
 - **Make related datasets in the info panel linkable** — if we're showing related content, it should be navigable.
 - **Show date ranges for image datasets** — not just start dates; users should know the full temporal extent of what they're viewing.
-- **Remove `videoFrameExtractor.ts`** — unused module that adds noise.
+- ~~**Remove `videoFrameExtractor.ts`**~~ ✅ — removed.
 - **Fix Vimeo URL regex** — currently fails on URLs with query parameters.
 
 ---
