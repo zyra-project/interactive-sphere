@@ -32,7 +32,6 @@ const CLOUD_TEXTURE_WEIGHT = 0.2
 const LOADING_BASE_PROGRESS = 20
 const LOADING_TEXTURE_RANGE = 70
 const LOADING_HIDE_DELAY_MS = 300
-const ERROR_DISPLAY_TIMEOUT_MS = 5000
 
 class InteractiveSphere {
   private appState: AppState = {
@@ -351,13 +350,16 @@ class InteractiveSphere {
     this.appState.error = error
     const errorEl = document.getElementById('error-message')
     if (errorEl) {
-      errorEl.textContent = error
+      const textEl = document.getElementById('error-text')
+      if (textEl) textEl.textContent = error
       errorEl.classList.toggle('hidden', !error)
-      setTimeout(() => {
-        if (!errorEl.classList.contains('hidden')) {
+      const dismissBtn = document.getElementById('error-dismiss')
+      if (dismissBtn) {
+        dismissBtn.onclick = () => {
           errorEl.classList.add('hidden')
+          this.appState.error = null
         }
-      }, ERROR_DISPLAY_TIMEOUT_MS)
+      }
     }
     console.error('[App] Error:', error)
   }

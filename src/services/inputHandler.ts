@@ -6,6 +6,7 @@
 
 import * as THREE from 'three'
 import type { ControlsState } from '../types'
+import { debounce } from '../utils/debounce'
 
 // --- Input constants ---
 const DAMPING = 0.88
@@ -18,6 +19,7 @@ const ZOOM_STEP_FACTOR = 0.12
 const SPHERE_SURFACE_RADIUS = 1.0
 const PINCH_SENSITIVITY = 0.002
 const CAMERA_DEFAULT_Z = 1.8
+const RESIZE_DEBOUNCE_MS = 150
 
 export class InputHandler {
   private camera: THREE.PerspectiveCamera
@@ -54,7 +56,7 @@ export class InputHandler {
     this.camera = camera
     this.webglRenderer = webglRenderer
     this.setupEventListeners(container)
-    window.addEventListener('resize', () => this.onWindowResize(container))
+    window.addEventListener('resize', debounce(() => this.onWindowResize(container), RESIZE_DEBOUNCE_MS))
   }
 
   setLatLngCallbacks(

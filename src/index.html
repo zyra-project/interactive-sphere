@@ -435,6 +435,22 @@
             z-index: 100;
         }
 
+        #error-dismiss {
+            display: block;
+            margin: 1rem auto 0;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            border-radius: 4px;
+            padding: 0.35rem 1rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        #error-dismiss:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
         /* --- Browse overlay --- */
         #browse-overlay {
             position: fixed;
@@ -1087,7 +1103,10 @@
                 <button id="auto-rotate-standalone" class="transport-btn" title="Toggle auto-rotation" aria-label="Toggle auto-rotation" style="position: absolute; bottom: 0.75rem; right: 0.75rem; pointer-events: auto; min-width: 28px; padding: 0.35rem 0.5rem; font-size: 0.75rem; background: rgba(13, 13, 18, 0.88) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08) !important; border-radius: 6px;">&#x21BB;</button>
 
                 <div id="caption-overlay" aria-live="polite"></div>
-                <div id="error-message" class="hidden" role="alert"></div>
+                <div id="error-message" class="hidden" role="alert">
+                    <span id="error-text"></span>
+                    <button id="error-dismiss" aria-label="Dismiss error">&#x2715;</button>
+                </div>
             </div>
         </div>
     </div>
