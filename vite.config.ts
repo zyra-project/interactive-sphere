@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
 import path from 'path'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   define: {
-    __BUNDLED_DEV__: JSON.stringify(false),
+    __BUNDLED_DEV__: JSON.stringify(mode !== 'production'),
   },
   root: './src',
   publicDir: '../public',

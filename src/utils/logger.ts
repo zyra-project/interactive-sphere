@@ -2,9 +2,11 @@
  * Simple log-level gating so production builds stay silent.
  *
  * Levels (lowest → highest): debug, info, warn, error, silent.
- * Default level is 'info' in development and 'warn' in production.
+ * Default level is 'debug' in development and 'warn' in production.
  * Override at runtime:  (window as any).__LOG_LEVEL__ = 'debug'
  */
+
+declare const __BUNDLED_DEV__: boolean
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
 
@@ -16,10 +18,18 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   silent: 4,
 }
 
-const DEFAULT_LEVEL: LogLevel =
-  typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV
-    ? 'debug'
-    : 'warn'
+function detectDevMode(): boolean {
+  try {
+    // __BUNDLED_DEV__ is defined by Vite at build time
+    if (typeof __BUNDLED_DEV__ !== 'undefined') return __BUNDLED_DEV__
+  } catch { /* not defined */ }
+  try {
+    return !!(import.meta as any).env?.DEV
+  } catch { /* not available */ }
+  return false
+}
+
+const DEFAULT_LEVEL: LogLevel = detectDevMode() ? 'debug' : 'warn'
 
 function currentLevel(): LogLevel {
   if (typeof window !== 'undefined' && (window as any).__LOG_LEVEL__) {

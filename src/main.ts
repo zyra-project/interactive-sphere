@@ -163,6 +163,7 @@ class InteractiveSphere {
   }
 
   private async loadDataset(datasetId: string): Promise<void> {
+    logger.debug('[App] loadDataset start:', datasetId)
     const oldVideoTexture = this.videoTexture
     const oldHlsService = this.hlsService
     this.videoTexture = null
@@ -178,7 +179,9 @@ class InteractiveSphere {
     try {
       await this.displayDataset(datasetId)
       this.showHomeButton()
+      logger.debug('[App] loadDataset complete:', datasetId)
     } catch (error) {
+      logger.debug('[App] loadDataset failed:', datasetId, error)
       // Clean up any partially-created resources from the failed load
       this.cleanupVideo()
       this.setError(error instanceof Error ? error.message : 'Failed to load dataset')
@@ -394,12 +397,17 @@ class InteractiveSphere {
 
   private async selectDatasetFromChat(id: string): Promise<void> {
     const gen = ++this.loadGeneration
+    logger.debug('[App] selectDatasetFromChat:', id, 'gen:', gen)
+    logger.debug('[App] selectDatasetFromChat:', id, 'gen:', gen)
     hideBrowseUI()
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
     await this.loadDataset(id)
-    if (gen !== this.loadGeneration) return // a newer load superseded this one
+    if (gen !== this.loadGeneration) {
+      logger.debug('[App] selectDatasetFromChat superseded:', id, 'gen:', gen, 'current:', this.loadGeneration)
+      return
+    }
     this.setLoading(false)
     showChatTrigger()
     const dataset = this.appState.currentDataset
