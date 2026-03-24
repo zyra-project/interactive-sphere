@@ -95,33 +95,39 @@ export async function* processMessage(
   const localResponse = generateResponse(intent, datasets, currentDataset, searchResults)
   const yieldedIds = new Set<string>()
 
-  // Phase 2: Check for auto-load on search intents
-  if (intent.type === 'search' && searchResults) {
-    const results = searchResults
-    const autoResult = evaluateAutoLoad(results)
-    if (autoResult) {
-      const action: ChatAction = {
-        type: 'load-dataset',
-        datasetId: autoResult.autoLoad.id,
-        datasetTitle: autoResult.autoLoad.title,
-      }
-      const alternatives: ChatAction[] = autoResult.alternatives.map(d => ({
-        type: 'load-dataset',
-        datasetId: d.id,
-        datasetTitle: d.title,
-      }))
-      yieldedIds.add(action.datasetId)
-      for (const alt of alternatives) yieldedIds.add(alt.datasetId)
-      yield { type: 'auto-load', action, alternatives }
-    }
-  }
+  // When LLM is enabled, let it be the sole source of dataset recommendations.
+  // Only use local engine actions as a fallback when LLM is unavailable.
+  const llmEnabled = cfg.enabled && !!cfg.apiUrl
 
-  // Yield local actions immediately (skip any already yielded by auto-load)
-  if (localResponse.actions) {
-    for (const action of localResponse.actions) {
-      if (!yieldedIds.has(action.datasetId)) {
+  if (!llmEnabled) {
+    // Phase 2: Check for auto-load on search intents
+    if (intent.type === 'search' && searchResults) {
+      const results = searchResults
+      const autoResult = evaluateAutoLoad(results)
+      if (autoResult) {
+        const action: ChatAction = {
+          type: 'load-dataset',
+          datasetId: autoResult.autoLoad.id,
+          datasetTitle: autoResult.autoLoad.title,
+        }
+        const alternatives: ChatAction[] = autoResult.alternatives.map(d => ({
+          type: 'load-dataset',
+          datasetId: d.id,
+          datasetTitle: d.title,
+        }))
         yieldedIds.add(action.datasetId)
-        yield { type: 'action', action }
+        for (const alt of alternatives) yieldedIds.add(alt.datasetId)
+        yield { type: 'auto-load', action, alternatives }
+      }
+    }
+
+    // Yield local actions immediately (skip any already yielded by auto-load)
+    if (localResponse.actions) {
+      for (const action of localResponse.actions) {
+        if (!yieldedIds.has(action.datasetId)) {
+          yieldedIds.add(action.datasetId)
+          yield { type: 'action', action }
+        }
       }
     }
   }

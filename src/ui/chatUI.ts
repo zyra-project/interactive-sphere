@@ -475,6 +475,17 @@ function wireActionButtons(container: Element): void {
       if (id && callbacks) {
         callbacks.onLoadDataset(id)
         callbacks.announce('Loading dataset')
+
+        // Remove action cards from this message after loading
+        const msgEl = btn.closest('.chat-msg')
+        const msgId = msgEl?.getAttribute('data-msg-id')
+        if (msgId) {
+          const msg = messages.find(m => m.id === msgId)
+          if (msg) delete msg.actions
+        }
+        const actionsEl = btn.closest('.chat-actions')
+        actionsEl?.remove()
+        saveSession()
       }
     })
   })
