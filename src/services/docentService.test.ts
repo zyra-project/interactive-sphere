@@ -343,7 +343,7 @@ describe('config management', () => {
   it('returns default config when nothing saved', () => {
     const config = loadConfig()
     expect(config.apiUrl).toBe('/api')
-    expect(config.model).toBe('llama-3.1-8b')
+    expect(config.model).toBe('llama-3.1-70b')
     expect(config.enabled).toBe(true)
   })
 
