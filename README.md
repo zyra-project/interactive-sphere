@@ -104,10 +104,14 @@ interactive-sphere/
 │   │   ├── datasetLoader.ts     # Dataset loading and texture application
 │   │   ├── dataService.ts       # SOS metadata fetching & cross-reference caching
 │   │   ├── hlsService.ts        # HLS.js video streaming with adaptive bitrate
-│   │   └── videoFrameExtractor.ts # Video frame extraction to sphere texture
+│   │   ├── docentService.ts     # Orbit orchestrator — hybrid LLM + local engine
+│   │   ├── docentContext.ts     # LLM system prompt, history compression
+│   │   ├── docentEngine.ts      # Local keyword-based fallback engine
+│   │   └── llmProvider.ts       # OpenAI-compatible SSE streaming client
 │   ├── ui/
+│   │   ├── chatUI.ts            # Orbit chat panel — rendering, settings, events
 │   │   ├── browseUI.ts          # Dataset browser, search, category filtering
-│   │   └── playbackController.ts # Video playback state and controls
+│   │   └── playbackController.ts # Video playback transport + portrait positioning
 │   └── utils/
 │       ├── time.ts              # ISO 8601 parsing, date formatting
 │       └── fetchProgress.ts     # Fetch with byte-level progress reporting
