@@ -1092,6 +1092,20 @@
             }
         }
 
+        /* Portrait phones: stack title above Load button so neither gets squeezed */
+        @media (max-width: 600px) and (orientation: portrait) {
+            .browse-card-header {
+                flex-direction: column;
+                gap: 0.35rem;
+            }
+            .browse-card-title {
+                -webkit-line-clamp: 3;
+            }
+            .browse-card-load {
+                align-self: flex-start;
+            }
+        }
+
         /* --- Chat / Digital Docent --- */
         /* Standalone trigger: hidden by default, shown when dataset is loaded */
         #chat-trigger {
