@@ -14,6 +14,7 @@ A WebGL-based globe that streams environmental data from the [Science On a Spher
 - Static image datasets with resolution fallback (4096/2048/1024) and download progress
 - HLS video streaming via Vimeo proxy with adaptive bitrate, playback controls, and audio
 - Time synchronization with ISO 8601 parsing and scrubber
+- **Orbit** — an AI digital docent that answers questions, explains datasets, and loads them onto the globe by conversation (hybrid LLM + local keyword engine, configurable to any OpenAI-compatible provider)
 - Collapsible browse panel (desktop sidebar with toggle)
 - Accessible controls (ARIA labels, keyboard navigation)
 - Frosted-glass UI design language (see [STYLE_GUIDE.md](STYLE_GUIDE.md))
@@ -37,6 +38,8 @@ The app is a single-page application built with TypeScript, Three.js, and Vite. 
 **`browseUI.ts`** builds the dataset browser panel — the search box, category chips, sub-category filters, sorting, and the scrollable list of expandable dataset cards. When a user selects a dataset, it calls back to `main.ts` to load it.
 
 **`playbackController.ts`** manages video playback state: play/pause toggling, frame stepping, scrubber synchronization, and closed caption loading.
+
+**`docentService.ts`** orchestrates Orbit, the digital docent. It runs a local keyword engine instantly (always available, no network required), then streams a richer response from an LLM in parallel. If the LLM is unavailable it falls back to the local engine transparently. The LLM is instructed to embed `<<LOAD:DATASET_ID>>` markers in its response; the service parses these into load actions that appear as inline buttons in the chat panel.
 
 **`time.ts`** and **`fetchProgress.ts`** are small utilities — one parses ISO 8601 durations and maps video playback time to real-world dates, the other wraps `fetch` to report download progress as a percentage.
 
@@ -137,6 +140,46 @@ interactive-sphere/
    - **Desktop**: click-drag to rotate, scroll to zoom, double-click to reset
    - **Mobile/Tablet**: single-finger drag to rotate, two-finger pinch to zoom
 5. **Deep-link** — share a specific dataset via `?dataset=INTERNAL_SOS_768`
+
+
+## 🤖 Orbit — Digital Docent
+
+Orbit is a conversational AI guide embedded in the globe. Click **Ask Orbit** to open the chat panel.
+
+### Capabilities
+
+- Explains datasets in plain language
+- Recommends relevant datasets for a given topic
+- Loads a dataset directly onto the globe from the conversation
+- Cross-links to the browse panel for deeper exploration
+
+### Architecture
+
+`docentService.processMessage()` uses a **hybrid approach**:
+
+1. **Local engine** (`docentEngine.ts`) — instant keyword matching, always available offline
+2. **LLM stream** (`llmProvider.ts`) — richer conversational responses via any OpenAI-compatible API
+
+If the LLM is unavailable or returns an error the local engine handles the response automatically.
+
+### Dataset loading from chat
+
+The LLM embeds `<<LOAD:DATASET_ID>>` markers inline with its response text. `docentService.ts` parses these (and bare `INTERNAL_...` IDs as a fallback) into `action` chunks. `chatUI.ts` converts each action into an inline load button rendered inside the message bubble.
+
+### LLM configuration
+
+Any OpenAI-compatible endpoint works: OpenAI, Ollama, LM Studio, Cloudflare AI Gateway, llama.cpp, vLLM. Configure in the Orbit settings panel (gear icon). Settings are persisted in `localStorage` under `sos-docent-config`.
+
+> **Local dev**: The Cloudflare `/api` proxy is unavailable on localhost. Set a direct API URL in Orbit settings, or disable LLM to use the local keyword engine only.
+
+| Setting | Default | Notes |
+|---|---|---|
+| API URL | `/api` | Cloudflare proxy in production |
+| Model | `llama-3.1-70b` | Dropdown populated from `/models` endpoint |
+| API Key | _(empty)_ | Optional Bearer token |
+| Enabled | on | Toggle LLM; falls back to local engine |
+
+---
 
 ## 🔍 Debugging
 
