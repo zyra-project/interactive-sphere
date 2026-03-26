@@ -214,6 +214,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     if (body.stream) {
       return visionStreamShim(context.env.AI, cfModel, textMessages, cors, image)
     }
+    // Non-streaming vision path also needs license acceptance
+    await ensureLicenseAccepted(context.env.AI, cfModel)
     return nonStreamResponse(context.env.AI, cfModel, textMessages, cors, image)
   }
 
@@ -221,6 +223,28 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return streamResponse(context.env.AI, cfModel, textMessages, cors)
   }
   return nonStreamResponse(context.env.AI, cfModel, textMessages, cors)
+}
+
+// Track which vision models have had their license accepted (per isolate lifetime)
+const acceptedLicenses = new Set<string>()
+
+/**
+ * Accept the Meta community license for a vision model by sending 'agree'.
+ * CF Workers AI requires this before the model can be used.
+ * Only needs to happen once per model per isolate.
+ */
+async function ensureLicenseAccepted(ai: Env['AI'], model: string): Promise<void> {
+  if (acceptedLicenses.has(model)) return
+  try {
+    await ai.run(model, {
+      messages: [{ role: 'user', content: 'agree' }],
+    })
+  } catch {
+    // Swallow errors — the agreement might already be in place,
+    // or the model may not require it. The actual request will
+    // surface any real errors.
+  }
+  acceptedLicenses.add(model)
 }
 
 /**
@@ -238,6 +262,9 @@ async function visionStreamShim(
   cors: Record<string, string>,
   image: Uint8Array | null,
 ): Promise<Response> {
+  // Accept Meta license on first use
+  await ensureLicenseAccepted(ai, model)
+
   const inputs: Record<string, unknown> = { messages }
   if (image) inputs.image = [...image]
 
