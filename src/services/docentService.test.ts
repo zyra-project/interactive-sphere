@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
-import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText } from './docentService'
+import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureGlobeScreenshot, captureViewContext } from './docentService'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -482,5 +482,271 @@ describe('config management', () => {
     expect(a).toEqual(b)
     a.model = 'changed'
     expect(b.model).not.toBe('changed')
+  })
+
+  it('default config has visionEnabled false', () => {
+    const config = getDefaultConfig()
+    expect(config.visionEnabled).toBe(false)
+  })
+
+  it('saves and loads visionEnabled', () => {
+    saveConfig({ ...getDefaultConfig(), visionEnabled: true })
+    const loaded = loadConfig()
+    expect(loaded.visionEnabled).toBe(true)
+  })
+})
+
+describe('captureGlobeScreenshot', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('returns a data URL when canvas is present', () => {
+    const canvas = document.createElement('canvas')
+    canvas.id = 'globe-canvas'
+    canvas.width = 100
+    canvas.height = 100
+    // jsdom canvas has no real rendering context — mock toDataURL
+    canvas.toDataURL = vi.fn().mockReturnValue('data:image/jpeg;base64,fakescreenshot')
+    document.body.appendChild(canvas)
+
+    const result = captureGlobeScreenshot()
+    expect(result).toBe('data:image/jpeg;base64,fakescreenshot')
+    expect(canvas.toDataURL).toHaveBeenCalledWith('image/jpeg', 0.7)
+  })
+
+  it('returns null when canvas is missing', () => {
+    expect(captureGlobeScreenshot()).toBeNull()
+  })
+})
+
+describe('captureViewContext', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('captures time display text', () => {
+    document.body.innerHTML = '<span id="time-display">Jan 2020</span>'
+    const ctx = captureViewContext()
+    expect(ctx).toContain('Time shown: Jan 2020')
+  })
+
+  it('ignores placeholder time text', () => {
+    document.body.innerHTML = '<span id="time-display">--</span>'
+    const ctx = captureViewContext()
+    expect(ctx).not.toContain('Time shown')
+  })
+
+  it('detects playing state from play button', () => {
+    document.body.innerHTML = '<button id="play-btn" aria-label="Pause"></button>'
+    const ctx = captureViewContext()
+    expect(ctx).toContain('Playback: playing')
+  })
+
+  it('detects paused state from play button', () => {
+    document.body.innerHTML = '<button id="play-btn" aria-label="Play"></button>'
+    const ctx = captureViewContext()
+    expect(ctx).toContain('Playback: paused')
+  })
+
+  it('returns empty string when no overlay elements exist', () => {
+    document.body.innerHTML = ''
+    expect(captureViewContext()).toBe('')
+  })
+
+  it('combines time and playback state', () => {
+    document.body.innerHTML = `
+      <span id="time-display">Mar 2023</span>
+      <button id="play-btn" aria-label="Pause"></button>
+    `
+    const ctx = captureViewContext()
+    expect(ctx).toContain('Time shown: Mar 2023')
+    expect(ctx).toContain('Playback: playing')
+    expect(ctx).toMatch(/\.$/)
+  })
+})
+
+describe('processMessage — vision mode', () => {
+  it('sends multimodal content when vision is enabled with screenshot', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedMessages: any[] = []
+    mockedStream.mockImplementation(async function* (messages) {
+      capturedMessages = messages
+      yield { type: 'delta' as const, text: 'I can see the globe.' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage(
+      'What am I looking at?', [], datasets, null, config,
+      'data:image/jpeg;base64,abc123',
+    )) {
+      chunks.push(chunk)
+    }
+
+    // The last message should be the user message with multimodal content
+    const userMsg = capturedMessages[capturedMessages.length - 1]
+    expect(Array.isArray(userMsg.content)).toBe(true)
+    expect(userMsg.content[0].type).toBe('image_url')
+    expect(userMsg.content[0].image_url.url).toBe('data:image/jpeg;base64,abc123')
+    expect(userMsg.content[1].type).toBe('text')
+    expect(userMsg.content[1].text).toContain('What am I looking at?')
+  })
+
+  it('includes view context in vision message text', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedMessages: any[] = []
+    mockedStream.mockImplementation(async function* (messages) {
+      capturedMessages = messages
+      yield { type: 'delta' as const, text: 'Response' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    for await (const _ of processMessage(
+      'What is this?', [], datasets, null, config,
+      'data:image/jpeg;base64,abc123',
+      'Time shown: Jan 2020. Playback: paused.',
+    )) { /* consume */ }
+
+    const userMsg = capturedMessages[capturedMessages.length - 1]
+    const textPart = userMsg.content.find((p: any) => p.type === 'text')
+    expect(textPart.text).toContain('Time shown: Jan 2020')
+    expect(textPart.text).toContain('What is this?')
+  })
+
+  it('auto-switches to vision model when using /api proxy', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedConfig: any = null
+    mockedStream.mockImplementation(async function* (_msgs, _tools, config) {
+      capturedConfig = config
+      yield { type: 'delta' as const, text: 'ok' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: '/api',
+      apiKey: '',
+      model: 'llama-3.1-70b',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    for await (const _ of processMessage(
+      'hi', [], datasets, null, config,
+      'data:image/jpeg;base64,abc123',
+    )) { /* consume */ }
+
+    expect(capturedConfig.model).toBe('llama-3.2-11b-vision')
+  })
+
+  it('does not switch model when using external API URL', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedConfig: any = null
+    mockedStream.mockImplementation(async function* (_msgs, _tools, config) {
+      capturedConfig = config
+      yield { type: 'delta' as const, text: 'ok' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'llava',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    for await (const _ of processMessage(
+      'hi', [], datasets, null, config,
+      'data:image/jpeg;base64,abc123',
+    )) { /* consume */ }
+
+    expect(capturedConfig.model).toBe('llava')
+  })
+
+  it('sends text-only message when vision enabled but no screenshot', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedMessages: any[] = []
+    mockedStream.mockImplementation(async function* (messages) {
+      capturedMessages = messages
+      yield { type: 'delta' as const, text: 'ok' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    for await (const _ of processMessage(
+      'hello', [], datasets, null, config,
+      null, // no screenshot
+    )) { /* consume */ }
+
+    const userMsg = capturedMessages[capturedMessages.length - 1]
+    expect(typeof userMsg.content).toBe('string')
+  })
+
+  it('includes vision instructions in system prompt when active', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedMessages: any[] = []
+    mockedStream.mockImplementation(async function* (messages) {
+      capturedMessages = messages
+      yield { type: 'delta' as const, text: 'ok' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    for await (const _ of processMessage(
+      'hi', [], datasets, null, config,
+      'data:image/jpeg;base64,abc123',
+    )) { /* consume */ }
+
+    const systemMsg = capturedMessages.find((m: any) => m.role === 'system')
+    expect(systemMsg.content).toContain('Vision Analysis Mode')
   })
 })

@@ -161,6 +161,50 @@ describe('streamChat', () => {
   })
 })
 
+describe('streamChat — multimodal messages', () => {
+  it('sends content array for multimodal messages', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeSSEStream(['data: [DONE]']),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const messages: LLMMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,abc' } },
+          { type: 'text', text: 'What is this?' },
+        ],
+      },
+    ]
+
+    for await (const _ of streamChat(messages, [], testConfig)) { /* consume */ }
+
+    const [, opts] = fetchMock.mock.calls[0]
+    const body = JSON.parse(opts.body)
+    expect(Array.isArray(body.messages[0].content)).toBe(true)
+    expect(body.messages[0].content[0].type).toBe('image_url')
+    expect(body.messages[0].content[1].type).toBe('text')
+  })
+
+  it('sends string content for text-only messages', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: makeSSEStream(['data: [DONE]']),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const messages: LLMMessage[] = [{ role: 'user', content: 'hello' }]
+
+    for await (const _ of streamChat(messages, [], testConfig)) { /* consume */ }
+
+    const [, opts] = fetchMock.mock.calls[0]
+    const body = JSON.parse(opts.body)
+    expect(typeof body.messages[0].content).toBe('string')
+  })
+})
+
 describe('checkAvailability', () => {
   it('returns ok when server responds and model is listed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

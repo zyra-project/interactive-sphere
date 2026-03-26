@@ -278,3 +278,28 @@ describe('getLoadDatasetTool', () => {
     expect(tool.function.parameters).toBeDefined()
   })
 })
+
+describe('buildSystemPromptForTurn — vision mode', () => {
+  it('includes vision instructions when visionActive is true', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'general', true)
+    expect(prompt).toContain('Vision Analysis Mode')
+    expect(prompt).toContain('screenshot')
+    expect(prompt).toContain('SEE what is displayed')
+  })
+
+  it('omits vision instructions when visionActive is false', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'general', false)
+    expect(prompt).not.toContain('Vision Analysis Mode')
+  })
+
+  it('omits vision instructions by default', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0)
+    expect(prompt).not.toContain('Vision Analysis Mode')
+  })
+
+  it('combines vision with reading level instructions', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'expert', true)
+    expect(prompt).toContain('Vision Analysis Mode')
+    expect(prompt).toContain('Reading Level: Expert')
+  })
+})
