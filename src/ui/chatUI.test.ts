@@ -32,12 +32,16 @@ function setupDOM(): void {
         <input id="chat-settings-key" type="password" />
         <input id="chat-settings-model" type="text" />
         <input id="chat-settings-enabled" type="checkbox" checked />
+        <input id="chat-settings-vision" type="checkbox" />
+        <select id="chat-settings-reading-level"><option value="general" selected>General</option></select>
         <button id="chat-settings-test"></button>
         <button id="chat-settings-save"></button>
         <span id="chat-settings-status"></span>
       </div>
       <div id="chat-messages"></div>
       <div id="chat-typing" class="hidden"></div>
+      <div id="chat-vision-hint" class="chat-vision-hint"></div>
+      <button id="chat-vision-toggle" class="chat-vision-btn" aria-pressed="false"></button>
       <textarea id="chat-input" rows="1"></textarea>
       <button id="chat-send"></button>
     </div>
@@ -436,5 +440,70 @@ describe('browse handoff', () => {
       expect(document.querySelector('.chat-action-btn')).not.toBeNull()
     })
     expect(document.querySelector('.chat-browse-link')).toBeNull()
+  })
+})
+
+describe('vision toggle', () => {
+  it('starts with vision disabled by default', () => {
+    initChatUI(makeCallbacks())
+    const btn = document.getElementById('chat-vision-toggle')
+    expect(btn?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('toggles vision on click and updates aria-pressed', () => {
+    initChatUI(makeCallbacks())
+    const btn = document.getElementById('chat-vision-toggle')!
+    btn.click()
+    expect(btn.getAttribute('aria-pressed')).toBe('true')
+    btn.click()
+    expect(btn.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('persists vision state to localStorage', () => {
+    initChatUI(makeCallbacks())
+    const btn = document.getElementById('chat-vision-toggle')!
+    btn.click()
+
+    const stored = JSON.parse(localStorage.getItem('sos-docent-config')!)
+    expect(stored.visionEnabled).toBe(true)
+  })
+
+  it('restores vision state on init', () => {
+    localStorage.setItem('sos-docent-config', JSON.stringify({ visionEnabled: true }))
+    initChatUI(makeCallbacks())
+    const btn = document.getElementById('chat-vision-toggle')
+    expect(btn?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('shows hint banner when vision is enabled', () => {
+    initChatUI(makeCallbacks())
+    const btn = document.getElementById('chat-vision-toggle')!
+    const hint = document.getElementById('chat-vision-hint')!
+    expect(hint.classList.contains('visible')).toBe(false)
+    btn.click()
+    expect(hint.classList.contains('visible')).toBe(true)
+    btn.click()
+    expect(hint.classList.contains('visible')).toBe(false)
+  })
+
+  it('syncs settings checkbox with toggle button', () => {
+    initChatUI(makeCallbacks())
+    const btn = document.getElementById('chat-vision-toggle')!
+    const checkbox = document.getElementById('chat-settings-vision') as HTMLInputElement
+
+    btn.click()
+    expect(checkbox.checked).toBe(true)
+    btn.click()
+    expect(checkbox.checked).toBe(false)
+  })
+
+  it('announces vision state changes', () => {
+    const cb = makeCallbacks()
+    initChatUI(cb)
+    const btn = document.getElementById('chat-vision-toggle')!
+    btn.click()
+    expect(cb.announce).toHaveBeenCalledWith('Vision mode enabled')
+    btn.click()
+    expect(cb.announce).toHaveBeenCalledWith('Vision mode disabled')
   })
 })

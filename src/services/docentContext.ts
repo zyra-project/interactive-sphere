@@ -133,6 +133,7 @@ export function buildSystemPromptForTurn(
   currentDataset: Dataset | null,
   turnIndex: number,
   readingLevel: ReadingLevel = 'general',
+  visionActive: boolean = false,
 ): string {
   const categorySummary = buildCategorySummary(datasets)
   const currentContext = buildCurrentDatasetContext(currentDataset)
@@ -194,7 +195,15 @@ CRITICAL RULES — violations break the UI:
 - Suggest related datasets when relevant — help users discover connections between Earth systems
 - If you don't know something specific, be honest and don't guess — point toward relevant data if possible
 - Keep responses under 150 words unless the user asks for detail
-- REMINDER: Never mention a dataset that is not in the reference list above. Every dataset title you mention must be copied exactly from the list.${READING_LEVEL_INSTRUCTIONS[readingLevel] ? '\n\n' + READING_LEVEL_INSTRUCTIONS[readingLevel] : ''}`
+- REMINDER: Never mention a dataset that is not in the reference list above. Every dataset title you mention must be copied exactly from the list.${READING_LEVEL_INSTRUCTIONS[readingLevel] ? '\n\n' + READING_LEVEL_INSTRUCTIONS[readingLevel] : ''}${visionActive ? `
+
+## Vision Analysis Mode
+The user has attached a screenshot of the current globe view. You can SEE what is displayed on the sphere. Use the visual information to give a richer, more specific answer:
+- Describe what you observe in the image — colors, patterns, gradients, geographic features.
+- Connect visual patterns to the scientific data (e.g. "the red band along the equator indicates…").
+- If a dataset is loaded, relate what you see to its known data characteristics.
+- If the globe shows the default Earth view, describe the visible continents, clouds, or lighting.
+- Be specific about regions, features, and patterns you can identify visually.` : ''}`
 }
 
 /**

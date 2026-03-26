@@ -16,9 +16,15 @@ interface Env {
   }
 }
 
+interface ContentPart {
+  type: string
+  text?: string
+  image_url?: { url: string }
+}
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | ContentPart[]
 }
 
 interface RequestBody {
@@ -33,7 +39,56 @@ const MODEL_MAP: Record<string, string> = {
   'llama-3.1-70b': '@cf/meta/llama-3.1-70b-instruct',
   'llama-3.1-8b': '@cf/meta/llama-3.1-8b-instruct',
   'llama-3.2-3b': '@cf/meta/llama-3.2-3b-instruct',
+  'llama-3.2-11b-vision': '@cf/meta/llama-3.2-11b-vision-instruct',
   default: '@cf/meta/llama-3.1-70b-instruct',
+}
+
+// Models that accept image input
+const VISION_MODELS = new Set([
+  '@cf/meta/llama-3.2-11b-vision-instruct',
+])
+
+/**
+ * Extract the first base64 image from OpenAI-format messages and convert
+ * multimodal content arrays to plain text for the CF AI API.
+ * Returns the image bytes (if any) and normalised text-only messages.
+ */
+function extractImageAndNormalise(
+  messages: ChatMessage[],
+): { image: number[] | null; textMessages: { role: string; content: string }[] } {
+  let image: number[] | null = null
+
+  const textMessages = messages.map(msg => {
+    if (typeof msg.content === 'string') {
+      return { role: msg.role, content: msg.content }
+    }
+    // Multimodal content array — extract image + concatenate text
+    const textParts: string[] = []
+    for (const part of msg.content) {
+      if (part.type === 'text' && part.text) {
+        textParts.push(part.text)
+      } else if (part.type === 'image_url' && part.image_url?.url && !image) {
+        // Extract the first image only (CF API supports one image)
+        const dataUrl = part.image_url.url
+        const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)
+        if (match) {
+          try {
+            const binary = atob(match[1])
+            const bytes = new Array<number>(binary.length)
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i)
+            }
+            image = bytes
+          } catch {
+            // Invalid base64 — skip the image rather than failing the request
+          }
+        }
+      }
+    }
+    return { role: msg.role, content: textParts.join('\n') }
+  })
+
+  return { image, textMessages }
 }
 
 // Basic per-IP rate limiting (in-memory, resets on deploy)
@@ -128,12 +183,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     })
   }
 
-  // Resolve the Cloudflare AI model
+  // Resolve the Cloudflare AI model — accept friendly names via MODEL_MAP
+  // or pass through full @cf/... model IDs directly
   const requestedModel = body.model ?? 'default'
-  const cfModel = MODEL_MAP[requestedModel] ?? MODEL_MAP['default']
+  const cfModel = requestedModel.startsWith('@cf/')
+    ? requestedModel
+    : (MODEL_MAP[requestedModel] ?? MODEL_MAP['default'])
 
   // Truncate messages to limit token usage
-  const messages = body.messages.slice(-22) // system + 20 history + user
+  const truncated = body.messages.slice(-22) // system + 20 history + user
 
   // Workers AI does not support tool calling — strip tools from the request so no tool calls
   // are produced on this path. The client-side local engine yields action cards independently.
@@ -143,21 +201,31 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     body.tools = undefined
   }
 
+  // For vision models, extract image data and normalise messages to text-only
+  const isVision = VISION_MODELS.has(cfModel)
+  const { image, textMessages } = isVision
+    ? extractImageAndNormalise(truncated)
+    : { image: null, textMessages: truncated.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.filter(p => p.type === 'text').map(p => p.text ?? '').join('\n') })) }
+
   if (body.stream) {
-    return streamResponse(context.env.AI, cfModel, messages, cors)
+    return streamResponse(context.env.AI, cfModel, textMessages, cors, image)
   }
-  return nonStreamResponse(context.env.AI, cfModel, messages, cors)
+  return nonStreamResponse(context.env.AI, cfModel, textMessages, cors, image)
 }
 
 async function streamResponse(
   ai: Env['AI'],
   model: string,
-  messages: ChatMessage[],
+  messages: { role: string; content: string }[],
   cors: Record<string, string>,
+  image?: number[] | null,
 ): Promise<Response> {
+  const inputs: Record<string, unknown> = { messages, stream: true }
+  if (image) inputs.image = image
+
   const response = (await ai.run(
     model,
-    { messages, stream: true },
+    inputs,
     { returnRawResponse: true },
   )) as Response
 
@@ -235,10 +303,14 @@ async function streamResponse(
 async function nonStreamResponse(
   ai: Env['AI'],
   model: string,
-  messages: ChatMessage[],
+  messages: { role: string; content: string }[],
   cors: Record<string, string>,
+  image?: number[] | null,
 ): Promise<Response> {
-  const result = (await ai.run(model, { messages })) as { response?: string }
+  const inputs: Record<string, unknown> = { messages }
+  if (image) inputs.image = image
+
+  const result = (await ai.run(model, inputs)) as { response?: string }
 
   const payload = {
     id: `chatcmpl-${Date.now()}`,

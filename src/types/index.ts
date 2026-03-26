@@ -167,4 +167,5 @@ export interface DocentConfig {
   model: string          // default: 'llama-3.1-70b'
   enabled: boolean       // default: true
   readingLevel: ReadingLevel  // default: 'general'
+  visionEnabled: boolean // default: false — captures globe screenshot as context
 }

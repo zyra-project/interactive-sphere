@@ -1401,6 +1401,44 @@
         #chat-send:hover { background: #0052a3 !important; }
         #chat-send:disabled { opacity: 0.5; cursor: default; }
 
+        /* Vision toggle */
+        .chat-vision-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            padding: 0 !important;
+            background: transparent !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            border-radius: 6px;
+            color: #888;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: color 0.2s, border-color 0.2s, background 0.2s;
+        }
+        .chat-vision-btn:hover {
+            color: #ccc;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+        .chat-vision-btn[aria-pressed="true"] {
+            color: #4da6ff;
+            border-color: rgba(77, 166, 255, 0.5) !important;
+            background: rgba(77, 166, 255, 0.1) !important;
+        }
+        .chat-vision-btn svg { pointer-events: none; }
+        .chat-vision-hint {
+            display: none;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.6rem;
+            line-height: 1.4;
+            color: #9cc5ea;
+            background: rgba(77, 166, 255, 0.08);
+            border-top: 1px solid rgba(77, 166, 255, 0.15);
+        }
+        .chat-vision-hint.visible { display: block; }
+        .chat-vision-hint strong { color: #b8d9f2; font-weight: 600; }
+
         /* Welcome state */
         .chat-welcome {
             text-align: center;
@@ -1687,6 +1725,12 @@
                                 Enable LLM (disable for local-only mode)
                             </label>
                         </div>
+                        <div class="chat-settings-row">
+                            <label class="chat-settings-check">
+                                <input type="checkbox" id="chat-settings-vision" />
+                                Vision mode — send a globe screenshot with each message so Orbit can describe what you see. Uses a vision-capable model automatically.
+                            </label>
+                        </div>
                         <div class="chat-settings-actions">
                             <button id="chat-settings-test" type="button">Test Connection</button>
                             <button id="chat-settings-save" type="button">Save</button>
@@ -1700,8 +1744,14 @@
                         <span class="chat-typing-dots"><span></span><span></span><span></span></span>
                     </div>
 
+                    <div id="chat-vision-hint" class="chat-vision-hint" aria-live="polite">
+                        <strong>Vision on</strong> — Orbit can see the globe. A screenshot of the current view is sent with each message for visual analysis.
+                    </div>
                     <div class="chat-input-wrap">
                         <label for="chat-input" class="sr-only">Ask Orbit</label>
+                        <button id="chat-vision-toggle" class="chat-vision-btn" aria-label="Toggle vision analysis" aria-pressed="false" title="Vision: analyze globe screenshot">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
                         <textarea id="chat-input" rows="1" placeholder="Ask about any dataset…" autocomplete="off" spellcheck="true"></textarea>
                         <button id="chat-send" aria-label="Send message">&#x27A4;</button>
                     </div>
