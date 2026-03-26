@@ -512,7 +512,7 @@ describe('captureGlobeScreenshot', () => {
 
     const result = captureGlobeScreenshot()
     expect(result).toBe('data:image/jpeg;base64,fakescreenshot')
-    expect(canvas.toDataURL).toHaveBeenCalledWith('image/jpeg', 0.7)
+    expect(canvas.toDataURL).toHaveBeenCalledWith('image/jpeg', 0.6)
   })
 
   it('returns null when canvas is missing', () => {

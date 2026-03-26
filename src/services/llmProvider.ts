@@ -54,6 +54,7 @@ export type StreamChunk =
 
 // --- Constants ---
 const REQUEST_TIMEOUT_MS = 30000
+const VISION_TIMEOUT_MS = 60000
 const STREAM_LINE_PREFIX = 'data:'
 
 /**
@@ -64,6 +65,7 @@ export async function* streamChat(
   messages: LLMMessage[],
   tools: LLMTool[],
   config: DocentConfig,
+  options?: { timeoutMs?: number },
 ): AsyncGenerator<StreamChunk> {
   const url = `${config.apiUrl.replace(/\/+$/, '')}/chat/completions`
 
@@ -84,7 +86,8 @@ export async function* streamChat(
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timeoutMs = options?.timeoutMs ?? REQUEST_TIMEOUT_MS
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   let response: Response
   try {
