@@ -221,12 +221,12 @@ function wireEvents(): void {
   if (visionBtn) {
     // Restore persisted state
     const cfg = loadConfig()
-    visionBtn.setAttribute('aria-pressed', String(cfg.visionEnabled))
+    setVisionUI(cfg.visionEnabled)
     visionBtn.addEventListener('click', () => {
       const config = loadConfig()
       config.visionEnabled = !config.visionEnabled
       saveConfig(config)
-      visionBtn.setAttribute('aria-pressed', String(config.visionEnabled))
+      setVisionUI(config.visionEnabled)
       callbacks?.announce(config.visionEnabled ? 'Vision mode enabled' : 'Vision mode disabled')
     })
   }
@@ -251,6 +251,18 @@ function isValidReadingLevel(value: string | undefined): value is ReadingLevel {
   return VALID_READING_LEVELS.includes(value as ReadingLevel)
 }
 
+// --- Vision UI helpers ---
+
+/** Sync all vision-related UI elements with the given state. */
+function setVisionUI(enabled: boolean): void {
+  const btn = document.getElementById('chat-vision-toggle')
+  const hint = document.getElementById('chat-vision-hint')
+  const settingsCheck = document.getElementById('chat-settings-vision') as HTMLInputElement | null
+  btn?.setAttribute('aria-pressed', String(enabled))
+  hint?.classList.toggle('visible', enabled)
+  if (settingsCheck) settingsCheck.checked = enabled
+}
+
 // --- Settings panel ---
 
 function toggleSettings(): void {
@@ -268,11 +280,13 @@ function populateSettings(): void {
   const urlInput = document.getElementById('chat-settings-url') as HTMLInputElement | null
   const keyInput = document.getElementById('chat-settings-key') as HTMLInputElement | null
   const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
+  const visionInput = document.getElementById('chat-settings-vision') as HTMLInputElement | null
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
   if (urlInput) urlInput.value = config.apiUrl
   if (keyInput) keyInput.value = config.apiKey
   if (readingLevelSelect) readingLevelSelect.value = config.readingLevel
   if (enabledInput) enabledInput.checked = config.enabled
+  if (visionInput) visionInput.checked = config.visionEnabled
   // Seed the select with the saved model immediately, then refresh from API
   seedModelSelect(config.model)
   void refreshModelSelect(config.apiUrl, config.model)
@@ -332,20 +346,22 @@ function readSettingsForm(): DocentConfig {
   const modelSelect = document.getElementById('chat-settings-model') as HTMLSelectElement | null
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
   const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
-  const current = loadConfig()
+  const visionInput = document.getElementById('chat-settings-vision') as HTMLInputElement | null
   return {
     apiUrl: urlInput?.value.trim() || defaults.apiUrl,
     apiKey: keyInput?.value.trim() ?? '',
     model: modelSelect?.value.trim() || defaults.model,
     readingLevel: isValidReadingLevel(readingLevelSelect?.value) ? readingLevelSelect!.value as ReadingLevel : defaults.readingLevel,
     enabled: enabledInput?.checked ?? defaults.enabled,
-    visionEnabled: current.visionEnabled,
+    visionEnabled: visionInput?.checked ?? defaults.visionEnabled,
   }
 }
 
 function handleSettingsSave(): void {
   const config = readSettingsForm()
   saveConfig(config)
+  // Keep vision toggle button + hint banner in sync with settings checkbox
+  setVisionUI(config.visionEnabled)
   const status = document.getElementById('chat-settings-status')
   if (status) {
     status.textContent = 'Saved'

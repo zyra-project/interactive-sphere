@@ -1427,6 +1427,17 @@
             background: rgba(77, 166, 255, 0.1) !important;
         }
         .chat-vision-btn svg { pointer-events: none; }
+        .chat-vision-hint {
+            display: none;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.6rem;
+            line-height: 1.4;
+            color: #9cc5ea;
+            background: rgba(77, 166, 255, 0.08);
+            border-top: 1px solid rgba(77, 166, 255, 0.15);
+        }
+        .chat-vision-hint.visible { display: block; }
+        .chat-vision-hint strong { color: #b8d9f2; font-weight: 600; }
 
         /* Welcome state */
         .chat-welcome {
@@ -1714,6 +1725,12 @@
                                 Enable LLM (disable for local-only mode)
                             </label>
                         </div>
+                        <div class="chat-settings-row">
+                            <label class="chat-settings-check">
+                                <input type="checkbox" id="chat-settings-vision" />
+                                Vision mode — send a globe screenshot with each message so Orbit can describe what you see. Uses a vision-capable model automatically.
+                            </label>
+                        </div>
                         <div class="chat-settings-actions">
                             <button id="chat-settings-test" type="button">Test Connection</button>
                             <button id="chat-settings-save" type="button">Save</button>
@@ -1727,6 +1744,9 @@
                         <span class="chat-typing-dots"><span></span><span></span><span></span></span>
                     </div>
 
+                    <div id="chat-vision-hint" class="chat-vision-hint" aria-live="polite">
+                        <strong>Vision on</strong> — Orbit can see the globe. A screenshot of the current view is sent with each message for visual analysis.
+                    </div>
                     <div class="chat-input-wrap">
                         <label for="chat-input" class="sr-only">Ask Orbit</label>
                         <button id="chat-vision-toggle" class="chat-vision-btn" aria-label="Toggle vision analysis" aria-pressed="false" title="Vision: analyse globe screenshot">
