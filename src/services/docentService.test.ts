@@ -403,6 +403,7 @@ describe('processMessage — rewrite chunk for hallucinated IDs', () => {
       apiKey: '',
       model: 'test',
       enabled: true,
+      readingLevel: 'general',
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -429,6 +430,7 @@ describe('processMessage — rewrite chunk for hallucinated IDs', () => {
       apiKey: '',
       model: 'test',
       enabled: true,
+      readingLevel: 'general',
     }
 
     const chunks: DocentStreamChunk[] = []
