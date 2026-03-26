@@ -54,7 +54,6 @@ export type StreamChunk =
 
 // --- Constants ---
 const REQUEST_TIMEOUT_MS = 30000
-const VISION_TIMEOUT_MS = 60000
 const STREAM_LINE_PREFIX = 'data:'
 
 /**
@@ -106,12 +105,12 @@ export async function* streamChat(
   }
 
   // Replace the initial connection timeout with a per-chunk inactivity timeout.
-  // If no data arrives for 30s during streaming, abort.
+  // If no data arrives within the timeout during streaming, abort.
   clearTimeout(timeout)
-  let inactivityTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  let inactivityTimer = setTimeout(() => controller.abort(), timeoutMs)
   const resetInactivity = () => {
     clearTimeout(inactivityTimer)
-    inactivityTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    inactivityTimer = setTimeout(() => controller.abort(), timeoutMs)
   }
 
   if (!response.ok) {

@@ -250,20 +250,26 @@ async function visionStreamShim(
     })
   }
 
-  // Wrap the complete response as a single SSE chunk + [DONE]
+  // Wrap the complete response as two SSE chunks (content + final) + [DONE]
   const chatId = `chatcmpl-${Date.now()}`
-  const chunk = {
+  const base = {
     id: chatId,
     object: 'chat.completion.chunk',
     created: Math.floor(Date.now() / 1000),
     model,
-    choices: [{
-      index: 0,
-      delta: { content: text },
-      finish_reason: 'stop',
-    }],
   }
-  const sseBody = `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`
+  const contentChunk = {
+    ...base,
+    choices: [{ index: 0, delta: { content: text } }],
+  }
+  const finalChunk = {
+    ...base,
+    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+  }
+  const sseBody =
+    `data: ${JSON.stringify(contentChunk)}\n\n` +
+    `data: ${JSON.stringify(finalChunk)}\n\n` +
+    `data: [DONE]\n\n`
 
   return new Response(sseBody, {
     headers: {

@@ -16,6 +16,7 @@ const CONFIG_STORAGE_KEY = 'sos-docent-config'
 
 /** The default vision-capable model for Cloudflare Workers AI. */
 const CF_VISION_MODEL = 'llama-3.2-11b-vision'
+const VISION_TIMEOUT_MS = 60000
 
 /** Detect localhost dev where the Cloudflare /api proxy may be unavailable. */
 export const isLocalDev = typeof window !== 'undefined'
@@ -320,7 +321,7 @@ export async function* processMessage(
         ? { ...cfg, model: CF_VISION_MODEL }
         : cfg
 
-      const stream = streamChat(llmMessages, tools, visionCfg, visionActive ? { timeoutMs: 60000 } : undefined)
+      const stream = streamChat(llmMessages, tools, visionCfg, visionActive ? { timeoutMs: VISION_TIMEOUT_MS } : undefined)
 
       for await (const chunk of stream) {
         switch (chunk.type) {
