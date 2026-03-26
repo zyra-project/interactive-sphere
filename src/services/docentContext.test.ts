@@ -163,6 +163,36 @@ describe('buildSystemPromptForTurn', () => {
     expect(prompt).toContain('Sea Surface Temperature')
     expect(prompt).toContain('Currently loaded')
   })
+
+  it('injects no extra instructions for general reading level', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'general')
+    expect(prompt).not.toContain('Reading Level')
+  })
+
+  it('defaults to general when no reading level is specified', () => {
+    const withDefault = buildSystemPromptForTurn(datasets, null, 0)
+    const withGeneral = buildSystemPromptForTurn(datasets, null, 0, 'general')
+    expect(withDefault).toBe(withGeneral)
+  })
+
+  it('injects young-learner instructions', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'young-learner')
+    expect(prompt).toContain('Reading Level: Young Learner')
+    expect(prompt).toContain('curious 10-year-old')
+  })
+
+  it('injects in-depth instructions', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'in-depth')
+    expect(prompt).toContain('Reading Level: In-Depth')
+    expect(prompt).toContain('250 words')
+  })
+
+  it('injects expert instructions that override default word limit', () => {
+    const prompt = buildSystemPromptForTurn(datasets, null, 0, 'expert')
+    expect(prompt).toContain('Reading Level: Expert')
+    expect(prompt).toContain('ignore the default 150-word limit')
+    expect(prompt).toContain('300 words')
+  })
 })
 
 describe('summarizeOlderMessages', () => {
