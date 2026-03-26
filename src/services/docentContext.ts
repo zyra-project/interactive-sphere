@@ -125,7 +125,7 @@ Explain everything as if talking to a curious 10-year-old. Use simple, everyday 
 Provide thorough, informative responses suitable for a scientifically curious adult. Use proper scientific terminology but define technical terms on first use. You may exceed the 150-word limit up to 250 words when the topic warrants it. Explain the "how" and "why" behind phenomena, mention relevant measurement methods or data sources when appropriate, and connect topics to broader Earth system processes.`,
 
   'expert': `## Reading Level: Expert
-Respond at a professional/graduate science level. Use precise scientific terminology freely without defining common domain terms. Focus on data specifics — resolution, temporal coverage, instrumentation, and methodology. Discuss limitations, uncertainties, and how datasets relate to current research. You may use up to 300 words. Assume the reader has strong background knowledge in Earth sciences.`,
+Respond at a professional/graduate science level. Use precise scientific terminology freely without defining common domain terms. Focus on data specifics — resolution, temporal coverage, instrumentation, and methodology. Discuss limitations, uncertainties, and how datasets relate to current research. You may ignore the default 150-word limit and use up to 300 words when helpful. Assume the reader has strong background knowledge in Earth sciences.`,
 }
 
 export function buildSystemPromptForTurn(

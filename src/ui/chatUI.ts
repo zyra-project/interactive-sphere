@@ -231,6 +231,11 @@ function wireEvents(): void {
   })
 }
 
+const VALID_READING_LEVELS: ReadingLevel[] = ['young-learner', 'general', 'in-depth', 'expert']
+function isValidReadingLevel(value: string | undefined): value is ReadingLevel {
+  return VALID_READING_LEVELS.includes(value as ReadingLevel)
+}
+
 // --- Settings panel ---
 
 function toggleSettings(): void {
@@ -316,7 +321,7 @@ function readSettingsForm(): DocentConfig {
     apiUrl: urlInput?.value.trim() || defaults.apiUrl,
     apiKey: keyInput?.value.trim() ?? '',
     model: modelSelect?.value.trim() || defaults.model,
-    readingLevel: (readingLevelSelect?.value as ReadingLevel) || defaults.readingLevel,
+    readingLevel: isValidReadingLevel(readingLevelSelect?.value) ? readingLevelSelect!.value as ReadingLevel : defaults.readingLevel,
     enabled: enabledInput?.checked ?? defaults.enabled,
   }
 }
