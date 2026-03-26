@@ -438,10 +438,11 @@ async function handleSend(): Promise<void> {
   setSendEnabled(false)
 
   try {
-    // Capture globe screenshot + overlay context if vision mode is active
+    // Capture globe screenshot + overlay context only when vision mode and LLM are both active
     const config = loadConfig()
-    const screenshot = config.visionEnabled ? captureGlobeScreenshot() : null
-    const viewContext = config.visionEnabled ? captureViewContext() : undefined
+    const shouldCaptureVision = config.visionEnabled && config.enabled && !!config.apiUrl
+    const screenshot = shouldCaptureVision ? captureGlobeScreenshot() : null
+    const viewContext = shouldCaptureVision ? captureViewContext() : undefined
 
     const stream = processMessage(
       text,

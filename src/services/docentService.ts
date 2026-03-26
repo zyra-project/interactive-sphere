@@ -300,7 +300,7 @@ export async function* processMessage(
 
       // Auto-switch to vision model when using the default CF proxy
       const normalizedUrl = cfg.apiUrl.replace(/\/+$/, '')
-      const visionCfg = visionActive && (normalizedUrl === '/api' || normalizedUrl.endsWith('/api'))
+      const visionCfg = visionActive && normalizedUrl === '/api'
         ? { ...cfg, model: CF_VISION_MODEL }
         : cfg
 

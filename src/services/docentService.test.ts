@@ -720,6 +720,34 @@ describe('processMessage — vision mode', () => {
     expect(capturedConfig.model).toBe('llava')
   })
 
+  it('does not switch model for external URL ending in /api', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let capturedConfig: any = null
+    mockedStream.mockImplementation(async function* (_msgs, _tools, config) {
+      capturedConfig = config
+      yield { type: 'delta' as const, text: 'ok' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'https://example.com/api',
+      apiKey: '',
+      model: 'gpt-4o',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: true,
+    }
+
+    for await (const _ of processMessage(
+      'hi', [], datasets, null, config,
+      'data:image/jpeg;base64,abc123',
+    )) { /* consume */ }
+
+    expect(capturedConfig.model).toBe('gpt-4o')
+  })
+
   it('sends text-only message when vision enabled but no screenshot', async () => {
     const { streamChat } = await import('./llmProvider')
     const mockedStream = vi.mocked(streamChat)
