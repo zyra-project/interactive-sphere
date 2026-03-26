@@ -443,6 +443,12 @@ async function handleSend(): Promise<void> {
           break
         }
 
+        case 'rewrite':
+          // Replace message text with validated version (invalid dataset IDs stripped)
+          docentMsg.text = chunk.text
+          updateStreamingMessage(docentMsg)
+          break
+
         case 'done':
           // Replace <<LOAD:...>> markers with inline placeholders so buttons
           // render at the original location in the text, not grouped at the bottom.

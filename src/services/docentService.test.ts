@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
-import { processMessage, loadConfig, saveConfig, getDefaultConfig } from './docentService'
+import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText } from './docentService'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -344,6 +344,100 @@ describe('processMessage — LLM dataset ID validation', () => {
       c.type === 'action' && (c as { type: 'action'; action: { datasetId: string } }).action.datasetId === 'TEST_001'
     )
     expect(resolved).toBeDefined()
+  })
+})
+
+describe('validateAndCleanText', () => {
+  it('keeps valid <<LOAD:ID>> markers intact', () => {
+    const text = 'Try this: <<LOAD:TEST_001>>'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).toBe(text)
+    expect(validIds.has('TEST_001')).toBe(true)
+    expect(invalidIds.size).toBe(0)
+  })
+
+  it('strips invalid <<LOAD:ID>> markers', () => {
+    const text = 'Try this: <<LOAD:HALLUCINATED_999>> and also <<LOAD:TEST_001>>'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).not.toContain('HALLUCINATED_999')
+    expect(cleanedText).toContain('<<LOAD:TEST_001>>')
+    expect(validIds.has('TEST_001')).toBe(true)
+    expect(invalidIds.has('HALLUCINATED_999')).toBe(true)
+  })
+
+  it('strips bare invalid INTERNAL_ IDs from prose', () => {
+    const text = 'Check out INTERNAL_FAKE_OCEAN for ocean data'
+    const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).not.toContain('INTERNAL_FAKE_OCEAN')
+    expect(invalidIds.has('INTERNAL_FAKE_OCEAN')).toBe(true)
+  })
+
+  it('keeps bare valid INTERNAL_ IDs in prose', () => {
+    const ds = [makeDataset({ id: 'INTERNAL_SST_001' })]
+    const text = 'Check out INTERNAL_SST_001 for SST data'
+    const { cleanedText, validIds } = validateAndCleanText(text, ds)
+    expect(cleanedText).toContain('INTERNAL_SST_001')
+    expect(validIds.has('INTERNAL_SST_001')).toBe(true)
+  })
+
+  it('returns empty invalidIds when all IDs are valid', () => {
+    const text = 'No dataset references here, just plain text.'
+    const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).toBe(text)
+    expect(invalidIds.size).toBe(0)
+  })
+})
+
+describe('processMessage — rewrite chunk for hallucinated IDs', () => {
+  it('yields rewrite chunk when LLM references invalid dataset IDs', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    mockedStream.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Check out <<LOAD:FAKE_DATASET_123>> for great data!' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me data', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    const rewrite = chunks.find(c => c.type === 'rewrite') as { type: 'rewrite'; text: string } | undefined
+    expect(rewrite).toBeDefined()
+    expect(rewrite!.text).not.toContain('FAKE_DATASET_123')
+  })
+
+  it('does not yield rewrite chunk when all dataset IDs are valid', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    mockedStream.mockImplementation(async function* () {
+      yield { type: 'delta' as const, text: 'Here is a great dataset: <<LOAD:TEST_001>>' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('ocean data', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    const rewrite = chunks.find(c => c.type === 'rewrite')
+    expect(rewrite).toBeUndefined()
   })
 })
 
