@@ -30,6 +30,7 @@ export type DocentStreamChunk =
   | { type: 'delta'; text: string }
   | { type: 'action'; action: ChatAction }
   | { type: 'auto-load'; action: ChatAction; alternatives: ChatAction[] }
+  | { type: 'rewrite'; text: string }
   | { type: 'done'; fallback: boolean }
 
 /**
@@ -81,6 +82,60 @@ export async function testConnection(config: DocentConfig): Promise<Availability
  */
 
 /**
+ * Validate dataset IDs found in LLM text against the catalog.
+ * Strips invalid <<LOAD:ID>> markers and bare INTERNAL_... IDs,
+ * logging warnings for hallucinated references. Returns the cleaned
+ * text and the set of valid IDs found.
+ */
+export function validateAndCleanText(
+  text: string,
+  datasets: Dataset[],
+): { cleanedText: string; validIds: Set<string>; invalidIds: Set<string> } {
+  const validIds = new Set<string>()
+  const invalidIds = new Set<string>()
+  const datasetIdSet = new Set(datasets.map(d => d.id))
+
+  // Collect all referenced IDs for validation
+  for (const match of text.matchAll(/<?<LOAD:([^>]+)>>?/g)) {
+    const id = match[1].trim()
+    if (datasetIdSet.has(id)) {
+      validIds.add(id)
+    } else {
+      invalidIds.add(id)
+    }
+  }
+  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/g)) {
+    const id = match[0]
+    // Skip IDs already captured via markers
+    if (validIds.has(id) || invalidIds.has(id)) continue
+    if (datasetIdSet.has(id)) {
+      validIds.add(id)
+    } else {
+      invalidIds.add(id)
+    }
+  }
+
+  if (invalidIds.size > 0) {
+    logger.warn('[Docent] Stripped hallucinated dataset IDs:', Array.from(invalidIds))
+  }
+
+  // Strip invalid <<LOAD:ID>> markers
+  let cleanedText = text.replace(/<?<LOAD:([^>]+)>>?\n?/g, (match, id) => {
+    const trimmedId = id.trim()
+    if (invalidIds.has(trimmedId)) return ''
+    return match
+  })
+
+  // Strip bare invalid INTERNAL_... IDs from prose
+  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/g, (id) => {
+    if (invalidIds.has(id)) return ''
+    return id
+  })
+
+  return { cleanedText, validIds, invalidIds }
+}
+
+/**
  * Yield action chunks for every dataset the LLM referenced in its response,
  * covering both explicit <<LOAD:ID>> markers and bare INTERNAL_... IDs written
  * in prose (a common LLM slip despite prompt instructions).
@@ -90,20 +145,9 @@ async function* extractActionsFromText(
   datasets: Dataset[],
   yieldedIds: Set<string>,
 ): AsyncGenerator<DocentStreamChunk> {
-  // Collect all IDs seen in the response — markers take priority, bare IDs are fallback
-  const seen = new Set<string>()
+  const { validIds } = validateAndCleanText(text, datasets)
 
-  // 1. Explicit <<LOAD:ID>> markers
-  for (const match of text.matchAll(/<?<LOAD:([^>]+)>>?/g)) {
-    seen.add(match[1].trim())
-  }
-
-  // 2. Bare INTERNAL_... IDs written in prose (LLM ignoring marker instructions)
-  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/g)) {
-    seen.add(match[0])
-  }
-
-  for (const idStr of seen) {
+  for (const idStr of validIds) {
     const dataset = datasets.find(d => d.id === idStr)
     if (dataset && !yieldedIds.has(dataset.id)) {
       yieldedIds.add(dataset.id)
@@ -246,6 +290,10 @@ export async function* processMessage(
           case 'done':
             if (llmProducedText) {
               yield* extractActionsFromText(accumulatedText, datasets, yieldedIds)
+              const { cleanedText, invalidIds } = validateAndCleanText(accumulatedText, datasets)
+              if (invalidIds.size > 0) {
+                yield { type: 'rewrite', text: cleanedText }
+              }
               yield { type: 'done', fallback: false }
               return
             }
@@ -255,6 +303,10 @@ export async function* processMessage(
 
       if (llmProducedText) {
         yield* extractActionsFromText(accumulatedText, datasets, yieldedIds)
+        const { cleanedText, invalidIds } = validateAndCleanText(accumulatedText, datasets)
+        if (invalidIds.size > 0) {
+          yield { type: 'rewrite', text: cleanedText }
+        }
         yield { type: 'done', fallback: false }
         return
       }
