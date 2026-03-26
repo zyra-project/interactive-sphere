@@ -10,7 +10,7 @@ import type { ChatMessage, ChatAction, ChatSession, DocentConfig, ReadingLevel }
 import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './browseUI'
 import { createMessageId } from '../services/docentEngine'
-import { processMessage, loadConfig, saveConfig, testConnection, getDefaultConfig, isLocalDev } from '../services/docentService'
+import { processMessage, loadConfig, saveConfig, testConnection, getDefaultConfig, isLocalDev, captureGlobeScreenshot } from '../services/docentService'
 import { fetchModels } from '../services/llmProvider'
 
 // --- Constants ---
@@ -216,6 +216,21 @@ function wireEvents(): void {
     callbacks?.announce('Chat cleared')
   })
 
+  // Vision toggle — syncs with DocentConfig.visionEnabled
+  const visionBtn = document.getElementById('chat-vision-toggle')
+  if (visionBtn) {
+    // Restore persisted state
+    const cfg = loadConfig()
+    visionBtn.setAttribute('aria-pressed', String(cfg.visionEnabled))
+    visionBtn.addEventListener('click', () => {
+      const config = loadConfig()
+      config.visionEnabled = !config.visionEnabled
+      saveConfig(config)
+      visionBtn.setAttribute('aria-pressed', String(config.visionEnabled))
+      callbacks?.announce(config.visionEnabled ? 'Vision mode enabled' : 'Vision mode disabled')
+    })
+  }
+
   // Settings form
   document.getElementById('chat-settings-save')?.addEventListener('click', handleSettingsSave)
   document.getElementById('chat-settings-test')?.addEventListener('click', handleSettingsTest)
@@ -317,12 +332,14 @@ function readSettingsForm(): DocentConfig {
   const modelSelect = document.getElementById('chat-settings-model') as HTMLSelectElement | null
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
   const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
+  const current = loadConfig()
   return {
     apiUrl: urlInput?.value.trim() || defaults.apiUrl,
     apiKey: keyInput?.value.trim() ?? '',
     model: modelSelect?.value.trim() || defaults.model,
     readingLevel: isValidReadingLevel(readingLevelSelect?.value) ? readingLevelSelect!.value as ReadingLevel : defaults.readingLevel,
     enabled: enabledInput?.checked ?? defaults.enabled,
+    visionEnabled: current.visionEnabled,
   }
 }
 
@@ -405,11 +422,17 @@ async function handleSend(): Promise<void> {
   setSendEnabled(false)
 
   try {
+    // Capture globe screenshot if vision mode is active
+    const config = loadConfig()
+    const screenshot = config.visionEnabled ? captureGlobeScreenshot() : null
+
     const stream = processMessage(
       text,
       messages.slice(0, -2), // history without user msg or placeholder (processMessage re-adds user msg)
       callbacks.getDatasets(),
       callbacks.getCurrentDataset(),
+      undefined,
+      screenshot,
     )
 
     let firstChunk = true

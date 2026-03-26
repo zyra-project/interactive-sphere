@@ -9,6 +9,7 @@ const testConfig: DocentConfig = {
   model: 'test-model',
   enabled: true,
   readingLevel: 'general',
+  visionEnabled: false,
 }
 
 function makeSSEStream(lines: string[]): ReadableStream<Uint8Array> {

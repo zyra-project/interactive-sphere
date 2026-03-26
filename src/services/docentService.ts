@@ -6,7 +6,7 @@
  */
 
 import type { Dataset, ChatMessage, ChatAction, DocentConfig } from '../types'
-import { streamChat, checkAvailability, type AvailabilityResult } from './llmProvider'
+import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart } from './llmProvider'
 import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
 import { logger } from '../utils/logger'
@@ -14,9 +14,27 @@ import { logger } from '../utils/logger'
 // --- Constants ---
 const CONFIG_STORAGE_KEY = 'sos-docent-config'
 
+/** The default vision-capable model for Cloudflare Workers AI. */
+const CF_VISION_MODEL = 'llama-3.2-11b-vision'
+
 /** Detect localhost dev where the Cloudflare /api proxy may be unavailable. */
 export const isLocalDev = typeof window !== 'undefined'
   && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+
+/**
+ * Capture the globe canvas as a compressed JPEG data URL.
+ * Returns null if the canvas is not available.
+ */
+export function captureGlobeScreenshot(): string | null {
+  const canvas = document.getElementById('globe-canvas') as HTMLCanvasElement | null
+  if (!canvas) return null
+  try {
+    return canvas.toDataURL('image/jpeg', 0.7)
+  } catch {
+    logger.warn('[Docent] Failed to capture globe screenshot')
+    return null
+  }
+}
 
 const DEFAULT_CONFIG: DocentConfig = {
   apiUrl: '/api',
@@ -24,6 +42,7 @@ const DEFAULT_CONFIG: DocentConfig = {
   model: 'llama-3.1-70b',
   enabled: true,
   readingLevel: 'general',
+  visionEnabled: false,
 }
 
 /** Yielded by the service during response generation */
@@ -181,6 +200,7 @@ export async function* processMessage(
   datasets: Dataset[],
   currentDataset: Dataset | null,
   config?: DocentConfig,
+  screenshotDataUrl?: string | null,
 ): AsyncGenerator<DocentStreamChunk> {
   const cfg = config ?? loadConfig()
 
@@ -234,15 +254,33 @@ export async function* processMessage(
     let accumulatedText = ''
     try {
       const turnIndex = Math.floor(history.length / 2)
-      const systemPrompt = buildSystemPromptForTurn(datasets, currentDataset, turnIndex, cfg.readingLevel)
-      const llmMessages = [
+      const visionActive = cfg.visionEnabled && !!screenshotDataUrl
+      const systemPrompt = buildSystemPromptForTurn(datasets, currentDataset, turnIndex, cfg.readingLevel, visionActive)
+
+      // Build the user message — multimodal if vision is active
+      const userMessage: LLMMessage = visionActive
+        ? {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: screenshotDataUrl! } },
+              { type: 'text', text: input },
+            ] as LLMContentPart[],
+          }
+        : { role: 'user', content: input }
+
+      const llmMessages: LLMMessage[] = [
         { role: 'system' as const, content: systemPrompt },
         ...buildCompressedHistory(history),
-        { role: 'user' as const, content: input },
+        userMessage,
       ]
       const tools = [getLoadDatasetTool()]
 
-      const stream = streamChat(llmMessages, tools, cfg)
+      // Auto-switch to vision model when using the default CF proxy
+      const visionCfg = visionActive && (cfg.apiUrl === '/api' || cfg.apiUrl.endsWith('/api'))
+        ? { ...cfg, model: CF_VISION_MODEL }
+        : cfg
+
+      const stream = streamChat(llmMessages, tools, visionCfg)
 
       for await (const chunk of stream) {
         switch (chunk.type) {

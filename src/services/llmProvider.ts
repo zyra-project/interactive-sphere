@@ -12,9 +12,23 @@ import { logger } from '../utils/logger'
 
 // --- Types ---
 
+/** A text-only content part. */
+export interface LLMTextPart {
+  type: 'text'
+  text: string
+}
+
+/** An image content part (base64 data URL). */
+export interface LLMImagePart {
+  type: 'image_url'
+  image_url: { url: string }
+}
+
+export type LLMContentPart = LLMTextPart | LLMImagePart
+
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | LLMContentPart[]
 }
 
 export interface LLMTool {

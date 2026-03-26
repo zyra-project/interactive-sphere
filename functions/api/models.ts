@@ -56,6 +56,11 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
           object: 'model',
           owned_by: 'cloudflare',
         },
+        {
+          id: '@cf/meta/llama-3.2-11b-vision-instruct',
+          object: 'model',
+          owned_by: 'cloudflare',
+        },
       ],
     }),
     { headers },

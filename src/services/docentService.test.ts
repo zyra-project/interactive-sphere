@@ -31,6 +31,7 @@ const disabledConfig: DocentConfig = {
   model: 'test',
   enabled: false,
   readingLevel: 'general',
+  visionEnabled: false,
 }
 
 beforeEach(() => {
@@ -107,6 +108,7 @@ describe('processMessage — LLM path', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -136,6 +138,7 @@ describe('processMessage — LLM path', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -171,6 +174,7 @@ describe('processMessage — LLM path', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -206,6 +210,7 @@ describe('processMessage — LLM path', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -235,6 +240,7 @@ describe('processMessage — LLM path', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -296,6 +302,7 @@ describe('processMessage — LLM dataset ID validation', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -332,6 +339,7 @@ describe('processMessage — LLM dataset ID validation', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -404,6 +412,7 @@ describe('processMessage — rewrite chunk for hallucinated IDs', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -431,6 +440,7 @@ describe('processMessage — rewrite chunk for hallucinated IDs', () => {
       model: 'test',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
 
     const chunks: DocentStreamChunk[] = []
@@ -458,6 +468,7 @@ describe('config management', () => {
       model: 'gpt-4',
       enabled: true,
       readingLevel: 'general',
+      visionEnabled: false,
     }
     saveConfig(custom)
     const loaded = loadConfig()
