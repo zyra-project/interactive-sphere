@@ -207,10 +207,78 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     ? extractImageAndNormalise(truncated)
     : { image: null, textMessages: truncated.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.filter(p => p.type === 'text').map(p => p.text ?? '').join('\n') })) }
 
-  if (body.stream) {
-    return streamResponse(context.env.AI, cfModel, textMessages, cors, image)
+  // Vision models on Workers AI do not support streaming — always use
+  // non-streaming and, if the client requested streaming, wrap the
+  // complete response in SSE format so the client parser handles it.
+  if (isVision) {
+    if (body.stream) {
+      return visionStreamShim(context.env.AI, cfModel, textMessages, cors, image)
+    }
+    return nonStreamResponse(context.env.AI, cfModel, textMessages, cors, image)
   }
-  return nonStreamResponse(context.env.AI, cfModel, textMessages, cors, image)
+
+  if (body.stream) {
+    return streamResponse(context.env.AI, cfModel, textMessages, cors)
+  }
+  return nonStreamResponse(context.env.AI, cfModel, textMessages, cors)
+}
+
+/**
+ * Vision models don't support streaming on Workers AI.
+ * Call non-streaming, then wrap the result in SSE so the client's
+ * streaming parser handles it transparently.
+ */
+async function visionStreamShim(
+  ai: Env['AI'],
+  model: string,
+  messages: { role: string; content: string }[],
+  cors: Record<string, string>,
+  image: number[] | null,
+): Promise<Response> {
+  const inputs: Record<string, unknown> = { messages }
+  if (image) inputs.image = image
+
+  let text: string
+  try {
+    const result = (await ai.run(model, inputs)) as { response?: string }
+    text = result.response ?? ''
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Vision model error'
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 502,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Wrap the complete response as two SSE chunks (content + final) + [DONE]
+  const chatId = `chatcmpl-${Date.now()}`
+  const base = {
+    id: chatId,
+    object: 'chat.completion.chunk',
+    created: Math.floor(Date.now() / 1000),
+    model,
+  }
+  const contentChunk = {
+    ...base,
+    choices: [{ index: 0, delta: { content: text } }],
+  }
+  const finalChunk = {
+    ...base,
+    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+  }
+  const sseBody =
+    `data: ${JSON.stringify(contentChunk)}\n\n` +
+    `data: ${JSON.stringify(finalChunk)}\n\n` +
+    `data: [DONE]\n\n`
+
+  return new Response(sseBody, {
+    headers: {
+      ...cors,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  })
 }
 
 async function streamResponse(
@@ -218,14 +286,10 @@ async function streamResponse(
   model: string,
   messages: { role: string; content: string }[],
   cors: Record<string, string>,
-  image?: number[] | null,
 ): Promise<Response> {
-  const inputs: Record<string, unknown> = { messages, stream: true }
-  if (image) inputs.image = image
-
   const response = (await ai.run(
     model,
-    inputs,
+    { messages, stream: true },
     { returnRawResponse: true },
   )) as Response
 

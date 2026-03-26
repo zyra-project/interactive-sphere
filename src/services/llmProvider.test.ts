@@ -205,6 +205,37 @@ describe('streamChat — multimodal messages', () => {
   })
 })
 
+describe('streamChat — timeout options', () => {
+  it('uses custom timeoutMs via setTimeout', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('abort')))
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of streamChat([{ role: 'user', content: 'hi' }], [], testConfig, { timeoutMs: 5000 })) {
+      chunks.push(chunk)
+    }
+
+    // The first setTimeout call is the connection timeout — verify custom value
+    const timeoutCall = setTimeoutSpy.mock.calls.find(c => c[1] === 5000)
+    expect(timeoutCall).toBeDefined()
+    setTimeoutSpy.mockRestore()
+  })
+
+  it('uses default 30s timeout when no options provided', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('abort')))
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of streamChat([{ role: 'user', content: 'hi' }], [], testConfig)) {
+      chunks.push(chunk)
+    }
+
+    const timeoutCall = setTimeoutSpy.mock.calls.find(c => c[1] === 30000)
+    expect(timeoutCall).toBeDefined()
+    setTimeoutSpy.mockRestore()
+  })
+})
+
 describe('checkAvailability', () => {
   it('returns ok when server responds and model is listed', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

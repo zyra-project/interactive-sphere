@@ -64,6 +64,7 @@ export async function* streamChat(
   messages: LLMMessage[],
   tools: LLMTool[],
   config: DocentConfig,
+  options?: { timeoutMs?: number },
 ): AsyncGenerator<StreamChunk> {
   const url = `${config.apiUrl.replace(/\/+$/, '')}/chat/completions`
 
@@ -84,7 +85,8 @@ export async function* streamChat(
   }
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timeoutMs = options?.timeoutMs ?? REQUEST_TIMEOUT_MS
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   let response: Response
   try {
@@ -103,12 +105,12 @@ export async function* streamChat(
   }
 
   // Replace the initial connection timeout with a per-chunk inactivity timeout.
-  // If no data arrives for 30s during streaming, abort.
+  // If no data arrives within the timeout during streaming, abort.
   clearTimeout(timeout)
-  let inactivityTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  let inactivityTimer = setTimeout(() => controller.abort(), timeoutMs)
   const resetInactivity = () => {
     clearTimeout(inactivityTimer)
-    inactivityTimer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    inactivityTimer = setTimeout(() => controller.abort(), timeoutMs)
   }
 
   if (!response.ok) {
