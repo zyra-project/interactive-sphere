@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
-import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureGlobeScreenshot, captureViewContext } from './docentService'
+import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureGlobeScreenshot, captureViewContext, readCurrentTime } from './docentService'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -556,14 +556,32 @@ describe('captureViewContext', () => {
     document.body.innerHTML = ''
   })
 
-  it('captures time display text', () => {
-    document.body.innerHTML = '<span id="time-display">Jan 2020</span>'
+  it('captures time display text when time-label is visible', () => {
+    document.body.innerHTML = `
+      <div id="time-label"><span id="time-display">Jan 2020</span></div>
+    `
     const ctx = captureViewContext()
     expect(ctx).toContain('Time shown: Jan 2020')
   })
 
+  it('ignores time when time-label is hidden (stale from previous dataset)', () => {
+    document.body.innerHTML = `
+      <div id="time-label" class="hidden"><span id="time-display">Jan 2006</span></div>
+    `
+    const ctx = captureViewContext()
+    expect(ctx).not.toContain('Time shown')
+  })
+
+  it('ignores time when time-label element is absent', () => {
+    document.body.innerHTML = '<span id="time-display">Jan 2020</span>'
+    const ctx = captureViewContext()
+    expect(ctx).not.toContain('Time shown')
+  })
+
   it('ignores placeholder time text', () => {
-    document.body.innerHTML = '<span id="time-display">--</span>'
+    document.body.innerHTML = `
+      <div id="time-label"><span id="time-display">--</span></div>
+    `
     const ctx = captureViewContext()
     expect(ctx).not.toContain('Time shown')
   })
@@ -601,7 +619,7 @@ describe('captureViewContext', () => {
     document.body.innerHTML = `
       <span id="info-title">Atmospheric Chemistry</span>
       <div id="latlng-display">9.5° N, 137.7° E</div>
-      <span id="time-display">Aug 17, 2006</span>
+      <div id="time-label"><span id="time-display">Aug 17, 2006</span></div>
       <button id="play-btn" aria-label="Pause"></button>
     `
     const ctx = captureViewContext()
@@ -621,6 +639,45 @@ describe('captureViewContext', () => {
     const ctx = captureViewContext()
     // (1.80 - 1.0) * 6371 = ~5,097 km
     expect(ctx).toContain('Viewing altitude: ~5,097 km')
+  })
+})
+
+describe('readCurrentTime', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('returns time text when time-label is visible', () => {
+    document.body.innerHTML = `
+      <div id="time-label"><span id="time-display">Mar 15, 2020</span></div>
+    `
+    expect(readCurrentTime()).toBe('Mar 15, 2020')
+  })
+
+  it('returns null when time-label is hidden (stale from previous dataset)', () => {
+    document.body.innerHTML = `
+      <div id="time-label" class="hidden"><span id="time-display">Jan 1, 2006</span></div>
+    `
+    expect(readCurrentTime()).toBeNull()
+  })
+
+  it('returns null when time-label element is absent', () => {
+    document.body.innerHTML = '<span id="time-display">Jan 2020</span>'
+    expect(readCurrentTime()).toBeNull()
+  })
+
+  it('returns null when time-display text is the placeholder', () => {
+    document.body.innerHTML = `
+      <div id="time-label"><span id="time-display">--</span></div>
+    `
+    expect(readCurrentTime()).toBeNull()
+  })
+
+  it('returns null when time-display is empty', () => {
+    document.body.innerHTML = `
+      <div id="time-label"><span id="time-display"></span></div>
+    `
+    expect(readCurrentTime()).toBeNull()
   })
 })
 

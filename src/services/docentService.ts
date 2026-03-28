@@ -75,10 +75,13 @@ export function captureViewContext(): string {
     parts.push(`Globe center: ${coordText}`)
   }
 
-  const timeEl = document.getElementById('time-display')
-  const timeText = timeEl?.textContent?.trim()
-  if (timeText && timeText !== '--') {
-    parts.push(`Time shown: ${timeText}`)
+  const timeLabelEl = document.getElementById('time-label')
+  if (timeLabelEl && !timeLabelEl.classList.contains('hidden')) {
+    const timeEl = document.getElementById('time-display')
+    const timeText = timeEl?.textContent?.trim()
+    if (timeText && timeText !== '--') {
+      parts.push(`Time shown: ${timeText}`)
+    }
   }
   const playBtn = document.getElementById('play-btn')
   if (playBtn) {
