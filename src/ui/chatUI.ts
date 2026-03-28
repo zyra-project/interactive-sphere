@@ -180,6 +180,7 @@ export function hideChatTrigger(): void {
   document.getElementById('chat-trigger')?.classList.remove('visible')
 }
 
+/** Wire DOM event listeners for the chat panel: trigger, input, send, settings, vision toggle. */
 function wireEvents(): void {
   document.getElementById('chat-trigger')?.addEventListener('click', toggleChat)
   document.getElementById('browse-chat-btn')?.addEventListener('click', toggleChat)
@@ -545,6 +546,7 @@ function setSendEnabled(enabled: boolean): void {
 
 // --- Rendering ---
 
+/** Render all messages into the chat container, or show the welcome screen if empty. */
 function renderMessages(): void {
   const container = document.getElementById('chat-messages')
   if (!container) return
@@ -577,6 +579,7 @@ function renderMessages(): void {
   wireActionButtons(container)
 }
 
+/** Render a single chat message as an HTML string with inline action buttons. */
 function renderMessage(msg: ChatMessage): string {
   const roleClass = msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-docent'
   const { html: textHtml, inlinedIds } = renderChatText(msg.text ?? '', msg.actions)
@@ -648,6 +651,7 @@ function renderChatText(
   return { html, inlinedIds }
 }
 
+/** Render a group of dataset action buttons as an HTML string. */
 function renderActions(actions: ChatAction[]): string {
   const buttons = actions.map(a => {
     if (a.type === 'load-dataset') {
@@ -664,6 +668,7 @@ function renderActions(actions: ChatAction[]): string {
   return `<div class="chat-actions">${buttons}${browseFooter}</div>`
 }
 
+/** Attach click handlers to action buttons within a rendered message container. */
 function wireActionButtons(container: Element): void {
   container.querySelectorAll<HTMLElement>('.chat-action-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -719,6 +724,7 @@ function renderMarkdownLite(html: string): string {
 
 // --- Trigger / info-panel coordination ---
 
+/** Adjust the chat trigger button position to sit above the info panel when expanded. */
 function updateTriggerForInfoPanel(): void {
   const trigger = document.getElementById('chat-trigger')
   const infoPanel = document.getElementById('info-panel')
@@ -733,6 +739,7 @@ function updateTriggerForInfoPanel(): void {
 
 // --- Contextual dataset prompt ---
 
+/** Show a contextual prompt nudging the user to ask about the loaded dataset. */
 function showDatasetPrompt(dataset: Dataset): void {
   dismissDatasetPrompt()
   const el = document.getElementById('chat-dataset-prompt')
@@ -752,6 +759,7 @@ function showDatasetPrompt(dataset: Dataset): void {
   datasetPromptTimer = setTimeout(() => dismissDatasetPrompt(), 8000)
 }
 
+/** Dismiss the dataset prompt banner and clear its auto-hide timer. */
 function dismissDatasetPrompt(): void {
   if (datasetPromptTimer !== null) {
     clearTimeout(datasetPromptTimer)
@@ -761,16 +769,19 @@ function dismissDatasetPrompt(): void {
   if (el) el.classList.add('hidden')
 }
 
+/** Show the typing indicator in the chat panel. */
 function showTyping(): void {
   const el = document.getElementById('chat-typing')
   if (el) el.classList.remove('hidden')
 }
 
+/** Hide the typing indicator. */
 function hideTyping(): void {
   const el = document.getElementById('chat-typing')
   if (el) el.classList.add('hidden')
 }
 
+/** Scroll the chat message container to the bottom. */
 function scrollToBottom(): void {
   const container = document.getElementById('chat-messages')
   if (container) {

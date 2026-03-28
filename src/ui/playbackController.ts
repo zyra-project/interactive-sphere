@@ -22,6 +22,7 @@ export interface PlaybackState {
   loopPauseTimer: ReturnType<typeof setTimeout> | null
 }
 
+/** Create a fresh playback state with all fields at their defaults. */
 export function createPlaybackState(): PlaybackState {
   return {
     playbackUpdateId: null,
@@ -34,6 +35,7 @@ export function createPlaybackState(): PlaybackState {
 
 // --- Playback loop ---
 
+/** Start a requestAnimationFrame loop that updates the scrubber, time label, and handles auto-looping. */
 export function startPlaybackLoop(
   state: PlaybackState,
   hlsService: HLSService | null,
@@ -80,6 +82,7 @@ export function startPlaybackLoop(
   state.playbackUpdateId = requestAnimationFrame(loop)
 }
 
+/** Cancel the running playback animation frame loop. */
 export function stopPlaybackLoop(state: PlaybackState): void {
   if (state.playbackUpdateId !== null) {
     cancelAnimationFrame(state.playbackUpdateId)
@@ -89,6 +92,7 @@ export function stopPlaybackLoop(state: PlaybackState): void {
 
 // --- Transport controls ---
 
+/** Toggle between play and pause, updating the button icon and app state. */
 export function togglePlayPause(
   hlsService: HLSService | null,
   appState: AppState,
@@ -109,6 +113,7 @@ export function togglePlayPause(
   announce(hlsService.paused ? 'Playback paused' : 'Playback started')
 }
 
+/** Seek to the beginning of the video and pause playback. */
 export function rewind(
   hlsService: HLSService | null,
   appState: AppState,
@@ -124,6 +129,7 @@ export function rewind(
   state.scrubbing = true
 }
 
+/** Seek to the end of the video and pause playback. */
 export function fastForward(
   hlsService: HLSService | null,
   appState: AppState,
@@ -142,6 +148,7 @@ export function fastForward(
   }
 }
 
+/** Step one display interval forward or backward, pausing if currently playing. */
 export function stepFrame(
   direction: 1 | -1,
   hlsService: HLSService | null,
@@ -173,6 +180,7 @@ export function stepFrame(
   state.scrubbing = true
 }
 
+/** Handle scrubber input by seeking the video to the corresponding position. */
 export function onScrub(
   value: number,
   hlsService: HLSService | null,
@@ -187,6 +195,7 @@ export function onScrub(
   }
 }
 
+/** Update the play/pause button icon and ARIA label to reflect the current state. */
 export function updatePlayButton(paused: boolean): void {
   const playBtn = document.getElementById('play-btn')
   if (playBtn) {
@@ -197,6 +206,7 @@ export function updatePlayButton(paused: boolean): void {
 
 // --- Captions ---
 
+/** Toggle closed-caption track visibility and update the CC button style. */
 export function toggleCaptions(state: PlaybackState): void {
   if (!state.captionTrack) return
   const ccBtn = document.getElementById('cc-btn')
@@ -213,6 +223,7 @@ export function toggleCaptions(state: PlaybackState): void {
   }
 }
 
+/** Fetch an SRT caption file, parse it, and attach cues to the video element. */
 export async function loadCaptions(
   video: HTMLVideoElement,
   captionUrl: string,
@@ -317,6 +328,7 @@ export function initPlaybackPositioning(): void {
 
 // --- Playback state reset ---
 
+/** Reset playback state, clear the loop timer, hide captions, and reset the CC button. */
 export function resetPlaybackState(state: PlaybackState): void {
   state.displayInterval = null
   if (state.loopPauseTimer) {

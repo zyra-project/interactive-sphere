@@ -37,6 +37,7 @@ export class SphereRenderer {
 
   private readonly isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
 
+  /** Create the Three.js scene, camera, renderer, lighting, skybox, and start the animation loop. */
   constructor(container: HTMLElement) {
     // Scene setup
     this.scene = new THREE.Scene()
@@ -115,32 +116,39 @@ export class SphereRenderer {
 
   // --- Delegated Earth material methods ---
 
+  /** Load the enhanced Earth material set (diffuse, normal, specular, night lights). */
   async loadDefaultEarthMaterials(onProgress?: (fraction: number) => void): Promise<void> {
     return this.earthMaterials.loadDefaultEarthMaterials(this.sphere, onProgress)
   }
 
+  /** Remove night-light emissive map and atmosphere overlays. */
   removeNightLights(): void {
     this.earthMaterials.removeNightLights()
   }
 
+  /** Position the directional light to simulate the sun at the given geographic coordinates. */
   enableSunLighting(lat: number, lng: number): void {
     this.earthMaterials.enableSunLighting(lat, lng)
   }
 
+  /** Reset lighting to the default uniform illumination. */
   disableSunLighting(): void {
     this.earthMaterials.disableSunLighting()
   }
 
+  /** Load and display a cloud layer texture over the globe. */
   async loadCloudOverlay(url: string, onProgress?: (fraction: number) => void): Promise<void> {
     return this.earthMaterials.loadCloudOverlay(url, onProgress)
   }
 
+  /** Remove the cloud overlay mesh from the scene. */
   removeCloudOverlay(): void {
     this.earthMaterials.removeCloudOverlay()
   }
 
   // --- Delegated input methods ---
 
+  /** Register callbacks invoked when the cursor hovers over the globe (lat/lng) or leaves it. */
   setLatLngCallbacks(
     onUpdate: (lat: number, lng: number) => void,
     onClear: () => void
@@ -148,12 +156,14 @@ export class SphereRenderer {
     this.inputHandler.setLatLngCallbacks(onUpdate, onClear)
   }
 
+  /** Toggle automatic globe rotation and return the new state. */
   toggleAutoRotate(): boolean {
     return this.inputHandler.toggleAutoRotate()
   }
 
   // --- Sphere management ---
 
+  /** Create (or replace) the sphere mesh with the given geometry options and optional texture. */
   createSphere(options: SphereOptions): THREE.Mesh {
     // Remove old sphere
     if (this.sphere) {
@@ -199,6 +209,7 @@ export class SphereRenderer {
 
   // --- Texture management ---
 
+  /** Replace the sphere's diffuse texture, stripping any advanced Earth maps. */
   updateTexture(texture: THREE.Texture | HTMLCanvasElement | HTMLImageElement): void {
     if (!this.sphere) return
 
@@ -233,6 +244,7 @@ export class SphereRenderer {
     this.earthMaterials.defaultEarthActive = false
   }
 
+  /** Attach an HTML video element as a live VideoTexture on the sphere. */
   setVideoTexture(video: HTMLVideoElement): THREE.VideoTexture {
     if (!this.sphere) throw new Error('Sphere not initialized')
 
@@ -266,10 +278,12 @@ export class SphereRenderer {
 
   // --- Canvas description ---
 
+  /** Update the canvas ARIA label for accessibility. */
   setCanvasDescription(text: string): void {
     this.renderer.domElement.setAttribute('aria-label', text)
   }
 
+  /** Return the current sphere mesh, or null if not yet created. */
   getSphere(): THREE.Mesh | null {
     return this.sphere
   }
@@ -307,6 +321,7 @@ export class SphereRenderer {
 
   // --- Disposal ---
 
+  /** Dispose all Three.js resources and remove the canvas from the DOM. */
   dispose(): void {
     if (this.sphere?.geometry) this.sphere.geometry.dispose()
     if (this.sphere?.material) {

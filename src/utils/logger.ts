@@ -38,16 +38,21 @@ function shouldLog(level: LogLevel): boolean {
   return LEVEL_ORDER[level] >= LEVEL_ORDER[currentLevel()]
 }
 
+/** Leveled logger that gates output based on the current log level. */
 export const logger = {
+  /** Log a debug-level message (development only by default). */
   debug(...args: unknown[]): void {
     if (shouldLog('debug')) console.log(...args)
   },
+  /** Log an info-level message. */
   info(...args: unknown[]): void {
     if (shouldLog('info')) console.log(...args)
   },
+  /** Log a warning-level message. */
   warn(...args: unknown[]): void {
     if (shouldLog('warn')) console.warn(...args)
   },
+  /** Log an error-level message. */
   error(...args: unknown[]): void {
     if (shouldLog('error')) console.error(...args)
   },

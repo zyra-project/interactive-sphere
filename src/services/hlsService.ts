@@ -182,38 +182,47 @@ export class HLSService {
     })
   }
 
+  /** Return the underlying video element, or null if not yet created. */
   getVideo(): HTMLVideoElement | null {
     return this.video
   }
 
+  /** Video duration in seconds. */
   get duration(): number {
     return this.video?.duration ?? 0
   }
 
+  /** Current playback position in seconds. */
   get currentTime(): number {
     return this.video?.currentTime ?? 0
   }
 
+  /** Seek to a specific time in seconds. */
   set currentTime(time: number) {
     if (this.video) this.video.currentTime = time
   }
 
+  /** Whether the video is currently paused. */
   get paused(): boolean {
     return this.video?.paused ?? true
   }
 
+  /** Start or resume playback. */
   play(): Promise<void> | undefined {
     return this.video?.play()
   }
 
+  /** Pause playback. */
   pause(): void {
     this.video?.pause()
   }
 
+  /** Set the playback speed multiplier. */
   set playbackRate(rate: number) {
     if (this.video) this.video.playbackRate = rate
   }
 
+  /** Current playback speed multiplier (1 = normal). */
   get playbackRate(): number {
     return this.video?.playbackRate ?? 1
   }
@@ -229,6 +238,7 @@ export class HLSService {
     return false
   }
 
+  /** Tear down the HLS instance, stop playback, and remove the video element from the DOM. */
   destroy(): void {
     if (this.hls) {
       this.hls.destroy()

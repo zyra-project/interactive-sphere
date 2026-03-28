@@ -21,6 +21,7 @@ export interface BrowseCallbacks {
   onOpenChat?: (query?: string) => void
 }
 
+/** Escape HTML special characters to prevent XSS in rendered content. */
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -29,10 +30,15 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
+/** Escape a string for safe use inside an HTML attribute value. */
 export function escapeAttr(value: string): string {
   return value.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
+/**
+ * Render and display the dataset browse overlay with category filters,
+ * search, sort controls, and dataset cards.
+ */
 export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): void {
   const overlay = document.getElementById('browse-overlay')
   if (!overlay) return
@@ -361,6 +367,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   renderCards()
 }
 
+/** Hide the browse overlay. */
 export function hideBrowseUI(): void {
   const overlay = document.getElementById('browse-overlay')
   overlay?.classList.add('hidden')

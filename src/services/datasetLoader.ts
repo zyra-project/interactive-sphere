@@ -31,6 +31,7 @@ export interface DatasetLoaderCallbacks {
 
 // --- Image loading ---
 
+/** Load an image dataset onto the globe, trying progressively lower resolutions on mobile. */
 export async function loadImageDataset(
   dataset: Dataset,
   renderer: SphereRenderer,
@@ -61,6 +62,7 @@ export async function loadImageDataset(
   logger.info(`[App] Image dataset loaded successfully: ${img.src}`)
 }
 
+/** Try loading an image from a list of candidate URLs, falling back to the next on failure. */
 function tryLoadImage(urls: string[]): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     let index = 0
@@ -87,6 +89,7 @@ function tryLoadImage(urls: string[]): Promise<HTMLImageElement> {
 
 // --- Video loading ---
 
+/** Load a video dataset via HLS streaming, set up the video texture, and configure playback controls. */
 export async function loadVideoDataset(
   dataset: Dataset,
   renderer: SphereRenderer,
@@ -185,6 +188,7 @@ export async function loadVideoDataset(
 
 // --- Dataset info panel ---
 
+/** Populate and display the dataset info panel with metadata, legend, related datasets, and event wiring. */
 export function displayDatasetInfo(
   dataset: Dataset,
   datasets: Dataset[],

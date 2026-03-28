@@ -36,6 +36,14 @@ const LOADING_BASE_PROGRESS = 20
 const LOADING_TEXTURE_RANGE = 70
 const LOADING_HIDE_DELAY_MS = 300
 
+/**
+ * Root application class that boots the WebGL globe, loads datasets,
+ * and orchestrates all UI subsystems (browse panel, chat, playback controls).
+ *
+ * Lifecycle: constructed once on DOMContentLoaded, then {@link initialize}
+ * fetches the dataset catalog and either displays the default Earth or
+ * loads a dataset specified by the `?dataset=` URL parameter.
+ */
 class InteractiveSphere {
   private appState: AppState = {
     datasets: [],
@@ -57,6 +65,11 @@ class InteractiveSphere {
   private loadingHideTimer: ReturnType<typeof setTimeout> | null = null
   private loadGeneration = 0 // guards against concurrent dataset loads
 
+  /**
+   * Boot the application: create the WebGL renderer, fetch the dataset
+   * catalog, and either load a URL-specified dataset or show the default
+   * Earth with the browse panel.
+   */
   async initialize(): Promise<void> {
     try {
       this.setLoading(true)
@@ -139,11 +152,13 @@ class InteractiveSphere {
     }
   }
 
+  /** Extract the `dataset` query parameter from the current URL. */
   private getDatasetIdFromUrl(): string | null {
     const params = new URLSearchParams(window.location.search)
     return params.get('dataset')
   }
 
+  /** Load the fallback Earth diffuse texture from local assets. */
   private loadDefaultTexture(): Promise<void> {
     return new Promise((resolve) => {
       const img = new Image()
@@ -159,11 +174,13 @@ class InteractiveSphere {
     })
   }
 
+  /** Fetch the dataset catalog from the data service and store in app state. */
   private async loadDatasets(): Promise<void> {
     const datasets = await dataService.fetchDatasets()
     this.appState.datasets = datasets
   }
 
+  /** Load a dataset by ID onto the globe, tearing down any previous video stream first. Uses a generation counter to safely ignore superseded loads. */
   private async loadDataset(datasetId: string): Promise<void> {
     const gen = this.loadGeneration
     logger.debug('[App] loadDataset start:', datasetId)
@@ -204,6 +221,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Resolve, render, and apply a dataset (image or video) to the sphere. */
   private async displayDataset(datasetId: string, gen: number): Promise<void> {
     const dataset = dataService.getDatasetById(datasetId)
     if (!dataset) throw new Error(`Dataset not found: ${datasetId}`)
@@ -251,6 +269,7 @@ class InteractiveSphere {
     initLegendForDataset(dataset, loadConfig())
   }
 
+  /** Start the requestAnimationFrame playback loop that syncs the scrubber, time label, and auto-loop. */
   private doStartPlaybackLoop(): void {
     startPlaybackLoop(
       this.playback,
@@ -261,6 +280,7 @@ class InteractiveSphere {
     )
   }
 
+  /** Map the current video playback time to a real-world date and update the time label. */
   private updateVideoTimeLabel(videoTime: number): void {
     const dataset = this.appState.currentDataset
     if (!dataset) return
@@ -281,6 +301,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Show or hide the time label overlay and update its text from app state. */
   private showTimeLabel(show: boolean): void {
     const timeLabel = document.getElementById('time-label')
     const timeDisplay = document.getElementById('time-display')
@@ -298,6 +319,7 @@ class InteractiveSphere {
 
   // --- UI helpers ---
 
+  /** Toggle visibility of the playback transport controls and standalone auto-rotate button. */
   private showPlaybackControls(show: boolean): void {
     const controls = document.getElementById('playback-controls')
     const standalone = document.getElementById('auto-rotate-standalone')
@@ -309,6 +331,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Detect WebGL support. If unavailable, display troubleshooting instructions and return false. */
   private checkWebGLSupport(): boolean {
     const canvas = document.createElement('canvas')
     const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
@@ -351,6 +374,7 @@ class InteractiveSphere {
     return false
   }
 
+  /** Set the loading state. When false, fades out the loading screen with a short delay. */
   private setLoading(isLoading: boolean): void {
     this.appState.isLoading = isLoading
     if (!isLoading) {
@@ -372,6 +396,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Update the loading screen status message and progress bar. */
   private setLoadingStatus(message: string, progress?: number): void {
     const statusEl = document.getElementById('loading-status')
     if (statusEl) statusEl.textContent = message
@@ -383,6 +408,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Display an error message in the error banner and log it. */
   private setError(error: string): void {
     this.appState.error = error
     const errorEl = document.getElementById('error-message')
@@ -401,6 +427,7 @@ class InteractiveSphere {
     logger.error('[App] Error:', error)
   }
 
+  /** Push a message to the ARIA live region for screen reader announcements. */
   private announce(message: string): void {
     const el = document.getElementById('a11y-announcer')
     if (el) {
@@ -409,6 +436,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Initialize the Orbit chat panel and wire playback positioning observers. */
   private initChat(): void {
     initPlaybackPositioning()
     initChatUI({
@@ -426,6 +454,7 @@ class InteractiveSphere {
     })
   }
 
+  /** Open the chat panel and optionally pre-fill the input with a query string. */
   private openChatWithQuery(query?: string): void {
     openChat()
     if (query) {
@@ -439,6 +468,7 @@ class InteractiveSphere {
   }
 
 
+  /** Load a dataset selected via the chat panel, updating URL and notifying chat of the change. */
   private async selectDatasetFromChat(id: string): Promise<void> {
     const gen = ++this.loadGeneration
     logger.debug('[App] selectDatasetFromChat:', id, 'gen:', gen)
@@ -461,6 +491,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Dispose the current video texture and HLS service, and reset playback state. */
   private cleanupVideo(): void {
     stopPlaybackLoop(this.playback)
     if (this.videoTexture) {
@@ -477,6 +508,7 @@ class InteractiveSphere {
 
   // --- Event listeners ---
 
+  /** Wire up all DOM event listeners: transport controls, keyboard shortcuts, browse toggle, scrubber, auto-rotate, and mute. */
   setupEventListeners(): void {
     document.getElementById('home-btn')?.addEventListener('click', () => this.goHome())
 
@@ -579,6 +611,7 @@ class InteractiveSphere {
 
   // --- Navigation ---
 
+  /** Load a dataset selected via the browse panel, updating URL and shifting focus to playback controls. */
   private async selectDatasetFromBrowse(id: string): Promise<void> {
     const gen = ++this.loadGeneration
     hideBrowseUI()
@@ -605,6 +638,7 @@ class InteractiveSphere {
     }
   }
 
+  /** Re-show the loading screen with a fade-in if it was hidden, cancelling any pending hide timer. */
   private showLoadingScreen(message = 'Loading dataset\u2026', progress = 0): void {
     if (this.loadingHideTimer !== null) {
       clearTimeout(this.loadingHideTimer)
@@ -631,14 +665,17 @@ class InteractiveSphere {
     this.setLoadingStatus(message, progress)
   }
 
+  /** Show the home navigation button. */
   private showHomeButton(): void {
     document.getElementById('home-btn')?.classList.remove('hidden')
   }
 
+  /** Hide the home navigation button. */
   private hideHomeButton(): void {
     document.getElementById('home-btn')?.classList.add('hidden')
   }
 
+  /** Navigate back to the default Earth view: tear down the current dataset, reload Earth materials, and re-show the browse panel. */
   private async goHome(): Promise<void> {
     this.cleanupVideo()
     clearLegendCache()
@@ -678,6 +715,7 @@ class InteractiveSphere {
     notifyDatasetChanged(null)
   }
 
+  /** Clean up all resources: video streams, textures, and the WebGL renderer. */
   dispose(): void {
     this.cleanupVideo()
     if (this.renderer) {

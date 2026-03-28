@@ -118,10 +118,15 @@ export function readCurrentTime(): string | null {
   return (text && text !== '--') ? text : null
 }
 
-/** Fetch a legend image URL and encode it as a full data URL. */
+/** Fetch a legend image URL and encode it as a full data URL.
+ * Routes through the /api/legend proxy to avoid browser CORS restrictions.
+ */
 async function fetchLegendBase64(legendLink: string): Promise<{ base64: string; mimeType: string } | null> {
   try {
-    const res = await fetch(legendLink)
+    // The /api/legend proxy fetches the image from the CF edge (no CORS issues).
+    // On localhost the vite proxy forwards /api/* to the production CF deployment.
+    const proxyUrl = `/api/legend?url=${encodeURIComponent(legendLink)}`
+    const res = await fetch(proxyUrl)
     if (!res.ok) return null
     const blob = await res.blob()
     const mimeType = blob.type || 'image/png'
@@ -155,9 +160,6 @@ async function describeLegendAsync(dataset: Dataset, config: DocentConfig): Prom
     legendCache.legendBase64 = encoded.base64
     legendCache.legendMimeType = encoded.mimeType
 
-    // In vision mode the image is sent directly — text description not needed
-    if (config.visionEnabled) return
-
     if (!config.enabled || !config.apiUrl) return
 
     // Always use the vision model for the describe call regardless of user's chat model
@@ -166,7 +168,7 @@ async function describeLegendAsync(dataset: Dataset, config: DocentConfig): Prom
     const describeMessages: LLMMessage[] = [
       {
         role: 'system',
-        content: 'You are a scientific data visualization analyst. Describe the legend image concisely for use as AI assistant context.',
+        content: 'You are a precise scientific data transcription assistant. Your only job is to read numbers, units, and labels directly from legend images — never infer or use prior knowledge.',
       },
       {
         role: 'user',
@@ -174,7 +176,7 @@ async function describeLegendAsync(dataset: Dataset, config: DocentConfig): Prom
           { type: 'image_url', image_url: { url: encoded.base64 } },
           {
             type: 'text',
-            text: `Describe this dataset legend for "${dataset.title}". Include: what each color represents, value ranges and units if shown, any notable thresholds or categories. Be concise (2–4 sentences). This description will be injected as context into an AI assistant answering user questions about the data.`,
+            text: `Transcribe this legend image for the dataset "${dataset.title}". For each colorbar or scale visible: (1) read the exact numbers shown at each labeled tick mark, (2) state the units exactly as written, (3) describe what the scale measures. If there are multiple scales, describe each one. Only report values explicitly visible in the image — do not guess, extrapolate, or apply prior scientific knowledge.`,
           },
         ] as LLMContentPart[],
       },
@@ -449,14 +451,16 @@ export async function* processMessage(
       const visionActive = cfg.visionEnabled && !!screenshotDataUrl
       const cache = getLegendCache()
 
-      // Non-vision mode: inject legend text description and current time into system prompt.
-      // Vision mode: legend image is sent inline; time is already in the vision prefix.
-      const legendDescription = (!visionActive && cache.legendDescription) ? cache.legendDescription : null
-      const currentTime = !visionActive ? readCurrentTime() : null
+      // Always pass legend text description and current time.
+      // In vision mode these go into the vision prefix text (system prompts are often
+      // deprioritised by small vision models); in non-vision mode into the system prompt.
+      const legendDescription = cache.legendDescription ?? null
+      const currentTime = readCurrentTime()
 
       const systemPrompt = buildSystemPromptForTurn(
         datasets, currentDataset, turnIndex, cfg.readingLevel, visionActive,
-        legendDescription, currentTime,
+        !visionActive ? legendDescription : null,
+        !visionActive ? currentTime : null,
       )
 
       // Build the user message — multimodal if vision is active
@@ -474,21 +478,20 @@ export async function* processMessage(
           }
         }
         if (viewContext) ctxParts.push(viewContext)
-        if (cache.legendBase64) ctxParts.push('The second image is the dataset color legend')
+        if (currentTime) ctxParts.push(`TIME: ${currentTime}`)
+        if (legendDescription) ctxParts.push(`LEGEND: ${legendDescription}`)
         if (ctxParts.length > 0) {
           visionPrefix = `[This image is a scientific data visualization on a 3D globe, NOT a photograph. ${ctxParts.join('. ')}]\n`
         }
       }
       const visionText = visionPrefix + input
 
-      // In vision mode, attach globe screenshot + legend image (if available)
+      // In vision mode, attach globe screenshot.
+      // Legend context is passed as text in visionPrefix above (CF proxy only supports one image).
       const visionContentParts: LLMContentPart[] = [
         { type: 'image_url', image_url: { url: screenshotDataUrl! } },
+        { type: 'text', text: visionText },
       ]
-      if (visionActive && cache.legendBase64) {
-        visionContentParts.push({ type: 'image_url', image_url: { url: cache.legendBase64 } })
-      }
-      visionContentParts.push({ type: 'text', text: visionText })
 
       const userMessage: LLMMessage = visionActive
         ? { role: 'user', content: visionContentParts }

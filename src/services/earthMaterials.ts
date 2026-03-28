@@ -70,8 +70,11 @@ export class EarthMaterials {
 
   // --- Cloud mesh access for rotation sync in animate loop ---
 
+  /** Return the cloud overlay mesh for rotation sync. */
   getCloudMesh(): THREE.Mesh | null { return this.cloudMesh }
+  /** Return the inner atmosphere mesh for rotation sync. */
   getAtmosphereInner(): THREE.Mesh | null { return this.atmosphereInner }
+  /** Return the outer atmosphere mesh for rotation sync. */
   getAtmosphereOuter(): THREE.Mesh | null { return this.atmosphereOuter }
 
   // --- Default Earth materials ---
@@ -389,6 +392,7 @@ export class EarthMaterials {
 
   // --- Sun lighting ---
 
+  /** Enable sun-based directional lighting from the given geographic lat/lng. */
   enableSunLighting(lat: number, lng: number): void {
     this.sunMode = true
 
@@ -409,6 +413,7 @@ export class EarthMaterials {
     this.createSunVisual()
   }
 
+  /** Disable sun lighting and restore default uniform illumination. */
   disableSunLighting(): void {
     this.sunMode = false
     this.directionalLight.position.set(5, 5, 5)
@@ -511,6 +516,7 @@ export class EarthMaterials {
     }
   }
 
+  /** Remove the cloud overlay mesh and dispose its resources. */
   removeCloudOverlay(): void {
     if (this.cloudMesh) {
       this.scene.remove(this.cloudMesh)
