@@ -11,6 +11,7 @@ import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './browseUI'
 import { createMessageId } from '../services/docentEngine'
 import { processMessage, loadConfig, saveConfig, testConnection, getDefaultConfig, isLocalDev, captureGlobeScreenshot, captureViewContext } from '../services/docentService'
+import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
 
 // --- Constants ---
@@ -63,6 +64,8 @@ export function openChat(): void {
   if (!panel) return
   isOpen = true
   panel.classList.remove('hidden')
+  // Pre-load Q&A knowledge base (fire-and-forget)
+  void ensureQALoaded()
   trigger?.classList.add('chat-trigger-active')
   trigger?.setAttribute('aria-expanded', 'true')
   browseChatBtn?.classList.add('chat-trigger-active')
@@ -321,12 +324,14 @@ function populateSettings(): void {
   const keyInput = document.getElementById('chat-settings-key') as HTMLInputElement | null
   const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
   const visionInput = document.getElementById('chat-settings-vision') as HTMLInputElement | null
+  const debugInput = document.getElementById('chat-settings-debug') as HTMLInputElement | null
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
   if (urlInput) urlInput.value = config.apiUrl
   if (keyInput) keyInput.value = config.apiKey
   if (readingLevelSelect) readingLevelSelect.value = config.readingLevel
   if (enabledInput) enabledInput.checked = config.enabled
   if (visionInput) visionInput.checked = config.visionEnabled
+  if (debugInput) debugInput.checked = config.debugPrompt ?? false
   // Seed the select with the saved model immediately, then refresh from API
   seedModelSelect(config.model)
   void refreshModelSelect(config.apiUrl, config.model)
@@ -387,6 +392,7 @@ function readSettingsForm(): DocentConfig {
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
   const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
   const visionInput = document.getElementById('chat-settings-vision') as HTMLInputElement | null
+  const debugInput = document.getElementById('chat-settings-debug') as HTMLInputElement | null
   return {
     apiUrl: urlInput?.value.trim() || defaults.apiUrl,
     apiKey: keyInput?.value.trim() ?? '',
@@ -394,6 +400,7 @@ function readSettingsForm(): DocentConfig {
     readingLevel: isValidReadingLevel(readingLevelSelect?.value) ? readingLevelSelect!.value as ReadingLevel : defaults.readingLevel,
     enabled: enabledInput?.checked ?? defaults.enabled,
     visionEnabled: visionInput?.checked ?? defaults.visionEnabled,
+    debugPrompt: debugInput?.checked ?? defaults.debugPrompt,
   }
 }
 

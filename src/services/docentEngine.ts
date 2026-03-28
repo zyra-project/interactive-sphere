@@ -7,6 +7,7 @@
  */
 
 import type { Dataset, ChatMessage, ChatAction } from '../types'
+import { getBestAnswer } from './qaService'
 
 // --- Constants ---
 const MAX_RESULTS = 5
@@ -255,8 +256,15 @@ export function generateResponse(
       const catText = cats.length > 0 ? ` It falls under: ${cats.join(', ')}.` : ''
       const source = currentDataset.organization ? ` Source: ${currentDataset.organization}.` : ''
 
+      // Try to enrich with Q&A knowledge
+      const qaAnswer = getBestAnswer(
+        intent.type === 'what-is-this' ? 'what is this about' : 'explain',
+        currentDataset.title,
+      )
+      const qaExtra = qaAnswer ? `\n\n${qaAnswer.length > 500 ? qaAnswer.substring(0, 500) + '…' : qaAnswer}` : ''
+
       return {
-        text: `**${currentDataset.title}**\n\n${desc}${timeRange}${catText}${source}`,
+        text: `**${currentDataset.title}**\n\n${desc}${timeRange}${catText}${source}${qaExtra}`,
       }
     }
 
@@ -307,9 +315,13 @@ export function generateResponse(
 
       const top = results[0].dataset
       const topDesc = describeDataset(top)
+      const qaSearchAnswer = getBestAnswer(intent.query, top.title)
+      const qaSnippet = qaSearchAnswer
+        ? `\n${qaSearchAnswer.length > 400 ? qaSearchAnswer.substring(0, 400) + '…' : qaSearchAnswer}`
+        : ''
       const introText = results.length === 1
-        ? `I found a dataset that matches: **${top.title}**\n\n${topDesc}`
-        : `I found ${results.length} datasets matching "${intent.query}". Here's the best match:\n\n**${top.title}**\n${topDesc}`
+        ? `I found a dataset that matches: **${top.title}**\n\n${topDesc}${qaSnippet}`
+        : `I found ${results.length} datasets matching "${intent.query}". Here's the best match:\n\n**${top.title}**\n${topDesc}${qaSnippet}`
 
       return {
         text: introText,

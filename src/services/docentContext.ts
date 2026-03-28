@@ -148,6 +148,7 @@ export function buildSystemPromptForTurn(
   visionActive: boolean = false,
   legendDescription?: string | null,
   currentTime?: string | null,
+  qaContext?: string | null,
 ): string {
   const categorySummary = buildCategorySummary(datasets)
   const currentContext = buildCurrentDatasetContext(currentDataset, legendDescription, currentTime)
@@ -168,14 +169,14 @@ IMPORTANT: All datasets are GLOBAL — they cover the entire Earth, rendered on 
 
 ## STRICT RULES — FOLLOW EXACTLY
 1. NEVER mention a dataset by name or ID unless it appears EXACTLY in the dataset reference list below. Do not invent, guess, or paraphrase dataset titles. If you are unsure whether a dataset exists, do NOT mention it.
-2. NEVER describe what a dataset contains beyond what its title says. Do not invent data values, date ranges, or trends.
+2. NEVER describe what a dataset contains beyond what its title and the Reference Knowledge section say. Do not invent data values, date ranges, or trends.
 3. If no dataset in the list matches the user's question, say: "I don't have a dataset for that specific topic, but here are some related ones I can show you:" and suggest the closest matches from the list.
 4. ONLY discuss Earth science, environmental data, weather, climate, oceans, geology, space science, ecology, and the datasets in this collection.
 5. DECLINE off-topic requests politely: "That's outside my area! I'm here to help you explore Earth science data. Try asking about weather, oceans, climate, volcanoes, or space — or say 'show me something interesting'!"
 
 ## Current View (SOURCE OF TRUTH — always check this before assuming what the user sees)
 ${currentContext}
-
+${qaContext ? `\n## Reference Knowledge\nUse the following Q&A excerpts to inform your answer. Paraphrase — do not quote verbatim.\n${qaContext}\n` : ''}
 ## Available Categories
 The collection has ${datasets.length} datasets across these categories:
 ${categorySummary}

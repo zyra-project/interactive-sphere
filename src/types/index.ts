@@ -167,7 +167,21 @@ export interface DocentConfig {
   enabled: boolean       // default: true
   readingLevel: ReadingLevel  // default: 'general'
   visionEnabled: boolean // default: false — captures globe screenshot as context
+  debugPrompt?: boolean  // default: false — log full system prompt to console
 }
+
+/**
+ * A single Q&A entry from the preprocessed HuggingFace knowledge base.
+ * Short field names keep the JSON payload compact.
+ */
+export interface QAEntry {
+  q: string   // prompt / question
+  c: string   // completion / answer
+  d?: string  // difficulty level
+}
+
+/** Title-keyed index of Q&A entries, loaded from /assets/sos_qa_pairs.json */
+export type QAIndex = Record<string, QAEntry[]>
 
 /**
  * In-memory cache for the active dataset's legend image and LLM-generated text description.

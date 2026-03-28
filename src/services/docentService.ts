@@ -9,6 +9,7 @@ import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache } from
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart } from './llmProvider'
 import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool, getFlyToTool, getSetTimeTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
+import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { logger } from '../utils/logger'
 
 // --- Constants ---
@@ -243,6 +244,7 @@ const DEFAULT_CONFIG: DocentConfig = {
   enabled: true,
   readingLevel: 'general',
   visionEnabled: false,
+  debugPrompt: false,
 }
 
 /** Yielded by the service during response generation */
@@ -553,11 +555,20 @@ export async function* processMessage(
       const legendDescription = cache.legendDescription ?? null
       const currentTime = readCurrentTime()
 
+      // Best-effort Q&A knowledge retrieval (non-blocking if not yet loaded)
+      await ensureQALoaded().catch(() => {})
+      const qaContext = getRelevantQA(input, currentDataset, datasets, turnIndex)
+
       const systemPrompt = buildSystemPromptForTurn(
         datasets, currentDataset, turnIndex, cfg.readingLevel, visionActive,
         !visionActive ? legendDescription : null,
         !visionActive ? currentTime : null,
+        qaContext || null,
       )
+
+      if (cfg.debugPrompt) {
+        logger.info('[Docent] Full system prompt:\n' + systemPrompt)
+      }
 
       // Build the user message — multimodal if vision is active
       // Inject dataset context directly into the user text so the small
