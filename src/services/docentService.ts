@@ -5,7 +5,7 @@
  * falls back to the local docentEngine for instant offline responses.
  */
 
-import type { Dataset, ChatMessage, ChatAction, DocentConfig } from '../types'
+import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart } from './llmProvider'
 import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
@@ -97,6 +97,134 @@ export function captureViewContext(): string {
   }
 
   return parts.length > 0 ? parts.join('. ') + '.' : ''
+}
+
+// --- Legend cache ---
+
+/** AbortController for any in-flight background legend describe call. */
+let legendDescribeAbortController: AbortController | null = null
+
+const legendCache: LegendCache = {
+  legendBase64: null,
+  legendMimeType: null,
+  legendDescription: null,
+  legendDescriptionForDatasetId: null,
+}
+
+/** Read the current time label from the globe overlay. */
+export function readCurrentTime(): string | null {
+  const el = document.getElementById('time-display')
+  const text = el?.textContent?.trim()
+  return (text && text !== '--') ? text : null
+}
+
+/** Fetch a legend image URL and encode it as a full data URL. */
+async function fetchLegendBase64(legendLink: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const res = await fetch(legendLink)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const mimeType = blob.type || 'image/png'
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({ base64: reader.result as string, mimeType })
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fire a background LLM vision call to generate a text description of the legend.
+ * Populates legendCache.legendDescription on success; fails silently on error.
+ */
+async function describeLegendAsync(dataset: Dataset, config: DocentConfig): Promise<void> {
+  if (!dataset.legendLink || !dataset.id) return
+
+  legendDescribeAbortController?.abort()
+  const controller = new AbortController()
+  legendDescribeAbortController = controller
+
+  try {
+    const encoded = await fetchLegendBase64(dataset.legendLink)
+    if (controller.signal.aborted) return
+    if (!encoded) return
+
+    legendCache.legendBase64 = encoded.base64
+    legendCache.legendMimeType = encoded.mimeType
+
+    // In vision mode the image is sent directly — text description not needed
+    if (config.visionEnabled) return
+
+    if (!config.enabled || !config.apiUrl) return
+
+    // Always use the vision model for the describe call regardless of user's chat model
+    const describeCfg: DocentConfig = { ...config, model: CF_VISION_MODEL }
+
+    const describeMessages: LLMMessage[] = [
+      {
+        role: 'system',
+        content: 'You are a scientific data visualization analyst. Describe the legend image concisely for use as AI assistant context.',
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: encoded.base64 } },
+          {
+            type: 'text',
+            text: `Describe this dataset legend for "${dataset.title}". Include: what each color represents, value ranges and units if shown, any notable thresholds or categories. Be concise (2–4 sentences). This description will be injected as context into an AI assistant answering user questions about the data.`,
+          },
+        ] as LLMContentPart[],
+      },
+    ]
+
+    let description = ''
+    const stream = streamChat(describeMessages, [], describeCfg, { timeoutMs: VISION_TIMEOUT_MS })
+    for await (const chunk of stream) {
+      if (controller.signal.aborted) return
+      if (chunk.type === 'delta') description += chunk.text
+      if (chunk.type === 'done' || chunk.type === 'error') break
+    }
+
+    if (controller.signal.aborted) return
+    if (description.trim()) {
+      legendCache.legendDescription = description.trim()
+      legendCache.legendDescriptionForDatasetId = dataset.id
+    }
+  } catch {
+    // Fail silently — legend context is best-effort
+  }
+}
+
+/**
+ * Initialise the legend cache for a newly loaded dataset.
+ * Clears the previous cache and fires a background fetch+describe.
+ * Call this after a dataset successfully loads.
+ */
+export function initLegendForDataset(dataset: Dataset, config: DocentConfig): void {
+  clearLegendCache()
+  if (!dataset.legendLink) return
+  void describeLegendAsync(dataset, config)
+}
+
+/**
+ * Clear the legend cache and abort any in-flight describe call.
+ * Call this when navigating home or loading a new dataset.
+ */
+export function clearLegendCache(): void {
+  legendDescribeAbortController?.abort()
+  legendDescribeAbortController = null
+  legendCache.legendBase64 = null
+  legendCache.legendMimeType = null
+  legendCache.legendDescription = null
+  legendCache.legendDescriptionForDatasetId = null
+}
+
+/** Read-only accessor for the current legend cache (consumed by processMessage). */
+export function getLegendCache(): Readonly<LegendCache> {
+  return legendCache
 }
 
 const DEFAULT_CONFIG: DocentConfig = {
@@ -319,7 +447,17 @@ export async function* processMessage(
     try {
       const turnIndex = Math.floor(history.length / 2)
       const visionActive = cfg.visionEnabled && !!screenshotDataUrl
-      const systemPrompt = buildSystemPromptForTurn(datasets, currentDataset, turnIndex, cfg.readingLevel, visionActive)
+      const cache = getLegendCache()
+
+      // Non-vision mode: inject legend text description and current time into system prompt.
+      // Vision mode: legend image is sent inline; time is already in the vision prefix.
+      const legendDescription = (!visionActive && cache.legendDescription) ? cache.legendDescription : null
+      const currentTime = !visionActive ? readCurrentTime() : null
+
+      const systemPrompt = buildSystemPromptForTurn(
+        datasets, currentDataset, turnIndex, cfg.readingLevel, visionActive,
+        legendDescription, currentTime,
+      )
 
       // Build the user message — multimodal if vision is active
       // Inject dataset context directly into the user text so the small
@@ -336,19 +474,24 @@ export async function* processMessage(
           }
         }
         if (viewContext) ctxParts.push(viewContext)
+        if (cache.legendBase64) ctxParts.push('The second image is the dataset color legend')
         if (ctxParts.length > 0) {
           visionPrefix = `[This image is a scientific data visualization on a 3D globe, NOT a photograph. ${ctxParts.join('. ')}]\n`
         }
       }
       const visionText = visionPrefix + input
+
+      // In vision mode, attach globe screenshot + legend image (if available)
+      const visionContentParts: LLMContentPart[] = [
+        { type: 'image_url', image_url: { url: screenshotDataUrl! } },
+      ]
+      if (visionActive && cache.legendBase64) {
+        visionContentParts.push({ type: 'image_url', image_url: { url: cache.legendBase64 } })
+      }
+      visionContentParts.push({ type: 'text', text: visionText })
+
       const userMessage: LLMMessage = visionActive
-        ? {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: screenshotDataUrl! } },
-              { type: 'text', text: visionText },
-            ] as LLMContentPart[],
-          }
+        ? { role: 'user', content: visionContentParts }
         : { role: 'user', content: input }
 
       const llmMessages: LLMMessage[] = [

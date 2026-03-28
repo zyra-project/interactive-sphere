@@ -169,3 +169,14 @@ export interface DocentConfig {
   readingLevel: ReadingLevel  // default: 'general'
   visionEnabled: boolean // default: false — captures globe screenshot as context
 }
+
+/**
+ * In-memory cache for the active dataset's legend image and LLM-generated text description.
+ * Populated by initLegendForDataset(); cleared by clearLegendCache() on dataset change.
+ */
+export interface LegendCache {
+  legendBase64: string | null        // full data URL (data:<mime>;base64,...)
+  legendMimeType: string | null
+  legendDescription: string | null   // LLM-generated text description (non-vision fallback)
+  legendDescriptionForDatasetId: string | null
+}

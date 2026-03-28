@@ -25,6 +25,7 @@ import {
 import {
   loadImageDataset, loadVideoDataset, displayDatasetInfo,
 } from './services/datasetLoader'
+import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 
 // --- App constants ---
 const SPHERE_SEGMENTS_MOBILE = 32
@@ -245,6 +246,9 @@ class InteractiveSphere {
     } else {
       throw new Error(`Unsupported format: ${dataset.format}`)
     }
+
+    // Fetch and cache the legend image; generate a text description for non-vision mode.
+    initLegendForDataset(dataset, loadConfig())
   }
 
   private doStartPlaybackLoop(): void {
@@ -637,6 +641,7 @@ class InteractiveSphere {
 
   private async goHome(): Promise<void> {
     this.cleanupVideo()
+    clearLegendCache()
     this.appState.currentDataset = null
     this.showPlaybackControls(false)
     this.showTimeLabel(false)

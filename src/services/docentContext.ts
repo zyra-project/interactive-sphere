@@ -34,7 +34,11 @@ export function buildCategorySummary(datasets: Dataset[]): string {
 /**
  * Build a compact description of the currently loaded dataset.
  */
-export function buildCurrentDatasetContext(dataset: Dataset | null): string {
+export function buildCurrentDatasetContext(
+  dataset: Dataset | null,
+  legendDescription?: string | null,
+  currentTime?: string | null,
+): string {
   if (!dataset) {
     return 'The user is currently viewing the default Earth globe with real-time cloud cover. No specific dataset is loaded.'
   }
@@ -70,6 +74,14 @@ export function buildCurrentDatasetContext(dataset: Dataset | null): string {
   const related = dataset.enriched?.relatedDatasets
   if (related && related.length > 0) {
     parts.push(`Related datasets: ${related.map(r => r.title).join(', ')}`)
+  }
+
+  if (currentTime) {
+    parts.push(`Current time shown: ${currentTime}`)
+  }
+
+  if (legendDescription) {
+    parts.push(`Legend: ${legendDescription}`)
   }
 
   return parts.join('\n')
@@ -134,9 +146,11 @@ export function buildSystemPromptForTurn(
   turnIndex: number,
   readingLevel: ReadingLevel = 'general',
   visionActive: boolean = false,
+  legendDescription?: string | null,
+  currentTime?: string | null,
 ): string {
   const categorySummary = buildCategorySummary(datasets)
-  const currentContext = buildCurrentDatasetContext(currentDataset)
+  const currentContext = buildCurrentDatasetContext(currentDataset, legendDescription, currentTime)
 
   const catalogSection = turnIndex === 0
     ? `## Dataset Reference
