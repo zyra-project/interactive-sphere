@@ -1,0 +1,35 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/main.ts",
+    "src/types/index.ts",
+    "src/services/dataService.ts",
+    "src/services/datasetLoader.ts",
+    "src/services/hlsService.ts",
+    "src/services/sphereRenderer.ts",
+    "src/services/earthMaterials.ts",
+    "src/services/inputHandler.ts",
+    "src/services/docentService.ts",
+    "src/services/docentContext.ts",
+    "src/services/docentEngine.ts",
+    "src/services/llmProvider.ts",
+    "src/ui/chatUI.ts",
+    "src/ui/browseUI.ts",
+    "src/ui/playbackController.ts",
+    "src/utils/time.ts",
+    "src/utils/logger.ts",
+    "src/utils/fetchProgress.ts"
+  ],
+  "out": "dist/docs",
+  "name": "Interactive Sphere — API Reference",
+  "readme": "none",
+  "excludePrivate": false,
+  "excludeInternal": true,
+  "includeVersion": true,
+  "navigationLinks": {
+    "Live Site": "https://sphere.zyra-project.org",
+    "GitHub": "https://github.com/zyra-project/interactive-sphere"
+  },
+  "categorizeByGroup": true,
+  "sort": ["source-order"]
+}
