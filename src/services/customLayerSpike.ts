@@ -1,0 +1,484 @@
+/**
+ * Spike C — Day/night custom layer for MapLibre globe.
+ *
+ * Renders a sphere aligned with MapLibre's globe using two compositing passes:
+ *   1. Multiply blend — darkens the night side of the Blue Marble tiles
+ *   2. Additive blend — overlays city lights (Earth_Lights texture) on the
+ *      night side only
+ *
+ * Both passes disable depth testing so the sphere composites on top of tiles
+ * without z-fighting. The multiply pass outputs white on the day side (no
+ * change) and dark on the night side; the additive pass outputs black on the
+ * day side (no change) and city light colors on the night side.
+ *
+ * Validates:
+ *   1. Custom WebGL shaders work inside MapLibre's GL context
+ *   2. Globe projection matrix aligns a unit sphere with the tile globe
+ *   3. Multi-pass compositing with different blend modes
+ *   4. Texture loading and equirectangular UV mapping on the globe
+ *
+ * Usage: activate via ?renderer=maplibre&spike=daynight URL params.
+ */
+
+import type { CustomLayerInterface } from 'maplibre-gl'
+import type { Map as MaplibreMap } from 'maplibre-gl'
+import { getSunPosition } from '../utils/time'
+
+// --- Night lights texture URL (same asset as the Three.js globe) ---
+const NIGHT_LIGHTS_URL = '/assets/Earth_Lights_6K.jpg'
+
+// --- Rendering constants (matched to earthMaterials.ts) ---
+const NIGHT_LIGHT_STRENGTH = 0.5
+const NIGHT_DARKENING = 0.08 // how dark the night side gets (before city lights)
+
+// --- Sphere geometry ---
+
+interface SphereBuffers {
+  positions: Float32Array
+  normals: Float32Array
+  uvs: Float32Array
+  indices: Uint16Array
+  indexCount: number
+}
+
+/**
+ * Generate a UV sphere with equirectangular texture coordinates.
+ * Coordinate convention matches MapLibre's ECEF globe:
+ *   x = cos(lat) * sin(lng)
+ *   y = sin(lat)
+ *   z = cos(lat) * cos(lng)
+ * where lat ∈ [+π/2, -π/2] (north→south), lng ∈ [-π, +π].
+ *
+ * UV mapping: u=0 at -180°, u=0.5 at 0° (prime meridian), u=1 at +180°.
+ */
+function createSphereGeometry(radius: number, wSegs: number, hSegs: number): SphereBuffers {
+  const positions: number[] = []
+  const normals: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+
+  for (let y = 0; y <= hSegs; y++) {
+    const v = y / hSegs
+    const lat = Math.PI / 2 - v * Math.PI // +90° at top to -90° at bottom
+
+    for (let x = 0; x <= wSegs; x++) {
+      const u = x / wSegs
+      const lng = u * 2 * Math.PI - Math.PI // -180° to +180°
+
+      // MapLibre ECEF convention
+      const nx = Math.cos(lat) * Math.sin(lng)
+      const ny = Math.sin(lat)
+      const nz = Math.cos(lat) * Math.cos(lng)
+
+      positions.push(radius * nx, radius * ny, radius * nz)
+      normals.push(nx, ny, nz)
+      uvs.push(u, v)
+    }
+  }
+
+  for (let y = 0; y < hSegs; y++) {
+    for (let x = 0; x < wSegs; x++) {
+      const a = y * (wSegs + 1) + x
+      const b = a + wSegs + 1
+      indices.push(a, b, a + 1)
+      indices.push(b, b + 1, a + 1)
+    }
+  }
+
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs),
+    indices: new Uint16Array(indices),
+    indexCount: indices.length,
+  }
+}
+
+// --- Sun direction ---
+
+/** Convert geographic lat/lng (degrees) to a unit direction vector (MapLibre ECEF convention). */
+function sunDirectionFromLatLng(latDeg: number, lngDeg: number): [number, number, number] {
+  const lat = latDeg * Math.PI / 180
+  const lng = lngDeg * Math.PI / 180
+  return [
+    Math.cos(lat) * Math.sin(lng),
+    Math.sin(lat),
+    Math.cos(lat) * Math.cos(lng),
+  ]
+}
+
+// --- Shader source ---
+
+// Pass 1: multiply blend — darkens night side of existing tiles
+const darkenVertSrc = `#version 300 es
+  layout(location = 0) in vec3 aPosition;
+  layout(location = 1) in vec3 aNormal;
+  uniform mat4 uMatrix;
+  out vec3 vNormal;
+
+  void main() {
+    vNormal = aNormal;
+    gl_Position = uMatrix * vec4(aPosition, 1.0);
+  }
+`
+
+const darkenFragSrc = `#version 300 es
+  precision highp float;
+  uniform vec3 uSunDir;
+  in vec3 vNormal;
+  out vec4 fragColor;
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    float NdotL = dot(N, uSunDir);
+
+    // smoothstep matches earthMaterials.ts: smoothstep(0.0, -0.2, NdotL)
+    float nightFactor = smoothstep(0.0, -0.2, NdotL);
+
+    // Day side → white (1.0) = no change under multiply blend
+    // Night side → dark (NIGHT_DARKENING) to simulate unlit Earth
+    float brightness = mix(1.0, ${NIGHT_DARKENING.toFixed(4)}, nightFactor);
+
+    fragColor = vec4(vec3(brightness), 1.0);
+  }
+`
+
+// Pass 2: additive blend — overlays city lights on night side
+const lightsVertSrc = `#version 300 es
+  layout(location = 0) in vec3 aPosition;
+  layout(location = 1) in vec3 aNormal;
+  layout(location = 2) in vec2 aUV;
+  uniform mat4 uMatrix;
+  out vec3 vNormal;
+  out vec2 vUV;
+
+  void main() {
+    vNormal = aNormal;
+    vUV = aUV;
+    gl_Position = uMatrix * vec4(aPosition, 1.0);
+  }
+`
+
+const lightsFragSrc = `#version 300 es
+  precision highp float;
+  uniform vec3 uSunDir;
+  uniform sampler2D uNightLights;
+  uniform float uLightStrength;
+  in vec3 vNormal;
+  in vec2 vUV;
+  out vec4 fragColor;
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    float NdotL = dot(N, uSunDir);
+
+    // Night factor — city lights only visible on dark side
+    float nightFactor = smoothstep(0.0, -0.2, NdotL);
+
+    // Sample night lights texture
+    vec3 lights = texture(uNightLights, vUV).rgb;
+
+    // Scale by night factor and strength
+    // Under additive blend: black (0,0,0) = no change on day side
+    vec3 emission = lights * nightFactor * uLightStrength;
+
+    fragColor = vec4(emission, 1.0);
+  }
+`
+
+// --- Atmosphere light sync ---
+
+/**
+ * Set MapLibre's light once using anchor:'map'.
+ *
+ * With anchor:'map', MapLibre automatically applies camera rotations
+ * each frame — no per-frame setLight() calls needed, so zero lag.
+ *
+ * MapLibre's getSunPos pipeline for anchor:'map':
+ *   cart = sphericalToCartesian(r, az, polar)
+ *   lp = [-cart.x, -cart.y, -cart.z]   (negate)
+ *   lp = ... * Rx(lat) * Ry(-lng) * lp (camera rotation)
+ *   → used as sun direction in atmosphere shader
+ *
+ * We want the final result to equal our ECEF sun direction. Since MapLibre
+ * applies the camera rotation automatically, we just need:
+ *   -cart = sunECEF  →  cart = -sunECEF
+ * Then solve for [azimuthal, polar] from cart = -sunECEF.
+ */
+export function syncAtmosphereLight(map: MaplibreMap, sunLat: number, sunLng: number): void {
+  const sLatR = sunLat * Math.PI / 180
+  const sLngR = sunLng * Math.PI / 180
+
+  // cart = -sunECEF (so that negate(cart) = sunECEF)
+  const cx = -(Math.cos(sLatR) * Math.sin(sLngR))
+  const cy = -(Math.sin(sLatR))
+  const cz = -(Math.cos(sLatR) * Math.cos(sLngR))
+
+  // Solve: cart = sphericalToCartesian(r, az, polar)
+  // where az_internal = (az + 90) * π/180
+  //   x = r * cos(az_internal) * sin(polar_rad)
+  //   y = r * sin(az_internal) * sin(polar_rad)
+  //   z = r * cos(polar_rad)
+  const r = Math.sqrt(cx * cx + cy * cy + cz * cz)
+  if (r < 1e-10) return
+
+  const polar = Math.acos(Math.max(-1, Math.min(1, cz / r))) * 180 / Math.PI
+  const azInternal = Math.atan2(cy, cx)
+  const azimuthal = ((azInternal * 180 / Math.PI - 90) % 360 + 360) % 360
+
+  map.setLight({
+    anchor: 'map',
+    position: [1.5, azimuthal, polar],
+  })
+}
+
+// --- Layer implementation ---
+
+interface DayNightProgram {
+  program: WebGLProgram
+  matrixLoc: WebGLUniformLocation | null
+  sunDirLoc: WebGLUniformLocation | null
+}
+
+interface LightsProgram extends DayNightProgram {
+  nightTexLoc: WebGLUniformLocation | null
+  strengthLoc: WebGLUniformLocation | null
+}
+
+function compileProgram(
+  gl: WebGL2RenderingContext,
+  vsSrc: string,
+  fsSrc: string,
+  label: string,
+): WebGLProgram | null {
+  const vs = gl.createShader(gl.VERTEX_SHADER)!
+  gl.shaderSource(vs, vsSrc)
+  gl.compileShader(vs)
+  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+    console.error(`[Spike C] ${label} vertex shader:`, gl.getShaderInfoLog(vs))
+    return null
+  }
+
+  const fs = gl.createShader(gl.FRAGMENT_SHADER)!
+  gl.shaderSource(fs, fsSrc)
+  gl.compileShader(fs)
+  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+    console.error(`[Spike C] ${label} fragment shader:`, gl.getShaderInfoLog(fs))
+    return null
+  }
+
+  const prog = gl.createProgram()!
+  gl.attachShader(prog, vs)
+  gl.attachShader(prog, fs)
+  gl.linkProgram(prog)
+  gl.deleteShader(vs)
+  gl.deleteShader(fs)
+
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.error(`[Spike C] ${label} link:`, gl.getProgramInfoLog(prog))
+    return null
+  }
+  return prog
+}
+
+/**
+ * Create a MapLibre CustomLayerInterface that composites day/night shading
+ * and city lights onto the globe tiles.
+ */
+export function createDayNightTestLayer(): CustomLayerInterface {
+  let darken: DayNightProgram | null = null
+  let lights: LightsProgram | null = null
+  let vao: WebGLVertexArrayObject | null = null
+  let indexCount = 0
+  let nightTex: WebGLTexture | null = null
+  let nightTexReady = false
+  let mapRef: MaplibreMap | null = null
+
+  // Sun direction — updated each frame from real time
+  let sunDir: [number, number, number] = [1, 0, 0]
+  let frameCount = 0
+
+  const layer: CustomLayerInterface = {
+    id: 'day-night-test-layer',
+    type: 'custom',
+    renderingMode: '3d',
+
+    onAdd(_map: MaplibreMap, gl: WebGL2RenderingContext | WebGLRenderingContext) {
+      mapRef = _map
+
+      // Set atmosphere light once — with anchor:'map', MapLibre handles
+      // camera rotation automatically so no per-frame updates needed.
+      const initSun = getSunPosition(new Date())
+      syncAtmosphereLight(_map, initSun.lat, initSun.lng)
+
+      const gl2 = gl as WebGL2RenderingContext
+
+      // --- Compile both shader programs ---
+      const darkenProg = compileProgram(gl2, darkenVertSrc, darkenFragSrc, 'darken')
+      if (darkenProg) {
+        darken = {
+          program: darkenProg,
+          matrixLoc: gl2.getUniformLocation(darkenProg, 'uMatrix'),
+          sunDirLoc: gl2.getUniformLocation(darkenProg, 'uSunDir'),
+        }
+      }
+
+      const lightsProg = compileProgram(gl2, lightsVertSrc, lightsFragSrc, 'lights')
+      if (lightsProg) {
+        lights = {
+          program: lightsProg,
+          matrixLoc: gl2.getUniformLocation(lightsProg, 'uMatrix'),
+          sunDirLoc: gl2.getUniformLocation(lightsProg, 'uSunDir'),
+          nightTexLoc: gl2.getUniformLocation(lightsProg, 'uNightLights'),
+          strengthLoc: gl2.getUniformLocation(lightsProg, 'uLightStrength'),
+        }
+      }
+
+      // --- Generate sphere geometry ---
+      const sphere = createSphereGeometry(1.0, 64, 64)
+      indexCount = sphere.indexCount
+
+      vao = gl2.createVertexArray()
+      gl2.bindVertexArray(vao)
+
+      // Position buffer (used by both programs at location 0)
+      const posBuf = gl2.createBuffer()
+      gl2.bindBuffer(gl2.ARRAY_BUFFER, posBuf)
+      gl2.bufferData(gl2.ARRAY_BUFFER, sphere.positions, gl2.STATIC_DRAW)
+      gl2.enableVertexAttribArray(0)
+      gl2.vertexAttribPointer(0, 3, gl2.FLOAT, false, 0, 0)
+
+      // Normal buffer (location 1)
+      const normBuf = gl2.createBuffer()
+      gl2.bindBuffer(gl2.ARRAY_BUFFER, normBuf)
+      gl2.bufferData(gl2.ARRAY_BUFFER, sphere.normals, gl2.STATIC_DRAW)
+      gl2.enableVertexAttribArray(1)
+      gl2.vertexAttribPointer(1, 3, gl2.FLOAT, false, 0, 0)
+
+      // UV buffer (location 2 — only used by lights program)
+      const uvBuf = gl2.createBuffer()
+      gl2.bindBuffer(gl2.ARRAY_BUFFER, uvBuf)
+      gl2.bufferData(gl2.ARRAY_BUFFER, sphere.uvs, gl2.STATIC_DRAW)
+      gl2.enableVertexAttribArray(2)
+      gl2.vertexAttribPointer(2, 2, gl2.FLOAT, false, 0, 0)
+
+      // Index buffer
+      const idxBuf = gl2.createBuffer()
+      gl2.bindBuffer(gl2.ELEMENT_ARRAY_BUFFER, idxBuf)
+      gl2.bufferData(gl2.ELEMENT_ARRAY_BUFFER, sphere.indices, gl2.STATIC_DRAW)
+
+      gl2.bindVertexArray(null)
+
+      // --- Load night lights texture asynchronously ---
+      nightTex = gl2.createTexture()
+      gl2.bindTexture(gl2.TEXTURE_2D, nightTex)
+      // 1x1 black placeholder until image loads
+      gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 1, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 0, 255]))
+
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        gl2.bindTexture(gl2.TEXTURE_2D, nightTex)
+        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, img)
+        gl2.generateMipmap(gl2.TEXTURE_2D)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR_MIPMAP_LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.REPEAT)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
+        nightTexReady = true
+        _map.triggerRepaint()
+        console.info('[Spike C] Night lights texture loaded (%dx%d)', img.width, img.height)
+      }
+      img.onerror = () => {
+        console.warn('[Spike C] Failed to load night lights texture:', NIGHT_LIGHTS_URL)
+      }
+      img.src = NIGHT_LIGHTS_URL
+
+      console.info('[Spike C] Day/night layer initialized (%d triangles)', indexCount / 3)
+    },
+
+    render(gl, args) {
+      if (!darken || !vao) return
+      const gl2 = gl as WebGL2RenderingContext
+
+      // Update sun direction — use debug override date if available
+      const dateSource = (window as any).__debugSunDate ?? new Date()
+      const sun = getSunPosition(dateSource)
+      sunDir = sunDirectionFromLatLng(sun.lat, sun.lng)
+
+      // Log every 120 frames (~2 sec) for debugging
+      if (frameCount++ % 120 === 0) {
+        const center = mapRef?.getCenter()
+        console.debug(
+          '[Spike C] frame %d | sun ECEF=[%.3f, %.3f, %.3f] | sun geo=[%.1f, %.1f] | camera=[%.1f, %.1f]',
+          frameCount, sunDir[0], sunDir[1], sunDir[2],
+          sun.lat, sun.lng,
+          center?.lat ?? 0, center?.lng ?? 0,
+        )
+      }
+
+      const matrix = args.defaultProjectionData.mainMatrix
+
+      // Common GL state for both passes
+      gl2.disable(gl2.DEPTH_TEST)
+      gl2.enable(gl2.CULL_FACE)
+      gl2.cullFace(gl2.BACK)
+      gl2.bindVertexArray(vao)
+
+      // --- Pass 1: Multiply blend — darken night side ---
+      gl2.enable(gl2.BLEND)
+      gl2.blendFunc(gl2.DST_COLOR, gl2.ZERO) // result = src * dst
+
+      gl2.useProgram(darken.program)
+      gl2.uniformMatrix4fv(darken.matrixLoc, false, matrix)
+      gl2.uniform3f(darken.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
+      gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
+
+      // --- Pass 2: Additive blend — overlay city lights ---
+      if (lights && nightTexReady) {
+        gl2.blendFunc(gl2.ONE, gl2.ONE) // result = src + dst
+
+        gl2.useProgram(lights.program)
+        gl2.uniformMatrix4fv(lights.matrixLoc, false, matrix)
+        gl2.uniform3f(lights.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
+        gl2.uniform1f(lights.strengthLoc, NIGHT_LIGHT_STRENGTH)
+
+        gl2.activeTexture(gl2.TEXTURE0)
+        gl2.bindTexture(gl2.TEXTURE_2D, nightTex)
+        gl2.uniform1i(lights.nightTexLoc, 0)
+
+        gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
+      }
+
+      // Restore MapLibre's expected GL state
+      gl2.bindVertexArray(null)
+      gl2.disable(gl2.BLEND)
+      gl2.enable(gl2.DEPTH_TEST)
+      gl2.disable(gl2.CULL_FACE)
+    },
+
+    onRemove(_map: MaplibreMap, gl: WebGL2RenderingContext | WebGLRenderingContext) {
+      const gl2 = gl as WebGL2RenderingContext
+      if (darken) gl2.deleteProgram(darken.program)
+      if (lights) gl2.deleteProgram(lights.program)
+      if (vao) gl2.deleteVertexArray(vao)
+      if (nightTex) gl2.deleteTexture(nightTex)
+    },
+  }
+
+  return layer
+}
+
+/**
+ * Add the day/night test layer to a MapLibre map.
+ * Call this after the map's 'load' event.
+ */
+export function addDayNightTestLayer(map: MaplibreMap): void {
+  const layer = createDayNightTestLayer()
+  map.addLayer(layer as unknown as maplibregl.LayerSpecification)
+  console.info('[Spike C] Day/night test layer added')
+}
+
+// Type import for the addLayer cast
+import type maplibregl from 'maplibre-gl'

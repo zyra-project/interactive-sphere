@@ -7,11 +7,13 @@
 
 import * as THREE from 'three'
 import { SphereRenderer } from './services/sphereRenderer'
+import { MapRenderer } from './services/mapRenderer'
+import { getRendererBackend } from './services/rendererToggle'
 import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
 import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
 import { logger } from './utils/logger'
-import type { AppState } from './types'
+import type { AppState, GlobeRenderer } from './types'
 
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
@@ -59,7 +61,8 @@ class InteractiveSphere {
 
   private readonly isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
 
-  private renderer: SphereRenderer | null = null
+  private renderer: GlobeRenderer | null = null
+  private readonly rendererBackend = getRendererBackend()
   private hlsService: HLSService | null = null
   private videoTexture: THREE.VideoTexture | null = null
   private playback: PlaybackState = createPlaybackState()
@@ -82,19 +85,28 @@ class InteractiveSphere {
       if (!container) throw new Error('Container element not found')
 
       this.setLoadingStatus('Creating renderer\u2026', 15)
-      this.renderer = new SphereRenderer(container)
-      const segments = this.isMobile ? SPHERE_SEGMENTS_MOBILE : SPHERE_SEGMENTS_DESKTOP
-      this.renderer.createSphere({
-        radius: 1,
-        widthSegments: segments,
-        heightSegments: segments
-      })
+      if (this.rendererBackend === 'maplibre') {
+        const mapRenderer = new MapRenderer()
+        mapRenderer.init(container)
+        this.renderer = mapRenderer
+        logger.info('[App] Using MapLibre renderer')
+      } else {
+        const sphereRenderer = new SphereRenderer(container)
+        const segments = this.isMobile ? SPHERE_SEGMENTS_MOBILE : SPHERE_SEGMENTS_DESKTOP
+        sphereRenderer.createSphere({
+          radius: 1,
+          widthSegments: segments,
+          heightSegments: segments
+        })
+        this.renderer = sphereRenderer
+        logger.info('[App] Using Three.js renderer')
+      }
 
       // Wire up lat/lng display
       const latlngEl = document.getElementById('latlng-display')
       if (latlngEl) {
         this.renderer.setLatLngCallbacks(
-          (lat, lng) => {
+          (lat: number, lng: number) => {
             const ns = lat >= 0 ? 'N' : 'S'
             const ew = lng >= 0 ? 'E' : 'W'
             latlngEl.textContent = `${Math.abs(lat).toFixed(1)}° ${ns}, ${Math.abs(lng).toFixed(1)}° ${ew}`
@@ -132,8 +144,8 @@ class InteractiveSphere {
           this.setLoadingStatus('Loading Earth textures\u2026', LOADING_BASE_PROGRESS + Math.round(combined * LOADING_TEXTURE_RANGE))
         }
         await Promise.all([
-          this.renderer.loadDefaultEarthMaterials((f) => { earthFraction = f; updateProgress() }),
-          this.renderer.loadCloudOverlay(cloudUrl, (f) => { cloudFraction = f; updateProgress() })
+          this.renderer.loadDefaultEarthMaterials((f: number) => { earthFraction = f; updateProgress() }),
+          this.renderer.loadCloudOverlay(cloudUrl, (f: number) => { cloudFraction = f; updateProgress() })
         ])
 
         const sun = getSunPosition(new Date())
@@ -701,8 +713,8 @@ class InteractiveSphere {
         this.setLoadingStatus('Loading Earth\u2026', LOADING_BASE_PROGRESS + Math.round(combined * LOADING_TEXTURE_RANGE))
       }
       await Promise.all([
-        this.renderer.loadDefaultEarthMaterials((f) => { earthFraction = f; updateProgress() }),
-        this.renderer.loadCloudOverlay(cloudUrl, (f) => { cloudFraction = f; updateProgress() })
+        this.renderer.loadDefaultEarthMaterials((f: number) => { earthFraction = f; updateProgress() }),
+        this.renderer.loadCloudOverlay(cloudUrl, (f: number) => { cloudFraction = f; updateProgress() })
       ])
       const sun = getSunPosition(new Date())
       this.renderer.enableSunLighting(sun.lat, sun.lng)
