@@ -26,6 +26,7 @@ import { getSunPosition } from '../utils/time'
 
 // --- Texture URLs (same assets as the Three.js globe) ---
 const NIGHT_LIGHTS_URL = '/assets/Earth_Lights_6K.jpg'
+const SPECULAR_MAP_URL = '/assets/Earth_Specular_2K.jpg'
 const CLOUD_TEXTURE_URL = 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/clouds_8192.jpg'
 
 // --- Rendering constants (matched to earthMaterials.ts) ---
@@ -35,6 +36,8 @@ const CLOUD_RADIUS = 1.005   // slightly above globe surface
 const CLOUD_OPACITY = 0.65
 const CLOUD_ALPHA_GAMMA = 1.8
 const CLOUD_NIGHT_DARKENING = 0.08
+const SPECULAR_SHININESS = 40.0
+const SPECULAR_STRENGTH = 0.6
 
 // --- Sphere geometry ---
 
@@ -248,6 +251,62 @@ const cloudsFragSrc = `#version 300 es
   }
 `
 
+// Pass 4: additive blend — specular sun glint on water
+const specularVertSrc = `#version 300 es
+  layout(location = 0) in vec3 aPosition;
+  layout(location = 1) in vec3 aNormal;
+  layout(location = 2) in vec2 aUV;
+  uniform mat4 uMatrix;
+  out vec3 vNormal;
+  out vec2 vUV;
+
+  void main() {
+    vNormal = aNormal;
+    vUV = aUV;
+    gl_Position = uMatrix * vec4(aPosition, 1.0);
+  }
+`
+
+const specularFragSrc = `#version 300 es
+  precision highp float;
+  uniform vec3 uSunDir;
+  uniform vec3 uViewDir;
+  uniform sampler2D uSpecMap;
+  uniform sampler2D uCloudMask;
+  uniform float uShininess;
+  uniform float uStrength;
+  uniform float uCloudAlphaGamma;
+  in vec3 vNormal;
+  in vec2 vUV;
+  out vec4 fragColor;
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(uSunDir);
+    vec3 V = normalize(uViewDir);
+
+    // Blinn-Phong half vector
+    vec3 H = normalize(L + V);
+    float spec = pow(max(dot(N, H), 0.0), uShininess);
+
+    // Only on the lit side
+    float NdotL = dot(N, L);
+    spec *= smoothstep(-0.1, 0.1, NdotL);
+
+    // Mask by specular map (bright = water/shiny, dark = land/matte)
+    float specMask = texture(uSpecMap, vUV).r;
+
+    // Reduce glint under clouds — sample cloud density
+    vec4 cloudSample = texture(uCloudMask, vUV);
+    float cloudLum = dot(cloudSample.rgb, vec3(0.299, 0.587, 0.114));
+    float cloudDensity = pow(cloudLum, uCloudAlphaGamma);
+    spec *= specMask * uStrength * (1.0 - cloudDensity);
+
+    // Additive: white highlight
+    fragColor = vec4(vec3(spec), 1.0);
+  }
+`
+
 // --- Atmosphere light sync ---
 
 /**
@@ -307,6 +366,15 @@ interface LightsProgram extends DayNightProgram {
   strengthLoc: WebGLUniformLocation | null
 }
 
+interface SpecularProgram extends DayNightProgram {
+  specMapLoc: WebGLUniformLocation | null
+  cloudMaskLoc: WebGLUniformLocation | null
+  viewDirLoc: WebGLUniformLocation | null
+  shininessLoc: WebGLUniformLocation | null
+  strengthLoc: WebGLUniformLocation | null
+  cloudAlphaGammaLoc: WebGLUniformLocation | null
+}
+
 interface CloudsProgram extends DayNightProgram {
   cloudTexLoc: WebGLUniformLocation | null
   radiusLoc: WebGLUniformLocation | null
@@ -359,11 +427,14 @@ function compileProgram(
 export function createDayNightTestLayer(): CustomLayerInterface {
   let darken: DayNightProgram | null = null
   let lights: LightsProgram | null = null
+  let specular: SpecularProgram | null = null
   let clouds: CloudsProgram | null = null
   let vao: WebGLVertexArrayObject | null = null
   let indexCount = 0
   let nightTex: WebGLTexture | null = null
   let nightTexReady = false
+  let specTex: WebGLTexture | null = null
+  let specTexReady = false
   let cloudTex: WebGLTexture | null = null
   let cloudTexReady = false
   let mapRef: MaplibreMap | null = null
@@ -420,6 +491,21 @@ export function createDayNightTestLayer(): CustomLayerInterface {
           alphaGammaLoc: gl2.getUniformLocation(cloudsProg, 'uAlphaGamma'),
           nightDarkeningLoc: gl2.getUniformLocation(cloudsProg, 'uNightDarkening'),
           zoomFadeLoc: gl2.getUniformLocation(cloudsProg, 'uZoomFade'),
+        }
+      }
+
+      const specularProg = compileProgram(gl2, specularVertSrc, specularFragSrc, 'specular')
+      if (specularProg) {
+        specular = {
+          program: specularProg,
+          matrixLoc: gl2.getUniformLocation(specularProg, 'uMatrix'),
+          sunDirLoc: gl2.getUniformLocation(specularProg, 'uSunDir'),
+          specMapLoc: gl2.getUniformLocation(specularProg, 'uSpecMap'),
+          cloudMaskLoc: gl2.getUniformLocation(specularProg, 'uCloudMask'),
+          viewDirLoc: gl2.getUniformLocation(specularProg, 'uViewDir'),
+          shininessLoc: gl2.getUniformLocation(specularProg, 'uShininess'),
+          strengthLoc: gl2.getUniformLocation(specularProg, 'uStrength'),
+          cloudAlphaGammaLoc: gl2.getUniformLocation(specularProg, 'uCloudAlphaGamma'),
         }
       }
 
@@ -509,7 +595,30 @@ export function createDayNightTestLayer(): CustomLayerInterface {
       }
       cloudImg.src = CLOUD_TEXTURE_URL
 
-      console.info('[Spike C] Day/night+clouds layer initialized (%d triangles)', indexCount / 3)
+      // --- Load specular map texture asynchronously ---
+      specTex = gl2.createTexture()
+      gl2.bindTexture(gl2.TEXTURE_2D, specTex)
+      gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 1, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 0, 255]))
+
+      const specImg = new Image()
+      specImg.crossOrigin = 'anonymous'
+      specImg.onload = () => {
+        gl2.bindTexture(gl2.TEXTURE_2D, specTex)
+        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, specImg)
+        gl2.generateMipmap(gl2.TEXTURE_2D)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR_MIPMAP_LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.REPEAT)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
+        specTexReady = true
+        _map.triggerRepaint()
+        console.info('[Spike C] Specular map loaded (%dx%d)', specImg.width, specImg.height)
+      }
+      specImg.onerror = () => console.warn('[Spike C] Failed to load specular map:', SPECULAR_MAP_URL)
+      specImg.src = SPECULAR_MAP_URL
+
+      console.info('[Spike C] Day/night+clouds+specular layer initialized (%d triangles)', indexCount / 3)
     },
 
     render(gl, args) {
@@ -565,7 +674,40 @@ export function createDayNightTestLayer(): CustomLayerInterface {
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
 
-      // --- Pass 3: Alpha blend — clouds with day/night darkening ---
+      // --- Pass 3: Additive blend — specular sun glint on water ---
+      if (specular && specTexReady && mapRef) {
+        gl2.blendFunc(gl2.ONE, gl2.ONE) // additive
+
+        // View direction: approximate as ECEF normal at camera center
+        const center = mapRef.getCenter()
+        const vLatR = center.lat * Math.PI / 180
+        const vLngR = center.lng * Math.PI / 180
+        const viewDir: [number, number, number] = [
+          Math.cos(vLatR) * Math.sin(vLngR),
+          Math.sin(vLatR),
+          Math.cos(vLatR) * Math.cos(vLngR),
+        ]
+
+        gl2.useProgram(specular.program)
+        gl2.uniformMatrix4fv(specular.matrixLoc, false, matrix)
+        gl2.uniform3f(specular.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
+        gl2.uniform3f(specular.viewDirLoc, viewDir[0], viewDir[1], viewDir[2])
+        gl2.uniform1f(specular.shininessLoc, SPECULAR_SHININESS)
+        gl2.uniform1f(specular.strengthLoc, SPECULAR_STRENGTH)
+
+        gl2.activeTexture(gl2.TEXTURE0)
+        gl2.bindTexture(gl2.TEXTURE_2D, specTex)
+        gl2.uniform1i(specular.specMapLoc, 0)
+
+        gl2.activeTexture(gl2.TEXTURE1)
+        gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
+        gl2.uniform1i(specular.cloudMaskLoc, 1)
+        gl2.uniform1f(specular.cloudAlphaGammaLoc, CLOUD_ALPHA_GAMMA)
+
+        gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
+      }
+
+      // --- Pass 4: Alpha blend — clouds with day/night darkening ---
       if (clouds && cloudTexReady) {
         // Standard alpha blend: clouds over existing content
         gl2.blendFunc(gl2.SRC_ALPHA, gl2.ONE_MINUS_SRC_ALPHA)
@@ -601,9 +743,11 @@ export function createDayNightTestLayer(): CustomLayerInterface {
       const gl2 = gl as WebGL2RenderingContext
       if (darken) gl2.deleteProgram(darken.program)
       if (lights) gl2.deleteProgram(lights.program)
+      if (specular) gl2.deleteProgram(specular.program)
       if (clouds) gl2.deleteProgram(clouds.program)
       if (vao) gl2.deleteVertexArray(vao)
       if (nightTex) gl2.deleteTexture(nightTex)
+      if (specTex) gl2.deleteTexture(specTex)
       if (cloudTex) gl2.deleteTexture(cloudTex)
     },
   }
