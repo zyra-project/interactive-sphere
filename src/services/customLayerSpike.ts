@@ -24,12 +24,17 @@ import type { CustomLayerInterface } from 'maplibre-gl'
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { getSunPosition } from '../utils/time'
 
-// --- Night lights texture URL (same asset as the Three.js globe) ---
+// --- Texture URLs (same assets as the Three.js globe) ---
 const NIGHT_LIGHTS_URL = '/assets/Earth_Lights_6K.jpg'
+const CLOUD_TEXTURE_URL = 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/clouds_8192.jpg'
 
 // --- Rendering constants (matched to earthMaterials.ts) ---
 const NIGHT_LIGHT_STRENGTH = 0.5
 const NIGHT_DARKENING = 0.08 // how dark the night side gets (before city lights)
+const CLOUD_RADIUS = 1.005   // slightly above globe surface
+const CLOUD_OPACITY = 0.65
+const CLOUD_ALPHA_GAMMA = 1.8
+const CLOUD_NIGHT_DARKENING = 0.08
 
 // --- Sphere geometry ---
 
@@ -186,6 +191,63 @@ const lightsFragSrc = `#version 300 es
   }
 `
 
+// Pass 3: alpha blend — clouds with day/night darkening
+const cloudsVertSrc = `#version 300 es
+  layout(location = 0) in vec3 aPosition;
+  layout(location = 1) in vec3 aNormal;
+  layout(location = 2) in vec2 aUV;
+  uniform mat4 uMatrix;
+  uniform float uRadius;
+  uniform float uZoomFade;
+  out vec3 vNormal;
+  out vec2 vUV;
+  out float vZoomFade;
+
+  void main() {
+    vNormal = aNormal;
+    vUV = aUV;
+    vZoomFade = uZoomFade;
+    gl_Position = uMatrix * vec4(aPosition * uRadius, 1.0);
+  }
+`
+
+const cloudsFragSrc = `#version 300 es
+  precision highp float;
+  uniform vec3 uSunDir;
+  uniform sampler2D uCloudTex;
+  uniform float uOpacity;
+  uniform float uAlphaGamma;
+  uniform float uNightDarkening;
+  in vec3 vNormal;
+  in vec2 vUV;
+  in float vZoomFade;
+  out vec4 fragColor;
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    float NdotL = dot(N, uSunDir);
+
+    // Sample cloud texture and convert luminance to alpha
+    vec4 texColor = texture(uCloudTex, vUV);
+    float lum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+    float cloudAlpha = pow(lum, uAlphaGamma) * uOpacity;
+
+    // Day/night factor
+    float nightMask = smoothstep(0.0, -0.2, NdotL);
+
+    // Day side: white clouds with alpha transparency
+    // Night side: black clouds that block city lights below
+    // Boost night-side alpha so even thin clouds obscure lights
+    vec3 color = mix(vec3(1.0), vec3(0.0), nightMask);
+    float alpha = mix(cloudAlpha, min(cloudAlpha * 2.5, 1.0), nightMask);
+
+    // Fade out clouds as camera zooms in
+    alpha *= vZoomFade;
+
+    fragColor = vec4(color, alpha);
+  }
+`
+
 // --- Atmosphere light sync ---
 
 /**
@@ -245,6 +307,15 @@ interface LightsProgram extends DayNightProgram {
   strengthLoc: WebGLUniformLocation | null
 }
 
+interface CloudsProgram extends DayNightProgram {
+  cloudTexLoc: WebGLUniformLocation | null
+  radiusLoc: WebGLUniformLocation | null
+  opacityLoc: WebGLUniformLocation | null
+  alphaGammaLoc: WebGLUniformLocation | null
+  nightDarkeningLoc: WebGLUniformLocation | null
+  zoomFadeLoc: WebGLUniformLocation | null
+}
+
 function compileProgram(
   gl: WebGL2RenderingContext,
   vsSrc: string,
@@ -288,10 +359,13 @@ function compileProgram(
 export function createDayNightTestLayer(): CustomLayerInterface {
   let darken: DayNightProgram | null = null
   let lights: LightsProgram | null = null
+  let clouds: CloudsProgram | null = null
   let vao: WebGLVertexArrayObject | null = null
   let indexCount = 0
   let nightTex: WebGLTexture | null = null
   let nightTexReady = false
+  let cloudTex: WebGLTexture | null = null
+  let cloudTexReady = false
   let mapRef: MaplibreMap | null = null
 
   // Sun direction — updated each frame from real time
@@ -313,7 +387,7 @@ export function createDayNightTestLayer(): CustomLayerInterface {
 
       const gl2 = gl as WebGL2RenderingContext
 
-      // --- Compile both shader programs ---
+      // --- Compile all three shader programs ---
       const darkenProg = compileProgram(gl2, darkenVertSrc, darkenFragSrc, 'darken')
       if (darkenProg) {
         darken = {
@@ -331,6 +405,21 @@ export function createDayNightTestLayer(): CustomLayerInterface {
           sunDirLoc: gl2.getUniformLocation(lightsProg, 'uSunDir'),
           nightTexLoc: gl2.getUniformLocation(lightsProg, 'uNightLights'),
           strengthLoc: gl2.getUniformLocation(lightsProg, 'uLightStrength'),
+        }
+      }
+
+      const cloudsProg = compileProgram(gl2, cloudsVertSrc, cloudsFragSrc, 'clouds')
+      if (cloudsProg) {
+        clouds = {
+          program: cloudsProg,
+          matrixLoc: gl2.getUniformLocation(cloudsProg, 'uMatrix'),
+          sunDirLoc: gl2.getUniformLocation(cloudsProg, 'uSunDir'),
+          cloudTexLoc: gl2.getUniformLocation(cloudsProg, 'uCloudTex'),
+          radiusLoc: gl2.getUniformLocation(cloudsProg, 'uRadius'),
+          opacityLoc: gl2.getUniformLocation(cloudsProg, 'uOpacity'),
+          alphaGammaLoc: gl2.getUniformLocation(cloudsProg, 'uAlphaGamma'),
+          nightDarkeningLoc: gl2.getUniformLocation(cloudsProg, 'uNightDarkening'),
+          zoomFadeLoc: gl2.getUniformLocation(cloudsProg, 'uZoomFade'),
         }
       }
 
@@ -395,7 +484,32 @@ export function createDayNightTestLayer(): CustomLayerInterface {
       }
       img.src = NIGHT_LIGHTS_URL
 
-      console.info('[Spike C] Day/night layer initialized (%d triangles)', indexCount / 3)
+      // --- Load cloud texture asynchronously ---
+      cloudTex = gl2.createTexture()
+      gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
+      gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 1, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 0, 0]))
+
+      const cloudImg = new Image()
+      cloudImg.crossOrigin = 'anonymous'
+      cloudImg.onload = () => {
+        gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
+        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, cloudImg)
+        gl2.generateMipmap(gl2.TEXTURE_2D)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR_MIPMAP_LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.REPEAT)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
+        cloudTexReady = true
+        _map.triggerRepaint()
+        console.info('[Spike C] Cloud texture loaded (%dx%d)', cloudImg.width, cloudImg.height)
+      }
+      cloudImg.onerror = () => {
+        console.warn('[Spike C] Failed to load cloud texture:', CLOUD_TEXTURE_URL)
+      }
+      cloudImg.src = CLOUD_TEXTURE_URL
+
+      console.info('[Spike C] Day/night+clouds layer initialized (%d triangles)', indexCount / 3)
     },
 
     render(gl, args) {
@@ -451,6 +565,31 @@ export function createDayNightTestLayer(): CustomLayerInterface {
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
 
+      // --- Pass 3: Alpha blend — clouds with day/night darkening ---
+      if (clouds && cloudTexReady) {
+        // Standard alpha blend: clouds over existing content
+        gl2.blendFunc(gl2.SRC_ALPHA, gl2.ONE_MINUS_SRC_ALPHA)
+
+        // Fade clouds: fully visible at zoom ≤3, fully gone at zoom ≥6
+        const zoom = mapRef?.getZoom() ?? 0
+        const zoomFade = 1.0 - Math.max(0, Math.min(1, (zoom - 3) / 3))
+
+        gl2.useProgram(clouds.program)
+        gl2.uniformMatrix4fv(clouds.matrixLoc, false, matrix)
+        gl2.uniform3f(clouds.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
+        gl2.uniform1f(clouds.radiusLoc, CLOUD_RADIUS)
+        gl2.uniform1f(clouds.opacityLoc, CLOUD_OPACITY)
+        gl2.uniform1f(clouds.alphaGammaLoc, CLOUD_ALPHA_GAMMA)
+        gl2.uniform1f(clouds.nightDarkeningLoc, CLOUD_NIGHT_DARKENING)
+        gl2.uniform1f(clouds.zoomFadeLoc, zoomFade)
+
+        gl2.activeTexture(gl2.TEXTURE0)
+        gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
+        gl2.uniform1i(clouds.cloudTexLoc, 0)
+
+        gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
+      }
+
       // Restore MapLibre's expected GL state
       gl2.bindVertexArray(null)
       gl2.disable(gl2.BLEND)
@@ -462,8 +601,10 @@ export function createDayNightTestLayer(): CustomLayerInterface {
       const gl2 = gl as WebGL2RenderingContext
       if (darken) gl2.deleteProgram(darken.program)
       if (lights) gl2.deleteProgram(lights.program)
+      if (clouds) gl2.deleteProgram(clouds.program)
       if (vao) gl2.deleteVertexArray(vao)
       if (nightTex) gl2.deleteTexture(nightTex)
+      if (cloudTex) gl2.deleteTexture(cloudTex)
     },
   }
 
