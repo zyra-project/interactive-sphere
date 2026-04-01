@@ -25,6 +25,12 @@ const GIBS_MAX_ZOOM = 8
 // --- Default camera ---
 const DEFAULT_CENTER: [number, number] = [0, 20]
 const DEFAULT_ZOOM = 1.0
+// Zoom limits: ~0.5 shows the full globe, ~8 is the max detail for GIBS tiles
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 8
+// Approximate conversion: Three.js camera.z [1.15, 3.6] → MapLibre zoom [8, 0.5]
+// altitude (km) → zoom: Earth radius ≈ 6371 km, each zoom level halves the view
+const EARTH_RADIUS_KM = 6371
 
 /**
  * Minimal dark globe style with NASA GIBS Blue Marble and Black Marble tiles.
@@ -131,10 +137,24 @@ export class MapRenderer {
       style: createGlobeStyle(),
       center: DEFAULT_CENTER,
       zoom: DEFAULT_ZOOM,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
       attributionControl: false,
       preserveDrawingBuffer: true, // needed for captureViewContext / toDataURL
       maxPitch: 85,
     } as maplibregl.MapOptions)
+
+    // Double-click resets to default view (Three.js behavior) instead of zoom in
+    this.map.doubleClickZoom.disable()
+    this.map.on('dblclick', () => {
+      this.map?.flyTo({
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+        bearing: 0,
+        pitch: 0,
+        duration: 2000,
+      })
+    })
 
     // Accessibility
     const canvas = this.map.getCanvas()
@@ -163,12 +183,30 @@ export class MapRenderer {
 
   // --- Navigation ---
 
-  /** Fly the camera to a geographic location. */
-  flyTo(lat: number, lon: number, zoom?: number): void {
-    this.map?.flyTo({
-      center: [lon, lat],
-      zoom: zoom ?? this.map.getZoom(),
-      duration: 2500,
+  /**
+   * Fly the camera to a geographic location.
+   * The third parameter is altitude in km (matching Three.js convention).
+   * It's converted to a MapLibre zoom level.
+   */
+  flyTo(lat: number, lon: number, altitude?: number): Promise<void> {
+    if (!this.map) return Promise.resolve()
+
+    let zoom = this.map.getZoom()
+    if (altitude !== undefined) {
+      // Convert altitude (km) to MapLibre zoom level
+      // At zoom 0, the view covers ~40,000 km. Each zoom level halves the view.
+      // altitude ≈ EARTH_RADIUS_KM * 2 / 2^zoom → zoom ≈ log2(EARTH_RADIUS_KM * 2 / altitude)
+      zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM,
+        Math.log2(EARTH_RADIUS_KM * 2 / Math.max(altitude, 1))))
+    }
+
+    return new Promise<void>(resolve => {
+      this.map!.once('moveend', () => resolve())
+      this.map!.flyTo({
+        center: [lon, lat],
+        zoom,
+        duration: 2500,
+      })
     })
   }
 
