@@ -300,6 +300,30 @@ const specularFragSrc = `#version 300 es
   }
 `
 
+// Dataset overlay: simple textured sphere (proper equirectangular mapping)
+const datasetVertSrc = `#version 300 es
+  layout(location = 0) in vec3 aPosition;
+  layout(location = 2) in vec2 aUV;
+  uniform mat4 uMatrix;
+  out vec2 vUV;
+
+  void main() {
+    vUV = aUV;
+    gl_Position = uMatrix * vec4(aPosition, 1.0);
+  }
+`
+
+const datasetFragSrc = `#version 300 es
+  precision highp float;
+  uniform sampler2D uDatasetTex;
+  in vec2 vUV;
+  out vec4 fragColor;
+
+  void main() {
+    fragColor = texture(uDatasetTex, vUV);
+  }
+`
+
 // --- Atmosphere light sync ---
 
 /**
@@ -362,6 +386,12 @@ export function computeSunLightPosition(sunLat: number, sunLng: number): [number
 }
 
 // --- Layer implementation ---
+
+interface DatasetProgram {
+  program: WebGLProgram
+  matrixLoc: WebGLUniformLocation | null
+  texLoc: WebGLUniformLocation | null
+}
 
 interface DayNightProgram {
   program: WebGLProgram
@@ -440,6 +470,10 @@ export interface EarthTileLayerControl {
   clearSunOverride(): void
   /** Show or hide all earth effects (day/night, lights, specular, clouds). */
   setVisible(visible: boolean): void
+  /** Display an equirectangular image as a dataset overlay on the globe. */
+  setDatasetTexture(image: HTMLCanvasElement | HTMLImageElement): void
+  /** Remove the current dataset overlay. */
+  clearDatasetTexture(): void
 }
 
 /**
@@ -459,6 +493,10 @@ export function createEarthTileLayer(): EarthTileLayerControl {
   let specTexReady = false
   let cloudTex: WebGLTexture | null = null
   let cloudTexReady = false
+  let dataset: DatasetProgram | null = null
+  let datasetTex: WebGLTexture | null = null
+  let datasetActive = false
+  let glRef: WebGL2RenderingContext | null = null
   let mapRef: MaplibreMap | null = null
 
   // Sun direction — updated each frame from real time, or set externally
@@ -487,8 +525,19 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       syncAtmosphereLight(_map, initSun.lat, initSun.lng)
 
       const gl2 = gl as WebGL2RenderingContext
+      glRef = gl2
 
-      // --- Compile all three shader programs ---
+      // --- Compile dataset overlay shader ---
+      const datasetProg = compileProgram(gl2, datasetVertSrc, datasetFragSrc, 'dataset')
+      if (datasetProg) {
+        dataset = {
+          program: datasetProg,
+          matrixLoc: gl2.getUniformLocation(datasetProg, 'uMatrix'),
+          texLoc: gl2.getUniformLocation(datasetProg, 'uDatasetTex'),
+        }
+      }
+
+      // --- Compile all earth effect shader programs ---
       const darkenProg = compileProgram(gl2, darkenVertSrc, darkenFragSrc, 'darken')
       if (darkenProg) {
         darken = {
@@ -598,6 +647,8 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       }
       img.onerror = () => {
         console.warn('[EarthTileLayer] Failed to load night lights texture:', NIGHT_LIGHTS_URL)
+        nightTexReady = true // resolve ready even on failure
+        checkReady()
       }
       img.src = NIGHT_LIGHTS_URL
 
@@ -624,6 +675,8 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       }
       cloudImg.onerror = () => {
         console.warn('[EarthTileLayer] Failed to load cloud texture:', CLOUD_TEXTURE_URL)
+        cloudTexReady = true
+        checkReady()
       }
       cloudImg.src = CLOUD_TEXTURE_URL
 
@@ -648,27 +701,54 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         _map.triggerRepaint()
         console.info('[EarthTileLayer] Specular map loaded (%dx%d)', specImg.width, specImg.height)
       }
-      specImg.onerror = () => console.warn('[EarthTileLayer] Failed to load specular map:', SPECULAR_MAP_URL)
+      specImg.onerror = () => {
+        console.warn('[EarthTileLayer] Failed to load specular map:', SPECULAR_MAP_URL)
+        specTexReady = true
+        checkReady()
+      }
       specImg.src = SPECULAR_MAP_URL
 
       console.info('[EarthTileLayer] Day/night+clouds+specular layer initialized (%d triangles)', indexCount / 3)
     },
 
     render(gl, args) {
-      if (!darken || !vao || !visible) return
+      if (!vao) return
       const gl2 = gl as WebGL2RenderingContext
-
-      // Update sun direction from override or real-time
-      const sun = sunOverride ?? getSunPosition(new Date())
-      sunDir = sunDirectionFromLatLng(sun.lat, sun.lng)
-
       const matrix = args.defaultProjectionData.mainMatrix
 
-      // Common GL state for both passes
+      // Common GL state
       gl2.disable(gl2.DEPTH_TEST)
       gl2.enable(gl2.CULL_FACE)
       gl2.cullFace(gl2.BACK)
       gl2.bindVertexArray(vao)
+
+      // --- Dataset overlay: opaque textured sphere (replaces earth effects) ---
+      if (datasetActive && dataset && datasetTex) {
+        gl2.disable(gl2.BLEND)
+        gl2.useProgram(dataset.program)
+        gl2.uniformMatrix4fv(dataset.matrixLoc, false, matrix)
+        gl2.activeTexture(gl2.TEXTURE0)
+        gl2.bindTexture(gl2.TEXTURE_2D, datasetTex)
+        gl2.uniform1i(dataset.texLoc, 0)
+        gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
+
+        // Restore GL state and return — no earth effects when dataset is active
+        gl2.bindVertexArray(null)
+        gl2.enable(gl2.DEPTH_TEST)
+        gl2.disable(gl2.CULL_FACE)
+        return
+      }
+
+      if (!darken || !visible) {
+        gl2.bindVertexArray(null)
+        gl2.enable(gl2.DEPTH_TEST)
+        gl2.disable(gl2.CULL_FACE)
+        return
+      }
+
+      // Update sun direction from override or real-time
+      const sun = sunOverride ?? getSunPosition(new Date())
+      sunDir = sunDirectionFromLatLng(sun.lat, sun.lng)
 
       // --- Pass 1: Multiply blend — darken night side ---
       gl2.enable(gl2.BLEND)
@@ -762,6 +842,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
 
     onRemove(_map: MaplibreMap, gl: WebGL2RenderingContext | WebGLRenderingContext) {
       const gl2 = gl as WebGL2RenderingContext
+      if (dataset) gl2.deleteProgram(dataset.program)
       if (darken) gl2.deleteProgram(darken.program)
       if (lights) gl2.deleteProgram(lights.program)
       if (specular) gl2.deleteProgram(specular.program)
@@ -770,6 +851,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       if (nightTex) gl2.deleteTexture(nightTex)
       if (specTex) gl2.deleteTexture(specTex)
       if (cloudTex) gl2.deleteTexture(cloudTex)
+      if (datasetTex) gl2.deleteTexture(datasetTex)
     },
   }
 
@@ -793,6 +875,26 @@ export function createEarthTileLayer(): EarthTileLayerControl {
     },
     setVisible(v: boolean) {
       visible = v
+      mapRef?.triggerRepaint()
+    },
+    setDatasetTexture(image: HTMLCanvasElement | HTMLImageElement) {
+      if (!glRef) return
+      // Create or reuse the dataset texture
+      if (!datasetTex) {
+        datasetTex = glRef.createTexture()
+      }
+      glRef.bindTexture(glRef.TEXTURE_2D, datasetTex)
+      glRef.texImage2D(glRef.TEXTURE_2D, 0, glRef.RGBA, glRef.RGBA, glRef.UNSIGNED_BYTE, image)
+      glRef.generateMipmap(glRef.TEXTURE_2D)
+      glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_MIN_FILTER, glRef.LINEAR_MIPMAP_LINEAR)
+      glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_MAG_FILTER, glRef.LINEAR)
+      glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_S, glRef.REPEAT)
+      glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_T, glRef.CLAMP_TO_EDGE)
+      datasetActive = true
+      mapRef?.triggerRepaint()
+    },
+    clearDatasetTexture() {
+      datasetActive = false
       mapRef?.triggerRepaint()
     },
   }

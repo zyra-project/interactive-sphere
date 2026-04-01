@@ -118,7 +118,13 @@ export class MapRenderer {
     mapDiv.id = 'maplibre-container'
     mapDiv.style.width = '100%'
     mapDiv.style.height = '100%'
-    container.appendChild(mapDiv)
+    // Insert before the #ui div so it sits behind UI overlays in z-order
+    const uiDiv = container.querySelector('#ui')
+    if (uiDiv) {
+      container.insertBefore(mapDiv, uiDiv)
+    } else {
+      container.appendChild(mapDiv)
+    }
 
     this.map = new maplibregl.Map({
       container: mapDiv,
@@ -246,64 +252,16 @@ export class MapRenderer {
   // --- Dataset overlays (Spike B) ---
 
   /**
-   * Display an equirectangular image on the globe via MapLibre ImageSource.
-   *
-   * Tests two bound variants:
-   *  - Standard Mercator bounds (+/-85°) — safe but may leave polar gaps
-   *  - Full geographic bounds (+/-90°) — ideal if globe projection supports it
-   *
-   * Falls back to +/-85 if +/-90 throws.
+   * Display an equirectangular image on the globe via custom layer sphere.
+   * Uses proper equirectangular UV mapping — no Mercator distortion, full
+   * pole coverage.
    */
   updateTexture(texture: HTMLCanvasElement | HTMLImageElement): void {
-    if (!this.map) return
-
-    // Convert to a data URL if it's a canvas/image element
-    let imageUrl: string
-    if (texture instanceof HTMLCanvasElement) {
-      imageUrl = texture.toDataURL('image/png')
-    } else {
-      // HTMLImageElement — use its src directly
-      imageUrl = texture.src
-    }
-
-    // Remove previous dataset overlay if any
-    this.removeDatasetOverlay()
-
-    // Try full-globe bounds first (±90°), fall back to Mercator-safe (±85°)
-    const fullBounds: [[number, number], [number, number], [number, number], [number, number]] =
-      [[-180, 90], [180, 90], [180, -90], [-180, -90]]
-    const safeBounds: [[number, number], [number, number], [number, number], [number, number]] =
-      [[-180, 85], [180, 85], [180, -85], [-180, -85]]
-
-    let bounds = fullBounds
-    try {
-      this.map.addSource('dataset-overlay', {
-        type: 'image',
-        url: imageUrl,
-        coordinates: bounds,
-      })
-    } catch (e) {
-      console.warn('[MapRenderer] ±90° bounds failed, falling back to ±85°:', e)
-      bounds = safeBounds
-      try { this.map.removeSource('dataset-overlay') } catch { /* noop */ }
-      this.map.addSource('dataset-overlay', {
-        type: 'image',
-        url: imageUrl,
-        coordinates: bounds,
-      })
-    }
-
-    this.map.addLayer({
-      id: 'dataset-overlay-layer',
-      type: 'raster',
-      source: 'dataset-overlay',
-      paint: { 'raster-opacity': 1 },
-    })
-
+    if (!this.earthLayer) return
+    this.earthLayer.setDatasetTexture(texture)
     // Hide the Blue Marble base layer when a dataset is active
-    this.map.setLayoutProperty('blue-marble-layer', 'visibility', 'none')
-
-    console.info('[MapRenderer] Image overlay added with bounds:', bounds)
+    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+    console.info('[MapRenderer] Dataset overlay set via custom layer sphere')
   }
 
   /**
@@ -342,21 +300,12 @@ export class MapRenderer {
     return new THREE.VideoTexture(video)
   }
 
-  /** Remove the current dataset overlay source and layer. */
+  /** Remove the current dataset overlay. */
   private removeDatasetOverlay(): void {
-    if (!this.map) return
-    try {
-      if (this.map.getLayer('dataset-overlay-layer')) {
-        this.map.removeLayer('dataset-overlay-layer')
-      }
-      if (this.map.getSource('dataset-overlay')) {
-        this.map.removeSource('dataset-overlay')
-      }
-    } catch { /* source/layer may not exist */ }
-
+    this.earthLayer?.clearDatasetTexture()
     // Restore Blue Marble base
     try {
-      this.map.setLayoutProperty('blue-marble-layer', 'visibility', 'visible')
+      this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'visible')
     } catch { /* noop */ }
   }
 
@@ -366,6 +315,7 @@ export class MapRenderer {
   async loadDefaultEarthMaterials(onProgress?: (fraction: number) => void): Promise<void> {
     // Wait for earth layer to be created (it's added on map 'load')
     if (!this.earthLayer) {
+      console.debug('[MapRenderer] loadDefaultEarthMaterials: waiting for earth layer...')
       await new Promise<void>(resolve => {
         const check = () => {
           if (this.earthLayer) resolve()
@@ -374,25 +324,42 @@ export class MapRenderer {
         check()
       })
     }
+    console.debug('[MapRenderer] loadDefaultEarthMaterials: earth layer found, waiting for textures...')
     onProgress?.(0.2)
     await this.earthLayer!.ready
+    console.debug('[MapRenderer] loadDefaultEarthMaterials: textures ready')
     onProgress?.(1)
   }
 
   /** Hide earth effects (day/night, city lights, specular, clouds) when a dataset is active. */
   removeNightLights(): void {
     this.earthLayer?.setVisible(false)
+    // Also hide the atmosphere glow since it conflicts with dataset overlays
+    try { this.map?.setSky({ 'atmosphere-blend': 0 }) } catch { /* noop */ }
   }
 
-  /** Update sun direction and re-show the earth tile layer. */
+  /** Update sun direction and re-show the earth tile layer + atmosphere. */
   enableSunLighting(lat: number, lng: number): void {
+    this.earthLayer?.clearDatasetTexture()
     this.earthLayer?.setVisible(true)
     this.earthLayer?.setSunPosition(lat, lng)
+    // Restore Blue Marble base (may have been hidden for dataset overlay)
+    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'visible') } catch { /* noop */ }
+    // Restore atmosphere glow (may have been hidden for dataset overlay)
+    try {
+      this.map?.setSky({
+        'atmosphere-blend': [
+          'interpolate', ['linear'], ['zoom'],
+          0, 1, 5, 1, 7, 0,
+        ] as any,
+      })
+    } catch { /* noop */ }
   }
 
-  /** Clear sun override — reverts to real-time sun position. */
+  /** Clear sun override — does NOT re-show the layer (that's enableSunLighting's job). */
   disableSunLighting(): void {
-    this.earthLayer?.clearSunOverride()
+    // Just clear the override; don't re-show the earth layer.
+    // enableSunLighting() will restore visibility when returning to the default view.
   }
 
   /** Clouds are loaded by the earth tile layer automatically. Report complete. */
