@@ -1,0 +1,170 @@
+/**
+ * Cloudflare Pages Function — /api/feedback
+ *
+ * Accepts user feedback on AI (Orbit) responses.
+ * Stores feedback in Cloudflare D1 for later analysis.
+ *
+ * POST /api/feedback  — JSON body matching FeedbackPayload
+ */
+
+interface Env {
+  FEEDBACK_DB?: D1Database
+}
+
+interface FeedbackBody {
+  rating: 'thumbs-up' | 'thumbs-down'
+  comment: string
+  messageId: string
+  messages: unknown[]
+  datasetId: string | null
+  timestamp: number
+}
+
+// --- Rate limiting (in-memory, per-isolate) ---
+
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60_000
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    if (rateLimitMap.size > 1000) {
+      for (const [key, val] of rateLimitMap) {
+        if (now > val.resetAt) rateLimitMap.delete(key)
+      }
+    }
+    return false
+  }
+  entry.count++
+  return entry.count > RATE_LIMIT
+}
+
+// --- CORS ---
+
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://localhost:4173',
+])
+
+function isAllowedOrigin(origin: string | null, requestUrl: string): boolean {
+  if (!origin) return false
+  if (ALLOWED_ORIGINS.has(origin)) return true
+  try {
+    const req = new URL(requestUrl)
+    return origin === req.origin
+  } catch {
+    return false
+  }
+}
+
+function corsHeaders(origin?: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  }
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin
+  }
+  return headers
+}
+
+// --- Validation ---
+
+function isValidBody(body: unknown): body is FeedbackBody {
+  if (!body || typeof body !== 'object') return false
+  const b = body as Record<string, unknown>
+  if (b.rating !== 'thumbs-up' && b.rating !== 'thumbs-down') return false
+  if (typeof b.comment !== 'string') return false
+  if (typeof b.messageId !== 'string' || !b.messageId) return false
+  if (!Array.isArray(b.messages)) return false
+  if (typeof b.timestamp !== 'number') return false
+  return true
+}
+
+// --- Handlers ---
+
+export const onRequestOptions: PagesFunction<Env> = async (context) => {
+  const origin = context.request.headers.get('Origin')
+  if (!isAllowedOrigin(origin, context.request.url)) {
+    return new Response(null, { status: 403 })
+  }
+  return new Response(null, { status: 204, headers: corsHeaders(origin) })
+}
+
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const origin = context.request.headers.get('Origin')
+  if (!origin || !isAllowedOrigin(origin, context.request.url)) {
+    return new Response(null, { status: 403 })
+  }
+  const cors = corsHeaders(origin)
+  const ip = context.request.headers.get('CF-Connecting-IP')
+
+  if (ip && isRateLimited(ip)) {
+    return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again shortly.' }), {
+      status: 429,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
+  }
+
+  let body: unknown
+  try {
+    body = await context.request.json()
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+      status: 400,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
+  }
+
+  if (!isValidBody(body)) {
+    return new Response(JSON.stringify({ error: 'Invalid feedback payload' }), {
+      status: 400,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
+  }
+
+  // Truncate messages to prevent excessively large payloads
+  const messages = body.messages.slice(-100)
+  const conversationJson = JSON.stringify(messages)
+
+  // Store in D1 if binding is available, otherwise log to console
+  const db = context.env.FEEDBACK_DB
+  if (db) {
+    try {
+      await db.prepare(
+        `INSERT INTO feedback (rating, comment, message_id, dataset_id, conversation, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        body.rating,
+        body.comment.slice(0, 2000),
+        body.messageId,
+        body.datasetId ?? null,
+        conversationJson,
+        new Date(body.timestamp).toISOString(),
+      ).run()
+    } catch (err) {
+      console.error('Failed to write feedback to D1:', err)
+      // Fall through to console log
+    }
+  } else {
+    // No D1 binding — log for Cloudflare Workers tail/dashboard
+    console.log('[feedback]', JSON.stringify({
+      rating: body.rating,
+      comment: body.comment.slice(0, 500),
+      messageId: body.messageId,
+      datasetId: body.datasetId,
+      messageCount: messages.length,
+      timestamp: body.timestamp,
+    }))
+  }
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  })
+}

@@ -6,7 +6,7 @@
  * Persists conversation in sessionStorage, config in localStorage.
  */
 
-import type { ChatMessage, ChatAction, ChatSession, DocentConfig, MapViewContext, ReadingLevel } from '../types'
+import type { ChatMessage, ChatAction, ChatSession, DocentConfig, MapViewContext, ReadingLevel, FeedbackRating, FeedbackPayload } from '../types'
 import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './browseUI'
 import { createMessageId } from '../services/docentEngine'
@@ -44,6 +44,9 @@ let datasetPromptTimer: ReturnType<typeof setTimeout> | null = null
 
 /** Globe-control actions deferred until a load-dataset action in the same message completes. */
 let pendingGlobeActions: ChatAction[] = []
+
+/** Tracks in-progress feedback modal state. */
+let feedbackTarget: { messageId: string; rating: FeedbackRating } | null = null
 
 /**
  * Initialize the chat UI with callbacks and restore session.
@@ -662,6 +665,7 @@ function renderMessages(): void {
 
   container.innerHTML = messages.map(msg => renderMessage(msg)).join('')
   wireActionButtons(container)
+  wireFeedbackButtons(container)
 }
 
 /** Render a single chat message as an HTML string with inline action buttons. */
@@ -670,8 +674,15 @@ function renderMessage(msg: ChatMessage): string {
   const { html: textHtml, inlinedIds } = renderChatText(msg.text ?? '', msg.actions)
   const remaining = msg.actions?.filter(a => a.type !== 'load-dataset' || !inlinedIds.has(a.datasetId))
   const actionsHtml = remaining?.length ? renderActions(remaining) : ''
+  const feedbackHtml = msg.role === 'docent' && msg.text
+    ? `<div class="chat-feedback">
+         <button class="chat-feedback-btn" data-feedback="thumbs-up" data-msg-id="${escapeAttr(msg.id)}" aria-label="Good response" title="Good response">&#x1F44D;&#xFE0E;</button>
+         <button class="chat-feedback-btn" data-feedback="thumbs-down" data-msg-id="${escapeAttr(msg.id)}" aria-label="Bad response" title="Bad response">&#x1F44E;&#xFE0E;</button>
+       </div>`
+    : ''
   return `<div class="chat-msg ${roleClass}" data-msg-id="${escapeAttr(msg.id)}">
     <div class="chat-msg-text">${textHtml}</div>
+    ${feedbackHtml}
     ${actionsHtml}
   </div>`
 }
@@ -918,4 +929,118 @@ function scrollToBottom(): void {
       container.scrollTop = container.scrollHeight
     })
   }
+}
+
+// --- Feedback ---
+
+/** Attach click handlers to feedback buttons within a rendered message container. */
+function wireFeedbackButtons(container: Element): void {
+  container.querySelectorAll<HTMLElement>('.chat-feedback-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rating = btn.dataset.feedback as FeedbackRating | undefined
+      const msgId = btn.dataset.msgId
+      if (rating && msgId) {
+        feedbackTarget = { messageId: msgId, rating }
+        showFeedbackModal()
+      }
+    })
+  })
+}
+
+/** Show the feedback modal overlay inside the chat panel. */
+function showFeedbackModal(): void {
+  if (!feedbackTarget) return
+  const panel = document.getElementById('chat-panel')
+  if (!panel) return
+
+  // Remove any existing modal element without clearing feedbackTarget
+  document.getElementById('chat-feedback-modal')?.remove()
+
+  const isPositive = feedbackTarget.rating === 'thumbs-up'
+  const icon = isPositive ? '\u{1F44D}\uFE0E' : '\u{1F44E}\uFE0E'
+  const placeholder = isPositive ? 'What was helpful?' : 'What could be improved?'
+
+  const modal = document.createElement('div')
+  modal.className = 'chat-feedback-modal'
+  modal.id = 'chat-feedback-modal'
+  modal.innerHTML = `
+    <h3>Share feedback</h3>
+    <div class="chat-feedback-rating-icon" aria-hidden="true">${icon}</div>
+    <textarea id="chat-feedback-comment" placeholder="${escapeAttr(placeholder)}" rows="3"></textarea>
+    <div class="chat-feedback-modal-actions">
+      <button class="chat-feedback-cancel" id="chat-feedback-cancel">Cancel</button>
+      <button class="chat-feedback-submit" id="chat-feedback-submit">Submit</button>
+    </div>
+    <span class="chat-feedback-status" id="chat-feedback-status"></span>
+  `
+  panel.appendChild(modal)
+
+  document.getElementById('chat-feedback-cancel')?.addEventListener('click', dismissFeedbackModal)
+  document.getElementById('chat-feedback-submit')?.addEventListener('click', handleFeedbackSubmit)
+  document.getElementById('chat-feedback-comment')?.focus()
+}
+
+/** Dismiss the feedback modal and clear state. */
+function dismissFeedbackModal(): void {
+  document.getElementById('chat-feedback-modal')?.remove()
+  feedbackTarget = null
+}
+
+/** Submit feedback to the server, then reset the conversation. */
+async function handleFeedbackSubmit(): Promise<void> {
+  if (!feedbackTarget) return
+
+  const comment = (document.getElementById('chat-feedback-comment') as HTMLTextAreaElement | null)?.value.trim() ?? ''
+  const submitBtn = document.getElementById('chat-feedback-submit') as HTMLButtonElement | null
+  const status = document.getElementById('chat-feedback-status')
+
+  if (submitBtn) submitBtn.disabled = true
+  if (status) {
+    status.textContent = 'Submitting...'
+    status.className = 'chat-feedback-status'
+  }
+
+  const payload: FeedbackPayload = {
+    rating: feedbackTarget.rating,
+    comment,
+    messageId: feedbackTarget.messageId,
+    messages: [...messages],
+    datasetId: callbacks?.getCurrentDataset()?.id ?? null,
+    timestamp: Date.now(),
+  }
+
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`)
+    }
+    if (status) {
+      status.textContent = 'Thank you for your feedback!'
+      status.className = 'chat-feedback-status chat-feedback-status-ok'
+    }
+    setTimeout(() => {
+      dismissFeedbackModal()
+      clearChat()
+      callbacks?.announce('Feedback submitted — conversation reset')
+    }, 1200)
+  } catch (err) {
+    if (status) {
+      status.textContent = err instanceof Error ? err.message : 'Failed to submit'
+      status.className = 'chat-feedback-status chat-feedback-status-err'
+    }
+    if (submitBtn) submitBtn.disabled = false
+  }
+}
+
+/**
+ * Submit feedback programmatically (for testing).
+ */
+export async function submitFeedback(messageId: string, rating: FeedbackRating): Promise<void> {
+  feedbackTarget = { messageId, rating }
+  showFeedbackModal()
 }

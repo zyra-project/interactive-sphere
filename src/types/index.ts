@@ -186,6 +186,23 @@ export interface ChatSession {
 }
 
 /**
+ * Thumbs-up or thumbs-down rating for an AI response
+ */
+export type FeedbackRating = 'thumbs-up' | 'thumbs-down'
+
+/**
+ * Payload submitted to the server when a user rates an AI response
+ */
+export interface FeedbackPayload {
+  rating: FeedbackRating
+  comment: string
+  messageId: string
+  messages: ChatMessage[]
+  datasetId: string | null
+  timestamp: number
+}
+
+/**
  * LLM provider configuration (stored in localStorage)
  */
 export type ReadingLevel = 'young-learner' | 'general' | 'in-depth' | 'expert'
