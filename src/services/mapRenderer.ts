@@ -8,6 +8,27 @@
 
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+
+// Override MapLibre popup styles for dark theme
+const popupStyle = document.createElement('style')
+popupStyle.textContent = `
+  .sos-popup .maplibregl-popup-content {
+    background: rgba(13,13,18,0.92);
+    backdrop-filter: blur(12px);
+    padding: 0;
+    border-radius: 6px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  }
+  .sos-popup .maplibregl-popup-tip {
+    border-top-color: rgba(13,13,18,0.92);
+  }
+  .sos-popup .maplibregl-popup-close-button {
+    color: #aaa;
+    font-size: 16px;
+    padding: 2px 6px;
+  }
+`
+document.head.appendChild(popupStyle)
 import type { Map as MaplibreMap, StyleSpecification, CustomLayerInterface } from 'maplibre-gl'
 import * as THREE from 'three'
 import { createEarthTileLayer, computeSunLightPosition, type EarthTileLayerControl } from './earthTileLayer'
@@ -33,8 +54,10 @@ const MAX_ZOOM = 8
 const EARTH_RADIUS_KM = 6371
 
 // --- OpenFreeMap vector tile endpoints (OpenMapTiles schema) ---
-const VECTOR_TILES_URL = 'https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf'
 const GLYPHS_URL = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
+
+// --- Terrain DEM tile source ---
+const TERRAIN_DEM_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
 
 /**
  * Globe style with NASA GIBS raster tiles and OpenFreeMap vector labels/boundaries.
@@ -66,6 +89,14 @@ function createGlobeStyle(): StyleSpecification {
         type: 'vector',
         url: 'https://tiles.openfreemap.org/planet',
         attribution: '© OpenMapTiles © OpenStreetMap',
+      },
+      'terrain-dem': {
+        type: 'raster-dem',
+        tiles: [TERRAIN_DEM_URL],
+        tileSize: 256,
+        maxzoom: 14,
+        encoding: 'terrarium',
+        attribution: 'Mapzen Terrain',
       },
     },
     layers: [
@@ -246,12 +277,20 @@ export class MapRenderer {
     canvas.setAttribute('aria-label', 'Interactive 3D globe visualization')
     canvas.id = 'globe-canvas'
 
-    // Add earth tile layer (day/night, city lights, specular, clouds)
+    // Add earth tile layer, then move label layers above it so they aren't
+    // darkened by the night-side multiply blend pass.
     this.map.on('load', () => {
       console.info('[MapRenderer] Map loaded with globe projection')
       this.earthLayer = createEarthTileLayer()
       this.map!.addLayer(this.earthLayer.layer as unknown as maplibregl.LayerSpecification)
-      console.info('[MapRenderer] Earth tile layer added')
+
+      // Move label/boundary layers above the custom layer so they aren't
+      // darkened by the night-side multiply blend
+      for (const id of this.labelLayerIds) {
+        try { this.map!.moveLayer(id) } catch { /* layer may not exist */ }
+      }
+
+      console.info('[MapRenderer] Earth tile layer added, labels moved above')
     })
   }
 
@@ -343,7 +382,9 @@ export class MapRenderer {
     const marker = new maplibregl.Marker({ color: '#4da6ff' })
       .setLngLat([lng, lat])
     if (label) {
-      marker.setPopup(new maplibregl.Popup({ offset: 25 }).setText(label))
+      marker.setPopup(new maplibregl.Popup({ offset: 25, className: 'sos-popup' }).setHTML(
+        `<div style="color:#fff;background:rgba(13,13,18,0.92);padding:6px 10px;border-radius:6px;font:13px/1.4 system-ui,sans-serif;white-space:nowrap;">${label}</div>`
+      ))
     }
     marker.addTo(this.map)
     this.markers.push(marker)
@@ -354,6 +395,22 @@ export class MapRenderer {
   clearMarkers(): void {
     for (const m of this.markers) m.remove()
     this.markers = []
+  }
+
+  // --- 3D Terrain ---
+
+  private terrainEnabled = false
+
+  /** Toggle 3D terrain elevation. Useful for topography/geology datasets. */
+  toggleTerrain(enabled?: boolean): boolean {
+    if (!this.map) return false
+    this.terrainEnabled = enabled ?? !this.terrainEnabled
+    if (this.terrainEnabled) {
+      this.map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 })
+    } else {
+      this.map.setTerrain(null as any)
+    }
+    return this.terrainEnabled
   }
 
   /** Toggle auto-rotation and return the new state. */
@@ -463,16 +520,7 @@ export class MapRenderer {
     return new THREE.VideoTexture(video)
   }
 
-  /** Remove the current dataset overlay. */
-  private removeDatasetOverlay(): void {
-    this.earthLayer?.clearDatasetTexture()
-    // Restore Blue Marble base
-    try {
-      this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'visible')
-    } catch { /* noop */ }
-  }
-
-  // --- Earth material stubs (Phase 1) ---
+  // --- Earth materials ---
 
   /** Wait for the earth tile layer's textures (night lights, specular, clouds) to load. */
   async loadDefaultEarthMaterials(onProgress?: (fraction: number) => void): Promise<void> {
