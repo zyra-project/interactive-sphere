@@ -32,10 +32,13 @@ const MAX_ZOOM = 8
 // altitude (km) → zoom: Earth radius ≈ 6371 km, each zoom level halves the view
 const EARTH_RADIUS_KM = 6371
 
+// --- OpenFreeMap vector tile endpoints (OpenMapTiles schema) ---
+const VECTOR_TILES_URL = 'https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf'
+const GLYPHS_URL = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf'
+
 /**
- * Minimal dark globe style with NASA GIBS Blue Marble and Black Marble tiles.
- * Black Marble is hidden by default — it will be used by the day/night blend
- * custom layer in Phase 1.
+ * Globe style with NASA GIBS raster tiles and OpenFreeMap vector labels/boundaries.
+ * Labels and boundaries are hidden by default and can be toggled.
  */
 function createGlobeStyle(): StyleSpecification {
   const initSun = getSunPosition(new Date())
@@ -43,6 +46,7 @@ function createGlobeStyle(): StyleSpecification {
     version: 8,
     name: 'sos-globe',
     projection: { type: 'globe' },
+    glyphs: GLYPHS_URL,
     sources: {
       'blue-marble': {
         type: 'raster',
@@ -57,6 +61,11 @@ function createGlobeStyle(): StyleSpecification {
         tileSize: 256,
         maxzoom: GIBS_MAX_ZOOM,
         attribution: 'NASA Black Marble',
+      },
+      'openmaptiles': {
+        type: 'vector',
+        url: 'https://tiles.openfreemap.org/planet',
+        attribution: '© OpenMapTiles © OpenStreetMap',
       },
     },
     layers: [
@@ -77,6 +86,80 @@ function createGlobeStyle(): StyleSpecification {
         source: 'black-marble',
         paint: { 'raster-opacity': 0 },
         layout: { visibility: 'none' },
+      },
+      // --- Vector layers (hidden by default, toggle-able) ---
+      {
+        id: 'boundaries',
+        type: 'line',
+        source: 'openmaptiles',
+        'source-layer': 'boundary',
+        filter: ['==', 'admin_level', 2],
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': 'rgba(255, 255, 255, 0.4)',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.5, 5, 1.5, 8, 2],
+          'line-dasharray': [3, 2],
+        },
+      },
+      {
+        id: 'country-labels',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'place',
+        filter: ['==', 'class', 'country'],
+        layout: {
+          visibility: 'none',
+          'text-field': '{name:latin}',
+          'text-font': ['Open Sans Bold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 1, 10, 5, 16, 8, 20],
+          'text-transform': 'uppercase',
+          'text-letter-spacing': 0.1,
+          'text-max-width': 8,
+        },
+        paint: {
+          'text-color': 'rgba(255, 255, 255, 0.85)',
+          'text-halo-color': 'rgba(0, 0, 0, 0.7)',
+          'text-halo-width': 1.5,
+        },
+      },
+      {
+        id: 'city-labels',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'place',
+        filter: ['all', ['==', 'class', 'city'], ['>=', 'rank', 1], ['<=', 'rank', 6]],
+        layout: {
+          visibility: 'none',
+          'text-field': '{name:latin}',
+          'text-font': ['Open Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 3, 9, 6, 13, 8, 16],
+          'text-max-width': 8,
+        },
+        paint: {
+          'text-color': 'rgba(220, 220, 255, 0.8)',
+          'text-halo-color': 'rgba(0, 0, 0, 0.6)',
+          'text-halo-width': 1,
+        },
+      },
+      {
+        id: 'ocean-labels',
+        type: 'symbol',
+        source: 'openmaptiles',
+        'source-layer': 'water_name',
+        filter: ['==', '$type', 'Point'],
+        layout: {
+          visibility: 'none',
+          'text-field': '{name:latin}',
+          'text-font': ['Open Sans Italic'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 1, 10, 5, 14],
+          'text-letter-spacing': 0.2,
+          'text-max-width': 10,
+        },
+        paint: {
+          'text-color': 'rgba(150, 200, 255, 0.6)',
+          'text-halo-color': 'rgba(0, 0, 0, 0.5)',
+          'text-halo-width': 1,
+        },
       },
     ],
     sky: {
@@ -209,6 +292,68 @@ export class MapRenderer {
         duration: 2500,
       })
     })
+  }
+
+  /**
+   * Fly the camera to fit a bounding box.
+   * bounds: [west, south, east, north] in degrees.
+   */
+  fitBounds(bounds: [number, number, number, number], options?: { padding?: number; duration?: number }): void {
+    this.map?.fitBounds(
+      [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+      {
+        padding: options?.padding ?? 50,
+        duration: options?.duration ?? 2500,
+      },
+    )
+  }
+
+  // --- Label & boundary layer toggles ---
+
+  private readonly labelLayerIds = ['boundaries', 'country-labels', 'city-labels', 'ocean-labels']
+
+  /** Show or hide all label and boundary layers. */
+  toggleLabels(visible?: boolean): boolean {
+    if (!this.map) return false
+    const firstLayer = this.map.getLayoutProperty('country-labels', 'visibility')
+    const show = visible ?? (firstLayer === 'none')
+    const vis = show ? 'visible' : 'none'
+    for (const id of this.labelLayerIds) {
+      try { this.map.setLayoutProperty(id, 'visibility', vis) } catch { /* noop */ }
+    }
+    return show
+  }
+
+  /** Show or hide only boundary lines. */
+  toggleBoundaries(visible?: boolean): boolean {
+    if (!this.map) return false
+    const current = this.map.getLayoutProperty('boundaries', 'visibility')
+    const show = visible ?? (current === 'none')
+    try { this.map.setLayoutProperty('boundaries', 'visibility', show ? 'visible' : 'none') } catch { /* noop */ }
+    return show
+  }
+
+  // --- Markers & popups ---
+
+  private markers: maplibregl.Marker[] = []
+
+  /** Add a marker at the given coordinates with an optional popup label. */
+  addMarker(lat: number, lng: number, label?: string): maplibregl.Marker | null {
+    if (!this.map) return null
+    const marker = new maplibregl.Marker({ color: '#4da6ff' })
+      .setLngLat([lng, lat])
+    if (label) {
+      marker.setPopup(new maplibregl.Popup({ offset: 25 }).setText(label))
+    }
+    marker.addTo(this.map)
+    this.markers.push(marker)
+    return marker
+  }
+
+  /** Remove all markers from the map. */
+  clearMarkers(): void {
+    for (const m of this.markers) m.remove()
+    this.markers = []
   }
 
   /** Toggle auto-rotation and return the new state. */
