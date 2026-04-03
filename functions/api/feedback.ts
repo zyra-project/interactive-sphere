@@ -149,9 +149,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const conversationJson = JSON.stringify(messages)
 
   // Extract the rated assistant message text for easy export queries
-  const ratedMsg = messages.find((m: Record<string, unknown>) =>
-    m.id === body.messageId && (m.role === 'docent' || m.role === 'assistant'),
-  ) as Record<string, unknown> | undefined
+  const ratedMsg = messages.find((m: unknown) => {
+    if (typeof m !== 'object' || m === null) return false
+    const msg = m as Record<string, unknown>
+    return msg.id === body.messageId && (msg.role === 'docent' || msg.role === 'assistant')
+  }) as Record<string, unknown> | undefined
   const assistantMessage = typeof ratedMsg?.text === 'string' ? ratedMsg.text.slice(0, 50_000) : ''
 
   // Store in D1 if binding is available, otherwise log to console
@@ -160,28 +162,24 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     try {
       const tagsJson = JSON.stringify((body.tags ?? []).slice(0, 10))
       const comment = body.comment.slice(0, 2000)
+      // Cap modelConfig to expected shape and size
+      const mc = body.modelConfig
+      const safeModelConfig = (mc && typeof mc === 'object' && !Array.isArray(mc))
+        ? { model: String((mc as Record<string, unknown>).model ?? ''),
+            readingLevel: String((mc as Record<string, unknown>).readingLevel ?? ''),
+            visionEnabled: !!(mc as Record<string, unknown>).visionEnabled }
+        : {}
+      const modelConfigJson = JSON.stringify(safeModelConfig)
 
-      // If tags or comment present, try to update existing row first (second submission)
-      if (comment || (body.tags?.length ?? 0) > 0) {
-        const existing = await db.prepare(
-          'SELECT id FROM feedback WHERE message_id = ? LIMIT 1',
-        ).bind(body.messageId).first<{ id: number }>()
-
-        if (existing) {
-          await db.prepare(
-            'UPDATE feedback SET comment = ?, tags = ? WHERE id = ?',
-          ).bind(comment, tagsJson, existing.id).run()
-          // Skip insert — we updated the existing row
-          return new Response(JSON.stringify({ ok: true }), {
-            status: 200,
-            headers: { ...cors, 'Content-Type': 'application/json' },
-          })
-        }
-      }
-
+      // ON CONFLICT handles upsert — second submission (with tags/comment)
+      // updates the existing row automatically
       await db.prepare(
         `INSERT INTO feedback (rating, comment, message_id, dataset_id, conversation, system_prompt, model_config, is_fallback, user_message, turn_index, history_compressed, action_clicks, tags, assistant_message, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(message_id) DO UPDATE SET
+           comment = excluded.comment,
+           tags = excluded.tags,
+           rating = excluded.rating`,
       ).bind(
         body.rating,
         comment,
@@ -189,19 +187,22 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         body.datasetId ?? null,
         conversationJson,
         (body.systemPrompt ?? '').slice(0, 100_000),
-        JSON.stringify(body.modelConfig ?? {}),
+        modelConfigJson,
         body.isFallback ? 1 : 0,
         (body.userMessage ?? '').slice(0, 10_000),
         body.turnIndex ?? null,
         body.historyCompressed ? 1 : 0,
-        JSON.stringify(body.actionClicks ?? []),
+        JSON.stringify((body.actionClicks ?? []).slice(0, 50)),
         tagsJson,
         assistantMessage,
         new Date().toISOString(),
       ).run()
     } catch (err) {
       console.error('Failed to write feedback to D1:', err)
-      // Fall through to console log
+      return new Response(JSON.stringify({ error: 'Failed to store feedback' }), {
+        status: 500,
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
     }
   } else {
     // No D1 binding — log for Cloudflare Workers tail/dashboard

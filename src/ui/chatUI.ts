@@ -980,17 +980,17 @@ function wireFeedbackButtons(container: Element): void {
 
       // Disable both buttons immediately
       const feedbackRow = btn.closest('.chat-feedback')
-      feedbackRow?.querySelectorAll<HTMLElement>('.chat-feedback-btn').forEach(b => {
+      feedbackRow?.querySelectorAll<HTMLButtonElement>('.chat-feedback-btn').forEach(b => {
+        b.disabled = true
         b.classList.add('chat-feedback-disabled')
-        b.setAttribute('aria-disabled', 'true')
-        b.style.pointerEvents = 'none'
       })
       // Highlight the selected one
+      ;(btn as HTMLButtonElement).disabled = false
       btn.classList.add('chat-feedback-rated')
       btn.classList.remove('chat-feedback-disabled')
       btn.setAttribute('aria-pressed', 'true')
 
-      submitInlineRating(msgId, rating, btn)
+      submitInlineRating(msgId, rating, btn as HTMLButtonElement)
     })
   })
 }
@@ -1020,7 +1020,7 @@ function buildFeedbackPayload(messageId: string, rating: FeedbackRating): Feedba
       readingLevel: ctx.readingLevel,
       visionEnabled: ctx.visionEnabled,
     } : undefined,
-    isFallback: ctx?.fallback ?? true,
+    isFallback: ctx ? ctx.fallback : undefined,
     userMessage,
     turnIndex: turnIndex >= 0 ? turnIndex : undefined,
     historyCompressed: ctx?.historyCompressed,
@@ -1029,7 +1029,7 @@ function buildFeedbackPayload(messageId: string, rating: FeedbackRating): Feedba
 }
 
 /** Submit a single-click inline rating to the server, then show expansion. */
-async function submitInlineRating(messageId: string, rating: FeedbackRating, btn: HTMLElement): Promise<void> {
+async function submitInlineRating(messageId: string, rating: FeedbackRating, btn: HTMLButtonElement): Promise<void> {
   const payload = buildFeedbackPayload(messageId, rating)
 
   try {
@@ -1049,11 +1049,10 @@ async function submitInlineRating(messageId: string, rating: FeedbackRating, btn
   } catch {
     // Re-enable buttons on failure so user can retry
     const feedbackRow = btn.closest('.chat-feedback')
-    feedbackRow?.querySelectorAll<HTMLElement>('.chat-feedback-btn').forEach(b => {
+    feedbackRow?.querySelectorAll<HTMLButtonElement>('.chat-feedback-btn').forEach(b => {
+      b.disabled = false
       b.classList.remove('chat-feedback-disabled', 'chat-feedback-rated')
       b.removeAttribute('aria-pressed')
-      b.removeAttribute('aria-disabled')
-      b.style.pointerEvents = ''
     })
   }
 }
