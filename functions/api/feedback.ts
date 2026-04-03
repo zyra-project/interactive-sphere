@@ -147,6 +147,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const messages = body.messages.slice(-100)
   const conversationJson = JSON.stringify(messages)
 
+  // Extract the rated assistant message text for easy export queries
+  const ratedMsg = messages.find((m: Record<string, unknown>) =>
+    m.id === body.messageId && (m.role === 'docent' || m.role === 'assistant'),
+  ) as Record<string, unknown> | undefined
+  const assistantMessage = typeof ratedMsg?.text === 'string' ? ratedMsg.text.slice(0, 50_000) : ''
+
   // Store in D1 if binding is available, otherwise log to console
   const db = context.env.FEEDBACK_DB
   if (db) {
@@ -173,8 +179,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       }
 
       await db.prepare(
-        `INSERT INTO feedback (rating, comment, message_id, dataset_id, conversation, system_prompt, model_config, is_fallback, user_message, turn_index, history_compressed, action_clicks, tags, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO feedback (rating, comment, message_id, dataset_id, conversation, system_prompt, model_config, is_fallback, user_message, turn_index, history_compressed, action_clicks, tags, assistant_message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         body.rating,
         comment,
@@ -189,6 +195,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         body.historyCompressed ? 1 : 0,
         JSON.stringify(body.actionClicks ?? []),
         tagsJson,
+        assistantMessage,
         new Date(body.timestamp).toISOString(),
       ).run()
     } catch (err) {
