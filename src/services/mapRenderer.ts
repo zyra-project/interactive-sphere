@@ -325,7 +325,7 @@ export class MapRenderer implements GlobeRenderer {
       this.map!.addLayer(this.earthLayer.layer as unknown as maplibregl.LayerSpecification)
 
       // Move label/boundary layers above the earth tile layer
-      for (const id of this.labelLayerIds) {
+      for (const id of this.allOverlayLayerIds) {
         try { this.map!.moveLayer(id) } catch { /* layer may not exist */ }
       }
 
@@ -391,16 +391,18 @@ export class MapRenderer implements GlobeRenderer {
 
   // --- Label & boundary layer toggles ---
 
-  private readonly labelLayerIds = ['coastline-halo', 'coastline', 'boundaries-halo', 'boundaries', 'country-labels', 'city-labels', 'ocean-labels']
+  private readonly allOverlayLayerIds = ['coastline-halo', 'coastline', 'boundaries-halo', 'boundaries', 'country-labels', 'city-labels', 'ocean-labels']
+  private readonly labelOnlyIds = ['country-labels', 'city-labels', 'ocean-labels']
+  private readonly boundaryOnlyIds = ['coastline-halo', 'coastline', 'boundaries-halo', 'boundaries']
 
-  /** Show or hide all label and boundary layers. */
+  /** Show or hide label layers only (country, city, ocean names). */
   toggleLabels(visible?: boolean): boolean {
     if (!this.map || !this.map.isStyleLoaded()) return false
     let firstLayer: string | undefined
     try { firstLayer = this.map.getLayoutProperty('country-labels', 'visibility') } catch { /* style not ready */ }
     const show = visible ?? (firstLayer === 'none' || firstLayer === undefined)
     const vis = show ? 'visible' : 'none'
-    for (const id of this.labelLayerIds) {
+    for (const id of this.labelOnlyIds) {
       try { this.map.setLayoutProperty(id, 'visibility', vis) } catch { /* noop */ }
     }
     return show
@@ -413,7 +415,7 @@ export class MapRenderer implements GlobeRenderer {
     try { current = this.map.getLayoutProperty('boundaries', 'visibility') } catch { /* style not ready */ }
     const show = visible ?? (current === 'none' || current === undefined)
     const vis = show ? 'visible' : 'none'
-    for (const id of ['coastline-halo', 'coastline', 'boundaries-halo', 'boundaries']) {
+    for (const id of this.boundaryOnlyIds) {
       try { this.map.setLayoutProperty(id, 'visibility', vis) } catch { /* noop */ }
     }
     return show
@@ -636,10 +638,10 @@ export class MapRenderer implements GlobeRenderer {
     } catch { /* noop */ }
   }
 
-  /** Clear sun override — does NOT re-show the layer (that's enableSunLighting's job). */
+  /** Clear sun override — reverts to real-time sun position.
+   *  Does NOT re-show the earth layer; enableSunLighting() handles that. */
   disableSunLighting(): void {
-    // Just clear the override; don't re-show the earth layer.
-    // enableSunLighting() will restore visibility when returning to the default view.
+    this.earthLayer?.clearSunOverride()
   }
 
   /** Clouds are loaded by the earth tile layer automatically. Report complete. */

@@ -66,7 +66,7 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork)
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
-      url: ${{ github.ref == 'refs/heads/main' && 'https://sphere.zyra-project.org/' || steps.deploy.outputs.url }}
+      url: ${{ github.ref == 'refs/heads/main' && 'https://sphere.zyra-project.org/' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
