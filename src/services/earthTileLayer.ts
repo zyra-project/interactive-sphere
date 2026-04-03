@@ -23,6 +23,7 @@
 import type { CustomLayerInterface } from 'maplibre-gl'
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { getSunPosition } from '../utils/time'
+import { logger } from '../utils/logger'
 
 // --- Texture URLs ---
 const SPECULAR_MAP_URL = '/assets/Earth_Specular_2K.jpg'
@@ -626,7 +627,7 @@ function compileProgram(
   gl.shaderSource(vs, vsSrc)
   gl.compileShader(vs)
   if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
-    console.error(`[EarthTileLayer] ${label} vertex shader:`, gl.getShaderInfoLog(vs))
+    logger.error(`[EarthTileLayer] ${label} vertex shader:`, gl.getShaderInfoLog(vs))
     return null
   }
 
@@ -634,7 +635,7 @@ function compileProgram(
   gl.shaderSource(fs, fsSrc)
   gl.compileShader(fs)
   if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-    console.error(`[EarthTileLayer] ${label} fragment shader:`, gl.getShaderInfoLog(fs))
+    logger.error(`[EarthTileLayer] ${label} fragment shader:`, gl.getShaderInfoLog(fs))
     return null
   }
 
@@ -646,7 +647,7 @@ function compileProgram(
   gl.deleteShader(fs)
 
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.error(`[EarthTileLayer] ${label} link:`, gl.getProgramInfoLog(prog))
+    logger.error(`[EarthTileLayer] ${label} link:`, gl.getProgramInfoLog(prog))
     return null
   }
   return prog
@@ -777,7 +778,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
             if (facesLoaded === 6) {
               skyboxReady = true
               _map.triggerRepaint()
-              console.info('[EarthTileLayer] Skybox loaded (6 faces)')
+              logger.info('[EarthTileLayer] Skybox loaded (6 faces)')
             }
           }
           faceImg.src = SKYBOX_URL_BASE + face + '.jpg'
@@ -933,10 +934,10 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         cloudTexReady = true
         checkReady()
         _map.triggerRepaint()
-        console.info('[EarthTileLayer] Cloud texture loaded (%dx%d)', cloudImg.width, cloudImg.height)
+        logger.info('[EarthTileLayer] Cloud texture loaded (%dx%d)', cloudImg.width, cloudImg.height)
       }
       cloudImg.onerror = () => {
-        console.warn('[EarthTileLayer] Failed to load cloud texture:', CLOUD_TEXTURE_URL)
+        logger.warn('[EarthTileLayer] Failed to load cloud texture:', CLOUD_TEXTURE_URL)
         cloudTexReady = true
         checkReady()
       }
@@ -961,16 +962,16 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         specTexReady = true
         checkReady()
         _map.triggerRepaint()
-        console.info('[EarthTileLayer] Specular map loaded (%dx%d)', specImg.width, specImg.height)
+        logger.info('[EarthTileLayer] Specular map loaded (%dx%d)', specImg.width, specImg.height)
       }
       specImg.onerror = () => {
-        console.warn('[EarthTileLayer] Failed to load specular map:', SPECULAR_MAP_URL)
+        logger.warn('[EarthTileLayer] Failed to load specular map:', SPECULAR_MAP_URL)
         specTexReady = true
         checkReady()
       }
       specImg.src = SPECULAR_MAP_URL
 
-      console.info('[EarthTileLayer] Day/night+clouds+specular layer initialized (%d triangles)', indexCount / 3)
+      logger.info('[EarthTileLayer] Day/night+clouds+specular layer initialized (%d triangles)', indexCount / 3)
     },
 
     render(gl, args) {

@@ -720,10 +720,14 @@ function renderChatText(
   text: string,
   actions?: ChatAction[],
 ): { html: string; inlinedIds: Set<string> } {
-  // Strip raw <<LOAD:...>>, <<FLY:...>>, <<TIME:...>> markers that appear during streaming
+  // Strip raw markers that appear during streaming (all action types)
   let clean = text.replace(/<?<LOAD:[^>]+>>?\n?/g, '')
   clean = clean.replace(/<?<FLY:[^>]+>>?\n?/g, '')
   clean = clean.replace(/<?<TIME:[^>]+>>?\n?/g, '')
+  clean = clean.replace(/<?<BOUNDS:[^>]+>>?\n?/g, '')
+  clean = clean.replace(/<?<MARKER:[^>]+>>?\n?/g, '')
+  clean = clean.replace(/<?<LABELS:[^>]+>>?\n?/g, '')
+  clean = clean.replace(/<?<REGION:[^>]+>>?\n?/g, '')
   // Strip bare fly_to/set_time text patterns (LLM fallback)
   clean = clean.replace(/^.*\bfly_to\s*[:(\s]\s*[-\d.,\s]+\)?\s*$/gim, '')
   clean = clean.replace(/^.*\bset_time\s*[:(\s]\s*"?[^")\n]*"?\s*\)?\s*$/gim, '')

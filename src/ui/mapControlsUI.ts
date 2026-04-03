@@ -2,16 +2,17 @@
  * Map Controls UI — floating toolbar for MapLibre overlay toggles.
  *
  * Provides direct buttons for labels, boundaries, terrain, and clearing
- * markers/highlights without needing the chat. Only shown when the
- * MapLibre renderer backend is active.
+ * markers/highlights without needing the chat.
  */
 
 import type { MapRenderer } from '../services/mapRenderer'
 
-/** Show the map controls toolbar and wire events to the MapRenderer. */
+/** Show the map controls toolbar and wire events to the MapRenderer.
+ *  Idempotent — safe to call multiple times (skips if already initialized). */
 export function initMapControls(renderer: MapRenderer): void {
   const container = document.getElementById('map-controls')
-  if (!container) return
+  if (!container || container.dataset.initialized) return
+  container.dataset.initialized = 'true'
 
   // Build the buttons
   container.innerHTML = `
@@ -54,7 +55,8 @@ export function initMapControls(renderer: MapRenderer): void {
   })
 
   // Re-position on window resize in case playback controls change height
-  window.addEventListener('resize', () => updateMapControlsPosition())
+  const onResize = () => updateMapControlsPosition()
+  window.addEventListener('resize', onResize)
 }
 
 /**
