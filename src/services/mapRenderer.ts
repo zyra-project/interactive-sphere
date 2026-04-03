@@ -24,8 +24,8 @@ const BLACK_MARBLE_TILES = [
 const GIBS_MAX_ZOOM = 8
 
 // --- Default camera ---
-const DEFAULT_CENTER: [number, number] = [0, 20]
-const DEFAULT_ZOOM = 1.8
+const DEFAULT_CENTER: [number, number] = [-95, 38]
+const DEFAULT_ZOOM = 2.3
 // Zoom limits: ~0.5 shows the full globe, ~8 is the max detail for GIBS tiles
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 8
@@ -332,6 +332,11 @@ export class MapRenderer implements GlobeRenderer {
     // Move label layers above the earth tile layer so they aren't darkened.
     this.map.on('load', () => {
       logger.info('[MapRenderer] Map loaded with globe projection')
+
+      // Collapse the compact attribution control so it doesn't cover the auto-rotate button
+      const attrib = container.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact')
+      attrib?.classList.remove('maplibregl-compact-show')
+
       this.earthLayer = createEarthTileLayer()
 
       // Layer order: black-marble → [capture] → blue-marble → [earth-tile] → labels → [skybox]
@@ -524,13 +529,13 @@ export class MapRenderer implements GlobeRenderer {
 
   private startAutoRotate(): void {
     this.stopAutoRotate()
-    // Use easeTo with a long duration to smoothly rotate the bearing.
-    // Re-trigger every 10 seconds to keep it going.
+    // Shift the center longitude to rotate around the polar axis (west-to-east).
+    // This avoids the wobble caused by bearing rotation on a tilted globe.
     const rotate = () => {
       if (!this.map || !this.autoRotating) return
-      const currentBearing = this.map.getBearing()
+      const center = this.map.getCenter()
       this.map.easeTo({
-        bearing: currentBearing - 30,
+        center: [center.lng - 30, center.lat],
         duration: 10000,
         easing: (t: number) => t, // linear
       })

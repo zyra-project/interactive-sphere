@@ -5,7 +5,7 @@
  * falls back to the local docentEngine for instant offline responses.
  */
 
-import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext } from '../types'
+import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext, LLMContextSnapshot, ReadingLevel } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart } from './llmProvider'
 import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
@@ -254,7 +254,7 @@ export type DocentStreamChunk =
   | { type: 'action'; action: ChatAction }
   | { type: 'auto-load'; action: ChatAction; alternatives: ChatAction[] }
   | { type: 'rewrite'; text: string }
-  | { type: 'done'; fallback: boolean }
+  | { type: 'done'; fallback: boolean; llmContext?: LLMContextSnapshot }
 
 /**
  * Load docent config from localStorage, merging with defaults.
@@ -692,6 +692,15 @@ export async function* processMessage(
         ? { ...cfg, model: CF_VISION_MODEL }
         : cfg
 
+      const llmContext: LLMContextSnapshot = {
+        systemPrompt,
+        model: visionCfg.model,
+        readingLevel: cfg.readingLevel as ReadingLevel,
+        visionEnabled: visionActive,
+        fallback: false,
+        historyCompressed: history.length > 6,
+      }
+
       const stream = streamChat(llmMessages, tools, visionCfg, visionActive ? { timeoutMs: VISION_TIMEOUT_MS } : undefined)
 
       for await (const chunk of stream) {
@@ -827,7 +836,7 @@ export async function* processMessage(
           case 'done':
             if (llmProducedText) {
               yield* emitValidatedActions(accumulatedText, datasets, yieldedIds)
-              yield { type: 'done', fallback: false }
+              yield { type: 'done', fallback: false, llmContext }
               return
             }
             break
@@ -836,7 +845,7 @@ export async function* processMessage(
 
       if (llmProducedText) {
         yield* emitValidatedActions(accumulatedText, datasets, yieldedIds)
-        yield { type: 'done', fallback: false }
+        yield { type: 'done', fallback: false, llmContext }
         return
       }
     } catch (err) {

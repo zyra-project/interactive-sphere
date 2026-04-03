@@ -42,6 +42,7 @@ export function startPlaybackLoop(
   videoTexture: { needsUpdate: boolean } | null,
   appState: AppState,
   updateVideoTimeLabel: (time: number) => void,
+  triggerRepaint?: () => void,
 ): void {
   stopPlaybackLoop(state)
 
@@ -73,6 +74,12 @@ export function startPlaybackLoop(
         }
 
         updateVideoTimeLabel(video.currentTime)
+
+        // Force MapLibre to re-render while video is playing so the
+        // globe texture updates with each new video frame.
+        if (!video.paused && triggerRepaint) {
+          triggerRepaint()
+        }
       }
     }
 

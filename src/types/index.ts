@@ -168,6 +168,19 @@ export type ChatAction =
   | { type: 'highlight-region'; geojson: GeoJSON.GeoJSON; label?: string }
 
 /**
+ * Snapshot of the LLM context used to generate an AI response.
+ * Attached to each docent message for RLHF / training data extraction.
+ */
+export interface LLMContextSnapshot {
+  systemPrompt: string
+  model: string
+  readingLevel: ReadingLevel
+  visionEnabled: boolean
+  fallback: boolean
+  historyCompressed: boolean
+}
+
+/**
  * A single chat message
  */
 export interface ChatMessage {
@@ -176,6 +189,8 @@ export interface ChatMessage {
   text: string
   actions?: ChatAction[]
   timestamp: number
+  /** LLM context that produced this response (docent messages only, in-memory only) */
+  llmContext?: LLMContextSnapshot
 }
 
 /**
@@ -183,6 +198,43 @@ export interface ChatMessage {
  */
 export interface ChatSession {
   messages: ChatMessage[]
+}
+
+/**
+ * Thumbs-up or thumbs-down rating for an AI response
+ */
+export type FeedbackRating = 'thumbs-up' | 'thumbs-down'
+
+/**
+ * Payload submitted to the server when a user rates an AI response
+ */
+export interface FeedbackPayload {
+  rating: FeedbackRating
+  comment: string
+  messageId: string
+  messages: ChatMessage[]
+  datasetId: string | null
+  timestamp: number
+  /** System prompt used for the rated message */
+  systemPrompt?: string
+  /** Model config at the time of the rated response */
+  modelConfig?: {
+    model: string
+    readingLevel: ReadingLevel
+    visionEnabled: boolean
+  }
+  /** True if the rated message came from the local engine, not the LLM */
+  isFallback?: boolean
+  /** The user message that prompted the rated AI response */
+  userMessage?: string
+  /** Zero-based index of this docent message among all docent messages */
+  turnIndex?: number
+  /** Whether conversation history was compressed for this turn */
+  historyCompressed?: boolean
+  /** Dataset IDs the user clicked to load from this message (implicit positive signal) */
+  actionClicks?: string[]
+  /** Quick-select feedback tags (e.g. "Wrong dataset", "Too long") */
+  tags?: string[]
 }
 
 /**

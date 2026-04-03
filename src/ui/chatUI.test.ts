@@ -7,6 +7,7 @@ import {
   getMessages,
   clearChat,
   notifyDatasetChanged,
+  submitFeedback,
 } from './chatUI'
 import type { ChatCallbacks } from './chatUI'
 
@@ -505,5 +506,336 @@ describe('vision toggle', () => {
     expect(cb.announce).toHaveBeenCalledWith('Vision mode enabled')
     btn.click()
     expect(cb.announce).toHaveBeenCalledWith('Vision mode disabled')
+  })
+})
+
+describe('feedback mechanism', () => {
+  it('renders feedback buttons on docent messages but not user messages', () => {
+    const session = {
+      messages: [
+        { id: 'u1', role: 'user', text: 'hello', timestamp: 1 },
+        { id: 'd1', role: 'docent', text: 'Hi there!', timestamp: 2 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const container = document.getElementById('chat-messages')!
+    const userMsg = container.querySelector('[data-msg-id="u1"]')
+    const docentMsg = container.querySelector('[data-msg-id="d1"]')
+
+    expect(userMsg?.querySelector('.chat-feedback')).toBeNull()
+    expect(docentMsg?.querySelector('.chat-feedback')).not.toBeNull()
+    expect(docentMsg?.querySelectorAll('.chat-feedback-btn')).toHaveLength(2)
+  })
+
+  it('does not render feedback buttons on empty docent messages', () => {
+    const session = {
+      messages: [
+        { id: 'd1', role: 'docent', text: '', timestamp: 1 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const container = document.getElementById('chat-messages')!
+    const docentMsg = container.querySelector('[data-msg-id="d1"]')
+    expect(docentMsg?.querySelector('.chat-feedback')).toBeNull()
+  })
+
+  it('submits rating immediately on click without modal', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'u1', role: 'user', text: 'hello', timestamp: 1 },
+        { id: 'd1', role: 'docent', text: 'Hi!', timestamp: 2 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    const cb = makeCallbacks()
+    initChatUI(cb)
+
+    const thumbsUp = document.querySelector('[data-feedback="thumbs-up"]') as HTMLElement
+    thumbsUp.click()
+
+    // No modal should appear
+    expect(document.getElementById('chat-feedback-modal')).toBeNull()
+
+    // Wait for fetch
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce()
+    })
+
+    // Verify the payload includes new RLHF fields
+    const [url, opts] = fetchSpy.mock.calls[0]
+    expect(url).toBe('/api/feedback')
+    const body = JSON.parse((opts as RequestInit).body as string)
+    expect(body.rating).toBe('thumbs-up')
+    expect(body.messageId).toBe('d1')
+    expect(body.messages).toHaveLength(2)
+    expect(body.userMessage).toBe('hello')
+    expect(body.turnIndex).toBe(0)
+
+    fetchSpy.mockRestore()
+  })
+
+  it('does NOT reset conversation after feedback', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'u1', role: 'user', text: 'hello', timestamp: 1 },
+        { id: 'd1', role: 'docent', text: 'Hi!', timestamp: 2 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    const cb = makeCallbacks()
+    initChatUI(cb)
+
+    const thumbsUp = document.querySelector('[data-feedback="thumbs-up"]') as HTMLElement
+    thumbsUp.click()
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce()
+    })
+
+    // Conversation should still be intact
+    expect(getMessages()).toHaveLength(2)
+    expect(cb.announce).toHaveBeenCalledWith('Feedback submitted')
+
+    fetchSpy.mockRestore()
+  })
+
+  it('disables buttons and highlights selected on click', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'd1', role: 'docent', text: 'Answer', timestamp: 1 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const thumbsUp = document.querySelector('[data-feedback="thumbs-up"]') as HTMLElement
+    const thumbsDown = document.querySelector('[data-feedback="thumbs-down"]') as HTMLElement
+    thumbsUp.click()
+
+    // Selected button should be highlighted, other disabled
+    expect(thumbsUp.classList.contains('chat-feedback-rated')).toBe(true)
+    expect(thumbsDown.classList.contains('chat-feedback-disabled')).toBe(true)
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce()
+    })
+
+    fetchSpy.mockRestore()
+  })
+
+  it('re-enables buttons on submission failure', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'd1', role: 'docent', text: 'Answer', timestamp: 1 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const thumbsDown = document.querySelector('[data-feedback="thumbs-down"]') as HTMLElement
+    thumbsDown.click()
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce()
+    })
+
+    // Buttons should be re-enabled after failure
+    await vi.waitFor(() => {
+      expect(thumbsDown.classList.contains('chat-feedback-rated')).toBe(false)
+      expect(thumbsDown.classList.contains('chat-feedback-disabled')).toBe(false)
+    })
+
+    // Messages should still be intact
+    expect(getMessages()).toHaveLength(1)
+    fetchSpy.mockRestore()
+  })
+
+  it('sends userMessage in payload (the preceding user message)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'u1', role: 'user', text: 'Tell me about oceans', timestamp: 1 },
+        { id: 'd1', role: 'docent', text: 'Oceans cover 71%...', timestamp: 2 },
+        { id: 'u2', role: 'user', text: 'What about coral?', timestamp: 3 },
+        { id: 'd2', role: 'docent', text: 'Coral reefs are...', timestamp: 4 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    // Rate the second docent message
+    const btns = document.querySelectorAll('[data-feedback="thumbs-up"][data-msg-id="d2"]')
+    ;(btns[0] as HTMLElement).click()
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce()
+    })
+
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.userMessage).toBe('What about coral?')
+    expect(body.turnIndex).toBe(1)
+
+    fetchSpy.mockRestore()
+  })
+
+  it('shows inline expansion with tags after successful rating', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'd1', role: 'docent', text: 'Answer', timestamp: 1 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const thumbsDown = document.querySelector('[data-feedback="thumbs-down"]') as HTMLElement
+    thumbsDown.click()
+
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce()
+    })
+
+    // Expansion should appear with tags
+    const expansion = document.getElementById('chat-feedback-expansion')
+    expect(expansion).not.toBeNull()
+    expect(expansion?.querySelectorAll('.chat-feedback-tag').length).toBeGreaterThan(0)
+    expect(expansion?.querySelector('.chat-feedback-comment')).not.toBeNull()
+
+    fetchSpy.mockRestore()
+  })
+
+  it('dismisses expansion on Escape key', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'd1', role: 'docent', text: 'Answer', timestamp: 1 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const thumbsUp = document.querySelector('[data-feedback="thumbs-up"]') as HTMLElement
+    thumbsUp.click()
+
+    await vi.waitFor(() => {
+      expect(document.getElementById('chat-feedback-expansion')).not.toBeNull()
+    })
+
+    const expansion = document.getElementById('chat-feedback-expansion')!
+    expansion.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(document.getElementById('chat-feedback-expansion')).toBeNull()
+
+    fetchSpy.mockRestore()
+  })
+
+  it('toggles tag aria-pressed on click', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'd1', role: 'docent', text: 'Answer', timestamp: 1 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const thumbsDown = document.querySelector('[data-feedback="thumbs-down"]') as HTMLElement
+    thumbsDown.click()
+
+    await vi.waitFor(() => {
+      expect(document.getElementById('chat-feedback-expansion')).not.toBeNull()
+    })
+
+    const tag = document.querySelector('.chat-feedback-tag') as HTMLElement
+    expect(tag.getAttribute('aria-pressed')).toBe('false')
+    tag.click()
+    expect(tag.getAttribute('aria-pressed')).toBe('true')
+    tag.click()
+    expect(tag.getAttribute('aria-pressed')).toBe('false')
+
+    fetchSpy.mockRestore()
+  })
+
+  it('submits tags and comment on send', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    )
+
+    const session = {
+      messages: [
+        { id: 'u1', role: 'user', text: 'hello', timestamp: 1 },
+        { id: 'd1', role: 'docent', text: 'Answer', timestamp: 2 },
+      ],
+    }
+    sessionStorage.setItem('sos-docent-chat', JSON.stringify(session))
+    initChatUI(makeCallbacks())
+
+    const thumbsDown = document.querySelector('[data-feedback="thumbs-down"]') as HTMLElement
+    thumbsDown.click()
+
+    // Wait for expansion to appear
+    await vi.waitFor(() => {
+      expect(document.getElementById('chat-feedback-expansion')).not.toBeNull()
+    })
+
+    // Select a tag
+    const tag = document.querySelector('.chat-feedback-tag') as HTMLElement
+    tag.click()
+
+    // Type a comment
+    const textarea = document.querySelector('.chat-feedback-comment') as HTMLTextAreaElement
+    textarea.value = 'Wrong dataset suggested'
+
+    // Click send
+    const sendBtn = document.querySelector('.chat-feedback-send') as HTMLElement
+    sendBtn.click()
+
+    // Wait for second fetch (update)
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    })
+
+    const body = JSON.parse((fetchSpy.mock.calls[1][1] as RequestInit).body as string)
+    expect(body.tags).toHaveLength(1)
+    expect(body.comment).toBe('Wrong dataset suggested')
+
+    // Expansion should be dismissed
+    await vi.waitFor(() => {
+      expect(document.getElementById('chat-feedback-expansion')).toBeNull()
+    })
+
+    fetchSpy.mockRestore()
   })
 })

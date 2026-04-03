@@ -255,6 +255,7 @@ class InteractiveSphere {
       this.videoTexture,
       this.appState,
       (time) => this.updateVideoTimeLabel(time),
+      () => this.renderer?.getMap()?.triggerRepaint(),
     )
   }
 
