@@ -293,9 +293,9 @@ export class MapRenderer implements GlobeRenderer {
       maxPitch: 85,
     } as maplibregl.MapOptions)
 
-    // Double-click resets to default view (Three.js behavior) instead of zoom in
+    // Double-click/double-tap resets to default view instead of zoom in
     this.map.doubleClickZoom.disable()
-    this.map.on('dblclick', () => {
+    const resetView = () => {
       this.map?.flyTo({
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
@@ -303,6 +303,22 @@ export class MapRenderer implements GlobeRenderer {
         pitch: 0,
         duration: 2000,
       })
+    }
+    this.map.on('dblclick', resetView)
+
+    // Double-tap detection for touch (dblclick doesn't fire on touch devices)
+    let lastTap = 0
+    this.map.on('touchend', (e) => {
+      // Only single-finger taps count as double-tap
+      if (e.originalEvent.touches.length > 0) return
+      const now = Date.now()
+      if (now - lastTap < 350) {
+        e.preventDefault()
+        resetView()
+        lastTap = 0
+      } else {
+        lastTap = now
+      }
     })
 
     // Accessibility
