@@ -752,9 +752,13 @@ export async function* processMessage(
                 const region = resolveRegion(args.place)
                 if (region) {
                   const [west, south, east, north] = region.bounds
+                  // Handle antimeridian-crossing bounds (west > east) by wrapping
+                  const lon = west <= east
+                    ? (west + east) / 2
+                    : ((west + east + 360) / 2) % 360 - (((west + east + 360) / 2) % 360 > 180 ? 360 : 0)
                   yield {
                     type: 'action',
-                    action: { type: 'fly-to', lat: (south + north) / 2, lon: (west + east) / 2, altitude: args.altitude },
+                    action: { type: 'fly-to', lat: (south + north) / 2, lon, altitude: args.altitude },
                   }
                 }
               }

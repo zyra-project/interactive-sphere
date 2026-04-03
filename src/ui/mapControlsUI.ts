@@ -52,6 +52,9 @@ export function initMapControls(renderer: MapRenderer): void {
     renderer.clearMarkers()
     renderer.clearHighlights()
   })
+
+  // Re-position on window resize in case playback controls change height
+  window.addEventListener('resize', () => updateMapControlsPosition())
 }
 
 /**

@@ -288,7 +288,7 @@ export class MapRenderer implements GlobeRenderer {
       zoom: DEFAULT_ZOOM,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
-      attributionControl: false,
+      attributionControl: { compact: true },
       preserveDrawingBuffer: true, // needed for captureViewContext / toDataURL
       maxPitch: 85,
     } as maplibregl.MapOptions)
@@ -705,24 +705,24 @@ export class MapRenderer implements GlobeRenderer {
    * Query the current viewport state and visible geographic features.
    * Returns a structured object the LLM can use for richer context.
    */
-  /** Extract unique feature names from a source layer, filtered to the viewport bounds. */
-  private queryNamesInBounds(sourceLayer: string, bounds: maplibregl.LngLatBounds): string[] {
+  /** Extract unique feature names from a source layer, filtered to the viewport bounds.
+   *  Only considers Point features to avoid false positives from off-screen geometry. */
+  private queryNamesInBounds(sourceLayer: string, bounds: maplibregl.LngLatBounds, classFilter?: string): string[] {
     if (!this.map) return []
     const names: string[] = []
     const seen = new Set<string>()
     try {
       const features = this.map.querySourceFeatures('openmaptiles', { sourceLayer })
       for (const f of features) {
+        // Only process Point features — LineString/Polygon can extend far off-screen
+        if (f.geometry.type !== 'Point') continue
+        if (classFilter && f.properties?.class !== classFilter) continue
         const name = (f.properties?.['name:latin'] ?? f.properties?.name) as string | undefined
         if (!name || seen.has(name)) continue
-        // Filter to features within viewport bounds (point geometry check)
-        const geom = f.geometry
-        if (geom.type === 'Point') {
-          const [lng, lat] = geom.coordinates
-          if (lat < bounds.getSouth() || lat > bounds.getNorth()) continue
-          const w = bounds.getWest(), e = bounds.getEast()
-          if (w <= e ? (lng < w || lng > e) : (lng < w && lng > e)) continue
-        }
+        const [lng, lat] = f.geometry.coordinates
+        if (lat < bounds.getSouth() || lat > bounds.getNorth()) continue
+        const w = bounds.getWest(), e = bounds.getEast()
+        if (w <= e ? (lng < w || lng > e) : (lng < w && lng > e)) continue
         seen.add(name)
         names.push(name)
       }
@@ -736,7 +736,7 @@ export class MapRenderer implements GlobeRenderer {
     const bounds = this.map.getBounds()
 
     // Use querySourceFeatures so results are available regardless of label visibility
-    const visibleCountries = this.queryNamesInBounds('place', bounds)
+    const visibleCountries = this.queryNamesInBounds('place', bounds, 'country')
     const visibleOceans = this.queryNamesInBounds('water_name', bounds)
 
     return {
