@@ -18,6 +18,9 @@ interface FeedbackBody {
   messages: unknown[]
   datasetId: string | null
   timestamp: number
+  systemPrompt?: string
+  modelConfig?: Record<string, unknown>
+  isFallback?: boolean
 }
 
 // --- Rate limiting (in-memory, per-isolate) ---
@@ -83,6 +86,8 @@ function isValidBody(body: unknown): body is FeedbackBody {
   if (typeof b.messageId !== 'string' || !b.messageId) return false
   if (!Array.isArray(b.messages)) return false
   if (typeof b.timestamp !== 'number') return false
+  if (b.systemPrompt !== undefined && typeof b.systemPrompt !== 'string') return false
+  if (b.isFallback !== undefined && typeof b.isFallback !== 'boolean') return false
   return true
 }
 
@@ -137,14 +142,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   if (db) {
     try {
       await db.prepare(
-        `INSERT INTO feedback (rating, comment, message_id, dataset_id, conversation, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO feedback (rating, comment, message_id, dataset_id, conversation, system_prompt, model_config, is_fallback, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         body.rating,
         body.comment.slice(0, 2000),
         body.messageId,
         body.datasetId ?? null,
         conversationJson,
+        (body.systemPrompt ?? '').slice(0, 100_000),
+        JSON.stringify(body.modelConfig ?? {}),
+        body.isFallback ? 1 : 0,
         new Date(body.timestamp).toISOString(),
       ).run()
     } catch (err) {
@@ -160,6 +168,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       datasetId: body.datasetId,
       messageCount: messages.length,
       timestamp: body.timestamp,
+      model: (body.modelConfig as Record<string, unknown>)?.model ?? 'unknown',
+      isFallback: body.isFallback ?? false,
+      hasSystemPrompt: !!body.systemPrompt,
     }))
   }
 

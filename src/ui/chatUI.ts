@@ -575,6 +575,12 @@ async function handleSend(): Promise<void> {
           break
 
         case 'done': {
+          // Attach LLM context for RLHF feedback extraction
+          if (chunk.llmContext) {
+            docentMsg.llmContext = chunk.llmContext
+          } else {
+            docentMsg.llmContext = { systemPrompt: '', model: '', readingLevel: 'general', visionEnabled: false, fallback: true }
+          }
           // Replace <<LOAD:...>> markers with inline placeholders so buttons
           // render at the original location in the text, not grouped at the bottom.
           if (docentMsg.text) {
@@ -1000,13 +1006,24 @@ async function handleFeedbackSubmit(): Promise<void> {
     status.className = 'chat-feedback-status'
   }
 
+  const target = feedbackTarget!
+  const ratedMessage = messages.find(m => m.id === target.messageId)
+  const ctx = ratedMessage?.llmContext
+
   const payload: FeedbackPayload = {
-    rating: feedbackTarget.rating,
+    rating: target.rating,
     comment,
-    messageId: feedbackTarget.messageId,
-    messages: [...messages],
+    messageId: target.messageId,
+    messages: messages.map(({ llmContext: _ctx, ...m }) => m),
     datasetId: callbacks?.getCurrentDataset()?.id ?? null,
     timestamp: Date.now(),
+    systemPrompt: ctx?.systemPrompt,
+    modelConfig: ctx ? {
+      model: ctx.model,
+      readingLevel: ctx.readingLevel,
+      visionEnabled: ctx.visionEnabled,
+    } : undefined,
+    isFallback: ctx?.fallback ?? true,
   }
 
   try {

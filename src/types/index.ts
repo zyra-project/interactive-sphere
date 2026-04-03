@@ -168,6 +168,18 @@ export type ChatAction =
   | { type: 'highlight-region'; geojson: GeoJSON.GeoJSON; label?: string }
 
 /**
+ * Snapshot of the LLM context used to generate an AI response.
+ * Attached to each docent message for RLHF / training data extraction.
+ */
+export interface LLMContextSnapshot {
+  systemPrompt: string
+  model: string
+  readingLevel: ReadingLevel
+  visionEnabled: boolean
+  fallback: boolean
+}
+
+/**
  * A single chat message
  */
 export interface ChatMessage {
@@ -176,6 +188,8 @@ export interface ChatMessage {
   text: string
   actions?: ChatAction[]
   timestamp: number
+  /** LLM context that produced this response (docent messages only, in-memory only) */
+  llmContext?: LLMContextSnapshot
 }
 
 /**
@@ -200,6 +214,16 @@ export interface FeedbackPayload {
   messages: ChatMessage[]
   datasetId: string | null
   timestamp: number
+  /** System prompt used for the rated message */
+  systemPrompt?: string
+  /** Model config at the time of the rated response */
+  modelConfig?: {
+    model: string
+    readingLevel: ReadingLevel
+    visionEnabled: boolean
+  }
+  /** True if the rated message came from the local engine, not the LLM */
+  isFallback?: boolean
 }
 
 /**
