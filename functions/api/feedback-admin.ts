@@ -95,12 +95,41 @@ export const onRequestGet: PagesFunction = async (context) => {
     table { width: 100%; border-collapse: collapse; font-size: 0.7rem; }
     th { text-align: left; padding: 0.4rem 0.5rem; color: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 500; }
     td { padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: top; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: rgba(255,255,255,0.03); }
     .rating-up { color: #64c864; }
     .rating-down { color: #ff8866; }
     .td-tags { display: flex; flex-wrap: wrap; gap: 0.2rem; }
     .td-tag { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 0.1rem 0.35rem; font-size: 0.6rem; }
     .td-comment { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .loading { text-align: center; padding: 3rem; color: rgba(255,255,255,0.4); }
+
+    /* Detail panel */
+    .detail-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      padding: 1rem;
+    }
+    .detail-panel {
+      background: #15151e; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px; padding: 1.2rem; width: 100%; max-width: 600px;
+      max-height: 85vh; overflow-y: auto;
+    }
+    .detail-panel h2 { font-size: 0.9rem; margin-bottom: 0.8rem; display: flex; justify-content: space-between; align-items: center; }
+    .detail-close {
+      background: none; border: none; color: rgba(255,255,255,0.5); font-size: 1.1rem;
+      cursor: pointer; padding: 0.2rem 0.4rem;
+    }
+    .detail-close:hover { color: #fff; }
+    .detail-field { margin-bottom: 0.6rem; }
+    .detail-label { font-size: 0.6rem; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.15rem; }
+    .detail-value { font-size: 0.75rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .detail-value.mono { font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 0.65rem; background: rgba(255,255,255,0.04); border-radius: 4px; padding: 0.4rem; max-height: 200px; overflow-y: auto; }
+    .detail-row { display: flex; gap: 0.8rem; flex-wrap: wrap; }
+    .detail-row .detail-field { flex: 1; min-width: 120px; }
+    .detail-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .detail-tag { background: rgba(77,166,255,0.1); border: 1px solid rgba(77,166,255,0.25); border-radius: 10px; padding: 0.15rem 0.5rem; font-size: 0.65rem; color: #6ab8ff; }
   </style>
 </head>
 <body>
@@ -227,26 +256,107 @@ export const onRequestGet: PagesFunction = async (context) => {
 
       // Recent
       if (d.recentFeedback && d.recentFeedback.length > 0) {
+        // Store for detail view
+        window._feedbackRows = d.recentFeedback;
         html += '<div class="section"><h2>Recent Feedback</h2><table><thead><tr>';
         html += '<th>Rating</th><th>Tags</th><th>Comment</th><th>User Message</th><th>Dataset</th><th>Date</th>';
         html += '</tr></thead><tbody>';
-        for (const r of d.recentFeedback) {
+        for (let i = 0; i < d.recentFeedback.length; i++) {
+          const r = d.recentFeedback[i];
           const cls = r.rating === 'thumbs-up' ? 'rating-up' : 'rating-down';
           const icon = r.rating === 'thumbs-up' ? '\\u{1F44D}' : '\\u{1F44E}';
           const tags = (r.tags || []).map(t => '<span class="td-tag">' + esc(t) + '</span>').join('');
-          html += '<tr>'
+          const dt = formatDateTime(r.created_at);
+          html += '<tr class="clickable" data-row-idx="' + i + '">'
             + '<td class="' + cls + '">' + icon + '</td>'
             + '<td><div class="td-tags">' + tags + '</div></td>'
             + '<td class="td-comment" title="' + escAttr(r.comment || '') + '">' + esc(r.comment || '-') + '</td>'
             + '<td class="td-comment" title="' + escAttr(r.user_message || '') + '">' + esc(r.user_message || '-') + '</td>'
             + '<td>' + esc(r.dataset_id || '-') + '</td>'
-            + '<td>' + (r.created_at || '').slice(0, 10) + '</td>'
+            + '<td style="white-space:nowrap">' + dt + '</td>'
             + '</tr>';
         }
         html += '</tbody></table></div>';
       }
 
       document.getElementById('content').innerHTML = html;
+
+      // Wire row clicks
+      document.querySelectorAll('tr.clickable').forEach(tr => {
+        tr.addEventListener('click', () => {
+          const idx = parseInt(tr.dataset.rowIdx);
+          if (window._feedbackRows && window._feedbackRows[idx]) showDetail(window._feedbackRows[idx]);
+        });
+      });
+    }
+
+    function showDetail(r) {
+      // Remove existing
+      document.getElementById('detail-overlay')?.remove();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'detail-overlay';
+      overlay.id = 'detail-overlay';
+
+      const ratingIcon = r.rating === 'thumbs-up' ? '\\u{1F44D} Positive' : '\\u{1F44E} Negative';
+      const ratingCls = r.rating === 'thumbs-up' ? 'rating-up' : 'rating-down';
+      const tags = (r.tags || []).map(t => '<span class="detail-tag">' + esc(t) + '</span>').join('');
+      const model = r.modelConfig?.model || (typeof r.model_config === 'string' ? (() => { try { return JSON.parse(r.model_config).model } catch { return '' } })() : '') || '-';
+      const readingLevel = r.modelConfig?.readingLevel || (typeof r.model_config === 'string' ? (() => { try { return JSON.parse(r.model_config).readingLevel } catch { return '' } })() : '') || '-';
+
+      let html = '<div class="detail-panel">';
+      html += '<h2><span class="' + ratingCls + '">' + ratingIcon + '</span><button class="detail-close" id="detail-close">&times;</button></h2>';
+
+      // Top row: date, model, dataset
+      html += '<div class="detail-row">';
+      html += field('Date', formatDateTime(r.created_at));
+      html += field('Model', model);
+      html += field('Reading Level', readingLevel);
+      html += '</div>';
+
+      html += '<div class="detail-row">';
+      html += field('Dataset', r.dataset_id || '-');
+      html += field('Turn Index', r.turn_index != null ? r.turn_index : '-');
+      html += field('Fallback', r.isFallback || r.is_fallback ? 'Yes (local engine)' : 'No (LLM)');
+      html += '</div>';
+
+      if (tags) {
+        html += '<div class="detail-field"><div class="detail-label">Tags</div><div class="detail-tags">' + tags + '</div></div>';
+      }
+
+      if (r.comment) {
+        html += field('Comment', r.comment);
+      }
+
+      html += field('User Message', r.user_message || '-');
+      html += '<div class="detail-field"><div class="detail-label">Assistant Response</div><div class="detail-value mono">' + esc(r.assistant_message || '-') + '</div></div>';
+
+      html += '</div>';
+      overlay.innerHTML = html;
+      document.body.appendChild(overlay);
+
+      // Close handlers
+      document.getElementById('detail-close').addEventListener('click', closeDetail);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetail(); });
+      overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
+      document.getElementById('detail-close').focus();
+    }
+
+    function closeDetail() {
+      document.getElementById('detail-overlay')?.remove();
+    }
+
+    function field(label, value) {
+      return '<div class="detail-field"><div class="detail-label">' + esc(label) + '</div><div class="detail-value">' + esc(String(value)) + '</div></div>';
+    }
+
+    function formatDateTime(iso) {
+      if (!iso) return '-';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+          + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      } catch { return iso.slice(0, 16).replace('T', ' '); }
     }
 
     function statCard(val, label, cls) {
