@@ -424,7 +424,7 @@ class InteractiveSphere {
       onSetTime: (isoDate) => seekToDate(isoDate, this.hlsService, this.appState, this.playback),
       onFitBounds: (bounds, _label) => { this.renderer?.fitBounds(bounds) },
       onAddMarker: (lat, lng, label) => { this.renderer?.addMarker(lat, lng, label) },
-      onToggleLabels: (visible) => { this.renderer?.toggleLabels(visible) },
+      onToggleLabels: (visible) => { this.renderer?.toggleLabels(visible); this.renderer?.toggleBoundaries(visible) },
       onHighlightRegion: (geojson, _label) => { this.renderer?.highlightRegion(geojson) },
       getMapViewContext: () => this.renderer?.getViewContext() ?? null,
       getDatasets: () => this.appState.datasets,

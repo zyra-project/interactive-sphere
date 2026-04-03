@@ -479,7 +479,7 @@ export function getToggleLabelsTool(): LLMTool {
     type: 'function',
     function: {
       name: 'toggle_labels',
-      description: 'Show or hide geographic labels (country names, city names, ocean names) and political boundaries on the globe. Useful for geographic context when discussing specific regions.',
+      description: 'Show or hide geographic labels (country names, city names, ocean names) and political boundaries/coastlines on the globe. Both labels and boundaries are toggled together.',
       parameters: {
         type: 'object',
         properties: {

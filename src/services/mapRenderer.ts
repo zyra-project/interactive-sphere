@@ -480,6 +480,13 @@ export class MapRenderer implements GlobeRenderer {
     return this.autoRotating
   }
 
+  private stopOnInteraction = () => {
+    if (this.autoRotating) {
+      this.autoRotating = false
+      this.stopAutoRotate()
+    }
+  }
+
   private startAutoRotate(): void {
     this.stopAutoRotate()
     // Use easeTo with a long duration to smoothly rotate the bearing.
@@ -497,16 +504,8 @@ export class MapRenderer implements GlobeRenderer {
     this.autoRotateInterval = window.setInterval(rotate, 10000)
 
     // Stop auto-rotate on user interaction
-    const stopOnInteraction = () => {
-      if (this.autoRotating) {
-        this.autoRotating = false
-        this.stopAutoRotate()
-      }
-      this.map?.off('mousedown', stopOnInteraction)
-      this.map?.off('touchstart', stopOnInteraction)
-    }
-    this.map?.on('mousedown', stopOnInteraction)
-    this.map?.on('touchstart', stopOnInteraction)
+    this.map?.on('mousedown', this.stopOnInteraction)
+    this.map?.on('touchstart', this.stopOnInteraction)
   }
 
   private stopAutoRotate(): void {
@@ -514,6 +513,8 @@ export class MapRenderer implements GlobeRenderer {
       clearInterval(this.autoRotateInterval)
       this.autoRotateInterval = null
     }
+    this.map?.off('mousedown', this.stopOnInteraction)
+    this.map?.off('touchstart', this.stopOnInteraction)
     this.map?.stop() // cancel any in-flight easeTo
   }
 
@@ -660,40 +661,39 @@ export class MapRenderer implements GlobeRenderer {
    * Query the current viewport state and visible geographic features.
    * Returns a structured object the LLM can use for richer context.
    */
+  /** Extract unique feature names from a source layer, filtered to the viewport bounds. */
+  private queryNamesInBounds(sourceLayer: string, bounds: maplibregl.LngLatBounds): string[] {
+    if (!this.map) return []
+    const names: string[] = []
+    const seen = new Set<string>()
+    try {
+      const features = this.map.querySourceFeatures('openmaptiles', { sourceLayer })
+      for (const f of features) {
+        const name = (f.properties?.['name:latin'] ?? f.properties?.name) as string | undefined
+        if (!name || seen.has(name)) continue
+        // Filter to features within viewport bounds (point geometry check)
+        const geom = f.geometry
+        if (geom.type === 'Point') {
+          const [lng, lat] = geom.coordinates
+          if (lat < bounds.getSouth() || lat > bounds.getNorth()) continue
+          const w = bounds.getWest(), e = bounds.getEast()
+          if (w <= e ? (lng < w || lng > e) : (lng < w && lng > e)) continue
+        }
+        seen.add(name)
+        names.push(name)
+      }
+    } catch { /* source may not be loaded yet */ }
+    return names
+  }
+
   getViewContext(): MapViewContext | null {
     if (!this.map) return null
     const center = this.map.getCenter()
     const bounds = this.map.getBounds()
-    const visibleCountries: string[] = []
-    const visibleOceans: string[] = []
 
-    try {
-      const features = this.map.queryRenderedFeatures(undefined, {
-        layers: ['country-labels'],
-      })
-      const seen = new Set<string>()
-      for (const f of features) {
-        const name = f.properties?.['name:latin'] ?? f.properties?.name
-        if (name && !seen.has(name)) {
-          seen.add(name)
-          visibleCountries.push(name)
-        }
-      }
-    } catch { /* layer may not exist */ }
-
-    try {
-      const features = this.map.queryRenderedFeatures(undefined, {
-        layers: ['ocean-labels'],
-      })
-      const seen = new Set<string>()
-      for (const f of features) {
-        const name = f.properties?.['name:latin'] ?? f.properties?.name
-        if (name && !seen.has(name)) {
-          seen.add(name)
-          visibleOceans.push(name)
-        }
-      }
-    } catch { /* layer may not exist */ }
+    // Use querySourceFeatures so results are available regardless of label visibility
+    const visibleCountries = this.queryNamesInBounds('place', bounds)
+    const visibleOceans = this.queryNamesInBounds('water_name', bounds)
 
     return {
       center: { lat: center.lat, lng: center.lng },

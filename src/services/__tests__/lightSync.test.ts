@@ -136,9 +136,7 @@ describe('viewport light sync', () => {
       v = rotX(-cam[0] * Math.PI / 180, v) // undo Rx(lat)
       v = rotY(cam[1] * Math.PI / 180, v)  // undo Ry(-lng)
 
-      console.log(`[${label}] target ECEF:`, target)
-      console.log(`[${label}] inverse VP:`, v)
-      console.log(`[${label}] az=${azimuthal.toFixed(1)} polar=${polar.toFixed(1)}`)
+
 
       expectClose(v, target)
     })
