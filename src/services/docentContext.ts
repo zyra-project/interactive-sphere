@@ -5,7 +5,7 @@
  * and the current view to give informed, conversational responses.
  */
 
-import type { Dataset, ChatMessage, ReadingLevel } from '../types'
+import type { Dataset, ChatMessage, MapViewContext, ReadingLevel } from '../types'
 import type { LLMMessage, LLMTool } from './llmProvider'
 
 // --- Constants ---
@@ -517,15 +517,7 @@ export function getHighlightRegionTool(): LLMTool {
 /**
  * Build a text summary of the current map view context for the LLM system prompt.
  */
-export function buildViewContextSection(viewContext: {
-  center: { lat: number; lng: number }
-  zoom: number
-  bearing: number
-  pitch: number
-  bounds: { west: number; south: number; east: number; north: number }
-  visibleCountries: string[]
-  visibleOceans: string[]
-} | null): string {
+export function buildViewContextSection(viewContext: MapViewContext | null): string {
   if (!viewContext) return ''
 
   const parts: string[] = []

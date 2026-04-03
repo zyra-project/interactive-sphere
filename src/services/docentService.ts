@@ -5,7 +5,7 @@
  * falls back to the local docentEngine for instant offline responses.
  */
 
-import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache } from '../types'
+import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart } from './llmProvider'
 import { buildSystemPromptForTurn, buildCompressedHistory, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
@@ -319,7 +319,7 @@ export type ExtractedGlobeAction =
  * (and bare `fly_to:` / `set_time:` fallback patterns).
  * Strips invalid <<LOAD:ID>> markers and bare INTERNAL_... IDs,
  * returning the cleaned text and the sets of valid/invalid IDs.
- * Pure function — does not log; callers decide when to log.
+ * Logs warnings for unknown region markers.
  */
 export function validateAndCleanText(
   text: string,
@@ -557,7 +557,7 @@ export async function* processMessage(
   config?: DocentConfig,
   screenshotDataUrl?: string | null,
   viewContext?: string,
-  mapViewContext?: Parameters<typeof buildSystemPromptForTurn>[8],
+  mapViewContext?: MapViewContext | null,
 ): AsyncGenerator<DocentStreamChunk> {
   const cfg = config ?? loadConfig()
 

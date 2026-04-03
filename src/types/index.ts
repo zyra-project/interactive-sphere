@@ -106,6 +106,19 @@ export interface AppState {
 }
 
 /**
+ * Structured map view context passed to the LLM system prompt.
+ */
+export interface MapViewContext {
+  center: { lat: number; lng: number }
+  zoom: number
+  bearing: number
+  pitch: number
+  bounds: { west: number; south: number; east: number; north: number }
+  visibleCountries: string[]
+  visibleOceans: string[]
+}
+
+/**
  * Lightweight handle for a video texture, used by the playback controller
  * to flag manual updates and clean up resources.
  */

@@ -6,7 +6,7 @@
  * Persists conversation in sessionStorage, config in localStorage.
  */
 
-import type { ChatMessage, ChatAction, ChatSession, DocentConfig, ReadingLevel } from '../types'
+import type { ChatMessage, ChatAction, ChatSession, DocentConfig, MapViewContext, ReadingLevel } from '../types'
 import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './browseUI'
 import { createMessageId } from '../services/docentEngine'
@@ -28,7 +28,7 @@ export interface ChatCallbacks {
   onAddMarker: (lat: number, lng: number, label?: string) => void
   onToggleLabels: (visible: boolean) => void
   onHighlightRegion: (geojson: GeoJSON.GeoJSON, label?: string) => void
-  getMapViewContext: () => unknown
+  getMapViewContext: () => MapViewContext | null
   getDatasets: () => Dataset[]
   getCurrentDataset: () => Dataset | null
   announce: (message: string) => void
@@ -504,8 +504,10 @@ async function handleSend(): Promise<void> {
     const screenshot = shouldCaptureVision ? captureGlobeScreenshot() : null
     const viewContext = shouldCaptureVision ? captureViewContext() : undefined
 
-    // Capture map geographic context for the LLM system prompt
-    const mapViewContext = callbacks.getMapViewContext?.() ?? undefined
+    // Capture map geographic context for the LLM system prompt (skip in local-only mode)
+    const mapViewContext = config.enabled && config.apiUrl
+      ? callbacks.getMapViewContext?.() ?? undefined
+      : undefined
 
     const stream = processMessage(
       text,
@@ -515,7 +517,7 @@ async function handleSend(): Promise<void> {
       config,
       screenshot,
       viewContext,
-      mapViewContext as any,
+      mapViewContext,
     )
 
     let firstChunk = true

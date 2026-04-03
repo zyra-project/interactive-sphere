@@ -8,29 +8,9 @@
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-// Override MapLibre popup styles for dark theme
-const popupStyle = document.createElement('style')
-popupStyle.textContent = `
-  .sos-popup .maplibregl-popup-content {
-    background: rgba(13,13,18,0.92);
-    backdrop-filter: blur(12px);
-    padding: 0;
-    border-radius: 6px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
-  }
-  .sos-popup .maplibregl-popup-tip {
-    border-top-color: rgba(13,13,18,0.92);
-  }
-  .sos-popup .maplibregl-popup-close-button {
-    color: #aaa;
-    font-size: 16px;
-    padding: 2px 6px;
-  }
-`
-document.head.appendChild(popupStyle)
 import type { Map as MaplibreMap, StyleSpecification, CustomLayerInterface } from 'maplibre-gl'
 import { createEarthTileLayer, computeSunLightPosition, type EarthTileLayerControl } from './earthTileLayer'
-import type { GlobeRenderer, VideoTextureHandle } from '../types'
+import type { GlobeRenderer, MapViewContext, VideoTextureHandle } from '../types'
 import { getSunPosition } from '../utils/time'
 
 // --- GIBS tile endpoints ---
@@ -260,8 +240,31 @@ export class MapRenderer implements GlobeRenderer {
   init(container: HTMLElement): void {
     this.container = container
 
-    // MapLibre needs a wrapper div — the Three.js renderer appends a canvas
-    // directly, but MapLibre manages its own canvas internally.
+    // Inject dark popup styles (idempotent — skips if already present)
+    if (!document.getElementById('sos-popup-style')) {
+      const style = document.createElement('style')
+      style.id = 'sos-popup-style'
+      style.textContent = `
+        .sos-popup .maplibregl-popup-content {
+          background: rgba(13,13,18,0.92);
+          backdrop-filter: blur(12px);
+          padding: 0;
+          border-radius: 6px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+        }
+        .sos-popup .maplibregl-popup-tip {
+          border-top-color: rgba(13,13,18,0.92);
+        }
+        .sos-popup .maplibregl-popup-close-button {
+          color: #aaa;
+          font-size: 16px;
+          padding: 2px 6px;
+        }
+      `
+      document.head.appendChild(style)
+    }
+
+    // MapLibre needs a wrapper div — it manages its own canvas internally.
     const mapDiv = document.createElement('div')
     mapDiv.id = 'maplibre-container'
     mapDiv.style.width = '100%'
@@ -588,10 +591,14 @@ export class MapRenderer implements GlobeRenderer {
     // Wait for earth layer to be created (it's added on map 'load')
     if (!this.earthLayer) {
       console.debug('[MapRenderer] loadDefaultEarthMaterials: waiting for earth layer...')
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve, reject) => {
+        const start = Date.now()
         const check = () => {
-          if (this.earthLayer) resolve()
-          else setTimeout(check, 50)
+          if (this.earthLayer) return resolve()
+          if (!this.map || Date.now() - start > 10_000) {
+            return reject(new Error('[MapRenderer] Timed out waiting for earth layer'))
+          }
+          setTimeout(check, 50)
         }
         check()
       })
@@ -651,15 +658,7 @@ export class MapRenderer implements GlobeRenderer {
    * Query the current viewport state and visible geographic features.
    * Returns a structured object the LLM can use for richer context.
    */
-  getViewContext(): {
-    center: { lat: number; lng: number }
-    zoom: number
-    bearing: number
-    pitch: number
-    bounds: { west: number; south: number; east: number; north: number }
-    visibleCountries: string[]
-    visibleOceans: string[]
-  } | null {
+  getViewContext(): MapViewContext | null {
     if (!this.map) return null
     const center = this.map.getCenter()
     const bounds = this.map.getBounds()
@@ -719,7 +718,7 @@ export class MapRenderer implements GlobeRenderer {
    * Returns the layer ID for later removal.
    */
   highlightRegion(geojson: GeoJSON.GeoJSON, options?: { color?: string; opacity?: number }): string | null {
-    if (!this.map) return null
+    if (!this.map || !this.map.isStyleLoaded()) return null
     const id = `highlight-${++this.highlightCounter}`
     const sourceId = `${id}-source`
     this.map.addSource(sourceId, { type: 'geojson', data: geojson })
