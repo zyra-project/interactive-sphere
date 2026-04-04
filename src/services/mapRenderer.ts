@@ -160,6 +160,8 @@ function createGlobeStyle(): StyleSpecification {
           'text-transform': 'uppercase',
           'text-letter-spacing': 0.1,
           'text-max-width': 8,
+          'text-pitch-alignment': 'map',
+          'text-rotation-alignment': 'map',
         },
         paint: {
           'text-color': 'rgba(255, 255, 255, 0.85)',
@@ -179,6 +181,8 @@ function createGlobeStyle(): StyleSpecification {
           'text-font': ['Open Sans Regular'],
           'text-size': ['interpolate', ['linear'], ['zoom'], 3, 9, 6, 13, 8, 16],
           'text-max-width': 8,
+          'text-pitch-alignment': 'map',
+          'text-rotation-alignment': 'map',
         },
         paint: {
           'text-color': 'rgba(220, 220, 255, 0.8)',
@@ -199,6 +203,8 @@ function createGlobeStyle(): StyleSpecification {
           'text-size': ['interpolate', ['linear'], ['zoom'], 1, 10, 5, 14],
           'text-letter-spacing': 0.2,
           'text-max-width': 10,
+          'text-pitch-alignment': 'map',
+          'text-rotation-alignment': 'map',
         },
         paint: {
           'text-color': 'rgba(150, 200, 255, 0.6)',
