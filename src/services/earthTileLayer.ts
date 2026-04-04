@@ -24,10 +24,13 @@ import type { CustomLayerInterface } from 'maplibre-gl'
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
+import { isMobile } from '../utils/deviceCapability'
 
 // --- Texture URLs ---
 const SPECULAR_MAP_URL = '/assets/Earth_Specular_2K.jpg'
-const CLOUD_TEXTURE_URL = 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/clouds_8192.jpg'
+const CLOUD_TEXTURE_URL = isMobile()
+  ? 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/clouds_4096.jpg'
+  : 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/clouds_8192.jpg'
 
 // --- Rendering constants (matched to earthMaterials.ts) ---
 const NIGHT_LIGHT_STRENGTH = 0.5
@@ -758,32 +761,38 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         skyboxFaceLocs = SKYBOX_FACES.map((_, i) =>
           gl2.getUniformLocation(skyboxProg!, `uFaces[${i}]`))
 
-        // Load 6 face textures
+        // Load 6 face textures — deferred so they don't compete with tile bandwidth
         let facesLoaded = 0
-        skyboxFaceTextures = SKYBOX_FACES.map((face, i) => {
+        skyboxFaceTextures = SKYBOX_FACES.map((_face, _i) => {
           const tex = gl2.createTexture()
           gl2.bindTexture(gl2.TEXTURE_2D, tex)
           gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 1, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE,
             new Uint8Array([0, 0, 0, 255]))
-          const faceImg = new Image()
-          faceImg.crossOrigin = 'anonymous'
-          faceImg.onload = () => {
-            gl2.bindTexture(gl2.TEXTURE_2D, tex)
-            gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, faceImg)
-            gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR)
-            gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
-            gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.CLAMP_TO_EDGE)
-            gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
-            facesLoaded++
-            if (facesLoaded === 6) {
-              skyboxReady = true
-              _map.triggerRepaint()
-              logger.info('[EarthTileLayer] Skybox loaded (6 faces)')
-            }
-          }
-          faceImg.src = SKYBOX_URL_BASE + face + '.jpg'
           return tex
         })
+        const loadSkyboxFaces = () => {
+          SKYBOX_FACES.forEach((face, i) => {
+            const tex = skyboxFaceTextures![i]
+            const faceImg = new Image()
+            faceImg.crossOrigin = 'anonymous'
+            faceImg.onload = () => {
+              gl2.bindTexture(gl2.TEXTURE_2D, tex)
+              gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, faceImg)
+              gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR)
+              gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
+              gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.CLAMP_TO_EDGE)
+              gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
+              facesLoaded++
+              if (facesLoaded === 6) {
+                skyboxReady = true
+                _map.triggerRepaint()
+                logger.info('[EarthTileLayer] Skybox loaded (6 faces)')
+              }
+            }
+            faceImg.src = SKYBOX_URL_BASE + face + '.jpg'
+          })
+        }
+        requestIdleCallback ? requestIdleCallback(loadSkyboxFaces) : setTimeout(loadSkyboxFaces, 200)
       }
 
       // --- Compile sun sprite shader ---
@@ -943,33 +952,36 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       }
       cloudImg.src = CLOUD_TEXTURE_URL
 
-      // --- Load specular map texture asynchronously ---
+      // --- Load specular map texture — deferred to avoid competing with tile bandwidth ---
       specTex = gl2.createTexture()
       gl2.bindTexture(gl2.TEXTURE_2D, specTex)
       gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 1, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE,
         new Uint8Array([0, 0, 0, 255]))
 
-      const specImg = new Image()
-      specImg.crossOrigin = 'anonymous'
-      specImg.onload = () => {
-        gl2.bindTexture(gl2.TEXTURE_2D, specTex)
-        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, specImg)
-        gl2.generateMipmap(gl2.TEXTURE_2D)
-        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR_MIPMAP_LINEAR)
-        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
-        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.REPEAT)
-        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
-        specTexReady = true
-        checkReady()
-        _map.triggerRepaint()
-        logger.info('[EarthTileLayer] Specular map loaded (%dx%d)', specImg.width, specImg.height)
+      const loadSpecularMap = () => {
+        const specImg = new Image()
+        specImg.crossOrigin = 'anonymous'
+        specImg.onload = () => {
+          gl2.bindTexture(gl2.TEXTURE_2D, specTex)
+          gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, specImg)
+          gl2.generateMipmap(gl2.TEXTURE_2D)
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR_MIPMAP_LINEAR)
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.REPEAT)
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
+          specTexReady = true
+          checkReady()
+          _map.triggerRepaint()
+          logger.info('[EarthTileLayer] Specular map loaded (%dx%d)', specImg.width, specImg.height)
+        }
+        specImg.onerror = () => {
+          logger.warn('[EarthTileLayer] Failed to load specular map:', SPECULAR_MAP_URL)
+          specTexReady = true
+          checkReady()
+        }
+        specImg.src = SPECULAR_MAP_URL
       }
-      specImg.onerror = () => {
-        logger.warn('[EarthTileLayer] Failed to load specular map:', SPECULAR_MAP_URL)
-        specTexReady = true
-        checkReady()
-      }
-      specImg.src = SPECULAR_MAP_URL
+      requestIdleCallback ? requestIdleCallback(loadSpecularMap) : setTimeout(loadSpecularMap, 200)
 
       logger.info('[EarthTileLayer] Day/night+clouds+specular layer initialized (%d triangles)', indexCount / 3)
     },
