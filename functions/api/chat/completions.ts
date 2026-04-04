@@ -210,19 +210,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   // Vision models on Workers AI do not support streaming — always use
   // non-streaming and, if the client requested streaming, wrap the
   // complete response in SSE format so the client parser handles it.
-  if (isVision) {
-    if (body.stream) {
-      return visionStreamShim(context.env.AI, cfModel, textMessages, cors, image)
+  try {
+    if (isVision) {
+      if (body.stream) {
+        return await visionStreamShim(context.env.AI, cfModel, textMessages, cors, image)
+      }
+      // Non-streaming vision path also needs license acceptance
+      await ensureLicenseAccepted(context.env.AI, cfModel)
+      return await nonStreamResponse(context.env.AI, cfModel, textMessages, cors, image)
     }
-    // Non-streaming vision path also needs license acceptance
-    await ensureLicenseAccepted(context.env.AI, cfModel)
-    return nonStreamResponse(context.env.AI, cfModel, textMessages, cors, image)
-  }
 
-  if (body.stream) {
-    return streamResponse(context.env.AI, cfModel, textMessages, cors)
+    if (body.stream) {
+      return await streamResponse(context.env.AI, cfModel, textMessages, cors)
+    }
+    return await nonStreamResponse(context.env.AI, cfModel, textMessages, cors)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
+    return new Response(JSON.stringify({ error: { message, type: 'server_error' } }), {
+      status: 502,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    })
   }
-  return nonStreamResponse(context.env.AI, cfModel, textMessages, cors)
 }
 
 // Track which vision models have had their license accepted (per isolate lifetime)

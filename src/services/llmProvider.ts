@@ -139,6 +139,9 @@ export async function* streamChat(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let yieldedContent = false
+
+  logger.debug('[LLM] Stream content-type:', response.headers?.get('content-type'))
 
   // Accumulate tool call fragments across chunks
   const toolCallAccum = new Map<number, { name: string; args: string }>()
@@ -156,6 +159,7 @@ export async function* streamChat(
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed || trimmed === STREAM_LINE_PREFIX.trim()) continue
+        logger.debug('[LLM] SSE line:', trimmed.length > 200 ? trimmed.slice(0, 200) + '…' : trimmed)
         if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') {
           // Emit any accumulated tool calls
           for (const [, tc] of toolCallAccum) {
@@ -181,6 +185,7 @@ export async function* streamChat(
 
           // Text content
           if (delta.content) {
+            yieldedContent = true
             yield { type: 'delta', text: delta.content }
           }
 
@@ -217,13 +222,17 @@ export async function* streamChat(
             }
           }
         } catch {
-          // Skip unparseable lines
+          logger.debug('[LLM] Skipping unparseable SSE payload:', json)
         }
       }
     }
   } finally {
     clearTimeout(inactivityTimer)
     reader.releaseLock()
+  }
+
+  if (!yieldedContent && toolCallAccum.size === 0) {
+    logger.warn('[LLM] Stream ended without producing any content or tool calls')
   }
 
   // Emit any remaining tool calls

@@ -847,6 +847,7 @@ export async function* processMessage(
               yield { type: 'done', fallback: false, llmContext }
               return
             }
+            logger.warn('[Docent] LLM stream completed but produced no text — falling back to local engine')
             break
         }
       }
