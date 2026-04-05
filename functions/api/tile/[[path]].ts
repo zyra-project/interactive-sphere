@@ -29,9 +29,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   const segments = Array.isArray(pathParam) ? pathParam : [pathParam]
 
-  // Reject path traversal attempts
+  // Reject path traversal attempts and malformed encoding
   for (const segment of segments) {
-    const decoded = decodeURIComponent(segment)
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(segment)
+    } catch {
+      return new Response('Invalid tile path', { status: 400 })
+    }
     if (decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
       return new Response('Invalid tile path', { status: 400 })
     }
@@ -68,7 +73,6 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     headers: {
       'Content-Type': contentType,
       'Cache-Control': 'public, max-age=31536000, immutable',
-      'Access-Control-Allow-Origin': '*',
     },
   })
 }

@@ -699,6 +699,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
   let specTexReady = false
   let cloudTex: WebGLTexture | null = null
   let cloudTexReady = false
+  let disposed = false
   let dataset: DatasetProgram | null = null
   let datasetTex: WebGLTexture | null = null
   let datasetVideo: HTMLVideoElement | null = null
@@ -769,11 +770,13 @@ export function createEarthTileLayer(): EarthTileLayerControl {
           return tex
         })
         const loadSkyboxFaces = () => {
+          if (disposed) return
           SKYBOX_FACES.forEach((face, i) => {
             const tex = skyboxFaceTextures![i]
             const faceImg = new Image()
             faceImg.crossOrigin = 'anonymous'
             faceImg.onload = () => {
+              if (disposed) return
               gl2.bindTexture(gl2.TEXTURE_2D, tex)
               gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, faceImg)
               gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR)
@@ -957,9 +960,11 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         new Uint8Array([0, 0, 0, 255]))
 
       const loadSpecularMap = () => {
+        if (disposed) return
         const specImg = new Image()
         specImg.crossOrigin = 'anonymous'
         specImg.onload = () => {
+          if (disposed) return
           gl2.bindTexture(gl2.TEXTURE_2D, specTex)
           gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, specImg)
           gl2.generateMipmap(gl2.TEXTURE_2D)
@@ -1128,6 +1133,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
     },
 
     onRemove(_map: MaplibreMap, gl: WebGL2RenderingContext | WebGLRenderingContext) {
+      disposed = true
       const gl2 = gl as WebGL2RenderingContext
       if (dataset) gl2.deleteProgram(dataset.program)
       if (darken) gl2.deleteProgram(darken.program)

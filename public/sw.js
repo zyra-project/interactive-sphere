@@ -10,11 +10,9 @@ const CACHEABLE_EXTERNAL = [
   { hostname: 's3.dualstack.us-east-1.amazonaws.com', pathPrefix: '/metadata.sosexplorer.gov/' },
 ]
 
-// Same-origin static assets to cache (skybox, specular map, etc.)
-// NOTE: /api/tile/ is NOT cached here — those requests hit the Cloudflare Pages
-// Function which has its own edge cache. Caching them in the SW would cause the
-// SW's fetch() to re-intercept itself, producing an error loop.
+// Same-origin paths to cache (proxied tiles, skybox, specular map, etc.)
 const CACHEABLE_LOCAL_PATHS = [
+  '/api/tile/',
   '/assets/skybox/',
   '/assets/Earth_Specular_2K.jpg',
   '/assets/Earth_Normal_2K.jpg',
@@ -79,14 +77,22 @@ self.addEventListener('fetch', event => {
       }
 
       // Not cached — fetch from network, cache the response, return it
-      const response = await fetch(request)
+      try {
+        const response = await fetch(request)
 
-      // Only cache successful responses
-      if (response.ok) {
-        cache.put(request, response.clone())
+        // Only cache successful responses
+        if (response.ok) {
+          cache.put(request, response.clone())
+        }
+
+        return response
+      } catch (err) {
+        // Network error — fall through to browser default handling
+        return fetch(request)
       }
-
-      return response
+    }).catch(() => {
+      // Cache API error (e.g. quota exceeded) — bypass caching entirely
+      return fetch(request)
     })
   )
 })
