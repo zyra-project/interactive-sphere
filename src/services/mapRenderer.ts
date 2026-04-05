@@ -29,18 +29,28 @@ function getTileUrls(template: string): string[] {
 
 if (IS_TAURI) {
   const tauriInvoke = (window as any).__TAURI_INTERNALS__?.invoke
+  logger.info('[Tiles] Tauri detected, __TAURI_INTERNALS__:', !!tauriInvoke)
   if (tauriInvoke) {
     maplibregl.addProtocol('tauritile', async (params: { url: string }) => {
       const tilePath = params.url.replace('tauritile://', '')
-      const b64: string = await tauriInvoke('get_tile', { tilePath })
-      const binary = atob(b64)
-      const bytes = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i)
+      logger.info('[Tiles] Fetching tile via IPC:', tilePath)
+      try {
+        const b64: string = await tauriInvoke('get_tile', { tilePath })
+        const binary = atob(b64)
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i)
+        }
+        logger.info('[Tiles] Tile loaded:', tilePath, `(${bytes.length} bytes)`)
+        return { data: bytes.buffer }
+      } catch (err) {
+        logger.error('[Tiles] IPC error for', tilePath, err)
+        throw err
       }
-      return { data: bytes.buffer }
     })
     logger.info('[Tiles] Registered tauritile:// protocol for Rust tile cache')
+  } else {
+    logger.warn('[Tiles] __TAURI__ set but __TAURI_INTERNALS__.invoke not found')
   }
 }
 
