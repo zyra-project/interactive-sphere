@@ -24,10 +24,12 @@
     "hls.js": "^1.4.0",
     "maplibre-gl": "^5.21.1"
   },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-musl": "^1.0.0-rc.11"
+  },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@cloudflare/workers-types": "^4.20260317.1",
-    "@rolldown/binding-linux-x64-musl": "^1.0.0-rc.11",
     "@types/node": "^20.10.0",
     "@vitest/coverage-v8": "^4.1.0",
     "happy-dom": "^20.8.4",
