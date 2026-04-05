@@ -69,7 +69,15 @@ self.addEventListener('fetch', event => {
   }
 
   event.respondWith(
-    caches.open(CACHE_NAME).then(async cache => {
+    (async () => {
+      let cache
+      try {
+        cache = await caches.open(CACHE_NAME)
+      } catch {
+        // Cache API unavailable — let the browser handle the request normally
+        return fetch(request.clone())
+      }
+
       // Cache-first: serve from cache if available
       const cached = await cache.match(request)
       if (cached) {
@@ -77,22 +85,17 @@ self.addEventListener('fetch', event => {
       }
 
       // Not cached — fetch from network, cache the response, return it
-      try {
-        const response = await fetch(request)
+      const response = await fetch(request.clone())
 
-        // Only cache successful responses
-        if (response.ok) {
-          cache.put(request, response.clone())
+      if (response.ok) {
+        try {
+          await cache.put(request, response.clone())
+        } catch {
+          // Cache write failed (e.g. quota exceeded) — still return the response
         }
-
-        return response
-      } catch (err) {
-        // Network error — fall through to browser default handling
-        return fetch(request)
       }
-    }).catch(() => {
-      // Cache API error (e.g. quota exceeded) — bypass caching entirely
-      return fetch(request)
-    })
+
+      return response
+    })()
   )
 })
