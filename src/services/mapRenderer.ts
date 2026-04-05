@@ -29,11 +29,9 @@ function getTileUrls(template: string): string[] {
 
 if (IS_TAURI) {
   const tauriInvoke = (window as any).__TAURI_INTERNALS__?.invoke
-  logger.info('[Tiles] Tauri detected, __TAURI_INTERNALS__:', !!tauriInvoke)
   if (tauriInvoke) {
     maplibregl.addProtocol('tauritile', async (params: { url: string }) => {
       const tilePath = params.url.replace('tauritile://', '')
-      logger.info('[Tiles] Fetching tile via IPC:', tilePath)
       try {
         const b64: string = await tauriInvoke('get_tile', { tilePath })
         const binary = atob(b64)
@@ -41,7 +39,6 @@ if (IS_TAURI) {
         for (let i = 0; i < binary.length; i++) {
           bytes[i] = binary.charCodeAt(i)
         }
-        logger.info('[Tiles] Tile loaded:', tilePath, `(${bytes.length} bytes)`)
         return { data: bytes.buffer }
       } catch (err) {
         logger.error('[Tiles] IPC error for', tilePath, err)
