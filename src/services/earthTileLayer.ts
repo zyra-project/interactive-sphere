@@ -793,7 +793,9 @@ export function createEarthTileLayer(): EarthTileLayerControl {
             faceImg.src = SKYBOX_URL_BASE + face + '.jpg'
           })
         }
-        typeof requestIdleCallback !== 'undefined' ? requestIdleCallback(loadSkyboxFaces) : setTimeout(loadSkyboxFaces, 200)
+        typeof requestIdleCallback !== 'undefined'
+          ? requestIdleCallback(loadSkyboxFaces, { timeout: 2000 })
+          : setTimeout(loadSkyboxFaces, 200)
       }
 
       // --- Compile sun sprite shader ---
@@ -934,6 +936,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       const cloudImg = new Image()
       cloudImg.crossOrigin = 'anonymous'
       cloudImg.onload = () => {
+        if (disposed) return
         gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
         gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, cloudImg)
         gl2.generateMipmap(gl2.TEXTURE_2D)
@@ -947,6 +950,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         logger.info('[EarthTileLayer] Cloud texture loaded (%dx%d)', cloudImg.width, cloudImg.height)
       }
       cloudImg.onerror = () => {
+        if (disposed) return
         logger.warn('[EarthTileLayer] Failed to load cloud texture:', CLOUD_TEXTURE_URL)
         cloudTexReady = true
         checkReady()
@@ -984,7 +988,9 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         }
         specImg.src = SPECULAR_MAP_URL
       }
-      typeof requestIdleCallback !== 'undefined' ? requestIdleCallback(loadSpecularMap) : setTimeout(loadSpecularMap, 200)
+      typeof requestIdleCallback !== 'undefined'
+        ? requestIdleCallback(loadSpecularMap, { timeout: 1000 })
+        : setTimeout(loadSpecularMap, 200)
 
       logger.info('[EarthTileLayer] Day/night+clouds+specular layer initialized (%d triangles)', indexCount / 3)
     },
