@@ -8,7 +8,7 @@
 
 ## Codebase Overview
 
-TypeScript SPA built with Vite and MapLibre GL JS. Deployed on Cloudflare Pages. No runtime framework — vanilla TS with a few focused libraries (MapLibre GL JS, HLS.js).
+TypeScript SPA built with Vite and MapLibre GL JS. Deployed on Cloudflare Pages (web) and packaged as a native desktop app with Tauri v2 (Windows, macOS, Linux). No runtime framework — vanilla TS with a few focused libraries (MapLibre GL JS, HLS.js).
 
 ### Key commands
 
@@ -17,6 +17,8 @@ npm run dev          # dev server (localhost:5173)
 npm run build        # tsc + vite build
 npm run type-check   # tsc --noEmit (must pass before committing)
 npm run test         # vitest run
+npm run dev:desktop  # Tauri dev mode (requires Rust)
+npm run build:desktop # tsc + vite build + tauri build
 ```
 
 ### Module map
@@ -34,8 +36,11 @@ npm run test         # vitest run
 | `src/services/docentContext.ts` | LLM system prompt builder, history compression, tool definition |
 | `src/services/docentEngine.ts` | Local keyword-based fallback engine |
 | `src/services/llmProvider.ts` | OpenAI-compatible SSE streaming client + `/models` fetch |
+| `src/services/downloadService.ts` | Offline dataset download manager (desktop only, Tauri commands) |
+| `src/services/tilePreloader.ts` | Eagerly fetches low-zoom GIBS tiles into cache on startup |
 | `src/ui/chatUI.ts` | Orbit chat panel — rendering, settings, trigger positioning |
 | `src/ui/browseUI.ts` | Dataset browse/search overlay |
+| `src/ui/downloadUI.ts` | Download manager panel — view/delete cached datasets (desktop only) |
 | `src/ui/mapControlsUI.ts` | Map controls overlay — labels, boundaries, terrain toggles |
 | `src/ui/playbackController.ts` | Playback transport controls + portrait-mobile positioning |
 
@@ -78,6 +83,8 @@ Stored in `localStorage` under `sos-docent-config`. Defaults:
 
 > On localhost the Cloudflare `/api` proxy is unavailable. The docent falls back to local engine automatically if the LLM is unreachable.
 
+> **Desktop (Tauri)**: API keys are stored in the OS keychain via `keychain.rs`, not localStorage. `saveConfig()` accepts a `persistApiKey` flag — pass `true` only from the settings form save handler to avoid erasing the keychain on unrelated config changes. The Tauri HTTP plugin (`@tauri-apps/plugin-http`) is used for all LLM requests to bypass webview CORS restrictions when connecting to local servers (Ollama, LM Studio, etc.).
+
 ### Stream chunk types
 
 `DocentStreamChunk` union (from `docentService.ts`):
@@ -116,4 +123,67 @@ Two elements track the info panel height as it animates open:
 
 ## Deployment
 
+### Web
 Cloudflare Pages. `functions/api/[[route]].ts` is a Cloudflare Function that proxies LLM API requests server-side so the API key is never in the client bundle.
+
+### Desktop
+Tauri v2. Three CI/CD workflows:
+- `desktop.yml` — CI build on push/PR (signed on push, compile-only on PRs from forks)
+- `release.yml` — tag-triggered or manual dispatch; builds all platforms, signs with Tauri updater key, creates draft GitHub Release with `latest.json` for auto-updates
+- Manual release: Actions → "Release Desktop App" → enter version, pick branch
+
+---
+
+## Desktop App (Tauri v2)
+
+The desktop app shares 100% of the TypeScript source. Desktop-only behaviour is gated at runtime via `window.__TAURI__`. The `src-tauri/` directory contains the Rust backend.
+
+### Rust module map
+
+| File | Responsibility |
+|---|---|
+| `src-tauri/src/main.rs` | Entry point — plugin registration, Tauri state setup |
+| `src-tauri/src/tile_cache.rs` | SHA-256 flat-file cache for GIBS map tiles |
+| `src-tauri/src/keychain.rs` | OS keychain read/write for LLM API key |
+| `src-tauri/src/download_manager.rs` | Dataset download with progress events, cancellation, JSON index |
+| `src-tauri/src/download_commands.rs` | Tauri commands exposing download operations to the frontend |
+
+### Key configuration files
+
+| File | Purpose |
+|---|---|
+| `src-tauri/tauri.conf.json` | Window config, updater (pubkey + endpoint), asset protocol scope, bundle targets |
+| `src-tauri/capabilities/default.json` | Permission policies — HTTP allowlist (localhost, Ollama/LM Studio/llama.cpp ports, HTTPS), updater, window controls |
+| `src-tauri/Cargo.toml` | Rust dependencies — tauri, reqwest, keyring, tauri-plugin-http, tauri-plugin-updater |
+
+### Tauri patterns used in the frontend
+
+All Tauri imports are **lazy-loaded** behind `IS_TAURI` checks so the web build is never affected:
+
+```typescript
+// Pattern used in llmProvider.ts, downloadService.ts, datasetLoader.ts, etc.
+const tauriFetchReady: Promise<typeof fetch | null> = IS_TAURI
+  ? import('@tauri-apps/plugin-http').then(m => m.fetch).catch(() => null)
+  : Promise.resolve(null)
+```
+
+- `@tauri-apps/api/core` — `invoke()` for IPC commands, `convertFileSrc()` for local file URLs
+- `@tauri-apps/api/event` — `listen()` for download progress/complete/error events
+- `@tauri-apps/plugin-http` — CORS-free `fetch()` for LLM requests and image resolution probes
+- `@tauri-apps/plugin-updater` — auto-update check on launch
+
+### Offline dataset downloads
+
+- Downloads are managed by `download_manager.rs` with files stored under `{app_data}/datasets/{dataset_id}/`
+- A JSON index (`index.json`) tracks all downloaded datasets
+- `downloadService.ts` resolves assets: videos via Vimeo proxy (highest quality MP4), images via HEAD probes (4096 → 2048 → original)
+- `datasetLoader.ts` checks for local cache first via `getDownload()` / `getDownloadPath()` before hitting the network
+- Local files are served to the webview via `convertFileSrc()` → `http://asset.localhost/` URLs
+- The asset protocol scope is restricted to `$APPDATA/**` and `$APPLOCALDATA/**`
+
+### HTTP plugin allowed origins
+
+The Tauri HTTP plugin capability (`capabilities/default.json`) restricts outbound HTTP:
+- `http://localhost:*` and `http://127.0.0.1:*` — any port on loopback
+- `http://*:11434` (Ollama), `http://*:1234` (LM Studio), `http://*:8080` (llama.cpp/vLLM)
+- `https://*` — any HTTPS endpoint (OpenAI, video proxy, NOAA, NASA GIBS, etc.)
