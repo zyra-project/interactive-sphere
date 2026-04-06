@@ -6,27 +6,67 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to release (e.g. v0.2.0). Must already exist.'
+      version:
+        description: 'Version to release (e.g. 0.2.0). Omit the "v" prefix — the workflow creates the v-prefixed tag.'
         required: true
+      branch:
+        description: 'Branch to release from (default: main)'
+        required: false
+        default: 'main'
+      draft:
+        description: 'Create as draft release?'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.version || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
   contents: write
 
 env:
-  # Tauri signing key for auto-updater signature verification.
-  # Generate with: npx tauri signer generate -w ~/.tauri/interactive-sphere.key
-  # Then add TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-  # as repository secrets in GitHub Settings → Secrets → Actions.
   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
+  # --- Bump version and create tag (manual dispatch only) ---
+  prepare:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: v${{ github.event.inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Update version in package.json
+        run: |
+          npm version "${{ github.event.inputs.version }}" --no-git-tag-version
+
+      - name: Update version in tauri.conf.json
+        run: |
+          jq '.version = "${{ github.event.inputs.version }}"' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to ${{ github.event.inputs.version }}" || echo "No changes to commit"
+          git tag "v${{ github.event.inputs.version }}"
+          git push origin "${{ github.event.inputs.branch }}" --tags
+
+  # --- Build and upload to GitHub Release ---
   build-and-release:
+    if: always() && (needs.prepare.result == 'success' || needs.prepare.result == 'skipped')
+    needs: [prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare.outputs.tag || github.ref }}
           lfs: true
 
       - uses: actions/setup-node@v4
@@ -85,20 +126,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS code signing (optional — set these secrets when you have
-          # an Apple Developer certificate):
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tauriScript: npx tauri
-          tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: 'Interactive Sphere ${{ github.event.inputs.tag || github.ref_name }}'
+          tagName: ${{ needs.prepare.outputs.tag || github.ref_name }}
+          releaseName: 'Interactive Sphere ${{ needs.prepare.outputs.tag || github.ref_name }}'
           releaseBody: |
-            See the [full changelog](https://github.com/zyra-project/interactive-sphere/commits/${{ github.event.inputs.tag || github.ref_name }}).
+            See the [full changelog](https://github.com/zyra-project/interactive-sphere/commits/${{ needs.prepare.outputs.tag || github.ref_name }}).
 
             ## Installation
             | Platform | Download |
@@ -109,7 +142,7 @@ jobs:
 
             ## Auto-Updates
             Existing installations will receive this update automatically on next launch.
-          releaseDraft: true
+          releaseDraft: ${{ github.event.inputs.draft || 'true' }}
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
