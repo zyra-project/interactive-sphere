@@ -60,8 +60,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json src-tauri/tauri.conf.json
           git commit -m "chore: bump version to ${{ github.event.inputs.version }}" || echo "No changes to commit"
-          git tag "v${{ github.event.inputs.version }}"
-          git push origin "${{ github.event.inputs.branch }}" --tags
+          git tag "v${{ github.event.inputs.version }}" 2>/dev/null || echo "Tag already exists, reusing"
+          git push origin "${{ github.event.inputs.branch }}" --tags 2>/dev/null || echo "Tag already pushed"
 
   # --- Build and upload to GitHub Release ---
   build-and-release:
