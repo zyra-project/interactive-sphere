@@ -14,6 +14,7 @@ import type { AppState, VideoTextureHandle } from './types'
 
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
+import { initDownloadUI } from './ui/downloadUI'
 import { initMapControls, updateMapControlsPosition } from './ui/mapControlsUI'
 import { initChatUI, openChat, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import {
@@ -85,6 +86,7 @@ class InteractiveSphere {
       this.renderer = new MapRenderer()
       this.renderer.init(container)
       initMapControls(this.renderer)
+      initDownloadUI()
       logger.info('[App] Using MapLibre renderer')
 
       // Wire up lat/lng display
