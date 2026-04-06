@@ -439,7 +439,7 @@ function readSettingsForm(): DocentConfig {
 
 function handleSettingsSave(): void {
   const config = readSettingsForm()
-  saveConfig(config)
+  saveConfig(config, true)
   // Apply debug log level at runtime so production console shows all messages
   setLogLevel(config.debugPrompt ? 'debug' : null)
   // Keep vision toggle button + hint banner in sync with settings checkbox

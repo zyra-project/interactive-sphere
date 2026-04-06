@@ -229,36 +229,43 @@ export async function downloadDataset(dataset: Dataset): Promise<void> {
 
 /** Cancel an in-progress download. */
 export async function cancelDownload(datasetId: string): Promise<void> {
+  if (!IS_TAURI) return
   await cmd('cancel_download', { datasetId })
 }
 
 /** List all downloaded datasets. */
 export async function listDownloads(): Promise<DownloadedDataset[]> {
+  if (!IS_TAURI) return []
   return cmd<DownloadedDataset[]>('list_downloads')
 }
 
 /** Check if a specific dataset is downloaded. */
 export async function getDownload(datasetId: string): Promise<DownloadedDataset | null> {
+  if (!IS_TAURI) return null
   return cmd<DownloadedDataset | null>('get_download', { datasetId })
 }
 
 /** Delete a downloaded dataset. */
 export async function deleteDownload(datasetId: string): Promise<void> {
+  if (!IS_TAURI) return
   await cmd('delete_download', { datasetId })
 }
 
 /** Get the local file path for a downloaded asset. */
 export async function getDownloadPath(datasetId: string, filename: string): Promise<string | null> {
+  if (!IS_TAURI) return null
   return cmd<string | null>('get_download_path', { datasetId, filename })
 }
 
 /** Get total disk usage of all downloaded datasets. */
 export async function getDownloadsSize(): Promise<number> {
+  if (!IS_TAURI) return 0
   return cmd<number>('get_downloads_size')
 }
 
 /** Check if a download is currently in progress. */
 export async function isDownloading(datasetId: string): Promise<boolean> {
+  if (!IS_TAURI) return false
   return cmd<boolean>('is_downloading', { datasetId })
 }
 

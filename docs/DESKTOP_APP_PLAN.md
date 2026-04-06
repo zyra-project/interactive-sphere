@@ -80,7 +80,7 @@ if ('serviceWorker' in navigator && !window.__TAURI__) {
 | Concern | Web | Desktop |
 |---|---|---|
 | Tile proxy | Cloudflare Function (`/api/tile/`) | Tauri command → Rust HTTP client |
-| Cache layer 1 | Service Worker (Cache API) | SQLite + filesystem |
+| Cache layer 1 | Service Worker (Cache API) | SHA-256 flat-file cache |
 | Cache layer 2 | Cloudflare Edge (1-year TTL) | N/A (local cache is sufficient) |
 | Cache layer 3 | MapLibre in-memory LRU | MapLibre in-memory LRU (unchanged) |
 
@@ -89,7 +89,7 @@ The desktop tile cache flow:
 ```
 MapLibre tile request
   → Tauri protocol handler intercepts /api/tile/*
-  → Check SQLite index (hash → file path, timestamp)
+  → Check SHA-256 flat-file cache (hash of path → cached file)
   → Hit: return from local filesystem
   → Miss: fetch from gibs.earthdata.nasa.gov, store locally, return
 ```
@@ -179,7 +179,7 @@ Unlike Electron (bundled Chromium), Tauri depends on the user's OS webview versi
 
 Backend code (tile cache, API proxy) requires Rust.
 
-**Mitigation:** The Rust surface area is small — HTTP client (`reqwest`), SQLite (`rusqlite`), and Tauri command handlers. No complex async orchestration or unsafe code needed.
+**Mitigation:** The Rust surface area is small — HTTP client (`reqwest`), filesystem caching, and Tauri command handlers. No complex async orchestration or unsafe code needed.
 
 ## Implementation Phases
 
@@ -194,7 +194,7 @@ Backend code (tile cache, API proxy) requires Rust.
 ### Phase 2: Local Tile Cache (1 week)
 
 - Implement Rust tile fetcher (direct GIBS access, no CF proxy needed)
-- SQLite index for cached tiles (hash, path, timestamp, size)
+- SHA-256 flat-file cache for tiles (hash of path → local file)
 - Tauri protocol handler to intercept `/api/tile/*` requests
 - Add `__TAURI__` guard to skip SW registration
 - Optional: bundle z0-z3 tiles in the installer
@@ -276,6 +276,6 @@ git push origin v0.2.0
 tauri                    # Core framework
 tauri-plugin-keyring     # OS keychain access
 reqwest                  # HTTP client (tile fetching, API proxy)
-rusqlite                 # SQLite for tile cache index
+sha2 / hex               # SHA-256 hashing for tile cache filenames
 serde / serde_json       # Serialization
 ```

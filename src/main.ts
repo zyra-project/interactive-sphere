@@ -86,7 +86,7 @@ class InteractiveSphere {
       this.renderer = new MapRenderer()
       this.renderer.init(container)
       initMapControls(this.renderer)
-      initDownloadUI()
+      initDownloadUI().catch(err => logger.warn('[App] Download UI init failed:', err))
       logger.info('[App] Using MapLibre renderer')
 
       // Wire up lat/lng display

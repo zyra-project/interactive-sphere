@@ -296,14 +296,16 @@ export async function loadConfigWithKey(): Promise<DocentConfig> {
 /**
  * Save docent config to localStorage.
  * On Tauri, the API key is stored in the OS keychain instead of localStorage.
+ *
+ * @param persistApiKey - When true (e.g. from the settings form), the apiKey
+ *   value is written to the keychain even if empty (clearing the stored key).
+ *   When false (default), the keychain is only updated if apiKey is non-empty,
+ *   preventing programmatic saves (model auto-persist, etc.) from erasing it.
  */
-export function saveConfig(config: DocentConfig): void {
+export function saveConfig(config: DocentConfig, persistApiKey = false): void {
   try {
     if (tauriInvoke) {
-      // Only write to keychain when the caller explicitly provides a key.
-      // loadConfig() returns apiKey: '' on Tauri, so saves triggered by
-      // non-key changes (model, vision, debug) would erase the keychain.
-      if (config.apiKey) {
+      if (persistApiKey || config.apiKey) {
         tauriInvoke('set_api_key', { key: config.apiKey }).catch(() => {
           logger.warn('[Docent] Failed to save API key to keychain')
         })
