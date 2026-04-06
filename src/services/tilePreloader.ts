@@ -8,8 +8,12 @@ import { logger } from '../utils/logger'
 import { isMobile, isSlowNetwork } from '../utils/deviceCapability'
 
 const IS_TAURI = !!(window as any).__TAURI__
-const tauriInvoke: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | null =
-  IS_TAURI ? (window as any).__TAURI_INTERNALS__?.invoke ?? null : null
+
+// Lazy-load the public invoke API instead of using __TAURI_INTERNALS__
+const tauriInvokeReady: Promise<((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | null> = IS_TAURI
+  ? import('@tauri-apps/api/core').then(m => m.invoke as (cmd: string, args: Record<string, unknown>) => Promise<unknown>)
+    .catch(() => null)
+  : Promise.resolve(null)
 
 // Tile URL templates — matches mapRenderer.ts
 const BLUE_MARBLE_TEMPLATE =
@@ -49,6 +53,7 @@ async function fetchWithConcurrency(urls: string[], concurrency: number): Promis
     while (i < urls.length) {
       const url = urls[i++]
       try {
+        const tauriInvoke = await tauriInvokeReady
         if (tauriInvoke) {
           // In Tauri, warm the Rust tile cache directly via IPC
           const tilePath = url.replace('/api/tile/', '')

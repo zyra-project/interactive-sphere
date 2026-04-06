@@ -19,6 +19,12 @@ import { preloadLowZoomTiles } from './tilePreloader'
 // --- Tauri desktop: route tiles through Rust cache via IPC ---
 const IS_TAURI = !!(window as any).__TAURI__
 
+// Lazy-load the public invoke API instead of using __TAURI_INTERNALS__
+const tauriInvokeReady: Promise<((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | null> = IS_TAURI
+  ? import('@tauri-apps/api/core').then(m => m.invoke as (cmd: string, args: Record<string, unknown>) => Promise<unknown>)
+    .catch(() => null)
+  : Promise.resolve(null)
+
 /** On web, returns the template unchanged. On Tauri, swaps to tauritile:// protocol. */
 function getTileUrls(template: string): string[] {
   if (IS_TAURI) {
@@ -28,27 +34,26 @@ function getTileUrls(template: string): string[] {
 }
 
 if (IS_TAURI) {
-  const tauriInvoke = (window as any).__TAURI_INTERNALS__?.invoke
-  if (tauriInvoke) {
-    maplibregl.addProtocol('tauritile', async (params: { url: string }) => {
-      const tilePath = params.url.replace('tauritile://', '')
-      try {
-        const b64: string = await tauriInvoke('get_tile', { tilePath })
-        const binary = atob(b64)
-        const bytes = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i)
-        }
-        return { data: bytes.buffer }
-      } catch (err) {
-        logger.error('[Tiles] IPC error for', tilePath, err)
-        throw err
+  // Register the protocol immediately — the invoke function is resolved
+  // lazily inside the handler (tiles aren't requested until the map loads).
+  maplibregl.addProtocol('tauritile', async (params: { url: string }) => {
+    const invoke = await tauriInvokeReady
+    if (!invoke) throw new Error('Tauri invoke not available')
+    const tilePath = params.url.replace('tauritile://', '')
+    try {
+      const b64: string = await invoke('get_tile', { tilePath }) as string
+      const binary = atob(b64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i)
       }
-    })
-    logger.info('[Tiles] Registered tauritile:// protocol for Rust tile cache')
-  } else {
-    logger.warn('[Tiles] __TAURI__ set but __TAURI_INTERNALS__.invoke not found')
-  }
+      return { data: bytes.buffer }
+    } catch (err) {
+      logger.error('[Tiles] IPC error for', tilePath, err)
+      throw err
+    }
+  })
+  logger.info('[Tiles] Registered tauritile:// protocol for Rust tile cache')
 }
 
 // --- GIBS tile endpoints ---
