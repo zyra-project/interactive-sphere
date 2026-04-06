@@ -7,6 +7,7 @@ yarn.lock
 dist/
 build/
 *.tsbuildinfo
+src-tauri/target/
 
 # Test / coverage artifacts
 coverage/
