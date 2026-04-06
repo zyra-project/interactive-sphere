@@ -16,13 +16,53 @@ import { logger } from '../utils/logger'
 import { isMobile } from '../utils/deviceCapability'
 import { preloadLowZoomTiles } from './tilePreloader'
 
-// --- GIBS tile endpoints (proxied through Cloudflare edge for caching) ---
-const BLUE_MARBLE_TILES = [
+// --- Tauri desktop: route tiles through Rust cache via IPC ---
+const IS_TAURI = !!(window as any).__TAURI__
+
+// Lazy-load the public invoke API instead of using __TAURI_INTERNALS__
+const tauriInvokeReady: Promise<((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | null> = IS_TAURI
+  ? import('@tauri-apps/api/core').then(m => m.invoke as (cmd: string, args: Record<string, unknown>) => Promise<unknown>)
+    .catch(() => null)
+  : Promise.resolve(null)
+
+/** On web, returns the template unchanged. On Tauri, swaps to tauritile:// protocol. */
+function getTileUrls(template: string): string[] {
+  if (IS_TAURI) {
+    return [template.replace('/api/tile/', 'tauritile://')]
+  }
+  return [template]
+}
+
+if (IS_TAURI) {
+  // Register the protocol immediately — the invoke function is resolved
+  // lazily inside the handler (tiles aren't requested until the map loads).
+  maplibregl.addProtocol('tauritile', async (params: { url: string }) => {
+    const invoke = await tauriInvokeReady
+    if (!invoke) throw new Error('Tauri invoke not available')
+    const tilePath = params.url.replace('tauritile://', '')
+    try {
+      const b64: string = await invoke('get_tile', { tilePath }) as string
+      const binary = atob(b64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i)
+      }
+      return { data: bytes.buffer }
+    } catch (err) {
+      logger.error('[Tiles] IPC error for', tilePath, err)
+      throw err
+    }
+  })
+  logger.info('[Tiles] Registered tauritile:// protocol for Rust tile cache')
+}
+
+// --- GIBS tile endpoints ---
+const BLUE_MARBLE_TILES = getTileUrls(
   '/api/tile/BlueMarble_NextGeneration/default/2004-08/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg'
-]
-const BLACK_MARBLE_TILES = [
+)
+const BLACK_MARBLE_TILES = getTileUrls(
   '/api/tile/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png'
-]
+)
 const GIBS_MAX_ZOOM = 8
 
 // --- Default camera ---

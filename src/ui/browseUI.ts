@@ -6,6 +6,11 @@
 
 import type { Dataset } from '../types'
 import { dataService } from '../services/dataService'
+import {
+  isDownloadAvailable, downloadDataset, getDownload,
+  isDownloading, formatBytes,
+} from '../services/downloadService'
+import { closeDownloadPanel } from './downloadUI'
 
 // --- Browse UI constants ---
 const CARD_DESCRIPTION_MAX_LENGTH = 120
@@ -43,6 +48,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   const overlay = document.getElementById('browse-overlay')
   if (!overlay) return
   overlay.classList.remove('hidden')
+  closeDownloadPanel()
 
   const visible = datasets
     .filter(d => !d.isHidden)
@@ -187,6 +193,52 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
     })
   }
 
+  // Update download button states after render
+  const updateDownloadButtons = async () => {
+    if (!isDownloadAvailable()) return
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.browse-card-download')
+    for (const btn of buttons) {
+      const id = btn.dataset.id
+      if (!id) continue
+      const downloaded = await getDownload(id)
+      const active = await isDownloading(id)
+      if (active) {
+        btn.classList.add('downloading')
+        btn.classList.remove('downloaded')
+        btn.innerHTML = '&#8987;'
+        btn.title = 'Downloading…'
+      } else if (downloaded) {
+        btn.classList.add('downloaded')
+        btn.classList.remove('downloading')
+        btn.innerHTML = '&#10003;'
+        btn.title = `Downloaded (${formatBytes(downloaded.total_bytes)})`
+      }
+    }
+  }
+
+  async function handleDownloadClick(btn: HTMLButtonElement, allDatasets: Dataset[]): Promise<void> {
+    const id = btn.dataset.id
+    if (!id) return
+
+    // If already downloaded or downloading, ignore
+    if (btn.classList.contains('downloaded') || btn.classList.contains('downloading')) return
+
+    const dataset = allDatasets.find(d => d.id === id)
+    if (!dataset) return
+
+    btn.classList.add('downloading')
+    btn.innerHTML = '&#8987;'
+    btn.title = 'Downloading…'
+
+    try {
+      await downloadDataset(dataset)
+    } catch {
+      btn.classList.remove('downloading')
+      btn.innerHTML = '&#8615;'
+      btn.title = 'Download for offline use'
+    }
+  }
+
   const renderCards = () => {
     const grid = document.getElementById('browse-grid')
     const countEl = document.getElementById('browse-count')
@@ -292,11 +344,16 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
         ? `<img class="browse-card-thumb" src="${escapeAttr(d.thumbnailLink)}" alt="${escapeAttr(d.title)} thumbnail" loading="lazy">`
         : ''
 
+      const downloadBtn = isDownloadAvailable()
+        ? `<button class="browse-card-download" data-id="${escapeAttr(d.id)}" aria-label="Download ${escapeAttr(d.title)} for offline use" title="Download for offline use">&#8615;</button>`
+        : ''
+
       return `<div class="browse-card" data-id="${escapeAttr(d.id)}" role="listitem" tabindex="0" aria-label="${escapeAttr(d.title)}" aria-expanded="false">
           ${thumbHtml}
           <div class="browse-card-body">
             <div class="browse-card-header">
               <span class="browse-card-title">${escapeHtml(d.title)}</span>
+              ${downloadBtn}
               <button class="browse-card-load" data-id="${escapeAttr(d.id)}" aria-label="Load ${escapeAttr(d.title)}">Load</button>
             </div>
             ${catsHtml}${shortDescHtml}
@@ -328,6 +385,12 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
           e.stopPropagation()
           const id = loadBtn.dataset.id
           if (id) callbacks.onSelectDataset(id)
+          return
+        }
+        const dlBtn = (e.target as HTMLElement).closest('.browse-card-download') as HTMLButtonElement | null
+        if (dlBtn) {
+          e.stopPropagation()
+          handleDownloadClick(dlBtn, visible)
           return
         }
         if ((e.target as HTMLElement).tagName === 'A') return
@@ -365,6 +428,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   }
 
   renderCards()
+  updateDownloadButtons()
 }
 
 /** Hide the browse overlay. */

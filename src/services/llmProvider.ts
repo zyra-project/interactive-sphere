@@ -10,6 +10,34 @@
 import type { DocentConfig } from '../types'
 import { logger } from '../utils/logger'
 
+// On Tauri, use the HTTP plugin's fetch to bypass webview CORS restrictions.
+// Local LLM servers (Ollama, LM Studio, etc.) don't set CORS headers for
+// the tauri.localhost origin, so requests from the webview's native fetch fail.
+const IS_TAURI = !!(window as any).__TAURI__
+const tauriFetchReady: Promise<typeof globalThis.fetch | null> | null = IS_TAURI
+  ? import('@tauri-apps/plugin-http').then(m => {
+    logger.info('[LLM] Tauri HTTP plugin loaded')
+    return m.fetch as typeof globalThis.fetch
+  }).catch(err => {
+    logger.error('[LLM] Failed to load Tauri HTTP plugin:', err)
+    return null
+  })
+  : null
+
+/** Use Tauri's CORS-free fetch when available, otherwise native fetch. */
+async function corsFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (tauriFetchReady) {
+    const f = await tauriFetchReady
+    if (f) {
+      logger.debug('[LLM] Using Tauri HTTP plugin for', typeof input === 'string' ? input : (input as Request).url)
+      return f(input, init)
+    }
+    logger.warn('[LLM] Tauri HTTP plugin resolved to null, falling back to native fetch')
+  }
+  logger.debug('[LLM] Using native fetch for', typeof input === 'string' ? input : (input as Request).url)
+  return fetch(input, init)
+}
+
 // --- Types ---
 
 /** A text-only content part. */
@@ -90,7 +118,8 @@ export async function* streamChat(
 
   let response: Response
   try {
-    response = await fetch(url, {
+    logger.info('[LLM] POST', url, 'model:', config.model)
+    response = await corsFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -131,9 +160,12 @@ export async function* streamChat(
 
   if (!response.body) {
     clearTimeout(inactivityTimer)
+    logger.warn('[LLM] No response body — response type:', typeof response.body)
     yield { type: 'error', message: 'No response body' }
     return
   }
+
+  logger.info('[LLM] Stream body type:', typeof response.body, 'locked:', response.bodyUsed)
 
   // Parse SSE stream
   const reader = response.body.getReader()
@@ -147,9 +179,14 @@ export async function* streamChat(
   const toolCallAccum = new Map<number, { name: string; args: string }>()
 
   try {
+    let chunkCount = 0
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        logger.info('[LLM] Stream done after', chunkCount, 'chunks, remaining buffer:', buffer.length, 'chars')
+        break
+      }
+      chunkCount++
 
       resetInactivity()
       buffer += decoder.decode(value, { stream: true })
@@ -269,7 +306,7 @@ export async function checkAvailability(config: DocentConfig): Promise<Availabil
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 5000)
   try {
-    const res = await fetch(url, { headers, signal: controller.signal })
+    const res = await corsFetch(url, { headers, signal: controller.signal })
     if (!res.ok) {
       return { ok: false, reason: `Server returned ${res.status}` }
     }
@@ -295,8 +332,10 @@ export async function checkAvailability(config: DocentConfig): Promise<Availabil
     }
 
     return { ok: true }
-  } catch {
-    return { ok: false, reason: 'Could not reach the server' }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    logger.error('[LLM] Connection test failed:', detail)
+    return { ok: false, reason: `Could not reach the server: ${detail}` }
   } finally {
     clearTimeout(timeoutId)
   }
@@ -313,7 +352,7 @@ export async function fetchModels(config: DocentConfig): Promise<string[]> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 5000)
   try {
-    const res = await fetch(url, { headers, signal: controller.signal })
+    const res = await corsFetch(url, { headers, signal: controller.signal })
     if (!res.ok) return []
     const body = await res.json() as { data?: { id?: string }[] }
     const models = body.data

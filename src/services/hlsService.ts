@@ -233,8 +233,17 @@ export class HLSService {
    */
   get hasAudio(): boolean {
     if (this.hls && this.hls.audioTracks.length > 0) return true
-    const tracks = (this.video as HTMLVideoElement & { audioTracks?: { length: number } })?.audioTracks
-    if (tracks && tracks.length > 0) return true
+    const v = this.video as HTMLVideoElement & {
+      audioTracks?: { length: number }
+      webkitAudioDecodedByteCount?: number
+      mozHasAudio?: boolean
+    }
+    if (!v) return false
+    // Safari / Firefox
+    if (v.audioTracks && v.audioTracks.length > 0) return true
+    if (v.mozHasAudio) return true
+    // Chromium: if any audio bytes have been decoded, there's an audio track
+    if (typeof v.webkitAudioDecodedByteCount === 'number' && v.webkitAudioDecodedByteCount > 0) return true
     return false
   }
 

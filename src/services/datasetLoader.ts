@@ -6,6 +6,7 @@
 
 import { HLSService } from './hlsService'
 import { dataService } from './dataService'
+import { getDownload, getDownloadPath } from './downloadService'
 import type { Dataset, AppState, GlobeRenderer, VideoTextureHandle } from '../types'
 import { formatDate, isSubDailyPeriod, inferDisplayInterval } from '../utils/time'
 import { logger } from '../utils/logger'
@@ -13,6 +14,20 @@ import { escapeHtml, escapeAttr } from '../ui/browseUI'
 import { closeChat } from '../ui/chatUI'
 import type { PlaybackState } from '../ui/playbackController'
 import { updatePlayButton, loadCaptions } from '../ui/playbackController'
+
+const IS_TAURI = !!(window as any).__TAURI__
+
+/** Convert a local file path to a URL the webview can load. */
+const convertFileSrcReady: Promise<((path: string) => string) | null> = IS_TAURI
+  ? import('@tauri-apps/api/core')
+      .then(m => m.convertFileSrc)
+      .catch(() => null)
+  : Promise.resolve(null)
+
+async function localFileUrl(path: string): Promise<string> {
+  const convert = await convertFileSrcReady
+  return convert ? convert(path) : `asset://localhost/${path}`
+}
 
 // --- Dataset loader constants ---
 const DESCRIPTION_MAX_LENGTH = 600
@@ -37,15 +52,20 @@ export async function loadImageDataset(
   isMobile: boolean,
   callbacks: DatasetLoaderCallbacks,
 ): Promise<void> {
-  const url = dataset.dataLink
-  const ext = url.match(/(\.\w+)$/)
-  const base = ext ? url.slice(0, -ext[1].length) : url
-  const suffix = ext ? ext[1] : ''
-
-  const resolutions = isMobile ? ['_2048', '_1024'] : ['_4096', '_2048', '_1024']
-  const candidates = [...resolutions.map(r => `${base}${r}${suffix}`), url]
-
-  const img = await tryLoadImage(candidates)
+  // Check for offline-cached version first
+  const dl = await getDownload(dataset.id)
+  let img: HTMLImageElement
+  if (dl) {
+    const localPath = await getDownloadPath(dataset.id, dl.primary_file)
+    if (localPath) {
+      logger.info(`[App] Loading image from offline cache: ${localPath}`)
+      img = await tryLoadImage([await localFileUrl(localPath)])
+    } else {
+      img = await loadImageFromNetwork(dataset, isMobile)
+    }
+  } else {
+    img = await loadImageFromNetwork(dataset, isMobile)
+  }
 
   renderer.updateTexture(img)
   if (dataset.startTime) {
@@ -58,6 +78,18 @@ export async function loadImageDataset(
 
   callbacks.showPlaybackControls(false)
   logger.info(`[App] Image dataset loaded successfully: ${img.src}`)
+}
+
+/** Load an image from the network with progressive resolution fallback. */
+function loadImageFromNetwork(dataset: Dataset, isMobile: boolean): Promise<HTMLImageElement> {
+  const url = dataset.dataLink
+  const ext = url.match(/(\.\w+)$/)
+  const base = ext ? url.slice(0, -ext[1].length) : url
+  const suffix = ext ? ext[1] : ''
+
+  const resolutions = isMobile ? ['_2048', '_1024'] : ['_4096', '_2048', '_1024']
+  const candidates = [...resolutions.map(r => `${base}${r}${suffix}`), url]
+  return tryLoadImage(candidates)
 }
 
 /** Try loading an image from a list of candidate URLs, falling back to the next on failure. */
@@ -96,24 +128,33 @@ export async function loadVideoDataset(
   playbackState: PlaybackState,
   callbacks: DatasetLoaderCallbacks,
 ): Promise<{ hlsService: HLSService; videoTexture: VideoTextureHandle }> {
-  const vimeoId = dataService.extractVimeoId(dataset.dataLink)
-  if (!vimeoId) throw new Error(`Could not extract Vimeo ID from: ${dataset.dataLink}`)
-
   const hlsService = new HLSService()
-  const manifest = await hlsService.fetchManifest(vimeoId)
-  logger.info('[App] Video manifest received:', { duration: manifest.duration, qualities: manifest.files.length })
-
   const video = hlsService.createVideo()
 
-  try {
-    await hlsService.loadStream(manifest.hls, video, isMobile)
-  } catch (hlsError) {
-    logger.warn('[App] HLS failed, falling back to direct MP4:', hlsError)
-    const mp4File = manifest.files.find(f => f.quality === '1080p')
-      ?? manifest.files.find(f => f.quality === '720p')
-      ?? manifest.files.find(f => f.width && f.link)
-    if (!mp4File) throw new Error('No playable video source found')
-    await hlsService.loadDirect(mp4File.link, video)
+  // Check for offline-cached version first
+  const dl = await getDownload(dataset.id)
+  const localVideoPath = dl ? await getDownloadPath(dataset.id, dl.primary_file) : null
+
+  if (localVideoPath) {
+    logger.info(`[App] Loading video from offline cache: ${localVideoPath}`)
+    await hlsService.loadDirect(await localFileUrl(localVideoPath), video)
+  } else {
+    const vimeoId = dataService.extractVimeoId(dataset.dataLink)
+    if (!vimeoId) throw new Error(`Could not extract Vimeo ID from: ${dataset.dataLink}`)
+
+    const manifest = await hlsService.fetchManifest(vimeoId)
+    logger.info('[App] Video manifest received:', { duration: manifest.duration, qualities: manifest.files.length })
+
+    try {
+      await hlsService.loadStream(manifest.hls, video, isMobile)
+    } catch (hlsError) {
+      logger.warn('[App] HLS failed, falling back to direct MP4:', hlsError)
+      const mp4File = manifest.files.find(f => f.quality === '1080p')
+        ?? manifest.files.find(f => f.quality === '720p')
+        ?? manifest.files.find(f => f.width && f.link)
+      if (!mp4File) throw new Error('No playable video source found')
+      await hlsService.loadDirect(mp4File.link, video)
+    }
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -131,12 +172,6 @@ export async function loadVideoDataset(
       }, VIDEO_LOAD_TIMEOUT_MS)
     }
   })
-
-  // Show mute button only when the stream has audio
-  const muteBtn = document.getElementById('mute-btn') as HTMLElement | null
-  if (muteBtn) {
-    muteBtn.style.display = hlsService.hasAudio ? '' : 'none'
-  }
 
   // Infer display interval from time range + video duration
   if (dataset.startTime && dataset.endTime) {
@@ -164,6 +199,13 @@ export async function loadVideoDataset(
     // Autoplay blocked — texture will update when user presses play
   }
 
+  // Show mute button only when the stream has audio.
+  // Checked after first-frame decode so webkitAudioDecodedByteCount is populated.
+  const muteBtn = document.getElementById('mute-btn') as HTMLElement | null
+  if (muteBtn) {
+    muteBtn.style.display = hlsService.hasAudio ? '' : 'none'
+  }
+
   const videoTexture = renderer.setVideoTexture(video)
   videoTexture.needsUpdate = true
 
@@ -180,7 +222,7 @@ export async function loadVideoDataset(
     loadCaptions(video, dataset.closedCaptionLink, playbackState)
   }
 
-  logger.info('[App] Video dataset loaded, duration:', manifest.duration, 's')
+  logger.info('[App] Video dataset loaded, duration:', video.duration, 's')
   return { hlsService, videoTexture }
 }
 

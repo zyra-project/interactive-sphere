@@ -7,7 +7,15 @@
 import { logger } from '../utils/logger'
 import { isMobile, isSlowNetwork } from '../utils/deviceCapability'
 
-// Proxied through Cloudflare edge — matches mapRenderer.ts tile URLs
+const IS_TAURI = !!(window as any).__TAURI__
+
+// Lazy-load the public invoke API instead of using __TAURI_INTERNALS__
+const tauriInvokeReady: Promise<((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | null> = IS_TAURI
+  ? import('@tauri-apps/api/core').then(m => m.invoke as (cmd: string, args: Record<string, unknown>) => Promise<unknown>)
+    .catch(() => null)
+  : Promise.resolve(null)
+
+// Tile URL templates — matches mapRenderer.ts
 const BLUE_MARBLE_TEMPLATE =
   '/api/tile/BlueMarble_NextGeneration/default/2004-08/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg'
 const BLACK_MARBLE_TEMPLATE =
@@ -45,7 +53,14 @@ async function fetchWithConcurrency(urls: string[], concurrency: number): Promis
     while (i < urls.length) {
       const url = urls[i++]
       try {
-        await fetch(url, { mode: 'cors', credentials: 'omit' })
+        const tauriInvoke = await tauriInvokeReady
+        if (tauriInvoke) {
+          // In Tauri, warm the Rust tile cache directly via IPC
+          const tilePath = url.replace('/api/tile/', '')
+          await tauriInvoke('get_tile', { tilePath })
+        } else {
+          await fetch(url, { mode: 'cors', credentials: 'omit' })
+        }
       } catch {
         // Non-critical — tile will be fetched on-demand later
       }

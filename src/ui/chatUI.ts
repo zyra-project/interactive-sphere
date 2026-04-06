@@ -10,10 +10,10 @@ import type { ChatMessage, ChatAction, ChatSession, DocentConfig, MapViewContext
 import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './browseUI'
 import { createMessageId } from '../services/docentEngine'
-import { processMessage, loadConfig, saveConfig, testConnection, getDefaultConfig, isLocalDev, captureGlobeScreenshot, captureViewContext } from '../services/docentService'
+import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureGlobeScreenshot, captureViewContext } from '../services/docentService'
 import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
-import { setLogLevel } from '../utils/logger'
+import { setLogLevel, logger } from '../utils/logger'
 
 // --- Constants ---
 const SESSION_STORAGE_KEY = 'sos-docent-chat'
@@ -332,20 +332,26 @@ function toggleSettings(): void {
   settingsOpen = !settingsOpen
   panel.classList.toggle('hidden', !settingsOpen)
   if (settingsOpen) {
-    populateSettings()
+    populateSettings().catch(err => logger.warn('[Chat] Failed to populate settings:', err))
   }
 }
 
-function populateSettings(): void {
-  const config = loadConfig()
+async function populateSettings(): Promise<void> {
+  const config = await loadConfigWithKey()
   const urlInput = document.getElementById('chat-settings-url') as HTMLInputElement | null
   const keyInput = document.getElementById('chat-settings-key') as HTMLInputElement | null
   const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
   const visionInput = document.getElementById('chat-settings-vision') as HTMLInputElement | null
   const debugInput = document.getElementById('chat-settings-debug') as HTMLInputElement | null
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
-  if (urlInput) urlInput.value = config.apiUrl
-  if (keyInput) keyInput.value = config.apiKey
+  if (urlInput) {
+    urlInput.value = config.apiUrl
+    if (IS_TAURI) urlInput.placeholder = 'https://api.openai.com/v1 or http://localhost:11434/v1'
+  }
+  if (keyInput) {
+    keyInput.value = config.apiKey
+    if (IS_TAURI) keyInput.placeholder = 'Stored securely in OS keychain'
+  }
   if (readingLevelSelect) readingLevelSelect.value = config.readingLevel
   if (enabledInput) enabledInput.checked = config.enabled
   if (visionInput) visionInput.checked = config.visionEnabled
@@ -376,7 +382,7 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
   const select = document.getElementById('chat-settings-model') as HTMLSelectElement | null
   if (!select) return
 
-  const config = loadConfig()
+  const config = await loadConfigWithKey()
   const selected = preferredModel ?? select.value ?? config.model
 
   const models = await fetchModels({ ...config, apiUrl })
@@ -402,6 +408,13 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
     select.appendChild(opt)
   }
   select.disabled = false
+
+  // Auto-persist the first model when config has none (e.g. fresh Tauri install)
+  if (!selected && models.length > 0) {
+    const cfg = loadConfig()
+    cfg.model = models[0]
+    saveConfig(cfg)
+  }
 }
 
 function readSettingsForm(): DocentConfig {
@@ -426,7 +439,7 @@ function readSettingsForm(): DocentConfig {
 
 function handleSettingsSave(): void {
   const config = readSettingsForm()
-  saveConfig(config)
+  saveConfig(config, true)
   // Apply debug log level at runtime so production console shows all messages
   setLogLevel(config.debugPrompt ? 'debug' : null)
   // Keep vision toggle button + hint banner in sync with settings checkbox
@@ -442,6 +455,8 @@ function handleSettingsSave(): void {
 
 async function handleSettingsTest(): Promise<void> {
   const config = readSettingsForm()
+  // Apply debug level before testing so errors appear in console
+  setLogLevel(config.debugPrompt ? 'debug' : null)
   const status = document.getElementById('chat-settings-status')
   const testBtn = document.getElementById('chat-settings-test') as HTMLButtonElement | null
   if (status) {
@@ -515,7 +530,7 @@ async function handleSend(): Promise<void> {
 
   try {
     // Capture globe screenshot + overlay context only when vision mode and LLM are both active
-    const config = loadConfig()
+    const config = await loadConfigWithKey()
     const shouldCaptureVision = config.visionEnabled && config.enabled && !!config.apiUrl
     const screenshot = shouldCaptureVision ? captureGlobeScreenshot() : null
     const viewContext = shouldCaptureVision ? captureViewContext() : undefined

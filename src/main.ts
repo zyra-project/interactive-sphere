@@ -14,6 +14,7 @@ import type { AppState, VideoTextureHandle } from './types'
 
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
+import { initDownloadUI } from './ui/downloadUI'
 import { initMapControls, updateMapControlsPosition } from './ui/mapControlsUI'
 import { initChatUI, openChat, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import {
@@ -85,6 +86,7 @@ class InteractiveSphere {
       this.renderer = new MapRenderer()
       this.renderer.init(container)
       initMapControls(this.renderer)
+      initDownloadUI().catch(err => logger.warn('[App] Download UI init failed:', err))
       logger.info('[App] Using MapLibre renderer')
 
       // Wire up lat/lng display
@@ -715,11 +717,30 @@ class InteractiveSphere {
   }
 }
 
-// Register service worker for tile caching (cache-first strategy for GIBS tiles)
-if ('serviceWorker' in navigator) {
+// Register service worker for tile caching (cache-first strategy for GIBS tiles).
+// Skip in Tauri desktop app — tile caching is handled by the Rust backend.
+if ('serviceWorker' in navigator && !(window as any).__TAURI__) {
   navigator.serviceWorker.register('/sw.js').catch(err => {
     logger.warn('[SW] Registration failed:', err)
   })
+}
+
+// Check for app updates on launch (Tauri desktop only).
+// Runs in the background after the app is fully loaded — non-blocking.
+async function checkForUpdates(): Promise<void> {
+  if (!(window as any).__TAURI__) return
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater')
+    const update = await check()
+    if (update) {
+      logger.info(`[Updater] Update available: ${update.version}`)
+      // download + install; the plugin shows a native confirmation dialog
+      // because "dialog: true" is set in tauri.conf.json
+      await update.downloadAndInstall()
+    }
+  } catch (err) {
+    logger.warn('[Updater] Update check failed:', err)
+  }
 }
 
 // Initialize app on DOM ready
@@ -729,4 +750,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await app.initialize()
 
   ;(window as any).app = app
+
+  // Non-blocking update check after app is ready
+  checkForUpdates()
 })
