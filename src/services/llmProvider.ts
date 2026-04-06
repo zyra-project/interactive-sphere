@@ -14,15 +14,21 @@ import { logger } from '../utils/logger'
 // Local LLM servers (Ollama, LM Studio, etc.) don't set CORS headers for
 // the tauri.localhost origin, so requests from the webview's native fetch fail.
 const IS_TAURI = !!(window as any).__TAURI__
-const tauriFetchReady: Promise<typeof globalThis.fetch> | null = IS_TAURI
-  ? import('@tauri-apps/plugin-http').then(m => m.fetch)
+const tauriFetchReady: Promise<typeof globalThis.fetch | null> | null = IS_TAURI
+  ? import('@tauri-apps/plugin-http').then(m => {
+    logger.info('[LLM] Tauri HTTP plugin loaded')
+    return m.fetch as typeof globalThis.fetch
+  }).catch(err => {
+    logger.error('[LLM] Failed to load Tauri HTTP plugin:', err)
+    return null
+  })
   : null
 
 /** Use Tauri's CORS-free fetch when available, otherwise native fetch. */
 async function corsFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (tauriFetchReady) {
     const f = await tauriFetchReady
-    return f(input, init)
+    if (f) return f(input, init)
   }
   return fetch(input, init)
 }
