@@ -155,9 +155,12 @@ export async function* streamChat(
 
   if (!response.body) {
     clearTimeout(inactivityTimer)
+    logger.warn('[LLM] No response body — response type:', typeof response.body)
     yield { type: 'error', message: 'No response body' }
     return
   }
+
+  logger.info('[LLM] Stream body type:', typeof response.body, 'locked:', response.bodyUsed)
 
   // Parse SSE stream
   const reader = response.body.getReader()
@@ -171,9 +174,14 @@ export async function* streamChat(
   const toolCallAccum = new Map<number, { name: string; args: string }>()
 
   try {
+    let chunkCount = 0
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        logger.info('[LLM] Stream done after', chunkCount, 'chunks, remaining buffer:', buffer.length, 'chars')
+        break
+      }
+      chunkCount++
 
       resetInactivity()
       buffer += decoder.decode(value, { stream: true })
