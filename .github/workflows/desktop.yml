@@ -2,7 +2,7 @@ name: Desktop Build
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags-ignore:
       - 'v*'
     paths:
