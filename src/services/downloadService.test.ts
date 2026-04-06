@@ -152,8 +152,8 @@ describe('supplementary asset filenames', () => {
     expect(`legend${ext}`).toBe('legend.gif')
   })
 
-  it('defaults legend extension to .png', () => {
-    const legendLink = undefined
+  it('defaults legend extension to .png when link is absent', () => {
+    const legendLink = null as string | null
     const ext = legendLink?.match(/(\.\w+)$/)?.[1] ?? '.png'
     expect(`legend${ext}`).toBe('legend.png')
   })
