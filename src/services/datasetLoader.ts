@@ -18,17 +18,15 @@ import { updatePlayButton, loadCaptions } from '../ui/playbackController'
 const IS_TAURI = !!(window as any).__TAURI__
 
 /** Convert a local file path to a URL the webview can load. */
-let convertFileSrc: ((path: string) => string) | null = null
-if (IS_TAURI) {
-  import('@tauri-apps/api/core').then(m => {
-    convertFileSrc = m.convertFileSrc
-  }).catch(() => {})
-}
+const convertFileSrcReady: Promise<((path: string) => string) | null> = IS_TAURI
+  ? import('@tauri-apps/api/core')
+      .then(m => m.convertFileSrc)
+      .catch(() => null)
+  : Promise.resolve(null)
 
-function localFileUrl(path: string): string {
-  if (convertFileSrc) return convertFileSrc(path)
-  // Fallback — shouldn't happen if Tauri is loaded
-  return `asset://localhost/${path}`
+async function localFileUrl(path: string): Promise<string> {
+  const convert = await convertFileSrcReady
+  return convert ? convert(path) : `asset://localhost/${path}`
 }
 
 // --- Dataset loader constants ---
@@ -61,7 +59,7 @@ export async function loadImageDataset(
     const localPath = await getDownloadPath(dataset.id, dl.primary_file)
     if (localPath) {
       logger.info(`[App] Loading image from offline cache: ${localPath}`)
-      img = await tryLoadImage([localFileUrl(localPath)])
+      img = await tryLoadImage([await localFileUrl(localPath)])
     } else {
       img = await loadImageFromNetwork(dataset, isMobile)
     }
@@ -139,7 +137,7 @@ export async function loadVideoDataset(
 
   if (localVideoPath) {
     logger.info(`[App] Loading video from offline cache: ${localVideoPath}`)
-    await hlsService.loadDirect(localFileUrl(localVideoPath), video)
+    await hlsService.loadDirect(await localFileUrl(localVideoPath), video)
   } else {
     const vimeoId = dataService.extractVimeoId(dataset.dataLink)
     if (!vimeoId) throw new Error(`Could not extract Vimeo ID from: ${dataset.dataLink}`)

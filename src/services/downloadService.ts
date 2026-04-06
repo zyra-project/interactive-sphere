@@ -13,15 +13,15 @@ const IS_TAURI = !!(window as any).__TAURI__
 const VIDEO_PROXY_BASE = 'https://video-proxy.zyra-project.org/video'
 
 // Use Tauri's CORS-free fetch for HEAD probes when available.
-let tauriFetch: typeof globalThis.fetch | null = null
-if (IS_TAURI) {
-  import('@tauri-apps/plugin-http').then(m => {
-    tauriFetch = m.fetch as typeof globalThis.fetch
-  }).catch(() => {})
-}
-function corsFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (tauriFetch) return tauriFetch(input, init)
-  return fetch(input, init)
+const tauriFetchReady: Promise<typeof globalThis.fetch | null> = IS_TAURI
+  ? import('@tauri-apps/plugin-http')
+      .then(m => m.fetch as typeof globalThis.fetch)
+      .catch(() => null)
+  : Promise.resolve(null)
+
+async function corsFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const f = await tauriFetchReady
+  return f ? f(input, init) : fetch(input, init)
 }
 
 // --- Types ---

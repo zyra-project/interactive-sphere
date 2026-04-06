@@ -32,8 +32,10 @@ interactive-sphere/
 │   ├── icons/                  #   App icons (all platforms)
 │   └── src/
 │       ├── main.rs             #   Entry point
-│       ├── tile_cache.rs       #   Local tile cache (SQLite + filesystem)
-│       └── api_proxy.rs        #   LLM API proxy (holds API key securely)
+│       ├── tile_cache.rs       #   Local tile cache (SHA-256 flat-file)
+│       ├── keychain.rs         #   OS keychain for API key storage
+│       ├── download_manager.rs #   Offline dataset download manager
+│       └── download_commands.rs#   Tauri commands for download operations
 ├── public/                     # Shared static assets
 ├── functions/                  # Cloudflare Functions (web deploy only)
 ├── vite.config.ts              # Shared Vite config

@@ -7,8 +7,8 @@
 import type { Dataset } from '../types'
 import { dataService } from '../services/dataService'
 import {
-  isDownloadAvailable, downloadDataset, getDownload, getDownloadSize,
-  isDownloading, formatBytes, cancelDownload,
+  isDownloadAvailable, downloadDataset, getDownload,
+  isDownloading, formatBytes,
 } from '../services/downloadService'
 import { closeDownloadPanel } from './downloadUI'
 
@@ -226,9 +226,6 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
     const dataset = allDatasets.find(d => d.id === id)
     if (!dataset) return
 
-    // Show size estimate and confirm
-    const size = await getDownloadSize(dataset)
-    const sizeStr = size > 0 ? ` (${formatBytes(size)})` : ''
     btn.classList.add('downloading')
     btn.innerHTML = '&#8987;'
     btn.title = 'Downloading…'

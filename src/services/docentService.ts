@@ -300,10 +300,14 @@ export async function loadConfigWithKey(): Promise<DocentConfig> {
 export function saveConfig(config: DocentConfig): void {
   try {
     if (tauriInvoke) {
-      // Store API key in OS keychain, strip from localStorage
-      tauriInvoke('set_api_key', { key: config.apiKey }).catch(() => {
-        logger.warn('[Docent] Failed to save API key to keychain')
-      })
+      // Only write to keychain when the caller explicitly provides a key.
+      // loadConfig() returns apiKey: '' on Tauri, so saves triggered by
+      // non-key changes (model, vision, debug) would erase the keychain.
+      if (config.apiKey) {
+        tauriInvoke('set_api_key', { key: config.apiKey }).catch(() => {
+          logger.warn('[Docent] Failed to save API key to keychain')
+        })
+      }
       const stored = { ...config, apiKey: '' }
       localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(stored))
     } else {

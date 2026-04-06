@@ -81,18 +81,27 @@ jobs:
 
       - run: npm ci
 
-      - name: Build desktop app
+      - name: Build desktop app (signed)
+        if: github.event_name != 'pull_request'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Provide signing key so CI builds succeed (pubkey in config requires it).
-          # Without this, tauri build errors: "A public key has been found, but no private key."
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: npx tauri
 
+      - name: Build desktop app (unsigned, PRs)
+        if: github.event_name == 'pull_request'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: npx tauri
+          args: --bundles none
+
       - name: Upload artifacts
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.platform }}
