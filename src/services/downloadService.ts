@@ -115,20 +115,34 @@ async function resolveVideoAssets(dataset: Dataset): Promise<{ assets: AssetInpu
   return { assets, totalSize }
 }
 
-/** Resolve image assets for download (highest resolution). */
-function resolveImageAssets(dataset: Dataset): { assets: AssetInput[]; totalSize: number } {
+/** Resolve image assets for download (highest available resolution). */
+async function resolveImageAssets(dataset: Dataset): Promise<{ assets: AssetInput[]; primaryFile: string }> {
   const url = dataset.dataLink
   const ext = url.match(/(\.\w+)$/)
   const base = ext ? url.slice(0, -ext[1].length) : url
   const suffix = ext ? ext[1] : ''
 
-  // Try 4096 first, then original
-  const assets: AssetInput[] = [
+  // Try resolutions from highest to lowest; use the first that responds 200
+  const candidates = [
     { url: `${base}_4096${suffix}`, filename: `image_4096${suffix}` },
+    { url: `${base}_2048${suffix}`, filename: `image_2048${suffix}` },
     { url, filename: `image${suffix}` },
   ]
 
-  return { assets, totalSize: 0 } // Size unknown for images
+  for (const candidate of candidates) {
+    try {
+      const res = await fetch(candidate.url, { method: 'HEAD' })
+      if (res.ok) {
+        return { assets: [candidate], primaryFile: candidate.filename }
+      }
+    } catch {
+      // Try next
+    }
+  }
+
+  // Last resort: use original URL and hope for the best
+  const fallback = candidates[candidates.length - 1]
+  return { assets: [fallback], primaryFile: fallback.filename }
 }
 
 /** Get the estimated download size for a dataset. */
@@ -155,12 +169,15 @@ export async function downloadDataset(dataset: Dataset): Promise<void> {
   const kind = isVideo ? 'video' : 'image'
 
   let assets: AssetInput[]
+  let primaryFile: string
   if (isVideo) {
     const result = await resolveVideoAssets(dataset)
     assets = result.assets
+    primaryFile = 'video.mp4'
   } else {
-    const result = resolveImageAssets(dataset)
+    const result = await resolveImageAssets(dataset)
     assets = result.assets
+    primaryFile = result.primaryFile
   }
 
   // Add supplementary assets
@@ -179,8 +196,6 @@ export async function downloadDataset(dataset: Dataset): Promise<void> {
       : dataset.closedCaptionLink
     assets.push({ url: captionUrl, filename: 'captions.srt' })
   }
-
-  const primaryFile = isVideo ? 'video.mp4' : assets[0].filename
   const ext = dataset.thumbnailLink?.match(/(\.\w+)$/)?.[1] ?? '.jpg'
   const legendExt = dataset.legendLink?.match(/(\.\w+)$/)?.[1] ?? '.png'
 
