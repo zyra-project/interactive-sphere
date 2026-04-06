@@ -408,6 +408,13 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
     select.appendChild(opt)
   }
   select.disabled = false
+
+  // Auto-persist the first model when config has none (e.g. fresh Tauri install)
+  if (!selected && models.length > 0) {
+    const cfg = loadConfig()
+    cfg.model = models[0]
+    saveConfig(cfg)
+  }
 }
 
 function readSettingsForm(): DocentConfig {
