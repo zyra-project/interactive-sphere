@@ -175,12 +175,6 @@ export async function loadVideoDataset(
     }
   })
 
-  // Show mute button only when the stream has audio
-  const muteBtn = document.getElementById('mute-btn') as HTMLElement | null
-  if (muteBtn) {
-    muteBtn.style.display = hlsService.hasAudio ? '' : 'none'
-  }
-
   // Infer display interval from time range + video duration
   if (dataset.startTime && dataset.endTime) {
     const start = new Date(dataset.startTime)
@@ -205,6 +199,13 @@ export async function loadVideoDataset(
     video.currentTime = 0
   } catch {
     // Autoplay blocked — texture will update when user presses play
+  }
+
+  // Show mute button only when the stream has audio.
+  // Checked after first-frame decode so webkitAudioDecodedByteCount is populated.
+  const muteBtn = document.getElementById('mute-btn') as HTMLElement | null
+  if (muteBtn) {
+    muteBtn.style.display = hlsService.hasAudio ? '' : 'none'
   }
 
   const videoTexture = renderer.setVideoTexture(video)
