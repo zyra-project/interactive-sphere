@@ -211,6 +211,48 @@ Backend code (tile cache, API proxy) requires Rust.
 - Auto-updater configuration
 - GitHub Releases as distribution channel
 
+#### Implementation details
+
+**Workflows:**
+- `desktop.yml` — CI builds on push/PR to main (artifacts only, no release)
+- `release.yml` — triggered by `v*` tags or manual dispatch; builds all platforms, signs with Tauri updater key, creates a draft GitHub Release with `latest.json` for auto-updates
+
+**Auto-updater flow:**
+1. App launches → `checkForUpdates()` in `main.ts` calls `@tauri-apps/plugin-updater`
+2. Plugin fetches `latest.json` from the latest GitHub Release
+3. If a newer version exists, a native dialog prompts the user to update
+4. Update downloads, verifies signature against the public key in `tauri.conf.json`, and installs
+
+**Setup steps (one-time, required before first release):**
+
+1. Generate a Tauri signing keypair:
+   ```bash
+   npx tauri signer generate -w ~/.tauri/interactive-sphere.key
+   ```
+   This prints a **public key** and saves a **private key** to the file.
+
+2. Copy the public key into `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`.
+
+3. Add two GitHub repository secrets (Settings → Secrets → Actions):
+   - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/interactive-sphere.key`
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — the password you chose during generation
+
+4. (Optional) macOS notarization — add these secrets when you have an Apple Developer certificate:
+   - `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`
+   - `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
+
+5. (Optional) Windows Authenticode — sign the MSI/EXE with a code signing certificate. Not required for distribution but suppresses SmartScreen warnings.
+
+**Release process:**
+```bash
+# Bump version in src-tauri/tauri.conf.json and package.json
+# Commit, then tag:
+git tag v0.2.0
+git push origin v0.2.0
+# → release.yml builds all platforms and creates a draft release
+# → Review the draft on GitHub, then publish it
+```
+
 ### Phase 5: Desktop-Only Features (ongoing)
 
 - Kiosk mode for exhibit deployments

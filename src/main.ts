@@ -723,6 +723,24 @@ if ('serviceWorker' in navigator && !(window as any).__TAURI__) {
   })
 }
 
+// Check for app updates on launch (Tauri desktop only).
+// Runs in the background after the app is fully loaded — non-blocking.
+async function checkForUpdates(): Promise<void> {
+  if (!(window as any).__TAURI__) return
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater')
+    const update = await check()
+    if (update) {
+      logger.info(`[Updater] Update available: ${update.version}`)
+      // download + install; the plugin shows a native confirmation dialog
+      // because "dialog: true" is set in tauri.conf.json
+      await update.downloadAndInstall()
+    }
+  } catch (err) {
+    logger.warn('[Updater] Update check failed:', err)
+  }
+}
+
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
   const app = new InteractiveSphere()
@@ -730,4 +748,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await app.initialize()
 
   ;(window as any).app = app
+
+  // Non-blocking update check after app is ready
+  checkForUpdates()
 })

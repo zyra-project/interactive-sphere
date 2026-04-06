@@ -3,6 +3,8 @@ name: Desktop Build
 on:
   push:
     branches: [main]
+    tags-ignore:
+      - 'v*'
     paths:
       - 'src-tauri/**'
       - 'src/**'

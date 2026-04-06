@@ -11,6 +11,7 @@
     "core:window:allow-set-position",
     "core:window:allow-available-monitors",
     "core:window:allow-current-monitor",
+    "updater:default",
     {
       "identifier": "http:default",
       "allow": [
