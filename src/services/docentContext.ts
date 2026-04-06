@@ -393,10 +393,6 @@ export function getFlyToTool(): LLMTool {
             description: 'Viewing altitude in kilometers above the surface. Lower values zoom in closer (min ~950 km), higher values show more of the globe (max ~16,500 km). Default: keep current altitude.',
           },
         },
-        anyOf: [
-          { required: ['lat', 'lon'] },
-          { required: ['place'] },
-        ],
       },
     },
   }
