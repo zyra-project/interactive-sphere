@@ -11,7 +11,15 @@ import {
 } from '../services/downloadService'
 import { escapeHtml, escapeAttr } from './browseUI'
 import { logger } from '../utils/logger'
-import { convertFileSrc } from '@tauri-apps/api/core'
+
+// Lazy-load convertFileSrc to avoid pulling Tauri-only code into web builds.
+let convertFileSrc: ((path: string) => string) | null = null
+const IS_TAURI = !!(window as any).__TAURI__
+if (IS_TAURI) {
+  import('@tauri-apps/api/core').then(m => {
+    convertFileSrc = m.convertFileSrc
+  }).catch(() => {})
+}
 
 let panelOpen = false
 let unsubProgress: (() => void) | null = null
@@ -124,7 +132,7 @@ async function renderPanel(): Promise<void> {
     const file = img.dataset.file
     if (!datasetId || !file) return
     const path = await getDownloadPath(datasetId, file)
-    if (path) {
+    if (path && convertFileSrc) {
       img.src = convertFileSrc(path)
     }
   })

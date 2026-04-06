@@ -35,6 +35,15 @@ describe('formatBytes', () => {
     expect(formatBytes(1073741824)).toBe('1.0 GB')
     expect(formatBytes(2.3 * 1024 * 1024 * 1024)).toBe('2.3 GB')
   })
+
+  it('formats terabytes with one decimal', () => {
+    expect(formatBytes(1024 * 1024 * 1024 * 1024)).toBe('1.0 TB')
+  })
+
+  it('clamps to largest unit for huge values', () => {
+    const result = formatBytes(Number.MAX_SAFE_INTEGER)
+    expect(result).toMatch(/PB$/)
+  })
 })
 
 // --- Asset resolution logic ---

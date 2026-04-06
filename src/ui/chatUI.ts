@@ -13,7 +13,7 @@ import { createMessageId } from '../services/docentEngine'
 import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureGlobeScreenshot, captureViewContext } from '../services/docentService'
 import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
-import { setLogLevel } from '../utils/logger'
+import { setLogLevel, logger } from '../utils/logger'
 
 // --- Constants ---
 const SESSION_STORAGE_KEY = 'sos-docent-chat'
@@ -332,7 +332,7 @@ function toggleSettings(): void {
   settingsOpen = !settingsOpen
   panel.classList.toggle('hidden', !settingsOpen)
   if (settingsOpen) {
-    populateSettings()
+    populateSettings().catch(err => logger.warn('[Chat] Failed to populate settings:', err))
   }
 }
 
