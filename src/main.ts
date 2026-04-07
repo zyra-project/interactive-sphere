@@ -796,6 +796,15 @@ class InteractiveSphere {
     notifyDatasetChanged(null)
   }
 
+  /**
+   * Load a tour from a URL — exposed for console testing.
+   * Usage: window.app.playTour('/assets/test-tour.json')
+   */
+  async playTour(url: string): Promise<void> {
+    const gen = ++this.loadGeneration
+    await this.startTour(url, gen)
+  }
+
   /** Clean up all resources: video streams, textures, and the WebGL renderer. */
   dispose(): void {
     this.cleanupVideo()

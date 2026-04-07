@@ -1,0 +1,150 @@
+{
+  "tourTasks": [
+    {
+      "envShowDayNightLighting": "on"
+    },
+    {
+      "envShowClouds": "on"
+    },
+    {
+      "showRect": {
+        "rectID": "welcome",
+        "caption": "Welcome to the Interactive Sphere Tour!\\n\\n<i><color=green>This is a test tour that exercises the tour engine. Press play to continue.</color></i>",
+        "captionPos": "center",
+        "captionBestFit": true,
+        "fontSize": 18,
+        "fontColor": "white",
+        "isClosable": true,
+        "xPct": 50.0,
+        "yPct": 50.0,
+        "widthPct": 45.0,
+        "heightPct": 35.0,
+        "showBorder": false
+      }
+    },
+    {
+      "pauseForInput": ""
+    },
+    {
+      "hideRect": "welcome"
+    },
+    {
+      "flyTo": {
+        "lat": 40.015,
+        "lon": -105.27,
+        "altmi": 500.0,
+        "animated": true
+      }
+    },
+    {
+      "showRect": {
+        "rectID": "boulder",
+        "caption": "We've flown to Boulder, Colorado — home of NOAA's Earth System Research Laboratories.\\n\\n<color=green>Press play to zoom out and see the whole globe.</color>",
+        "captionPos": "center",
+        "fontSize": 16,
+        "fontColor": "white",
+        "isClosable": true,
+        "xPct": 75.0,
+        "yPct": 50.0,
+        "widthPct": 30.0,
+        "heightPct": 40.0,
+        "showBorder": false
+      }
+    },
+    {
+      "pauseForInput": ""
+    },
+    {
+      "hideRect": "boulder"
+    },
+    {
+      "resetCameraZoomOut": ""
+    },
+    {
+      "showRect": {
+        "rectID": "rotation",
+        "caption": "Now let's start the globe rotating slowly.\\n\\n<i>Watch how day and night move across the surface.</i>",
+        "captionPos": "center",
+        "fontSize": 16,
+        "fontColor": "white",
+        "isClosable": true,
+        "xPct": 25.0,
+        "yPct": 60.0,
+        "widthPct": 28.0,
+        "heightPct": 30.0,
+        "showBorder": false
+      }
+    },
+    {
+      "setGlobeRotationRate": 0.5
+    },
+    {
+      "pauseSeconds": 6
+    },
+    {
+      "hideRect": "rotation"
+    },
+    {
+      "setGlobeRotationRate": 0
+    },
+    {
+      "envShowWorldBorder": "on"
+    },
+    {
+      "flyTo": {
+        "lat": -33.86,
+        "lon": 151.21,
+        "altmi": 3000.0,
+        "animated": true
+      }
+    },
+    {
+      "showRect": {
+        "rectID": "sydney",
+        "caption": "Here's Sydney, Australia — with country borders now visible.\\n\\n<color=green>Press play to finish the tour.</color>",
+        "captionPos": "center",
+        "fontSize": 16,
+        "fontColor": "white",
+        "isClosable": true,
+        "xPct": 25.0,
+        "yPct": 50.0,
+        "widthPct": 28.0,
+        "heightPct": 35.0,
+        "showBorder": true
+      }
+    },
+    {
+      "pauseForInput": ""
+    },
+    {
+      "hideRect": "sydney"
+    },
+    {
+      "envShowWorldBorder": "off"
+    },
+    {
+      "resetCameraZoomOut": ""
+    },
+    {
+      "showRect": {
+        "rectID": "goodbye",
+        "caption": "Thanks for taking the tour!\\n\\n<i><color=green>The tour engine supports flyTo, text boxes, pauses, dataset loading, rotation, day/night, clouds, borders, and more.</color></i>",
+        "captionPos": "center",
+        "fontSize": 18,
+        "fontColor": "white",
+        "isClosable": true,
+        "xPct": 50.0,
+        "yPct": 50.0,
+        "widthPct": 45.0,
+        "heightPct": 30.0,
+        "showBorder": false
+      }
+    },
+    {
+      "pauseForInput": ""
+    },
+    {
+      "hideRect": "goodbye"
+    }
+  ]
+}
