@@ -449,6 +449,89 @@
             display: none !important;
         }
 
+        /* --- Tour controls --- */
+        #tour-controls {
+            position: absolute;
+            bottom: 0.75rem;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.45rem 0.7rem;
+            background: rgba(13, 13, 18, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            z-index: 700;
+        }
+
+        #tour-controls .transport-btn {
+            min-width: 32px;
+            min-height: 32px;
+        }
+
+        #tour-step-counter {
+            font-size: 0.7rem;
+            color: #999;
+            letter-spacing: 0.04em;
+            font-variant-numeric: tabular-nums;
+            min-width: 3.5em;
+            text-align: center;
+            user-select: none;
+        }
+
+        #tour-stop-btn {
+            margin-left: 0.25rem;
+            color: #ff6b6b !important;
+            border-color: rgba(255, 107, 107, 0.25) !important;
+        }
+        #tour-stop-btn:hover {
+            background: rgba(255, 107, 107, 0.15) !important;
+            border-color: rgba(255, 107, 107, 0.5) !important;
+        }
+
+        /* Tour text-box overlays */
+        .tour-textbox {
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+        }
+        .tour-textbox-close {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.4rem;
+            background: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            color: #aaa !important;
+            font-size: 0.65rem;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            line-height: 1;
+        }
+        .tour-textbox-close:hover {
+            background: rgba(255, 255, 255, 0.2) !important;
+            color: #fff !important;
+        }
+
+        @keyframes tour-box-fadein {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 768px) {
+            #tour-controls .transport-btn {
+                min-width: 40px;
+                min-height: 40px;
+            }
+        }
+
         #error-message {
             position: absolute;
             top: 50%;
@@ -2048,6 +2131,15 @@
                 <!-- Map overlay controls — MapLibre only, hidden by default -->
                 <div id="map-controls" class="ui-panel hidden" role="toolbar" aria-label="Map overlay controls"></div>
                 <div id="download-manager" class="hidden" aria-label="Download manager"></div>
+
+                <!-- Tour controls — shown when a tour is playing -->
+                <div id="tour-controls" class="hidden" role="toolbar" aria-label="Tour controls">
+                    <button id="tour-prev-btn" class="transport-btn" title="Previous step" aria-label="Previous step">&#x23EA;&#xFE0E;</button>
+                    <button id="tour-play-btn" class="transport-btn" title="Play tour" aria-label="Play tour">&#x25B6;&#xFE0E;</button>
+                    <button id="tour-next-btn" class="transport-btn" title="Next step" aria-label="Next step">&#x23E9;&#xFE0E;</button>
+                    <span id="tour-step-counter">1 / 1</span>
+                    <button id="tour-stop-btn" class="transport-btn" title="Stop tour" aria-label="Stop tour">&#x23F9;&#xFE0E;</button>
+                </div>
 
                 <!-- Orbit Chat -->
                 <button id="chat-trigger" title="Ask the docent" aria-label="Open digital docent chat" aria-expanded="false"><span class="chat-trigger-icon" aria-hidden="true">&#x1F4AC;&#xFE0E;</span><span class="chat-trigger-label">Ask Orbit</span></button>

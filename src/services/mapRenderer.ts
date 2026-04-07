@@ -280,6 +280,7 @@ export class MapRenderer implements GlobeRenderer {
   private container: HTMLElement | null = null
   private autoRotateInterval: number | null = null
   private autoRotating = false
+  private rotationRate = 1.0 // 1.0 = default (30° per 10s)
   private earthLayer: EarthTileLayerControl | null = null
   private pendingTexture: HTMLCanvasElement | HTMLImageElement | null = null
   private pendingVideo: HTMLVideoElement | null = null
@@ -578,6 +579,26 @@ export class MapRenderer implements GlobeRenderer {
     return this.autoRotating
   }
 
+  /**
+   * Set the globe rotation rate. 0 = stop, 1.0 = default (30°/10s), 2.0 = double speed.
+   * Starts rotation if rate > 0 and not already rotating; stops if rate is 0.
+   */
+  setRotationRate(rate: number): void {
+    this.rotationRate = Math.max(0, Math.min(2, rate))
+    if (this.rotationRate > 0) {
+      if (!this.autoRotating) {
+        this.autoRotating = true
+        this.startAutoRotate()
+      } else {
+        // Restart with new rate
+        this.startAutoRotate()
+      }
+    } else {
+      this.autoRotating = false
+      this.stopAutoRotate()
+    }
+  }
+
   private stopOnInteraction = () => {
     if (this.autoRotating) {
       this.autoRotating = false
@@ -589,11 +610,12 @@ export class MapRenderer implements GlobeRenderer {
     this.stopAutoRotate()
     // Shift the center longitude to rotate around the polar axis (west-to-east).
     // This avoids the wobble caused by bearing rotation on a tilted globe.
+    const degreesPerCycle = 30 * this.rotationRate
     const rotate = () => {
       if (!this.map || !this.autoRotating) return
       const center = this.map.getCenter()
       this.map.easeTo({
-        center: [center.lng - 30, center.lat],
+        center: [center.lng - degreesPerCycle, center.lat],
         duration: 10000,
         easing: (t: number) => t, // linear
       })

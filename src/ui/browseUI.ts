@@ -72,7 +72,6 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   }
   catSet.delete('Movies')
   catSet.delete('Layers')
-  catSet.delete('Tours')
   const categories = ['All', ...Array.from(catSet).sort()]
 
   let activeCategory = 'All'

@@ -10,7 +10,7 @@ import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
 import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
 import { logger } from './utils/logger'
-import type { AppState, VideoTextureHandle } from './types'
+import type { AppState, VideoTextureHandle, TourFile } from './types'
 
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
@@ -27,6 +27,8 @@ import {
 import {
   loadImageDataset, loadVideoDataset, displayDatasetInfo,
 } from './services/datasetLoader'
+import { TourEngine } from './services/tourEngine'
+import { showTourControls, hideTourControls, hideAllTourTextBoxes } from './ui/tourUI'
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, getCloudTextureUrl } from './utils/deviceCapability'
 
@@ -66,6 +68,7 @@ class InteractiveSphere {
   private playback: PlaybackState = createPlaybackState()
   private loadingHideTimer: ReturnType<typeof setTimeout> | null = null
   private loadGeneration = 0 // guards against concurrent dataset loads
+  private tourEngine: TourEngine | null = null
 
   /**
    * Boot the application: create the WebGL renderer, fetch the dataset
@@ -170,6 +173,9 @@ class InteractiveSphere {
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
 
+    // Stop any active tour (but don't trigger full goHome — let the new load proceed)
+    this.stopTour()
+
     // Tear down the previous video *before* starting the new load so the old
     // HLS stream stops downloading and the old MediaSource is released.  Two
     // concurrent HLS.js instances fight over bandwidth and can exhaust the
@@ -226,7 +232,10 @@ class InteractiveSphere {
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
-    if (dataService.isImageDataset(dataset)) {
+    if (dataset.format === 'tour/json') {
+      await this.startTour(dataset.dataLink, gen)
+      return
+    } else if (dataService.isImageDataset(dataset)) {
       await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
       if (gen !== this.loadGeneration) return
     } else if (dataService.isVideoDataset(dataset)) {
@@ -261,6 +270,57 @@ class InteractiveSphere {
       (time) => this.updateVideoTimeLabel(time),
       () => this.renderer?.getMap()?.triggerRepaint(),
     )
+  }
+
+  /** Fetch a tour JSON file and start the tour engine. */
+  private async startTour(dataLink: string, gen: number): Promise<void> {
+    // Stop any previous tour
+    this.stopTour()
+
+    const resp = await fetch(dataLink)
+    if (!resp.ok) throw new Error(`Failed to fetch tour: ${resp.status}`)
+    const tourFile: TourFile = await resp.json()
+
+    if (gen !== this.loadGeneration) return
+
+    this.tourEngine = new TourEngine(tourFile, {
+      loadDataset: async (id) => {
+        await this.loadDataset(id)
+      },
+      unloadAllDatasets: async () => {
+        await this.goHome()
+      },
+      getRenderer: () => this.renderer!,
+      togglePlayPause: () => {
+        togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m))
+      },
+      isPlaying: () => this.appState.isPlaying,
+      onTourEnd: () => this.endTour(),
+      announce: (msg) => this.announce(msg),
+    })
+
+    showTourControls(this.tourEngine)
+    this.showPlaybackControls(false)
+    void this.tourEngine.play()
+  }
+
+  /** Called when the tour finishes or the user stops it. */
+  private endTour(): void {
+    hideTourControls()
+    hideAllTourTextBoxes()
+    this.tourEngine = null
+    this.announce('Tour ended')
+  }
+
+  /** Stop any active tour without triggering goHome. */
+  private stopTour(): void {
+    if (this.tourEngine) {
+      // Detach onTourEnd to avoid recursive cleanup
+      this.tourEngine.stop()
+      this.tourEngine = null
+      hideTourControls()
+      hideAllTourTextBoxes()
+    }
   }
 
   /** Map the current video playback time to a real-world date and update the time label. */
