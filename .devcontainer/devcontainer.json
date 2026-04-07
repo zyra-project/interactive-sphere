@@ -3,19 +3,18 @@
   "build": {
     "dockerfile": "../Dockerfile"
   },
-  "forwardPorts": [5173],
+  "workspaceFolder": "/app",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached",
   "mounts": [
-    "source=${localWorkspaceFolder}/src,target=/app/src,type=bind",
-    "source=${localWorkspaceFolder}/src-tauri,target=/app/src-tauri,type=bind",
-    "source=${localWorkspaceFolder}/public,target=/app/public,type=bind",
-    "source=${localWorkspaceFolder}/vite.config.ts,target=/app/vite.config.ts,type=bind",
-    "source=${localWorkspaceFolder}/tsconfig.json,target=/app/tsconfig.json,type=bind"
+    "source=interactive-sphere-node-modules,target=/app/node_modules,type=volume",
+    "source=interactive-sphere-cargo-target,target=/app/src-tauri/target,type=volume"
   ],
+  "forwardPorts": [5173],
   "containerEnv": {
     "CHOKIDAR_USEPOLLING": "true",
     "SHELL": "/bin/bash"
   },
-  "postStartCommand": "cd /app && npm run dev -- --host 0.0.0.0",
+  "postCreateCommand": "npm ci",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -23,7 +22,8 @@
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
         "anthropic.claude-code",
-        "rust-lang.rust-analyzer"
+        "rust-lang.rust-analyzer",
+        "tauri-apps.tauri-vscode"
       ],
       "settings": {
         "typescript.tsdk": "/app/node_modules/typescript/lib"
