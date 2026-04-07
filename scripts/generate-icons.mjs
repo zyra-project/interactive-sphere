@@ -1,8 +1,10 @@
 import sharp from 'sharp';
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync } from 'fs';
 import { join } from 'path';
 
-const publicDir = join(import.meta.dirname, '..', 'public');
+const rootDir = join(import.meta.dirname, '..');
+const publicDir = join(rootDir, 'public');
+const tauriIconsDir = join(rootDir, 'src-tauri', 'icons');
 
 // Globe icon as SVG - earth-like sphere with meridians and parallels
 const svgIcon = (size) => `
@@ -51,24 +53,85 @@ const svgIcon = (size) => `
   <circle cx="${size/2}" cy="${size/2}" r="${size*0.44}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="${Math.max(1, size*0.015)}"/>
 </svg>`;
 
-// Generate PNG icons at various sizes
-const sizes = [
+async function generatePng(size, outPath) {
+  const buf = Buffer.from(svgIcon(size));
+  const png = await sharp(buf).png().toBuffer();
+  writeFileSync(outPath, png);
+  console.log(`  ${outPath.split('/').slice(-2).join('/')} (${size}x${size})`);
+}
+
+// --- Web icons (public/) ---
+console.log('Web icons:');
+const webIcons = [
   { name: 'apple-touch-icon.png', size: 180 },
   { name: 'icon-192.png', size: 192 },
   { name: 'icon-512.png', size: 512 },
   { name: 'favicon-32.png', size: 32 },
   { name: 'favicon-16.png', size: 16 },
 ];
+for (const { name, size } of webIcons) {
+  await generatePng(size, join(publicDir, name));
+}
+writeFileSync(join(publicDir, 'favicon.svg'), svgIcon(32));
+console.log('  public/favicon.svg');
 
-for (const { name, size } of sizes) {
-  const buf = Buffer.from(svgIcon(size));
-  const png = await sharp(buf).png().toBuffer();
-  writeFileSync(join(publicDir, name), png);
-  console.log(`Generated ${name} (${size}x${size})`);
+// --- Desktop icons (src-tauri/icons/) ---
+console.log('Desktop icons:');
+const tauriIcons = [
+  { name: '32x32.png', size: 32 },
+  { name: '128x128.png', size: 128 },
+  { name: '128x128@2x.png', size: 256 },
+];
+for (const { name, size } of tauriIcons) {
+  await generatePng(size, join(tauriIconsDir, name));
 }
 
-// Also save the SVG favicon
-writeFileSync(join(publicDir, 'favicon.svg'), svgIcon(32));
-console.log('Generated favicon.svg');
+// Generate ICO (contains 16, 32, 48, 256 sizes)
+// sharp doesn't support ICO natively, so we build a minimal ICO file
+async function generateIco(outPath) {
+  const icoSizes = [16, 32, 48, 256];
+  const pngBuffers = [];
+  for (const size of icoSizes) {
+    const buf = Buffer.from(svgIcon(size));
+    pngBuffers.push(await sharp(buf).png().toBuffer());
+  }
+
+  // ICO header: 2 reserved + 2 type (1=ICO) + 2 count
+  const headerSize = 6;
+  const dirEntrySize = 16;
+  const numImages = pngBuffers.length;
+  let dataOffset = headerSize + dirEntrySize * numImages;
+
+  const header = Buffer.alloc(headerSize);
+  header.writeUInt16LE(0, 0);       // reserved
+  header.writeUInt16LE(1, 2);       // type: ICO
+  header.writeUInt16LE(numImages, 4);
+
+  const dirEntries = [];
+  for (let i = 0; i < numImages; i++) {
+    const entry = Buffer.alloc(dirEntrySize);
+    const s = icoSizes[i];
+    entry.writeUInt8(s >= 256 ? 0 : s, 0);   // width (0 = 256)
+    entry.writeUInt8(s >= 256 ? 0 : s, 1);   // height
+    entry.writeUInt8(0, 2);                    // color palette
+    entry.writeUInt8(0, 3);                    // reserved
+    entry.writeUInt16LE(1, 4);                 // color planes
+    entry.writeUInt16LE(32, 6);                // bits per pixel
+    entry.writeUInt32LE(pngBuffers[i].length, 8);  // size
+    entry.writeUInt32LE(dataOffset, 12);            // offset
+    dataOffset += pngBuffers[i].length;
+    dirEntries.push(entry);
+  }
+
+  writeFileSync(outPath, Buffer.concat([header, ...dirEntries, ...pngBuffers]));
+  console.log(`  src-tauri/icons/icon.ico`);
+}
+await generateIco(join(tauriIconsDir, 'icon.ico'));
+
+// Note: .icns generation requires macOS tools or a dedicated library.
+// For now, generate a 512x512 PNG that can be converted to .icns on macOS.
+// On CI (macOS runner), use: sips -s format icns icon-1024.png --out icon.icns
+await generatePng(1024, join(tauriIconsDir, 'icon-1024.png'));
+console.log('  (use `sips -s format icns icon-1024.png --out icon.icns` on macOS to regenerate .icns)');
 
 console.log('Done!');
