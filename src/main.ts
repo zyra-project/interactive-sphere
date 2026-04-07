@@ -401,6 +401,7 @@ class InteractiveSphere {
   private endTour(): void {
     this.cleanupTourOverlays()
     this.tourEngine = null
+    this.restorePostTourUI()
     this.announce('Tour ended')
   }
 
@@ -410,6 +411,18 @@ class InteractiveSphere {
       this.tourEngine.stop()
       this.tourEngine = null
       this.cleanupTourOverlays()
+      this.restorePostTourUI()
+    }
+  }
+
+  /** Restore playback/time UI after a tour ends, based on the current dataset. */
+  private restorePostTourUI(): void {
+    const dataset = this.appState.currentDataset
+    if (dataset && dataService.isVideoDataset(dataset)) {
+      this.showPlaybackControls(true)
+      if (this.hlsService) {
+        updatePlayButton(this.hlsService.paused)
+      }
     }
   }
 

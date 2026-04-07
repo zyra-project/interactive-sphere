@@ -118,7 +118,7 @@ export class TourEngine {
     return key === 'pauseForInput' || key === 'pauseSeconds' || key === 'pauseSec'
   }
 
-  /** Advance to the next pause point (skipping intermediate steps). */
+  /** Advance past the current pause and resume playing from the next task. */
   next(): void {
     if (this.index >= this.tasks.length - 1) return
 
@@ -518,9 +518,10 @@ export class TourEngine {
     const renderer = this.callbacks.getRenderer()
     if (renderer.setRotationRate) {
       renderer.setRotationRate(rate)
-    } else if (rate > 0) {
-      renderer.toggleAutoRotate()
     }
+    // No fallback to toggleAutoRotate — it's not idempotent and can't
+    // represent specific rates. setRotationRate is always available on
+    // MapRenderer, the only GlobeRenderer implementation.
   }
 
   // ── Media executors ────────────────────────────────────────────────

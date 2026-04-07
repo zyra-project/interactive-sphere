@@ -6,9 +6,9 @@ SOS Explorer tours are sequential JSON task lists that orchestrate the globe: fl
 
 ---
 
-## Phase 1 — Core Engine (MVP) ✅
+## Phase 1 & 2 — Tour Engine ✅
 
-**Status: Implemented** — committed on branch `claude/implement-tours-feature-QUGHl`
+**Status: Implemented** — Phase 1 (core engine + flow tasks) and Phase 2 (media, Q&A, camera, placemarks) shipped together.
 
 ### New files
 

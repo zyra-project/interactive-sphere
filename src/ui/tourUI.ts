@@ -52,8 +52,8 @@ function getOverlayContainer(): HTMLElement {
 
 /** Build glass-surface CSS for positioned overlays. */
 function glassStyles(xPct: number, yPct: number, widthPct: number, heightPct: number): string {
-  const left = Math.max(0, xPct - widthPct / 2)
-  const bottom = Math.max(0, yPct - heightPct / 2)
+  const left = Math.max(0, Math.min(100 - widthPct, xPct - widthPct / 2))
+  const bottom = Math.max(0, Math.min(100 - heightPct, yPct - heightPct / 2))
   return `
     position: absolute;
     left: ${left}%;
@@ -119,8 +119,8 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
   box.dataset.rectId = params.rectID
   box.className = 'tour-textbox'
 
-  const left = Math.max(0, params.xPct - params.widthPct / 2)
-  const bottom = Math.max(0, params.yPct - params.heightPct / 2)
+  const left = Math.max(0, Math.min(100 - params.widthPct, params.xPct - params.widthPct / 2))
+  const bottom = Math.max(0, Math.min(100 - params.heightPct, params.yPct - params.heightPct / 2))
 
   box.style.cssText = `
     position: absolute;
