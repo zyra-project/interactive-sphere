@@ -402,12 +402,12 @@ let spaceHandler: ((e: KeyboardEvent) => void) | null = null
 let stopCallback: (() => void) | null = null
 
 /** Show the tour controls bar and bind it to the given engine. */
-export function showTourControls(engine: TourEngine, onStop?: () => void): void {
+export function showTourControls(engine: TourEngine, onStopCb?: () => void): void {
   // Remove any existing listeners first to prevent duplicates
   hideTourControls()
 
   boundEngine = engine
-  stopCallback = onStop ?? null
+  stopCallback = onStopCb ?? null
 
   controlsEl = document.getElementById('tour-controls')
   if (!controlsEl) return
