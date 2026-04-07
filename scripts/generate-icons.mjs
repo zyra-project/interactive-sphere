@@ -1,14 +1,13 @@
 import sharp from 'sharp';
 import { writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, relative } from 'path';
 
 const rootDir = join(import.meta.dirname, '..');
 const publicDir = join(rootDir, 'public');
 const tauriIconsDir = join(rootDir, 'src-tauri', 'icons');
 
 // Globe icon as SVG - earth-like sphere with meridians and parallels
-const svgIcon = (size) => `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+const svgIcon = (size) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
   <defs>
     <radialGradient id="sphere" cx="40%" cy="35%" r="50%">
       <stop offset="0%" stop-color="#4FC3F7"/>
@@ -57,7 +56,44 @@ async function generatePng(size, outPath) {
   const buf = Buffer.from(svgIcon(size));
   const png = await sharp(buf).png().toBuffer();
   writeFileSync(outPath, png);
-  console.log(`  ${outPath.split('/').slice(-2).join('/')} (${size}x${size})`);
+  console.log(`  ${relative(rootDir, outPath)} (${size}x${size})`);
+}
+
+async function generateWebIco(outPath) {
+  const icoSizes = [16, 32, 48];
+  const pngBuffers = [];
+  for (const size of icoSizes) {
+    const buf = Buffer.from(svgIcon(size));
+    pngBuffers.push(await sharp(buf).png().toBuffer());
+  }
+
+  const headerSize = 6;
+  const dirEntrySize = 16;
+  const numImages = pngBuffers.length;
+  let dataOffset = headerSize + dirEntrySize * numImages;
+
+  const header = Buffer.alloc(headerSize);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(numImages, 4);
+
+  const dirEntries = [];
+  for (let i = 0; i < numImages; i++) {
+    const entry = Buffer.alloc(dirEntrySize);
+    entry.writeUInt8(icoSizes[i], 0);
+    entry.writeUInt8(icoSizes[i], 1);
+    entry.writeUInt8(0, 2);
+    entry.writeUInt8(0, 3);
+    entry.writeUInt16LE(1, 4);
+    entry.writeUInt16LE(32, 6);
+    entry.writeUInt32LE(pngBuffers[i].length, 8);
+    entry.writeUInt32LE(dataOffset, 12);
+    dataOffset += pngBuffers[i].length;
+    dirEntries.push(entry);
+  }
+
+  writeFileSync(outPath, Buffer.concat([header, ...dirEntries, ...pngBuffers]));
+  console.log(`  ${relative(rootDir, outPath)}`);
 }
 
 // --- Web icons (public/) ---
@@ -74,6 +110,9 @@ for (const { name, size } of webIcons) {
 }
 writeFileSync(join(publicDir, 'favicon.svg'), svgIcon(32));
 console.log('  public/favicon.svg');
+
+// Generate favicon.ico for legacy browser/crawler compatibility
+await generateWebIco(join(publicDir, 'favicon.ico'));
 
 // --- Desktop icons (src-tauri/icons/) ---
 console.log('Desktop icons:');
