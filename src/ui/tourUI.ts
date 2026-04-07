@@ -1,18 +1,24 @@
 /**
- * Tour UI — manages the tour control bar and text-box overlays.
+ * Tour UI — manages the tour control bar and all overlay types.
  *
- * Text boxes (showRect / hideRect) are positioned as percentage-based DOM
- * overlays on top of the globe canvas, matching the SOS coordinate system
- * where (0,0) is bottom-left and (100,100) is top-right.
+ * Overlay types:
+ * - Text boxes (showRect / hideRect) — positioned captions
+ * - Images (showImage / hideImage) — positioned image overlays
+ * - Videos (playVideo / hideVideo) — positioned video players
+ * - Popups (showPopupHtml / hidePopupHtml) — URL or inline HTML
+ * - Questions (question) — image-based multiple-choice Q&A
+ *
+ * All overlays use the SOS coordinate system where (0,0) is bottom-left
+ * and (100,100) is top-right.
  */
 
-import type { ShowRectTaskParams } from '../types'
+import type {
+  ShowRectTaskParams, ShowImageTaskParams, PlayVideoTaskParams,
+  ShowPopupHtmlTaskParams, QuestionTaskParams,
+} from '../types'
 import type { TourEngine } from '../services/tourEngine'
 
-// ── Text-box overlay management ──────────────────────────────────────
-
-/** Active text-box elements keyed by rectID */
-const activeBoxes = new Map<string, HTMLElement>()
+// ── Shared helpers ──────────────────────────────────────────────────
 
 /**
  * Parse SOS-style markup in captions:
@@ -30,12 +36,12 @@ function parseCaptionMarkup(raw: string): string {
     .replace(/<\/color>/gi, '</span>')
 }
 
-/** Get or create the tour text-box container (lives inside #ui). */
-function getTextBoxContainer(): HTMLElement {
-  let container = document.getElementById('tour-textbox-container')
+/** Get or create the tour overlay container (lives inside #ui). */
+function getOverlayContainer(): HTMLElement {
+  let container = document.getElementById('tour-overlay-container')
   if (!container) {
     container = document.createElement('div')
-    container.id = 'tour-textbox-container'
+    container.id = 'tour-overlay-container'
     container.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:600;'
     const ui = document.getElementById('ui')
     if (ui) ui.appendChild(container)
@@ -44,19 +50,75 @@ function getTextBoxContainer(): HTMLElement {
   return container
 }
 
+/** Build glass-surface CSS for positioned overlays. */
+function glassStyles(xPct: number, yPct: number, widthPct: number, heightPct: number): string {
+  const left = Math.max(0, xPct - widthPct / 2)
+  const bottom = Math.max(0, yPct - heightPct / 2)
+  return `
+    position: absolute;
+    left: ${left}%;
+    bottom: ${bottom}%;
+    width: ${widthPct}%;
+    height: ${heightPct}%;
+    pointer-events: auto;
+    background: rgba(13, 13, 18, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    overflow: hidden;
+    animation: tour-box-fadein 0.35s ease;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  `
+}
+
+function addCloseButton(el: HTMLElement, onClose: () => void): void {
+  const btn = document.createElement('button')
+  btn.className = 'tour-textbox-close'
+  btn.innerHTML = '&#x2715;'
+  btn.title = 'Close'
+  btn.setAttribute('aria-label', 'Close')
+  btn.addEventListener('click', onClose)
+  el.appendChild(btn)
+}
+
+// ── Generic overlay registry ────────────────────────────────────────
+
+function createRegistry() {
+  const map = new Map<string, HTMLElement>()
+  return {
+    add(id: string, el: HTMLElement) { map.set(id, el) },
+    remove(id: string) {
+      const el = map.get(id)
+      if (el) { el.remove(); map.delete(id) }
+    },
+    removeAll() {
+      for (const [id] of map) {
+        const el = map.get(id)
+        if (el) el.remove()
+      }
+      map.clear()
+    },
+  }
+}
+
+const textBoxes = createRegistry()
+const images = createRegistry()
+const videos = createRegistry()
+const popups = createRegistry()
+const questions = createRegistry()
+
+// ── Text-box overlays (showRect / hideRect) ──────────────────────────
+
 /** Show a text box overlay at the specified screen-percentage position. */
 export function showTourTextBox(params: ShowRectTaskParams): void {
-  // Remove existing box with the same ID
   hideTourTextBox(params.rectID)
 
-  const container = getTextBoxContainer()
+  const container = getOverlayContainer()
   const box = document.createElement('div')
   box.dataset.rectId = params.rectID
   box.className = 'tour-textbox'
 
-  // SOS coordinate system: origin at bottom-left, values are percentages.
-  // CSS origin is top-left, so we convert: top = 100 - yPct - heightPct/2
-  // and left = xPct - widthPct/2 (since SOS positions from center of box).
   const left = Math.max(0, params.xPct - params.widthPct / 2)
   const bottom = Math.max(0, params.yPct - params.heightPct / 2)
 
@@ -85,6 +147,7 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
     line-height: 1.55;
     overflow-y: auto;
     animation: tour-box-fadein 0.35s ease;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
   `
 
   const caption = document.createElement('div')
@@ -92,34 +155,242 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
   box.appendChild(caption)
 
   if (params.isClosable) {
-    const closeBtn = document.createElement('button')
-    closeBtn.className = 'tour-textbox-close'
-    closeBtn.innerHTML = '&#x2715;'
-    closeBtn.title = 'Close'
-    closeBtn.setAttribute('aria-label', 'Close text box')
-    closeBtn.addEventListener('click', () => hideTourTextBox(params.rectID))
-    box.appendChild(closeBtn)
+    addCloseButton(box, () => hideTourTextBox(params.rectID))
   }
 
   container.appendChild(box)
-  activeBoxes.set(params.rectID, box)
+  textBoxes.add(params.rectID, box)
 }
 
-/** Hide and remove a text box by rectID. */
-export function hideTourTextBox(rectID: string): void {
-  const box = activeBoxes.get(rectID)
-  if (box) {
-    box.remove()
-    activeBoxes.delete(rectID)
+export function hideTourTextBox(rectID: string): void { textBoxes.remove(rectID) }
+export function hideAllTourTextBoxes(): void { textBoxes.removeAll() }
+
+// ── Image overlays (showImage / hideImage) ───────────────────────────
+
+export function showTourImage(params: ShowImageTaskParams): void {
+  hideTourImage(params.imageID)
+
+  const container = getOverlayContainer()
+  const wrapper = document.createElement('div')
+  wrapper.className = 'tour-image-overlay'
+
+  const xPct = params.xPct ?? 50
+  const yPct = params.yPct ?? 50
+  const widthPct = params.widthPct ?? 40
+  const heightPct = params.heightPct ?? 40
+
+  wrapper.style.cssText = glassStyles(xPct, yPct, widthPct, heightPct) + `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+  `
+
+  const img = document.createElement('img')
+  img.src = params.filename
+  img.alt = params.caption || 'Tour image'
+  img.style.cssText = `
+    max-width: 100%;
+    max-height: ${params.caption ? '85%' : '100%'};
+    object-fit: contain;
+    border-radius: 6px;
+  `
+  wrapper.appendChild(img)
+
+  if (params.caption) {
+    const cap = document.createElement('div')
+    cap.style.cssText = `
+      margin-top: 0.5rem;
+      font-size: ${params.fontSize ? params.fontSize + 'px' : '0.8rem'};
+      color: ${params.fontColor || '#ddd'};
+      text-align: ${params.captionPos || 'center'};
+    `
+    cap.innerHTML = parseCaptionMarkup(params.caption)
+    wrapper.appendChild(cap)
   }
+
+  if (params.isClosable) {
+    addCloseButton(wrapper, () => hideTourImage(params.imageID))
+  }
+
+  container.appendChild(wrapper)
+  images.add(params.imageID, wrapper)
 }
 
-/** Remove all active text boxes. */
-export function hideAllTourTextBoxes(): void {
-  for (const [id] of activeBoxes) {
-    hideTourTextBox(id)
-  }
+export function hideTourImage(imageID: string): void { images.remove(imageID) }
+export function hideAllTourImages(): void { images.removeAll() }
+
+// ── Video overlays (playVideo / hideVideo) ───────────────────────────
+
+export function showTourVideo(params: PlayVideoTaskParams): void {
+  // Use filename as the ID for video overlays
+  const videoID = params.filename
+  hideTourVideo(videoID)
+
+  const container = getOverlayContainer()
+  const wrapper = document.createElement('div')
+  wrapper.className = 'tour-video-overlay'
+
+  const xPct = params.xPct ?? 50
+  const yPct = params.yPct ?? 50
+  const sizePct = params.sizePct ?? 50
+
+  wrapper.style.cssText = glassStyles(xPct, yPct, sizePct, sizePct * 0.5625) + `
+    padding: 0;
+  `
+
+  const video = document.createElement('video')
+  video.src = params.filename
+  video.autoplay = true
+  video.controls = params.showControls ?? false
+  video.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 10px;
+  `
+  wrapper.appendChild(video)
+
+  addCloseButton(wrapper, () => hideTourVideo(videoID))
+
+  container.appendChild(wrapper)
+  videos.add(videoID, wrapper)
 }
+
+export function hideTourVideo(videoID: string): void {
+  // Pause video before removing
+  const el = document.querySelector(`[data-video-id="${CSS.escape(videoID)}"]`) as HTMLVideoElement | null
+  if (el) el.pause()
+  videos.remove(videoID)
+}
+export function hideAllTourVideos(): void { videos.removeAll() }
+
+// ── Popup HTML overlays (showPopupHtml / hidePopupHtml) ──────────────
+
+export function showTourPopup(params: ShowPopupHtmlTaskParams): void {
+  hideTourPopup(params.popupID)
+
+  const container = getOverlayContainer()
+  const wrapper = document.createElement('div')
+  wrapper.className = 'tour-popup-overlay'
+
+  const xPct = params.xPct ?? 50
+  const yPct = params.yPct ?? 50
+  const widthPct = params.widthPct ?? 50
+  const heightPct = params.heightPct ?? 50
+
+  wrapper.style.cssText = glassStyles(xPct, yPct, widthPct, heightPct) + `
+    padding: 0;
+  `
+
+  if (params.url) {
+    const iframe = document.createElement('iframe')
+    iframe.src = params.url
+    iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:10px;'
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin')
+    wrapper.appendChild(iframe)
+  } else if (params.html) {
+    const content = document.createElement('div')
+    content.style.cssText = 'width:100%;height:100%;overflow:auto;padding:1rem;color:#ddd;font-size:0.85rem;line-height:1.5;'
+    content.innerHTML = params.html
+    wrapper.appendChild(content)
+  }
+
+  addCloseButton(wrapper, () => hideTourPopup(params.popupID))
+
+  container.appendChild(wrapper)
+  popups.add(params.popupID, wrapper)
+}
+
+export function hideTourPopup(popupID: string): void { popups.remove(popupID) }
+export function hideAllTourPopups(): void { popups.removeAll() }
+
+// ── Question overlays ────────────────────────────────────────────────
+
+interface QuestionDisplayParams extends QuestionTaskParams {
+  /** Resolved URLs for question and answer images */
+  imgQuestionFilename: string
+  imgAnswerFilename: string
+  /** Called when the user completes the question */
+  onComplete: () => void
+}
+
+export function showTourQuestion(params: QuestionDisplayParams): void {
+  hideAllTourQuestions()
+
+  const container = getOverlayContainer()
+  const wrapper = document.createElement('div')
+  wrapper.className = 'tour-question-overlay'
+
+  const xPct = params.xPct ?? 50
+  const yPct = params.yPct ?? 50
+  const widthPct = params.widthPct ?? 50
+  const heightPct = params.heightPct ?? 60
+
+  wrapper.style.cssText = glassStyles(xPct, yPct, widthPct, heightPct) + `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  `
+
+  const img = document.createElement('img')
+  img.src = params.imgQuestionFilename
+  img.alt = 'Question'
+  img.style.cssText = 'max-width:100%;max-height:60%;object-fit:contain;border-radius:6px;margin-bottom:1rem;'
+  wrapper.appendChild(img)
+
+  // Answer buttons
+  const btnRow = document.createElement('div')
+  btnRow.style.cssText = 'display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:center;'
+
+  for (let i = 0; i < params.numberOfAnswers; i++) {
+    const btn = document.createElement('button')
+    btn.className = 'tour-question-btn'
+    btn.textContent = String(i + 1)
+    btn.setAttribute('aria-label', `Answer ${i + 1}`)
+    btn.addEventListener('click', () => {
+      // Disable all buttons
+      btnRow.querySelectorAll('button').forEach(b => {
+        (b as HTMLButtonElement).disabled = true
+      })
+
+      if (i === params.correctAnswerIndex) {
+        btn.classList.add('tour-question-correct')
+      } else {
+        btn.classList.add('tour-question-wrong')
+        // Highlight the correct answer
+        const correct = btnRow.children[params.correctAnswerIndex] as HTMLElement | undefined
+        if (correct) correct.classList.add('tour-question-correct')
+      }
+
+      // Show the answer image after a brief delay
+      setTimeout(() => {
+        img.src = params.imgAnswerFilename
+        img.alt = 'Answer'
+
+        // Add a continue button
+        const continueBtn = document.createElement('button')
+        continueBtn.className = 'tour-question-continue'
+        continueBtn.textContent = 'Continue'
+        continueBtn.addEventListener('click', () => {
+          hideAllTourQuestions()
+          params.onComplete()
+        })
+        wrapper.appendChild(continueBtn)
+      }, 1500)
+    })
+    btnRow.appendChild(btn)
+  }
+  wrapper.appendChild(btnRow)
+
+  container.appendChild(wrapper)
+  questions.add(params.id, wrapper)
+}
+
+export function hideAllTourQuestions(): void { questions.removeAll() }
 
 // ── Tour controls bar ────────────────────────────────────────────────
 
@@ -173,7 +444,6 @@ export function hideTourControls(): void {
 export function updateTourProgress(index: number, total: number): void {
   const el = document.getElementById('tour-step-counter')
   if (el) el.textContent = `${index + 1} / ${total}`
-  // Also update play/pause button state
   if (boundEngine) updatePlayPauseBtn(boundEngine.state === 'playing')
 }
 
@@ -185,29 +455,20 @@ function updatePlayPauseBtn(isPlaying: boolean): void {
   btn.title = isPlaying ? 'Pause tour' : 'Play tour'
 }
 
-function onPrev(): void {
-  boundEngine?.prev()
-}
+function onPrev(): void { boundEngine?.prev() }
 
 function onNext(): void {
   if (boundEngine) {
     boundEngine.next()
-    if (boundEngine.state === 'paused') {
-      void boundEngine.play()
-    }
+    if (boundEngine.state === 'paused') void boundEngine.play()
   }
 }
 
 function onPlayPause(): void {
   if (!boundEngine) return
-  if (boundEngine.state === 'playing') {
-    boundEngine.pause()
-  } else {
-    void boundEngine.play()
-  }
+  if (boundEngine.state === 'playing') boundEngine.pause()
+  else void boundEngine.play()
   updatePlayPauseBtn(boundEngine.state === 'playing')
 }
 
-function onStop(): void {
-  boundEngine?.stop()
-}
+function onStop(): void { boundEngine?.stop() }

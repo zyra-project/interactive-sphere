@@ -92,29 +92,36 @@ TourEngine                          TourUI
 
 ---
 
-## Phase 2 — Extended Tasks
+## Phase 2 — Extended Tasks ✅
 
-Each task is an independent executor — add incrementally with no architectural changes.
+**Status: Implemented** — all tasks below added to `tourEngine.ts` and `tourUI.ts`.
+
+| Task | Status | Notes |
+|---|---|---|
+| `question` | ✅ Done | Image-based multiple-choice Q&A with correct/wrong highlighting |
+| `pauseSeconds` | ✅ Done | Already implemented in Phase 1 |
+| `playAudio` / `stopAudio` | ✅ Done | HTML5 `<audio>`, supports async (fire-and-forget) or sync (wait) |
+| `playVideo` / `hideVideo` | ✅ Done | Positioned `<video>` overlay with optional controls |
+| `showImage` / `hideImage` | ✅ Done | Positioned `<img>` overlay with caption support |
+| `addPlacemark` / `hidePlacemark` | ✅ Done | Reuses `renderer.addMarker()`, tracked by ID |
+| `loopToBeginning` | ✅ Done | Resets index to 0 |
+| `tiltRotateCamera` | ✅ Done | Pitch/bearing via `map.easeTo()` |
+| `showPopupHtml` / `hidePopupHtml` | ✅ Done | iframe (URL) or innerHTML overlay |
+| `resetCameraZoomOut` | ✅ Done | Fly to default center/zoom/pitch/bearing |
+| `worldBorder` | ✅ Done | `renderer.toggleBoundaries()` + `toggleLabels()` |
+| `enableTourPlayer` | ✅ Done | Show/hide the tour controls bar |
+| `envShowStars` | ✅ Logged | Not rendered in web — logged and skipped |
+| `resolveMediaUrl` | ✅ Done | Resolves relative filenames against tour JSON base URL |
+
+### Remaining (Phase 2+)
 
 | Task | Complexity | Notes |
 |---|---|---|
-| `question` | Medium | Image-based multiple-choice Q&A UI with answer checking |
-| `pauseSeconds` | ✅ Done | Already implemented in Phase 1 |
-| `playAudio` / `stopAudio` | Low | HTML5 `<audio>` element, supports async (continue) or sync (wait) |
-| `playVideo` / `hideVideo` | Medium | Positioned `<video>` overlay with optional controls |
-| `showImage` / `hideImage` | Low | Positioned `<img>` overlay, supports draggable/closable/resizable |
-| `addPlacemark` / `hidePlacemark` | Low | Reuse `renderer.addMarker()` with custom icons |
-| `loopToBeginning` | Trivial | Reset `currentIndex = 0` |
 | `loadTour` (subtour) | Medium | Recursive engine or task splicing |
-| `tiltRotateCamera` | Low | New renderer method for pitch/bearing animation |
-| `showPopupHtml` / `hidePopupHtml` | Medium | iframe or innerHTML overlay |
 | `addGroundOverlay` / `hideGroundOverlay` | Hard | New MapLibre image source + layer with lat/lon bounding box |
 | `add360Media` / `hide360Media` | Hard | 360-degree image/video bubble viewer |
 | `showInfoButton` / `hideInfoButton` | Low | Floating action button overlay |
-| `resetCameraZoomOut` | Trivial | Fly to default center/zoom |
-| `worldBorder` | Trivial | `renderer.toggleBoundaries()` |
-| `stars` / `sun` / `earth` | Low–Medium | Environment toggles (some may need new renderer APIs) |
-| `enableTourPlayer` | Trivial | Show/hide the tour controls bar |
+| `sun` / `earth` | Low–Medium | Environment toggles (may need new renderer APIs) |
 
 ---
 

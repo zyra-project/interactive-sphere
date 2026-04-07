@@ -525,6 +525,53 @@
             to   { opacity: 1; transform: translateY(0); }
         }
 
+        /* Tour question buttons */
+        .tour-question-btn {
+            min-width: 44px;
+            min-height: 44px;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            color: #ddd !important;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .tour-question-btn:hover:not(:disabled) {
+            background: rgba(77, 166, 255, 0.2) !important;
+            border-color: #4da6ff !important;
+            color: #fff !important;
+        }
+        .tour-question-btn:disabled {
+            cursor: default;
+            opacity: 0.7;
+        }
+        .tour-question-correct {
+            background: rgba(34, 197, 94, 0.3) !important;
+            border-color: #22c55e !important;
+            color: #22c55e !important;
+        }
+        .tour-question-wrong {
+            background: rgba(239, 68, 68, 0.3) !important;
+            border-color: #ef4444 !important;
+            color: #ef4444 !important;
+        }
+        .tour-question-continue {
+            margin-top: 1rem;
+            padding: 0.5rem 1.5rem;
+            font-size: 0.85rem;
+            background: rgba(77, 166, 255, 0.2) !important;
+            border: 1px solid #4da6ff !important;
+            color: #4da6ff !important;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .tour-question-continue:hover {
+            background: rgba(77, 166, 255, 0.35) !important;
+        }
+
         @media (max-width: 768px) {
             #tour-controls .transport-btn {
                 min-width: 40px;

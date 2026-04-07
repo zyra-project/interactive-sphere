@@ -28,7 +28,7 @@ import {
   loadImageDataset, loadVideoDataset, displayDatasetInfo,
 } from './services/datasetLoader'
 import { TourEngine } from './services/tourEngine'
-import { showTourControls, hideTourControls, hideAllTourTextBoxes } from './ui/tourUI'
+import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourImages, hideAllTourVideos, hideAllTourPopups, hideAllTourQuestions } from './ui/tourUI'
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, getCloudTextureUrl } from './utils/deviceCapability'
 
@@ -283,6 +283,9 @@ class InteractiveSphere {
 
     if (gen !== this.loadGeneration) return
 
+    // Compute base URL for resolving relative media filenames in tour tasks
+    const tourBaseUrl = dataLink.substring(0, dataLink.lastIndexOf('/') + 1)
+
     this.tourEngine = new TourEngine(tourFile, {
       loadDataset: async (id) => {
         await this.loadDataset(id)
@@ -297,6 +300,13 @@ class InteractiveSphere {
       isPlaying: () => this.appState.isPlaying,
       onTourEnd: () => this.endTour(),
       announce: (msg) => this.announce(msg),
+      resolveMediaUrl: (filename) => {
+        // If already absolute, return as-is; otherwise resolve relative to tour JSON
+        if (filename.startsWith('http://') || filename.startsWith('https://') || filename.startsWith('/')) {
+          return filename
+        }
+        return tourBaseUrl + filename
+      },
     })
 
     showTourControls(this.tourEngine)
@@ -306,8 +316,7 @@ class InteractiveSphere {
 
   /** Called when the tour finishes or the user stops it. */
   private endTour(): void {
-    hideTourControls()
-    hideAllTourTextBoxes()
+    this.cleanupTourOverlays()
     this.tourEngine = null
     this.announce('Tour ended')
   }
@@ -315,12 +324,20 @@ class InteractiveSphere {
   /** Stop any active tour without triggering goHome. */
   private stopTour(): void {
     if (this.tourEngine) {
-      // Detach onTourEnd to avoid recursive cleanup
       this.tourEngine.stop()
       this.tourEngine = null
-      hideTourControls()
-      hideAllTourTextBoxes()
+      this.cleanupTourOverlays()
     }
+  }
+
+  /** Remove all tour UI elements. */
+  private cleanupTourOverlays(): void {
+    hideTourControls()
+    hideAllTourTextBoxes()
+    hideAllTourImages()
+    hideAllTourVideos()
+    hideAllTourPopups()
+    hideAllTourQuestions()
   }
 
   /** Map the current video playback time to a real-world date and update the time label. */

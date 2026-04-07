@@ -14,8 +14,18 @@ import { getSunPosition } from '../utils/time'
 import type {
   TourFile, TourTaskDef, TourState, TourCallbacks,
   FlyToTaskParams, ShowRectTaskParams, DatasetAnimationTaskParams,
+  TiltRotateCameraTaskParams, QuestionTaskParams,
+  PlayAudioTaskParams, PlayVideoTaskParams, ShowImageTaskParams,
+  ShowPopupHtmlTaskParams, AddPlacemarkTaskParams,
 } from '../types'
-import { showTourTextBox, hideTourTextBox, hideAllTourTextBoxes, updateTourProgress } from '../ui/tourUI'
+import {
+  showTourTextBox, hideTourTextBox, hideAllTourTextBoxes, updateTourProgress,
+  showTourImage, hideTourImage, hideAllTourImages,
+  showTourVideo, hideTourVideo, hideAllTourVideos,
+  showTourPopup, hideTourPopup, hideAllTourPopups,
+  showTourQuestion, hideAllTourQuestions,
+  showTourControls as showControls, hideTourControls as hideControls,
+} from '../ui/tourUI'
 
 // Miles → kilometres
 const MI_TO_KM = 1.60934
@@ -40,6 +50,12 @@ export class TourEngine {
 
   // Abort handle — when the tour is stopped, pending awaits should bail out
   private abortController = new AbortController()
+
+  // Active audio element for playAudio/stopAudio
+  private activeAudio: HTMLAudioElement | null = null
+
+  // Active placemarks keyed by ID for cleanup
+  private activePlacemarks = new Map<string, unknown>()
 
   constructor(tourFile: TourFile, callbacks: TourCallbacks) {
     this.tasks = tourFile.tourTasks
@@ -121,8 +137,19 @@ export class TourEngine {
       this.resumeResolver()
       this.resumeResolver = null
     }
-    hideAllTourTextBoxes()
+    this.cleanup()
     this.callbacks.onTourEnd()
+  }
+
+  /** Clean up all tour-created overlays and media. */
+  private cleanup(): void {
+    hideAllTourTextBoxes()
+    hideAllTourImages()
+    hideAllTourVideos()
+    hideAllTourPopups()
+    hideAllTourQuestions()
+    this.stopActiveAudio()
+    this.clearPlacemarks()
   }
 
   /** Read current state without TS narrowing (state can change during awaits). */
@@ -158,7 +185,7 @@ export class TourEngine {
     // Reached the end
     logger.info('[Tour] Tour complete')
     this._state = 'stopped'
-    hideAllTourTextBoxes()
+    this.cleanup()
     this.callbacks.onTourEnd()
   }
 
@@ -168,55 +195,135 @@ export class TourEngine {
     const [key, value] = identifyTask(def)
 
     switch (key) {
+      // Camera
       case 'flyTo':
         return this.execFlyTo(value as FlyToTaskParams)
-      case 'showRect':
-        return this.execShowRect(value as ShowRectTaskParams)
-      case 'hideRect':
-        hideTourTextBox(value as string)
-        return
+      case 'tiltRotateCamera':
+        return this.execTiltRotateCamera(value as TiltRotateCameraTaskParams)
+      case 'resetCameraZoomOut':
+        return this.execResetCameraZoomOut()
+
+      // Flow
       case 'pauseForInput':
         return this.execPauseForInput()
       case 'pauseSeconds':
         return this.execPauseSeconds(value as number)
+      case 'loopToBeginning':
+        return this.execLoopToBeginning()
+      case 'enableTourPlayer':
+        return this.execEnableTourPlayer(value as 'on' | 'off')
+      case 'question':
+        return this.execQuestion(value as QuestionTaskParams)
+
+      // Dataset
       case 'loadDataset':
         return this.execLoadDataset((value as { id: string }).id)
       case 'unloadAllDatasets':
         return this.execUnloadAll()
       case 'datasetAnimation':
         return this.execDatasetAnimation(value as DatasetAnimationTaskParams)
+
+      // Environment
       case 'envShowDayNightLighting':
         return this.execDayNight(value as 'on' | 'off')
       case 'envShowClouds':
         return this.execClouds(value as 'on' | 'off')
+      case 'envShowWorldBorder':
+        return this.execWorldBorder(value as 'on' | 'off')
+      case 'envShowStars':
+        // Stars aren't rendered in the web app — log and skip
+        logger.info('[Tour] Stars toggle not supported in web player')
+        return
       case 'setGlobeRotationRate':
         return this.execRotationRate(value as number)
-      case 'question':
-        // Phase 2 — skip for now
-        logger.info('[Tour] Skipping unsupported task: question')
+
+      // Media
+      case 'playAudio':
+        return this.execPlayAudio(value as PlayAudioTaskParams)
+      case 'stopAudio':
+        this.stopActiveAudio()
         return
+      case 'playVideo':
+        return this.execPlayVideo(value as PlayVideoTaskParams)
+      case 'hideVideo':
+        hideTourVideo(value as string)
+        return
+      case 'showImage':
+        return this.execShowImage(value as ShowImageTaskParams)
+      case 'hideImage':
+        hideTourImage(value as string)
+        return
+      case 'showPopupHtml':
+        return this.execShowPopupHtml(value as ShowPopupHtmlTaskParams)
+      case 'hidePopupHtml':
+        hideTourPopup(value as string)
+        return
+
+      // Resources
+      case 'showRect':
+        showTourTextBox(value as ShowRectTaskParams)
+        return
+      case 'hideRect':
+        hideTourTextBox(value as string)
+        return
+      case 'addPlacemark':
+        return this.execAddPlacemark(value as AddPlacemarkTaskParams)
+      case 'hidePlacemark':
+        this.execHidePlacemark(value as string)
+        return
+
       default:
         logger.info(`[Tour] Skipping unknown task: ${key}`)
     }
   }
 
-  // ── Individual task executors ──────────────────────────────────────
+  // ── Camera executors ───────────────────────────────────────────────
 
   private async execFlyTo(params: FlyToTaskParams): Promise<void> {
     const renderer = this.callbacks.getRenderer()
     const altKm = params.altmi * MI_TO_KM
+    await renderer.flyTo(params.lat, params.lon, altKm)
+  }
+
+  private async execTiltRotateCamera(params: TiltRotateCameraTaskParams): Promise<void> {
+    const renderer = this.callbacks.getRenderer()
+    // tiltRotateCamera sets pitch and bearing via the underlying map
+    const map = (renderer as any).getMap?.()
+    if (!map) return
+
     if (params.animated) {
-      await renderer.flyTo(params.lat, params.lon, altKm)
+      await new Promise<void>(resolve => {
+        map.once('moveend', () => resolve())
+        map.easeTo({
+          pitch: params.tilt,
+          bearing: params.rotate,
+          duration: 2500,
+        })
+      })
     } else {
-      // Instant jump — flyTo with 0 duration isn't exposed, so use a very
-      // short animated flyTo as a pragmatic substitute.
-      await renderer.flyTo(params.lat, params.lon, altKm)
+      map.jumpTo({ pitch: params.tilt, bearing: params.rotate })
     }
   }
 
-  private execShowRect(params: ShowRectTaskParams): void {
-    showTourTextBox(params)
+  private async execResetCameraZoomOut(): Promise<void> {
+    const renderer = this.callbacks.getRenderer()
+    // Fly to default view — full globe, straight down
+    const map = (renderer as any).getMap?.()
+    if (!map) return
+
+    await new Promise<void>(resolve => {
+      map.once('moveend', () => resolve())
+      map.flyTo({
+        center: [-95, 38],
+        zoom: 2.3,
+        pitch: 0,
+        bearing: 0,
+        duration: 2000,
+      })
+    })
   }
+
+  // ── Flow executors ─────────────────────────────────────────────────
 
   private async execPauseForInput(): Promise<void> {
     this._state = 'paused'
@@ -233,6 +340,36 @@ export class TourEngine {
     })
   }
 
+  private execLoopToBeginning(): void {
+    // Set index to -1 because the loop will increment it to 0
+    this.index = -1
+    logger.info('[Tour] Looping to beginning')
+  }
+
+  private execEnableTourPlayer(state: 'on' | 'off'): void {
+    if (state === 'on') {
+      showControls(this)
+    } else {
+      hideControls()
+    }
+  }
+
+  private async execQuestion(params: QuestionTaskParams): Promise<void> {
+    const questionUrl = this.callbacks.resolveMediaUrl(params.imgQuestionFilename)
+    const answerUrl = this.callbacks.resolveMediaUrl(params.imgAnswerFilename)
+
+    return new Promise<void>(resolve => {
+      showTourQuestion({
+        ...params,
+        imgQuestionFilename: questionUrl,
+        imgAnswerFilename: answerUrl,
+        onComplete: resolve,
+      })
+    })
+  }
+
+  // ── Dataset executors ──────────────────────────────────────────────
+
   private async execLoadDataset(id: string): Promise<void> {
     await this.callbacks.loadDataset(id)
   }
@@ -248,6 +385,8 @@ export class TourEngine {
       this.callbacks.togglePlayPause()
     }
   }
+
+  // ── Environment executors ──────────────────────────────────────────
 
   private execDayNight(state: 'on' | 'off'): void {
     const renderer = this.callbacks.getRenderer()
@@ -269,15 +408,96 @@ export class TourEngine {
     }
   }
 
+  private execWorldBorder(state: 'on' | 'off'): void {
+    const renderer = this.callbacks.getRenderer()
+    renderer.toggleBoundaries?.(state === 'on')
+    renderer.toggleLabels?.(state === 'on')
+  }
+
   private execRotationRate(rate: number): void {
     const renderer = this.callbacks.getRenderer()
-    if (rate > 0) {
-      // Use setRotationRate if available, otherwise toggle auto-rotate
-      if ('setRotationRate' in renderer && typeof (renderer as any).setRotationRate === 'function') {
-        (renderer as any).setRotationRate(rate)
-      } else {
-        renderer.toggleAutoRotate()
+    if (renderer.setRotationRate) {
+      renderer.setRotationRate(rate)
+    } else if (rate > 0) {
+      renderer.toggleAutoRotate()
+    }
+  }
+
+  // ── Media executors ────────────────────────────────────────────────
+
+  private async execPlayAudio(params: PlayAudioTaskParams): Promise<void> {
+    this.stopActiveAudio()
+    const url = this.callbacks.resolveMediaUrl(params.filename)
+    const audio = new Audio(url)
+    this.activeAudio = audio
+
+    if (params.asynchronous) {
+      // Fire and forget — don't wait for completion
+      audio.play().catch(err => logger.warn('[Tour] Audio play failed:', err))
+    } else {
+      // Wait for audio to finish
+      await new Promise<void>((resolve, reject) => {
+        audio.addEventListener('ended', () => resolve(), { once: true })
+        audio.addEventListener('error', () => reject(new Error('Audio playback failed')), { once: true })
+        audio.play().catch(reject)
+      })
+    }
+  }
+
+  private stopActiveAudio(): void {
+    if (this.activeAudio) {
+      this.activeAudio.pause()
+      this.activeAudio.src = ''
+      this.activeAudio = null
+    }
+  }
+
+  private execPlayVideo(params: PlayVideoTaskParams): void {
+    const url = this.callbacks.resolveMediaUrl(params.filename)
+    showTourVideo({
+      ...params,
+      filename: url,
+    })
+  }
+
+  private execShowImage(params: ShowImageTaskParams): void {
+    const url = this.callbacks.resolveMediaUrl(params.filename)
+    showTourImage({
+      ...params,
+      filename: url,
+    })
+  }
+
+  private execShowPopupHtml(params: ShowPopupHtmlTaskParams): void {
+    showTourPopup(params)
+  }
+
+  // ── Placemark executors ────────────────────────────────────────────
+
+  private execAddPlacemark(params: AddPlacemarkTaskParams): void {
+    const renderer = this.callbacks.getRenderer()
+    if (renderer.addMarker) {
+      const marker = renderer.addMarker(params.lat, params.lon, params.name)
+      if (marker) {
+        this.activePlacemarks.set(params.placemarkID, marker)
       }
     }
+  }
+
+  private execHidePlacemark(id: string): void {
+    const marker = this.activePlacemarks.get(id)
+    if (marker && typeof (marker as any).remove === 'function') {
+      (marker as any).remove()
+      this.activePlacemarks.delete(id)
+    }
+  }
+
+  private clearPlacemarks(): void {
+    for (const [, marker] of this.activePlacemarks) {
+      if (typeof (marker as any).remove === 'function') {
+        (marker as any).remove()
+      }
+    }
+    this.activePlacemarks.clear()
   }
 }

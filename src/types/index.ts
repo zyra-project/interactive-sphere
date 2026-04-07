@@ -148,6 +148,13 @@ export interface GlobeRenderer {
   loadCloudOverlay(url: string, onProgress?: (fraction: number) => void): Promise<void>
   removeCloudOverlay(): void
   dispose(): void
+
+  // Tour-specific methods (optional — checked at runtime)
+  toggleLabels?(visible?: boolean): boolean
+  toggleBoundaries?(visible?: boolean): boolean
+  addMarker?(lat: number, lng: number, label?: string): unknown
+  clearMarkers?(): void
+  setRotationRate?(rate: number): void
 }
 
 /**
@@ -278,6 +285,8 @@ export interface TourFile {
  */
 export type TourTaskDef =
   | { flyTo: FlyToTaskParams }
+  | { tiltRotateCamera: TiltRotateCameraTaskParams }
+  | { resetCameraZoomOut: string }
   | { showRect: ShowRectTaskParams }
   | { hideRect: string }
   | { pauseForInput: string }
@@ -287,8 +296,22 @@ export type TourTaskDef =
   | { datasetAnimation: DatasetAnimationTaskParams }
   | { envShowDayNightLighting: 'on' | 'off' }
   | { envShowClouds: 'on' | 'off' }
+  | { envShowStars: 'on' | 'off' }
+  | { envShowWorldBorder: 'on' | 'off' }
   | { setGlobeRotationRate: number }
+  | { loopToBeginning: string }
+  | { enableTourPlayer: 'on' | 'off' }
   | { question: QuestionTaskParams }
+  | { playAudio: PlayAudioTaskParams }
+  | { stopAudio: string }
+  | { playVideo: PlayVideoTaskParams }
+  | { hideVideo: string }
+  | { showImage: ShowImageTaskParams }
+  | { hideImage: string }
+  | { showPopupHtml: ShowPopupHtmlTaskParams }
+  | { hidePopupHtml: string }
+  | { addPlacemark: AddPlacemarkTaskParams }
+  | { hidePlacemark: string }
 
 export interface FlyToTaskParams {
   lat: number
@@ -335,6 +358,62 @@ export interface QuestionTaskParams {
   heightPct?: number
 }
 
+export interface TiltRotateCameraTaskParams {
+  tilt: number
+  rotate: number
+  animated: boolean
+}
+
+export interface PlayAudioTaskParams {
+  filename: string
+  asynchronous?: boolean
+}
+
+export interface PlayVideoTaskParams {
+  filename: string
+  xPct?: number
+  yPct?: number
+  sizePct?: number
+  showControls?: boolean
+}
+
+export interface ShowImageTaskParams {
+  imageID: string
+  filename: string
+  xPct?: number
+  yPct?: number
+  widthPct?: number
+  heightPct?: number
+  isAspectRatioLocked?: boolean
+  isDraggable?: boolean
+  isClosable?: boolean
+  isResizable?: boolean
+  caption?: string
+  captionPos?: 'center' | 'left' | 'right' | 'top' | 'bottom'
+  fontSize?: number
+  fontColor?: string
+}
+
+export interface ShowPopupHtmlTaskParams {
+  popupID: string
+  url?: string
+  html?: string
+  xPct?: number
+  yPct?: number
+  widthPct?: number
+  heightPct?: number
+}
+
+export interface AddPlacemarkTaskParams {
+  placemarkID: string
+  lat: number
+  lon: number
+  name?: string
+  popupHTML?: string
+  iconFilename?: string
+  scale?: number
+}
+
 /** Playback state of the tour engine */
 export type TourState = 'stopped' | 'playing' | 'paused'
 
@@ -347,6 +426,8 @@ export interface TourCallbacks {
   isPlaying(): boolean
   onTourEnd(): void
   announce(message: string): void
+  /** Resolve a media filename relative to the tour's base URL */
+  resolveMediaUrl(filename: string): string
 }
 
 /**
