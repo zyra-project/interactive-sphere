@@ -230,9 +230,9 @@ export class DataService {
     return timeInfo
   }
 
-  /** Check whether a dataset's format is one we can render (video or image). */
+  /** Check whether a dataset's format is one we can render (video, image, or tour). */
   isSupportedDataset(dataset: Dataset): boolean {
-    return this.isVideoDataset(dataset) || this.isImageDataset(dataset)
+    return this.isVideoDataset(dataset) || this.isImageDataset(dataset) || this.isTourDataset(dataset)
   }
 
   /** True if the dataset format is `video/mp4`. */
@@ -243,6 +243,11 @@ export class DataService {
   /** True if the dataset format is a supported image type (PNG or JPEG). */
   isImageDataset(dataset: Dataset): boolean {
     return dataset.format === 'image/png' || dataset.format === 'image/jpg' || dataset.format === 'images/jpg'
+  }
+
+  /** True if the dataset format is a guided tour. */
+  isTourDataset(dataset: Dataset): boolean {
+    return dataset.format === 'tour/json'
   }
 
   /** Invalidate the dataset cache, forcing a fresh fetch on the next call. */
