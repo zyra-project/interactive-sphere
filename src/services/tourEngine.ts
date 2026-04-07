@@ -25,6 +25,7 @@ import {
   showTourPopup, hideTourPopup, hideAllTourPopups,
   showTourQuestion, hideAllTourQuestions,
   showTourControls as showControls, hideTourControls as hideControls,
+  updateTourPlayState,
 } from '../ui/tourUI'
 
 // Miles → kilometres
@@ -73,6 +74,7 @@ export class TourEngine {
     if (this._state === 'paused' && this.resumeResolver) {
       // Resume from a pauseForInput / pauseSeconds
       this._state = 'playing'
+      updateTourPlayState(true)
       this.resumeResolver()
       this.resumeResolver = null
       return
@@ -81,6 +83,7 @@ export class TourEngine {
     if (this._state === 'playing') return
 
     this._state = 'playing'
+    updateTourPlayState(true)
     this.abortController = new AbortController()
     await this.runLoop()
   }
@@ -90,6 +93,7 @@ export class TourEngine {
   pause(): void {
     if (this._state !== 'playing') return
     this._state = 'paused'
+    updateTourPlayState(false)
   }
 
   /** Advance to the next task (skipping any current pause). */
@@ -327,6 +331,7 @@ export class TourEngine {
 
   private async execPauseForInput(): Promise<void> {
     this._state = 'paused'
+    updateTourPlayState(false)
     this.callbacks.announce('Tour paused — press play to continue')
     await new Promise<void>(resolve => { this.resumeResolver = resolve })
   }

@@ -444,7 +444,11 @@ export function hideTourControls(): void {
 export function updateTourProgress(index: number, total: number): void {
   const el = document.getElementById('tour-step-counter')
   if (el) el.textContent = `${index + 1} / ${total}`
-  if (boundEngine) updatePlayPauseBtn(boundEngine.state === 'playing')
+}
+
+/** Update the play/pause button to reflect the engine's current state. */
+export function updateTourPlayState(isPlaying: boolean): void {
+  updatePlayPauseBtn(isPlaying)
 }
 
 function updatePlayPauseBtn(isPlaying: boolean): void {
