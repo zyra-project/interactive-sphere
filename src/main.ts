@@ -402,8 +402,6 @@ class InteractiveSphere {
   private endTour(): void {
     this.cleanupTourOverlays()
     this.tourEngine = null
-    // Reset playback rate to normal in case a tour changed it
-    if (this.hlsService) this.hlsService.playbackRate = 1
     this.announce('Tour ended')
   }
 
