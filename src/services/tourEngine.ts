@@ -48,6 +48,7 @@ export class TourEngine {
   // Used to resolve `pauseForInput` / `pauseSeconds` from outside
   private resumeResolver: (() => void) | null = null
   private pauseTimer: ReturnType<typeof setTimeout> | null = null
+  private pauseTimerResolver: (() => void) | null = null
 
   // When next/prev changes the index during a task, this flag tells the
   // loop to skip its normal index++ at the bottom of the iteration.
@@ -100,17 +101,29 @@ export class TourEngine {
     updateTourPlayState(false)
   }
 
-  /** Advance to the next pause point (skipping intermediate steps). */
-  next(): void {
-    if (this.index >= this.tasks.length - 1) return
-
+  /** Cancel any active pauseSeconds timer and resolve its promise. */
+  private cancelPauseTimer(): void {
     if (this.pauseTimer) {
       clearTimeout(this.pauseTimer)
       this.pauseTimer = null
     }
+    if (this.pauseTimerResolver) {
+      this.pauseTimerResolver()
+      this.pauseTimerResolver = null
+    }
+  }
 
-    // Skip ahead to the step right after the current pause — the loop
-    // will execute steps sequentially until it hits the next pause.
+  /** Check if a task key is a pause-type task. */
+  private static isPauseTask(key: string): boolean {
+    return key === 'pauseForInput' || key === 'pauseSeconds' || key === 'pauseSec'
+  }
+
+  /** Advance to the next pause point (skipping intermediate steps). */
+  next(): void {
+    if (this.index >= this.tasks.length - 1) return
+
+    this.cancelPauseTimer()
+
     this.index++
     this.indexOverridden = true
     updateTourProgress(this.index, this.tasks.length)
@@ -133,16 +146,13 @@ export class TourEngine {
   prev(): void {
     if (this.index <= 0) return
 
-    if (this.pauseTimer) {
-      clearTimeout(this.pauseTimer)
-      this.pauseTimer = null
-    }
+    this.cancelPauseTimer()
 
     // Find the previous pause point before our current position
     let prevPause = -1
     for (let i = this.index - 1; i >= 0; i--) {
       const [key] = identifyTask(this.tasks[i])
-      if (key === 'pauseForInput' || key === 'pauseSeconds') {
+      if (TourEngine.isPauseTask(key)) {
         prevPause = i
         break
       }
@@ -153,7 +163,7 @@ export class TourEngine {
     if (prevPause > 0) {
       for (let i = prevPause - 1; i >= 0; i--) {
         const [key] = identifyTask(this.tasks[i])
-        if (key === 'pauseForInput' || key === 'pauseSeconds') {
+        if (TourEngine.isPauseTask(key)) {
           segmentStart = i + 1
           break
         }
@@ -162,6 +172,10 @@ export class TourEngine {
 
     // Clean up existing overlays before replaying the segment
     hideAllTourTextBoxes()
+    hideAllTourImages()
+    hideAllTourVideos()
+    hideAllTourPopups()
+    hideAllTourQuestions()
 
     this.index = segmentStart
     this.indexOverridden = true
@@ -177,20 +191,16 @@ export class TourEngine {
     }
   }
 
-  /** Stop and reset the tour. */
+  /** Stop and reset the tour. Does NOT call onTourEnd — caller handles cleanup. */
   stop(): void {
     this._state = 'stopped'
     this.abortController.abort()
-    if (this.pauseTimer) {
-      clearTimeout(this.pauseTimer)
-      this.pauseTimer = null
-    }
+    this.cancelPauseTimer()
     if (this.resumeResolver) {
       this.resumeResolver()
       this.resumeResolver = null
     }
     this.cleanup()
-    this.callbacks.onTourEnd()
   }
 
   /** Clean up all tour-created overlays and media. */
@@ -404,8 +414,10 @@ export class TourEngine {
 
   private async execPauseSeconds(seconds: number): Promise<void> {
     await new Promise<void>(resolve => {
+      this.pauseTimerResolver = resolve
       this.pauseTimer = setTimeout(() => {
         this.pauseTimer = null
+        this.pauseTimerResolver = null
         resolve()
       }, seconds * 1000)
     })

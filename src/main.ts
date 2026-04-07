@@ -329,11 +329,6 @@ class InteractiveSphere {
 
     if (!this.renderer) return
 
-    const loaderCallbacks = {
-      showPlaybackControls: (show: boolean) => this.showPlaybackControls(show),
-      showTimeLabel: (show: boolean) => this.showTimeLabel(show),
-    }
-
     // Suppress playback controls — tour controls are active
     const tourLoaderCallbacks = {
       showPlaybackControls: (_show: boolean) => { /* tour controls are shown instead */ },

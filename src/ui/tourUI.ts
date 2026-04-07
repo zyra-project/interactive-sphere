@@ -231,6 +231,7 @@ export function showTourVideo(params: PlayVideoTaskParams): void {
   const container = getOverlayContainer()
   const wrapper = document.createElement('div')
   wrapper.className = 'tour-video-overlay'
+  wrapper.dataset.overlayId = `video-${videoID}`
 
   const xPct = params.xPct ?? 50
   const yPct = params.yPct ?? 50
@@ -259,9 +260,10 @@ export function showTourVideo(params: PlayVideoTaskParams): void {
 }
 
 export function hideTourVideo(videoID: string): void {
-  // Pause video before removing
-  const el = document.querySelector(`[data-video-id="${CSS.escape(videoID)}"]`) as HTMLVideoElement | null
-  if (el) el.pause()
+  // Pause any playing video inside the overlay before removing
+  const wrapper = document.querySelector(`[data-overlay-id="video-${CSS.escape(videoID)}"]`)
+  const videoEl = wrapper?.querySelector('video')
+  if (videoEl) videoEl.pause()
   videos.remove(videoID)
 }
 export function hideAllTourVideos(): void { videos.removeAll() }

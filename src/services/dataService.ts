@@ -69,18 +69,20 @@ export class DataService {
         .sort((a, b) => (b.weight || 0) - (a.weight || 0))
         .map(d => this.enrichDataset(d))
 
-      // Inject the built-in sample tour so it's always available for testing
-      datasets.push({
-        id: 'SAMPLE_TOUR',
-        title: 'Tour - Interactive Sphere Demo',
-        format: 'tour/json',
-        dataLink: '/assets/test-tour.json',
-        organization: 'Interactive Sphere',
-        abstractTxt: 'A sample guided tour that demonstrates the tour engine: camera flights, text overlays, day/night lighting, clouds, rotation, and country borders.',
-        tags: ['Tours'],
-        weight: 1,
-        thumbnailLink: '',
-      })
+      // Inject the built-in sample tour in dev mode for testing
+      if (import.meta.env.DEV) {
+        datasets.push({
+          id: 'SAMPLE_TOUR',
+          title: 'Tour - Interactive Sphere Demo',
+          format: 'tour/json',
+          dataLink: '/assets/test-tour.json',
+          organization: 'Interactive Sphere',
+          abstractTxt: 'A sample guided tour that demonstrates the tour engine: camera flights, text overlays, day/night lighting, clouds, rotation, and country borders.',
+          tags: ['Tours'],
+          weight: 1,
+          thumbnailLink: '',
+        })
+      }
 
       this.cache = { datasets }
       this.cacheTime = now
