@@ -54,8 +54,6 @@ export class TourEngine {
   // loop to skip its normal index++ at the bottom of the iteration.
   private indexOverridden = false
 
-  // Abort handle — when the tour is stopped, pending awaits should bail out
-  private abortController = new AbortController()
 
   // Active audio element for playAudio/stopAudio
   private activeAudio: HTMLAudioElement | null = null
@@ -89,7 +87,6 @@ export class TourEngine {
 
     this._state = 'playing'
     updateTourPlayState(true)
-    this.abortController = new AbortController()
     await this.runLoop()
   }
 
@@ -194,7 +191,6 @@ export class TourEngine {
   /** Stop and reset the tour. Does NOT call onTourEnd — caller handles cleanup. */
   stop(): void {
     this._state = 'stopped'
-    this.abortController.abort()
     this.cancelPauseTimer()
     if (this.resumeResolver) {
       this.resumeResolver()
@@ -325,9 +321,11 @@ export class TourEngine {
         return
       case 'playVideo':
         return this.execPlayVideo(value as PlayVideoTaskParams)
-      case 'hideVideo':
-        hideTourVideo(value as string)
+      case 'hideVideo': {
+        const resolvedFilename = this.callbacks.resolveMediaUrl(value as string)
+        hideTourVideo(resolvedFilename)
         return
+      }
       case 'showImage':
         return this.execShowImage(value as ShowImageTaskParams)
       case 'hideImage':
