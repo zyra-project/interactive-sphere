@@ -306,6 +306,12 @@ class InteractiveSphere {
       return
     }
 
+    // Skip re-loading if this dataset is already on the globe
+    if (this.appState.currentDataset?.id === datasetId) {
+      logger.debug('[App] Tour loadDataset: already loaded, skipping:', datasetId)
+      return
+    }
+
     stopPlaybackLoop(this.playback)
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
@@ -328,11 +334,17 @@ class InteractiveSphere {
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
+    // Suppress playback controls — tour controls are active
+    const tourLoaderCallbacks = {
+      showPlaybackControls: (_show: boolean) => { /* tour controls are shown instead */ },
+      showTimeLabel: (show: boolean) => this.showTimeLabel(show),
+    }
+
     if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
+      await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, tourLoaderCallbacks)
     } else if (dataService.isVideoDataset(dataset)) {
       const result = await loadVideoDataset(
-        dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
+        dataset, this.renderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks
       )
       this.hlsService = result.hlsService
       this.videoTexture = result.videoTexture
