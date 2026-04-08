@@ -199,15 +199,13 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
     params.xPct, params.yPct, params.widthPct, params.heightPct
   )
   const fontSize = responsiveFontSize(params.fontSize)
-  // Cap max-height to available space above the bottom edge, with some padding
-  const maxH = Math.min(80, 96 - bottom)
 
   box.style.cssText = `
     position: absolute;
     left: ${left}%;
     bottom: ${bottom}%;
     max-width: ${width}vw;
-    max-height: ${maxH}vh;
+    max-height: calc(100% - ${bottom}% - 0.5rem);
     width: fit-content;
     pointer-events: auto;
     display: flex;
