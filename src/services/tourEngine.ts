@@ -297,7 +297,7 @@ export class TourEngine {
 
       // Dataset
       case 'loadDataset':
-        return this.execLoadDataset((value as { id: string }).id)
+        return this.execLoadDataset(value as { id: string; showLegend?: boolean })
       case 'unloadAllDatasets':
         return this.execUnloadAll()
       case 'datasetAnimation':
@@ -471,8 +471,17 @@ export class TourEngine {
 
   // ── Dataset executors ──────────────────────────────────────────────
 
-  private async execLoadDataset(id: string): Promise<void> {
-    await this.callbacks.loadDataset(id)
+  private async execLoadDataset(params: { id: string; showLegend?: boolean; [key: string]: unknown }): Promise<void> {
+    await this.callbacks.loadDataset(params.id)
+    // Expand the info panel if the tour wants the legend visible
+    if (params.showLegend) {
+      const infoPanel = document.getElementById('info-panel')
+      const infoHeader = document.getElementById('info-header')
+      if (infoPanel && !infoPanel.classList.contains('expanded')) {
+        infoPanel.classList.add('expanded')
+        infoHeader?.setAttribute('aria-expanded', 'true')
+      }
+    }
   }
 
   private async execUnloadAll(): Promise<void> {

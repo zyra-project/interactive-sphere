@@ -357,7 +357,11 @@ class InteractiveSphere {
     this.appState.currentDataset = null
     this.showPlaybackControls(false)
     this.showTimeLabel(false)
-    document.getElementById('info-panel')?.classList.add('hidden')
+    const infoPanel = document.getElementById('info-panel')
+    if (infoPanel) {
+      infoPanel.classList.add('hidden')
+      infoPanel.classList.remove('expanded')
+    }
 
     if (this.renderer) {
       await this.renderer.loadDefaultEarthMaterials()
