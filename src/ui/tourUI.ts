@@ -195,17 +195,19 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
   box.dataset.rectId = params.rectID
   box.className = 'tour-textbox'
 
-  const { left, bottom, width, height } = adaptOverlay(
+  const { left, bottom, width } = adaptOverlay(
     params.xPct, params.yPct, params.widthPct, params.heightPct
   )
   const fontSize = responsiveFontSize(params.fontSize)
+  // Cap max-height to available space above the bottom edge, with some padding
+  const maxH = Math.min(80, 96 - bottom)
 
   box.style.cssText = `
     position: absolute;
     left: ${left}%;
     bottom: ${bottom}%;
     max-width: ${width}vw;
-    max-height: 80vh;
+    max-height: ${maxH}vh;
     width: fit-content;
     pointer-events: auto;
     display: flex;
