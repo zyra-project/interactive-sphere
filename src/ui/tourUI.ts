@@ -289,7 +289,11 @@ export function showTourImage(params: ShowImageTaskParams): void {
     max-height: ${height}vh;
     object-fit: contain;
     border-radius: 6px;
+    display: block;
   `
+  // Hide wrapper until image loads so fit-content has intrinsic dimensions
+  wrapper.style.visibility = 'hidden'
+  img.onload = () => { wrapper.style.visibility = '' }
   wrapper.appendChild(img)
 
   if (params.caption) {
