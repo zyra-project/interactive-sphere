@@ -340,14 +340,18 @@ export function showTourVideo(params: PlayVideoTaskParams): void {
   const yPct = params.yPct ?? 50
   const sizePct = params.sizePct ?? 50
 
-  const { left, bottom, width, height } = adaptOverlay(xPct, yPct, sizePct, sizePct * 0.5625)
+  // Videos are primary content — use less aggressive scaling than text/images
+  const mode = getLayoutMode()
+  const videoScale = mode === 'phone-portrait' ? 0.85 : mode === 'mobile' ? 0.9 : 1.0
+  const scaledSize = Math.max(35, sizePct * videoScale)
+  const { left, bottom } = adaptOverlay(xPct, yPct, scaledSize, scaledSize * 0.5625)
 
   wrapper.style.cssText = `
     position: absolute;
     left: ${left}%;
     bottom: ${bottom}%;
     width: fit-content;
-    max-width: ${width}%;
+    max-width: ${scaledSize}%;
     pointer-events: auto;
     background: rgba(13, 13, 18, 0.88);
     backdrop-filter: blur(12px);
@@ -365,9 +369,10 @@ export function showTourVideo(params: PlayVideoTaskParams): void {
   video.src = params.filename
   video.autoplay = true
   video.controls = params.showControls ?? false
+  const videoHeight = scaledSize * 0.5625
   video.style.cssText = `
-    max-width: ${width}vw;
-    max-height: ${height}vh;
+    max-width: ${scaledSize}vw;
+    max-height: ${videoHeight}vh;
     display: block;
     border-radius: 10px;
   `
