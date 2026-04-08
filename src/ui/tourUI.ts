@@ -490,7 +490,8 @@ export function showTourControls(engine: TourEngine, onStopCb?: () => void): voi
 
   controlsEl.classList.remove('hidden')
   updateTourProgress(engine.currentIndex, engine.totalSteps)
-  updatePlayPauseBtn(engine.state === 'playing')
+  // Start with play button disabled — it enables when tour hits a pause
+  updateTourPlayState(true)
 
   // Wire buttons
   document.getElementById('tour-prev-btn')?.addEventListener('click', onPrev)
@@ -501,7 +502,8 @@ export function showTourControls(engine: TourEngine, onStopCb?: () => void): voi
   // Space bar handler for resuming paused tours
   spaceHandler = (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-    if (e.code === 'Space' && boundEngine && boundEngine.state === 'paused') {
+    const btn = document.getElementById('tour-play-btn') as HTMLButtonElement | null
+    if (e.code === 'Space' && boundEngine && boundEngine.state === 'paused' && !btn?.disabled) {
       e.preventDefault()
       onPlayPause()
     }
@@ -532,15 +534,27 @@ export function updateTourProgress(index: number, total: number): void {
 
 /** Update the play/pause button to reflect the engine's current state. */
 export function updateTourPlayState(isPlaying: boolean): void {
-  updatePlayPauseBtn(isPlaying)
+  const btn = document.getElementById('tour-play-btn') as HTMLButtonElement | null
+  if (!btn) return
+  if (isPlaying) {
+    // Tour is executing tasks — disable the button
+    btn.innerHTML = '&#x23F8;&#xFE0E;'
+    btn.setAttribute('aria-label', 'Tour running')
+    btn.title = 'Tour running'
+    btn.disabled = true
+    btn.style.opacity = '0.4'
+  } else {
+    // Tour is paused — enable the play button
+    btn.innerHTML = '&#x25B6;&#xFE0E;'
+    btn.setAttribute('aria-label', 'Continue tour')
+    btn.title = 'Continue tour'
+    btn.disabled = false
+    btn.style.opacity = ''
+  }
 }
 
-function updatePlayPauseBtn(isPlaying: boolean): void {
-  const btn = document.getElementById('tour-play-btn')
-  if (!btn) return
-  btn.innerHTML = isPlaying ? '&#x23F8;&#xFE0E;' : '&#x25B6;&#xFE0E;'
-  btn.setAttribute('aria-label', isPlaying ? 'Pause tour' : 'Play tour')
-  btn.title = isPlaying ? 'Pause tour' : 'Play tour'
+function updatePlayPauseBtn(_isPlaying: boolean): void {
+  // Delegate to updateTourPlayState for consistency
 }
 
 function onPrev(): void { boundEngine?.prev() }
