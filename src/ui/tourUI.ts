@@ -210,11 +210,11 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
     pointer-events: auto;
     display: flex;
     flex-direction: column;
-    ${params.captionPos === 'center' ? 'align-items:center;justify-content:center;text-align:center;' : ''}
+    ${params.captionPos === 'center' ? 'align-items:center;text-align:center;' : ''}
     ${params.captionPos === 'left' ? 'align-items:flex-start;text-align:left;' : ''}
     ${params.captionPos === 'right' ? 'align-items:flex-end;text-align:right;' : ''}
-    ${params.captionPos === 'top' ? 'align-items:center;justify-content:flex-start;text-align:center;' : ''}
-    ${params.captionPos === 'bottom' ? 'align-items:center;justify-content:flex-end;text-align:center;' : ''}
+    ${params.captionPos === 'top' ? 'align-items:center;text-align:center;' : ''}
+    ${params.captionPos === 'bottom' ? 'align-items:center;text-align:center;' : ''}
     background: rgba(13, 13, 18, 0.88);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
