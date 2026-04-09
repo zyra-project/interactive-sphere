@@ -68,13 +68,13 @@ export class DataService {
       if ((import.meta as any).env?.DEV) {
         rawDatasets.push({
           id: 'SAMPLE_TOUR',
-          title: 'Tour - Interactive Sphere Demo',
+          title: 'Climate Connections — How Earth\'s Systems Tell One Story',
           format: 'tour/json' as const,
           dataLink: '/assets/test-tour.json',
           organization: 'Interactive Sphere',
-          abstractTxt: 'A sample guided tour that demonstrates the tour engine: camera flights, text overlays, day/night lighting, clouds, rotation, and country borders.',
+          abstractTxt: 'An educational tour exploring how climate change shows up across Earth\'s systems — temperature anomalies, Arctic sea ice loss, sea level rise, ocean acidification, the carbon cycle, and global vegetation. Six datasets, one connected story.',
           tags: ['Tours'],
-          weight: 1,
+          weight: 50,
           thumbnailLink: '',
         })
       }
