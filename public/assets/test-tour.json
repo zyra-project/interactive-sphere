@@ -255,6 +255,7 @@
       "id": "INTERNAL_SOS_25_VIDEO",
       "showLegend": true
     }},
+    {"worldBorder": {"worldBorders": "on", "worldBorderColor": "white"}},
     {"datasetAnimation": {
       "animation": "on",
       "frameRate": "15 fps"
@@ -277,6 +278,7 @@
     {"pauseForInput": ""},
     {"hideRect": "co2-explain"},
     {"setGlobeRotationRate": 0},
+    {"worldBorder": {"worldBorders": "off", "worldBorderColor": "white"}},
 
 
     {"unloadAllDatasets": ""},
