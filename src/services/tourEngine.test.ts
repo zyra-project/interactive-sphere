@@ -70,6 +70,7 @@ function makeCallbacks(overrides: Partial<TourCallbacks> = {}): TourCallbacks {
     isPlaying: vi.fn(() => false),
     setPlaybackRate: vi.fn(),
     onTourEnd: vi.fn(),
+    onStop: vi.fn(),
     announce: vi.fn(),
     resolveMediaUrl: vi.fn((f: string) => `https://base/${f}`),
     ...overrides,

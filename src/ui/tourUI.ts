@@ -297,6 +297,7 @@ export function showTourImage(params: ShowImageTaskParams): void {
   // Hide wrapper until image loads so fit-content has intrinsic dimensions
   wrapper.style.visibility = 'hidden'
   img.onload = () => { wrapper.style.visibility = '' }
+  img.onerror = () => { wrapper.style.visibility = '' }
   wrapper.appendChild(img)
 
   if (params.caption) {
@@ -374,8 +375,9 @@ export function showTourVideo(params: PlayVideoTaskParams): void {
     display: block;
     border-radius: 10px;
   `
-  // Show wrapper once video has dimensions
+  // Show wrapper once video has dimensions, or on error so it can be closed
   video.onloadedmetadata = () => { wrapper.style.visibility = '' }
+  video.onerror = () => { wrapper.style.visibility = '' }
   wrapper.appendChild(video)
 
   addCloseButton(wrapper, () => hideTourVideo(videoID))
@@ -385,13 +387,19 @@ export function showTourVideo(params: PlayVideoTaskParams): void {
 }
 
 export function hideTourVideo(videoID: string): void {
-  // Pause any playing video inside the overlay before removing
   const wrapper = document.querySelector(`[data-overlay-id="video-${CSS.escape(videoID)}"]`)
   const videoEl = wrapper?.querySelector('video')
   if (videoEl) videoEl.pause()
   videos.remove(videoID)
 }
-export function hideAllTourVideos(): void { videos.removeAll() }
+export function hideAllTourVideos(): void {
+  // Pause all videos before removing to stop media playback
+  document.querySelectorAll('[data-overlay-id^="video-"]').forEach(wrapper => {
+    const videoEl = wrapper.querySelector('video')
+    if (videoEl) videoEl.pause()
+  })
+  videos.removeAll()
+}
 
 // ── Popup HTML overlays (showPopupHtml / hidePopupHtml) ──────────────
 

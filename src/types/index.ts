@@ -435,6 +435,8 @@ export interface TourCallbacks {
   isPlaying(): boolean
   setPlaybackRate(rate: number): void
   onTourEnd(): void
+  /** Called when the user clicks the stop button in tour controls */
+  onStop(): void
   announce(message: string): void
   /** Resolve a media filename relative to the tour's base URL */
   resolveMediaUrl(filename: string): string

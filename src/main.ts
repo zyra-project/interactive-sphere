@@ -400,6 +400,7 @@ class InteractiveSphere {
         if (this.hlsService) this.hlsService.playbackRate = rate
       },
       onTourEnd: () => this.endTour(),
+      onStop: () => this.stopTour(),
       announce: (msg) => this.announce(msg),
       resolveMediaUrl: (filename) => {
         // If already absolute, return as-is; otherwise resolve relative to tour JSON

@@ -33,8 +33,8 @@ const MI_TO_KM = 1.60934
 
 // SOS altitude values are camera-distance parameters for the Unity renderer,
 // not true orbital altitudes. They need to be scaled down to produce
-// equivalent MapLibre zoom levels. Empirically, 0.47 maps SOS altitudes
-// to views that match the legacy app (e.g., 4200 mi → zoom ~2.0 continent view).
+// equivalent MapLibre zoom levels. Empirically, 0.2 maps SOS altitudes
+// to views that match the legacy app (e.g., 4200 mi → zoom ~3.2 continent view).
 const SOS_ALTITUDE_SCALE = 0.2
 
 /**
@@ -449,7 +449,7 @@ export class TourEngine {
 
   private execEnableTourPlayer(state: 'on' | 'off'): void {
     if (state === 'on') {
-      showControls(this)
+      showControls(this, () => this.callbacks.onStop())
     } else {
       hideControls()
     }

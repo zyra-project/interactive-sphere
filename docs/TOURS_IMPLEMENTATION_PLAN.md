@@ -76,7 +76,7 @@ TourEngine                          TourUI
 
 4. **Text boxes are DOM overlays** — not WebGL. Positioned with CSS as percentages of the viewport. Styled with the existing glass-surface aesthetic. Support SOS `caption`, `fontSize`, `fontColor`, `isClosable` properties. `<color=X>` and `<i>` markup in captions is parsed into HTML.
 
-5. **Altitude conversion** — SOS uses miles (`altmi`), the renderer uses km. `altKm = altMi * 1.60934`.
+5. **Altitude conversion** — SOS uses miles (`altmi`), the renderer uses km, and the implementation applies `SOS_ALTITUDE_SCALE` (currently 0.2) to match the legacy app's camera framing. Effective conversion: `altKm = altMi * 1.60934 * SOS_ALTITUDE_SCALE`.
 
 6. **SOS coordinate system** — Origin at bottom-left, values 0–100. Converted to CSS `left`/`bottom` positioning.
 
