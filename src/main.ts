@@ -886,6 +886,9 @@ class InteractiveSphere {
     this.showTimeLabel(false)
     document.getElementById('info-panel')?.classList.add('hidden')
     this.hideHomeButton()
+    // Reset overlays that tours may have turned on
+    this.renderer?.toggleLabels?.(false)
+    this.renderer?.toggleBoundaries?.(false)
     window.history.pushState({}, '', window.location.pathname)
 
     this.showLoadingScreen('Loading Earth\u2026', 20)
