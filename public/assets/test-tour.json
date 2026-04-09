@@ -163,10 +163,10 @@
     }},
     {"datasetAnimation": {
       "animation": "on",
-      "frameRate": "3 fps"
+      "frameRate": "30 fps"
     }},
 
-    {"flyTo": {"lat": 23.0, "lon": 90.0, "altmi": 4000.0, "animated": true}},
+    {"flyTo": {"lat": 0.0, "lon": 90.0, "altmi": 5000.0, "animated": true}},
 
     {"showRect": {
       "rectID": "sea-bangladesh",
@@ -184,7 +184,7 @@
     {"pauseForInput": ""},
     {"hideRect": "sea-bangladesh"},
 
-    {"flyTo": {"lat": 26.0, "lon": -80.0, "altmi": 4000.0, "animated": true}},
+    {"flyTo": {"lat": 0.0, "lon": -80.0, "altmi": 5000.0, "animated": true}},
 
     {"showRect": {
       "rectID": "sea-florida",
