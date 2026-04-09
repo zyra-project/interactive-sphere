@@ -15,7 +15,7 @@ import type { AppState, VideoTextureHandle, TourFile } from './types'
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
-import { initMapControls, updateMapControlsPosition } from './ui/mapControlsUI'
+import { initMapControls, updateMapControlsPosition, syncMapControlState } from './ui/mapControlsUI'
 import { initChatUI, openChat, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import {
   createPlaybackState, startPlaybackLoop, stopPlaybackLoop,
@@ -889,6 +889,7 @@ class InteractiveSphere {
     // Reset overlays that tours may have turned on
     this.renderer?.toggleLabels?.(false)
     this.renderer?.toggleBoundaries?.(false)
+    syncMapControlState(false, false)
     window.history.pushState({}, '', window.location.pathname)
 
     this.showLoadingScreen('Loading Earth\u2026', 20)
