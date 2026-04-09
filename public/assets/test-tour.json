@@ -166,41 +166,23 @@
       "frameRate": "30 fps"
     }},
 
-    {"flyTo": {"lat": 0.0, "lon": 90.0, "altmi": 5000.0, "animated": true}},
+    {"flyTo": {"lat": 0.0, "lon": -30.0, "altmi": 6000.0, "animated": true}},
 
     {"showRect": {
-      "rectID": "sea-bangladesh",
-      "caption": "Bangladesh is one of the most vulnerable nations. Over 160 million people live in this low-lying delta. Even a small rise in sea level can displace millions and contaminate fresh water supplies with salt water.",
+      "rectID": "sea-explain",
+      "caption": "This simulation shows what happens as sea levels rise. The water creeps inland, swallowing coastlines where billions of people live.\\n\\nLow-lying nations like Bangladesh, island nations in the Pacific, and coastal cities like Miami, Shanghai, and Amsterdam are especially vulnerable.\\n\\nEven a small rise can displace millions and contaminate freshwater with salt water.\\n\\n<i><color=green>What challenges does rising water create for coastal communities? Think about housing, farming, and drinking water.</color></i>",
       "captionPos": "center",
       "fontSize": 20,
       "fontColor": "white",
       "isClosable": true,
-      "xPct": 20.0,
+      "xPct": 78.0,
       "yPct": 45.0,
-      "widthPct": 26.0,
-      "heightPct": 55.0,
+      "widthPct": 30.0,
+      "heightPct": 70.0,
       "showBorder": false
     }},
     {"pauseForInput": ""},
-    {"hideRect": "sea-bangladesh"},
-
-    {"flyTo": {"lat": 0.0, "lon": -80.0, "altmi": 5000.0, "animated": true}},
-
-    {"showRect": {
-      "rectID": "sea-florida",
-      "caption": "South Florida sits just a few feet above sea level. Miami already experiences regular tidal flooding — streets that flood on sunny days simply because the tide is high.\\n\\n<i><color=green>What challenges does rising water create for coastal cities?</color></i>",
-      "captionPos": "center",
-      "fontSize": 20,
-      "fontColor": "white",
-      "isClosable": true,
-      "xPct": 80.0,
-      "yPct": 45.0,
-      "widthPct": 26.0,
-      "heightPct": 55.0,
-      "showBorder": false
-    }},
-    {"pauseForInput": ""},
-    {"hideRect": "sea-florida"},
+    {"hideRect": "sea-explain"},
 
 
     {"unloadAllDatasets": ""},
