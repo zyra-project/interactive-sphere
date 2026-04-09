@@ -65,19 +65,18 @@ export class DataService {
 
       // Inject the built-in sample tour in dev mode for testing
       const rawDatasets = s3Response.data.datasets
-      if ((import.meta as any).env?.DEV) {
-        rawDatasets.push({
-          id: 'SAMPLE_TOUR',
-          title: 'Climate Connections — How Earth\'s Systems Tell One Story',
-          format: 'tour/json' as const,
-          dataLink: '/assets/test-tour.json',
-          organization: 'Interactive Sphere',
-          abstractTxt: 'An educational tour exploring how climate change shows up across Earth\'s systems — temperature anomalies, Arctic sea ice loss, sea level rise, ocean acidification, the carbon cycle, and global vegetation. Six datasets, one connected story.',
-          tags: ['Tours'],
-          weight: 50,
-          thumbnailLink: '',
-        })
-      }
+      // Built-in Climate Connections tour — always available
+      rawDatasets.push({
+        id: 'SAMPLE_TOUR',
+        title: 'Climate Connections — How Earth\'s Systems Tell One Story',
+        format: 'tour/json' as const,
+        dataLink: '/assets/test-tour.json',
+        organization: 'Interactive Sphere',
+        abstractTxt: 'An educational tour exploring how climate change shows up across Earth\'s systems — temperature anomalies, Arctic sea ice loss, sea level rise, ocean acidification, the carbon cycle, and global vegetation. Six datasets, one connected story.',
+        tags: ['Tours'],
+        weight: 50,
+        thumbnailLink: '',
+      })
 
       // Filter, sort, and enrich datasets
       const datasets = rawDatasets
