@@ -263,21 +263,24 @@ class InteractiveSphere {
 
     // Auto-start a tour if the dataset has one associated via runTourOnLoad.
     // Skip if a tour is already running (the tour engine triggered this load).
+    // Failures are silently logged — the tour is optional, the dataset already loaded.
     if (dataset.runTourOnLoad && gen === this.loadGeneration && !this.tourEngine) {
       const ref = dataset.runTourOnLoad
-      if (ref.startsWith('http://') || ref.startsWith('https://') || ref.endsWith('.json')) {
-        // Direct URL to a tour.json file
-        logger.info('[App] Auto-starting tour from runTourOnLoad URL:', ref)
-        await this.startTour(ref, gen)
-      } else {
-        // Dataset ID reference
-        const tourDataset = dataService.getDatasetById(ref)
-        if (tourDataset && tourDataset.format === 'tour/json') {
-          logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
-          await this.startTour(tourDataset.dataLink, gen)
+      try {
+        if (ref.startsWith('http://') || ref.startsWith('https://') || ref.endsWith('.json')) {
+          logger.info('[App] Auto-starting tour from runTourOnLoad URL:', ref)
+          await this.startTour(ref, gen)
         } else {
-          logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
+          const tourDataset = dataService.getDatasetById(ref)
+          if (tourDataset && tourDataset.format === 'tour/json') {
+            logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
+            await this.startTour(tourDataset.dataLink, gen)
+          } else {
+            logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
+          }
         }
+      } catch (err) {
+        logger.warn('[App] runTourOnLoad failed (tour is optional):', err)
       }
     }
   }
