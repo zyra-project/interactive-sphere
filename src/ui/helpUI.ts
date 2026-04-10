@@ -270,7 +270,7 @@ function wireFeedbackForm(): void {
 
     let screenshot: string | undefined
     if (screenshotEl?.checked) {
-      const captured = captureGlobeScreenshot()
+      const captured = await captureGlobeScreenshot()
       if (captured) screenshot = captured
     }
 

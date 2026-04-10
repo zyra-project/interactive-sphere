@@ -533,7 +533,7 @@ async function handleSend(): Promise<void> {
     // Capture globe screenshot + overlay context only when vision mode and LLM are both active
     const config = await loadConfigWithKey()
     const shouldCaptureVision = config.visionEnabled && config.enabled && !!config.apiUrl
-    const screenshot = shouldCaptureVision ? captureGlobeScreenshot() : null
+    const screenshot = shouldCaptureVision ? await captureGlobeScreenshot() : null
     const viewContext = shouldCaptureVision ? captureViewContext() : undefined
 
     // Capture map geographic context for the LLM system prompt (skip in local-only mode)

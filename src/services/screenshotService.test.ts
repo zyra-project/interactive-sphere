@@ -1,13 +1,21 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+
+// Force the MapRenderer to be absent so the tests exercise the DOM
+// fallback path — we're verifying the fallback's downsample logic
+// here, not the renderer's repaint-and-wait behavior.
+vi.mock('./mapRenderer', () => ({
+  getActiveMapRenderer: () => null,
+}))
+
 import { captureGlobeScreenshot } from './screenshotService'
 
-describe('captureGlobeScreenshot', () => {
+describe('captureGlobeScreenshot (DOM fallback)', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     vi.restoreAllMocks()
   })
 
-  it('returns a data URL when canvas is present', () => {
+  it('returns a data URL when canvas is present', async () => {
     const canvas = document.createElement('canvas')
     canvas.id = 'globe-canvas'
     canvas.width = 100
@@ -16,12 +24,12 @@ describe('captureGlobeScreenshot', () => {
     canvas.toDataURL = vi.fn().mockReturnValue('data:image/jpeg;base64,fakescreenshot')
     document.body.appendChild(canvas)
 
-    const result = captureGlobeScreenshot()
+    const result = await captureGlobeScreenshot()
     expect(result).toBe('data:image/jpeg;base64,fakescreenshot')
     expect(canvas.toDataURL).toHaveBeenCalledWith('image/jpeg', 0.6)
   })
 
-  it('downsizes canvas exceeding SCREENSHOT_MAX_SIZE', () => {
+  it('downsizes canvas exceeding SCREENSHOT_MAX_SIZE', async () => {
     const canvas = document.createElement('canvas')
     canvas.id = 'globe-canvas'
     canvas.width = 1920
@@ -44,7 +52,7 @@ describe('captureGlobeScreenshot', () => {
     })
     document.body.appendChild(canvas)
 
-    const result = captureGlobeScreenshot()
+    const result = await captureGlobeScreenshot()
     // Should use the offscreen canvas, not the original
     expect(result).toBe('data:image/jpeg;base64,downsized')
     expect(offscreenToDataURL).toHaveBeenCalledWith('image/jpeg', 0.6)
@@ -52,7 +60,7 @@ describe('captureGlobeScreenshot', () => {
     expect(canvas.toDataURL).not.toHaveBeenCalled()
   })
 
-  it('returns null when canvas is missing', () => {
-    expect(captureGlobeScreenshot()).toBeNull()
+  it('returns null when canvas is missing', async () => {
+    expect(await captureGlobeScreenshot()).toBeNull()
   })
 })

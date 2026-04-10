@@ -274,6 +274,23 @@ function createGlobeStyle(): StyleSpecification {
   }
 }
 
+/**
+ * Module-level reference to the currently active MapRenderer instance.
+ * Set in init() and cleared in dispose(). Used by screenshotService so
+ * screenshot consumers (vision flow, feedback form) can drive a proper
+ * triggerRepaint + once('render') cycle rather than fighting the WebGL
+ * drawing-buffer preservation quirks on their own.
+ */
+let activeRenderer: MapRenderer | null = null
+
+/** Get the currently active MapRenderer, if any. */
+export function getActiveMapRenderer(): MapRenderer | null {
+  return activeRenderer
+}
+
+/** Max dimension for a captured screenshot — keeps payload small. */
+const SCREENSHOT_MAX_SIZE = 512
+
 /** MapLibre-based globe renderer. */
 export class MapRenderer implements GlobeRenderer {
   private map: MaplibreMap | null = null
@@ -291,6 +308,7 @@ export class MapRenderer implements GlobeRenderer {
    */
   init(container: HTMLElement): void {
     this.container = container
+    activeRenderer = this
 
     // Inject dark popup styles (idempotent — skips if already present)
     if (!document.getElementById('sos-popup-style')) {
@@ -440,6 +458,44 @@ export class MapRenderer implements GlobeRenderer {
   /** Return the map canvas element for screenshot capture. */
   getCanvas(): HTMLCanvasElement | null {
     return this.map?.getCanvas() ?? null
+  }
+
+  /**
+   * Capture the current globe view as a downscaled JPEG data URL.
+   *
+   * A naive `canvas.toDataURL()` is unreliable on MapLibre — even with
+   * `preserveDrawingBuffer: true`, the WebGL drawing buffer can be
+   * cleared between frames when the map is idle, producing a black
+   * image. Force a fresh repaint and wait for MapLibre to finish
+   * rendering before reading pixels.
+   *
+   * Returns null if the map isn't initialized or the capture fails.
+   */
+  async captureScreenshot(): Promise<string | null> {
+    const map = this.map
+    if (!map) return null
+    try {
+      await new Promise<void>((resolve) => {
+        map.once('render', () => resolve())
+        map.triggerRepaint()
+      })
+      const canvas = map.getCanvas()
+      const { width, height } = canvas
+      const scale = Math.min(1, SCREENSHOT_MAX_SIZE / Math.max(width, height))
+      if (scale < 1) {
+        const offscreen = document.createElement('canvas')
+        offscreen.width = Math.round(width * scale)
+        offscreen.height = Math.round(height * scale)
+        const ctx = offscreen.getContext('2d')
+        if (!ctx) return canvas.toDataURL('image/jpeg', 0.6)
+        ctx.drawImage(canvas, 0, 0, offscreen.width, offscreen.height)
+        return offscreen.toDataURL('image/jpeg', 0.6)
+      }
+      return canvas.toDataURL('image/jpeg', 0.6)
+    } catch (err) {
+      logger.warn('[MapRenderer] captureScreenshot failed:', err)
+      return null
+    }
   }
 
   // --- Navigation ---
@@ -904,5 +960,8 @@ export class MapRenderer implements GlobeRenderer {
     const mapDiv = this.container?.querySelector('#maplibre-container')
     if (mapDiv) mapDiv.remove()
     this.container = null
+    if (activeRenderer === this) {
+      activeRenderer = null
+    }
   }
 }
