@@ -111,11 +111,17 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       ORDER BY date DESC`,
     ).bind(sinceDate).all<{ date: string; bugs: number; features: number; other: number }>()
 
-    // Recent entries — include the screenshot data URL so the detail
-    // panel can render it inline without another round trip.
+    // Recent entries — the screenshot column is intentionally NOT
+    // selected here. Data URLs can be up to 200KB each, so inlining
+    // them in a 100-row list response can produce multi-megabyte
+    // payloads. The admin UI fetches screenshots on demand via
+    // /api/general-feedback-screenshot?id=X when the user opens a
+    // detail panel. Report length()+presence instead so reviewers
+    // can still see which rows have an image attached.
     const recent = await db.prepare(
       `SELECT id, kind, message, contact, url, user_agent, app_version,
-              platform, dataset_id, screenshot, created_at
+              platform, dataset_id, created_at,
+              length(screenshot) as screenshot_length
       FROM general_feedback
       ORDER BY created_at DESC
       LIMIT ?`,
@@ -129,8 +135,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       app_version: string
       platform: string
       dataset_id: string | null
-      screenshot: string
       created_at: string
+      screenshot_length: number
     }>()
 
     return new Response(JSON.stringify({
@@ -139,10 +145,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       featureCount: totals?.features ?? 0,
       otherCount: totals?.other ?? 0,
       byDay: byDay.results,
-      recentFeedback: recent.results.map(r => ({
-        ...r,
-        hasScreenshot: !!r.screenshot,
-      })),
+      recentFeedback: recent.results.map(r => {
+        const { screenshot_length, ...rest } = r
+        return {
+          ...rest,
+          hasScreenshot: (screenshot_length ?? 0) > 0,
+          screenshotLength: screenshot_length ?? 0,
+        }
+      }),
     }), { headers: jsonHeaders })
   } catch (err) {
     console.error('General feedback dashboard query failed:', err)

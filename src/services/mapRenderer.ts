@@ -464,12 +464,28 @@ export class MapRenderer implements GlobeRenderer {
    * Force MapLibre to render a fresh frame and resolve once the render
    * event fires. Used as a prelude to screenshot capture so the WebGL
    * drawing buffer is guaranteed to be populated when we read pixels.
+   *
+   * Falls back to a short timeout if the render event never fires
+   * (map hidden, disposed, or otherwise quiescent) so screenshot
+   * callers don't hang forever.
    */
   async triggerFreshRender(): Promise<void> {
     const map = this.map
     if (!map) return
+    const RENDER_WAIT_TIMEOUT_MS = 1000
     await new Promise<void>((resolve) => {
-      map.once('render', () => resolve())
+      let settled = false
+      const timeoutId = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolve()
+      }, RENDER_WAIT_TIMEOUT_MS)
+      map.once('render', () => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeoutId)
+        resolve()
+      })
       map.triggerRepaint()
     })
   }

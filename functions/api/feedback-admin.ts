@@ -438,9 +438,15 @@ export const onRequestGet: PagesFunction = async (context) => {
       if (r.app_version) html += field('App Version', r.app_version);
       if (r.user_agent) html += '<div class="detail-field"><div class="detail-label">User Agent</div><div class="detail-value mono">' + esc(r.user_agent) + '</div></div>';
 
-      if (r.screenshot) {
-        html += '<div class="detail-field"><div class="detail-label">Screenshot</div>'
-          + '<img class="detail-screenshot" src="' + escAttr(r.screenshot) + '" alt="User-attached screenshot of the globe view"></div>';
+      // Placeholder for the screenshot — populated asynchronously after
+      // we fetch it from /api/general-feedback-screenshot. Dashboard
+      // list responses no longer inline screenshot data URLs to keep
+      // the payload small.
+      if (r.hasScreenshot) {
+        html += '<div class="detail-field" id="detail-screenshot-slot">'
+          + '<div class="detail-label">Screenshot</div>'
+          + '<div class="loading" id="detail-screenshot-loading">Loading screenshot\\u2026</div>'
+          + '</div>';
       }
 
       html += '</div>';
@@ -451,6 +457,23 @@ export const onRequestGet: PagesFunction = async (context) => {
       overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetail(); });
       overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
       document.getElementById('detail-close').focus();
+
+      // Lazy-fetch the screenshot
+      if (r.hasScreenshot) {
+        fetch(BASE + '/api/general-feedback-screenshot?id=' + encodeURIComponent(r.id), {
+          headers: { 'Authorization': 'Bearer ' + token }
+        }).then(res => res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status)))
+          .then(data => {
+            const slot = document.getElementById('detail-screenshot-slot');
+            if (!slot || !data.screenshot) return;
+            slot.innerHTML = '<div class="detail-label">Screenshot</div>'
+              + '<img class="detail-screenshot" src="' + escAttr(data.screenshot) + '" alt="User-attached screenshot">';
+          })
+          .catch(() => {
+            const loading = document.getElementById('detail-screenshot-loading');
+            if (loading) loading.textContent = 'Failed to load screenshot';
+          });
+      }
     }
 
     function showDetail(r) {

@@ -16,8 +16,25 @@
  * bloat the file and aren't useful in a spreadsheet anyway. Instead,
  * a boolean has_screenshot column and a screenshot_bytes column are
  * emitted so reviewers can tell which rows have a screenshot attached
- * and drill into them via the dashboard if needed.
+ * and drill into them via the dashboard if needed. screenshot_bytes
+ * is an estimate of the decoded image byte size, not the length of
+ * the base64 data URL string.
  */
+
+/**
+ * Estimate the decoded byte size of a base64 data URL. The JS string
+ * length counts characters, not bytes — and base64 encodes 3 bytes
+ * per 4 characters of payload. Strip the `data:...;base64,` prefix
+ * first so we only count the encoded payload.
+ */
+function estimateDataUrlBytes(dataUrl: string): number {
+  if (!dataUrl) return 0
+  const commaIdx = dataUrl.indexOf(',')
+  const payload = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl
+  // Each '=' padding char represents 1 fewer decoded byte.
+  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0
+  return Math.floor((payload.length * 3) / 4) - padding
+}
 
 interface Env {
   FEEDBACK_DB?: D1Database
@@ -129,7 +146,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         controller.enqueue(encoder.encode(header))
 
         for (const row of rows) {
-          const screenshotBytes = row.screenshot ? row.screenshot.length : 0
+          const hasScreenshot = !!row.screenshot
+          const screenshotBytes = hasScreenshot ? estimateDataUrlBytes(row.screenshot) : 0
           const line = [
             csvEscape(row.id),
             csvEscape(row.kind),
@@ -140,7 +158,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
             csvEscape(row.contact),
             csvEscape(row.app_version),
             csvEscape(row.user_agent),
-            csvEscape(screenshotBytes > 0 ? 'true' : 'false'),
+            csvEscape(hasScreenshot ? 'true' : 'false'),
             csvEscape(screenshotBytes),
             csvEscape(row.message),
           ].join(',') + '\r\n'

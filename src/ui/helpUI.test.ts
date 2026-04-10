@@ -18,7 +18,7 @@ vi.mock('../services/screenshotService', () => ({
 }))
 
 // Import after mocks are set up
-import { initHelpUI, openHelp, closeHelp, toggleHelp, setActiveDataset } from './helpUI'
+import { initHelpUI, disposeHelpUI, openHelp, closeHelp, toggleHelp, setActiveDataset } from './helpUI'
 
 function setupDom(): void {
   document.body.innerHTML = `
@@ -50,8 +50,9 @@ describe('helpUI', () => {
   })
 
   afterEach(() => {
-    document.body.innerHTML = ''
     closeHelp()
+    disposeHelpUI()
+    document.body.innerHTML = ''
   })
 
   describe('panel open/close', () => {

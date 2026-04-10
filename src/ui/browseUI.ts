@@ -12,6 +12,11 @@ import {
 } from '../services/downloadService'
 import { closeDownloadPanel } from './downloadUI'
 import { toggleHelp } from './helpUI'
+import { escapeHtml, escapeAttr } from './domUtils'
+
+// Re-export so existing callers (chatUI, downloadUI, datasetLoader)
+// continue to import these from browseUI.
+export { escapeHtml, escapeAttr }
 
 // --- Browse UI constants ---
 const CARD_DESCRIPTION_MAX_LENGTH = 120
@@ -25,20 +30,6 @@ export interface BrowseCallbacks {
   announce: (message: string) => void
   isMobile: boolean
   onOpenChat?: (query?: string) => void
-}
-
-/** Escape HTML special characters to prevent XSS in rendered content. */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-/** Escape a string for safe use inside an HTML attribute value. */
-export function escapeAttr(value: string): string {
-  return value.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
 /**

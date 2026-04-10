@@ -15,7 +15,6 @@ import type { GeneralFeedbackKind, GeneralFeedbackPayload } from '../types'
 import { captureFullScreen } from '../services/screenshotService'
 import { submitGeneralFeedback } from '../services/generalFeedbackService'
 import { closeChat } from './chatUI'
-import { escapeHtml } from './browseUI'
 import { logger } from '../utils/logger'
 
 const IS_TAURI = !!(window as any).__TAURI__
@@ -260,52 +259,63 @@ function wireFeedbackForm(): void {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault()
-    const message = textarea.value.trim()
-    if (message.length < MESSAGE_MIN) {
-      status.textContent = `Please enter at least ${MESSAGE_MIN} characters.`
-      status.className = 'help-form-status error'
-      textarea.focus()
-      return
-    }
-    const kindInput = form.querySelector<HTMLInputElement>('input[name="help-kind"]:checked')
-    const kind = (kindInput?.value ?? 'bug') as GeneralFeedbackKind
-    const contactEl = document.getElementById('help-feedback-contact') as HTMLInputElement | null
-    const screenshotEl = document.getElementById('help-feedback-screenshot') as HTMLInputElement | null
-
-    let screenshot: string | undefined
-    if (screenshotEl?.checked) {
-      status.textContent = 'Capturing screenshot\u2026'
-      const captured = await captureFullScreen()
-      if (captured) screenshot = captured
-    }
-
-    const payload: GeneralFeedbackPayload = {
-      kind,
-      message,
-      contact: contactEl?.value.trim() || undefined,
-      url: typeof window !== 'undefined' ? window.location.href : undefined,
-      platform: IS_TAURI ? 'desktop' : 'web',
-      datasetId: activeDatasetId,
-      screenshot,
-    }
-
+    // Disable immediately so a double-click (or Enter-spam) can't fire
+    // a second submission while we're capturing a screenshot or
+    // waiting on the server. Re-enabled on every exit path below.
+    if (submit.disabled) return
     submit.disabled = true
-    status.textContent = 'Sending\u2026'
-    status.className = 'help-form-status'
+    try {
+      const message = textarea.value.trim()
+      if (message.length < MESSAGE_MIN) {
+        status.textContent = `Please enter at least ${MESSAGE_MIN} characters.`
+        status.className = 'help-form-status error'
+        textarea.focus()
+        return
+      }
+      const kindInput = form.querySelector<HTMLInputElement>('input[name="help-kind"]:checked')
+      const kind = (kindInput?.value ?? 'bug') as GeneralFeedbackKind
+      const contactEl = document.getElementById('help-feedback-contact') as HTMLInputElement | null
+      const screenshotEl = document.getElementById('help-feedback-screenshot') as HTMLInputElement | null
 
-    const result = await submitGeneralFeedback(payload)
-    submit.disabled = false
+      let screenshot: string | undefined
+      if (screenshotEl?.checked) {
+        status.textContent = 'Capturing screenshot\u2026'
+        const captured = await captureFullScreen()
+        if (captured) screenshot = captured
+      }
 
-    if (result.ok) {
-      form.reset()
-      updateCounter()
-      status.textContent = 'Thanks! Your feedback was received.'
-      status.className = 'help-form-status success'
-    } else {
-      const detail = result.error ? `: ${escapeHtml(result.error)}` : ''
-      status.textContent = `Couldn't send feedback${detail}`
-      status.className = 'help-form-status error'
-      logger.warn('[helpUI] submit failed', result)
+      const payload: GeneralFeedbackPayload = {
+        kind,
+        message,
+        contact: contactEl?.value.trim() || undefined,
+        url: typeof window !== 'undefined' ? window.location.href : undefined,
+        platform: IS_TAURI ? 'desktop' : 'web',
+        datasetId: activeDatasetId,
+        screenshot,
+      }
+
+      status.textContent = 'Sending\u2026'
+      status.className = 'help-form-status'
+
+      const result = await submitGeneralFeedback(payload)
+
+      if (result.ok) {
+        form.reset()
+        updateCounter()
+        status.textContent = 'Thanks! Your feedback was received.'
+        status.className = 'help-form-status success'
+      } else {
+        // status.textContent does not interpret HTML, so pass the raw
+        // server error string — escaping would show users literal
+        // '&lt;' etc. instead of the intended characters.
+        status.textContent = result.error
+          ? `Couldn't send feedback: ${result.error}`
+          : "Couldn't send feedback"
+        status.className = 'help-form-status error'
+        logger.warn('[helpUI] submit failed', result)
+      }
+    } finally {
+      submit.disabled = false
     }
   })
 }
@@ -334,8 +344,37 @@ function onDocumentClick(e: MouseEvent): void {
   closeHelp()
 }
 
+// Module-level refs to the document-level listeners so disposeHelpUI()
+// can remove them cleanly. initHelpUI() is idempotent: calling it twice
+// tears down the previous handlers first so tests (and hot-reloading)
+// don't accumulate listeners.
+let onDocumentKeyDown: ((e: KeyboardEvent) => void) | null = null
+let onDocumentClickRef: ((e: MouseEvent) => void) | null = null
+
+/**
+ * Remove global document listeners and reset module state.
+ * Exported primarily for tests that re-initialize the UI between
+ * runs; also called internally by initHelpUI() for idempotency.
+ */
+export function disposeHelpUI(): void {
+  if (onDocumentKeyDown) {
+    document.removeEventListener('keydown', onDocumentKeyDown)
+    onDocumentKeyDown = null
+  }
+  if (onDocumentClickRef) {
+    document.removeEventListener('click', onDocumentClickRef)
+    onDocumentClickRef = null
+  }
+  isOpen = false
+  lastTrigger = null
+}
+
 /** Initialize the help UI — wire up triggers, tabs, and global handlers. */
 export function initHelpUI(): void {
+  // Tear down any existing listeners from a prior init so we don't
+  // accumulate handlers.
+  disposeHelpUI()
+
   const trigger = document.getElementById('help-trigger')
   const panel = document.getElementById('help-panel')
   if (!trigger || !panel) {
@@ -359,12 +398,15 @@ export function initHelpUI(): void {
     tab.addEventListener('keydown', onTabKeyDown)
   })
 
-  // Global handlers
-  document.addEventListener('keydown', (e) => {
+  // Global handlers — stored in module refs so disposeHelpUI() can
+  // remove the exact same function references later.
+  onDocumentKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && isOpen) {
       e.stopPropagation()
       closeHelp()
     }
-  })
-  document.addEventListener('click', onDocumentClick)
+  }
+  onDocumentClickRef = onDocumentClick
+  document.addEventListener('keydown', onDocumentKeyDown)
+  document.addEventListener('click', onDocumentClickRef)
 }

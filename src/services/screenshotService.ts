@@ -32,6 +32,7 @@ const FULL_SCREEN_MAX_SIZE = 1280
 /** IDs of elements that should be excluded from the full-screen capture. */
 const EXCLUDE_IDS = new Set([
   'help-panel',
+  'help-backdrop',
   'help-trigger',
   'help-trigger-browse',
 ])
@@ -41,13 +42,16 @@ const EXCLUDE_IDS = new Set([
  * `globe-canvas`. Used only when no MapRenderer is registered — the
  * result may be blank on a MapLibre canvas because the drawing buffer
  * can be cleared between frames.
+ *
+ * @param maxSize Max dimension on the longer edge. Defaults to
+ * SCREENSHOT_MAX_SIZE; pass `Infinity` to skip the downsample.
  */
-function captureFromDom(): string | null {
+function captureFromDom(maxSize: number = SCREENSHOT_MAX_SIZE): string | null {
   const canvas = document.getElementById('globe-canvas') as HTMLCanvasElement | null
   if (!canvas) return null
   try {
     const { width, height } = canvas
-    const scale = Math.min(1, SCREENSHOT_MAX_SIZE / Math.max(width, height))
+    const scale = Math.min(1, maxSize / Math.max(width, height))
     if (scale < 1) {
       const offscreen = document.createElement('canvas')
       offscreen.width = Math.round(width * scale)
@@ -84,6 +88,26 @@ function downsampleCanvas(canvas: HTMLCanvasElement, maxSize: number, quality: n
 }
 
 /**
+ * Load an image from a data URL and resolve once it's fully decoded.
+ * Uses the modern `img.decode()` promise when available, falling
+ * back to the load/error events otherwise.
+ */
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('Failed to load globe image'))
+    img.src = src
+    if (typeof img.decode === 'function') {
+      img.decode().then(() => resolve(img)).catch(() => {
+        // Fall through to onload/onerror — decode() can reject on
+        // some browsers even though the image is loadable.
+      })
+    }
+  })
+}
+
+/**
  * Capture the globe canvas as a compressed JPEG data URL, downsized to
  * at most SCREENSHOT_MAX_SIZE px on the longest edge so the payload
  * stays small. Used by the Orbit vision flow.
@@ -105,13 +129,15 @@ export async function captureGlobeScreenshot(): Promise<string | null> {
  * data URL. Used by the feedback form so bug reports can include the
  * UI state.
  *
- * The help panel itself is excluded via html2canvas's ignoreElements
- * option, so reports show the app as it was behind the feedback form.
+ * The help panel and its backdrop are excluded via html2canvas's
+ * ignoreElements option, so reports show the app as it was behind
+ * the feedback form.
  *
- * The globe is pre-captured at full resolution and swapped into the
- * cloned DOM via onclone — this sidesteps the WebGL drawing-buffer
- * unreliability that a naive html2canvas call would hit when reading
- * the canvas directly.
+ * The globe is pre-captured at full resolution and preloaded as an
+ * Image BEFORE html2canvas is invoked. The onclone hook is then
+ * synchronous: it paints the already-loaded image onto the cloned
+ * canvas's 2D context. This sidesteps the WebGL drawing-buffer
+ * unreliability that a direct html2canvas read would hit.
  *
  * Returns null if capture fails for any reason.
  */
@@ -124,32 +150,44 @@ export async function captureFullScreen(): Promise<string | null> {
     if (renderer) {
       globeDataUrl = await renderer.captureScreenshot({ maxSize: Infinity })
     } else {
-      globeDataUrl = captureFromDom()
+      globeDataUrl = captureFromDom(Infinity)
     }
 
-    // 2) Lazy-load html2canvas — only fetched when a user actually
+    // 2) Preload the globe image so onclone can paint it
+    //    synchronously — avoids any race with html2canvas's render
+    //    walk and doesn't rely on async onclone support.
+    let globeImage: HTMLImageElement | null = null
+    if (globeDataUrl) {
+      try {
+        globeImage = await loadImage(globeDataUrl)
+      } catch (err) {
+        logger.warn('[screenshotService] failed to preload globe image', err)
+      }
+    }
+
+    // 3) Lazy-load html2canvas — only fetched when a user actually
     //    attaches a screenshot to a feedback submission.
     const { default: html2canvas } = await import('html2canvas')
 
-    // 3) Render the full body to a canvas, skipping the help panel
-    //    and painting the pre-captured globe onto the cloned canvas's
-    //    2D context so html2canvas never has to read the WebGL buffer.
+    // 4) Render the full body to a canvas, skipping the help panel
+    //    and painting the pre-loaded globe image onto the cloned
+    //    canvas's 2D context so html2canvas never has to read the
+    //    WebGL buffer.
     const composite = await html2canvas(document.body, {
       backgroundColor: '#0d0d12',
       useCORS: true,
       logging: false,
       scale: 1,
       ignoreElements: (el) => EXCLUDE_IDS.has(el.id),
-      onclone: async (clonedDoc) => {
-        if (!globeDataUrl) return
+      onclone: (clonedDoc) => {
+        if (!globeImage) return
         const clonedCanvas = clonedDoc.getElementById('globe-canvas') as HTMLCanvasElement | null
         if (!clonedCanvas) return
 
         // Match the cloned canvas's backing-store size to the live
-        // canvas so what we paint ends up the right size. The cloned
-        // canvas isn't attached to a rendered viewport, so its own
-        // bounding rect is 0x0 — always read dimensions from the live
-        // canvas.
+        // canvas so what we paint ends up the right size. Assigning
+        // to width/height also clears the surface per spec, wiping
+        // whatever html2canvas's createCanvasClone put there.
         const liveCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement | null
         if (liveCanvas) {
           clonedCanvas.width = liveCanvas.width
@@ -159,22 +197,9 @@ export async function captureFullScreen(): Promise<string | null> {
           clonedCanvas.style.height = rect.height + 'px'
         }
 
-        // Decode the globe data URL and draw it onto the cloned
-        // canvas's 2D context. await ensures the decode completes
-        // before html2canvas walks the clone tree to render.
-        const img = new Image()
-        img.src = globeDataUrl
-        try {
-          await img.decode()
-        } catch {
-          await new Promise<void>((resolve) => {
-            img.onload = () => resolve()
-            img.onerror = () => resolve()
-          })
-        }
         const ctx = clonedCanvas.getContext('2d')
         if (ctx) {
-          ctx.drawImage(img, 0, 0, clonedCanvas.width, clonedCanvas.height)
+          ctx.drawImage(globeImage, 0, 0, clonedCanvas.width, clonedCanvas.height)
         }
       },
     })

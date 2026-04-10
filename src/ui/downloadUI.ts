@@ -9,7 +9,7 @@ import {
   getDownloadPath, formatBytes, onDownloadProgress, onDownloadComplete,
   onDownloadError, type DownloadedDataset, type DownloadProgress,
 } from '../services/downloadService'
-import { escapeHtml, escapeAttr } from './browseUI'
+import { escapeHtml, escapeAttr } from './domUtils'
 import { logger } from '../utils/logger'
 
 // Lazy-load convertFileSrc to avoid pulling Tauri-only code into web builds.

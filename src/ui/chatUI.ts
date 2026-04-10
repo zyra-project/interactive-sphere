@@ -8,7 +8,7 @@
 
 import type { ChatMessage, ChatAction, ChatSession, DocentConfig, MapViewContext, ReadingLevel, FeedbackRating, FeedbackPayload } from '../types'
 import type { Dataset } from '../types'
-import { escapeHtml, escapeAttr } from './browseUI'
+import { escapeHtml, escapeAttr } from './domUtils'
 import { createMessageId } from '../services/docentEngine'
 import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureViewContext } from '../services/docentService'
 import { captureGlobeScreenshot } from '../services/screenshotService'

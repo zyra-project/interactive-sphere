@@ -6,6 +6,18 @@ Adds a "?" help button that opens a floating panel with two tabs: a **Guide** (h
 
 ---
 
+## Implementation notes (updates to the original plan)
+
+A few things evolved during implementation and diverge from the responsive design sketched below. The code is the source of truth; this section records the deltas for anyone reading the plan as historical context.
+
+- **Desktop is a centered modal, not a top-right flyout.** The original Tier 1 design was a 380px panel anchored to the top-right corner, mirroring the chat panel. Once shipped, that felt cramped for guide content on wide screens, so the desktop treatment was converted to a centered modal (up to 640px wide, `min(80vh, calc(100vh - 4rem))` tall) with a `rgba(0, 0, 0, 0.5)` backdrop. Tier 2 (tablet) and Tier 3 (portrait phone) are unchanged. See `src/index.html` for the final CSS.
+- **Feedback screenshots are full-UI composites, not globe-only.** The original plan reused the existing `captureGlobeScreenshot()` helper. During testing it became clear that bug reports often depend on surrounding UI state (info panel content, chat state, etc.), so a new `captureFullScreen()` path was added that lazy-loads `html2canvas` and composites the globe onto the full viewport. The help panel itself, the backdrop, and both help triggers are excluded via `ignoreElements`. The Orbit vision flow continues to use `captureGlobeScreenshot()` — globe-only — per the product call.
+- **Admin dashboard grew a lazy-loaded screenshot path.** Inlining 100-row-worth of data URLs in the dashboard list response could produce multi-megabyte payloads. The list response now returns `hasScreenshot` + `screenshotLength`; the screenshot itself is fetched on demand from a new `/api/general-feedback-screenshot?id=N` endpoint when the admin opens a detail panel.
+- **Shared escape helpers live in `src/ui/domUtils.ts`.** `escapeHtml` and `escapeAttr` started life in `browseUI.ts`. Once `helpUI.ts` entered the picture, `browseUI → helpUI → chatUI → browseUI` became a circular import graph. The helpers were extracted to a neutral `domUtils.ts` module; `browseUI` still re-exports them for backward compatibility.
+- **CSV export reports estimated decoded screenshot bytes.** The first draft exported `row.screenshot.length` which is character count of the data URL, not the actual image size. The export now emits an estimated decoded byte count derived from the base64 payload length (minus padding).
+
+---
+
 ## 1. Goals
 
 1. Surface a discoverable entry point for first-time users to learn what the app does and how to navigate it.
