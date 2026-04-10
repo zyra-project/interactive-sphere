@@ -27,6 +27,7 @@ import {
   showTourQuestion, hideAllTourQuestions,
   showTourControls as showControls, hideTourControls as hideControls,
   updateTourPlayState,
+  showTourLegend, hideTourLegend,
 } from '../ui/tourUI'
 
 // Miles → kilometres
@@ -218,6 +219,7 @@ export class TourEngine {
     hideAllTourVideos()
     hideAllTourPopups()
     hideAllTourQuestions()
+    hideTourLegend()
     this.stopActiveAudio()
     this.clearPlacemarks()
   }
@@ -488,18 +490,30 @@ export class TourEngine {
 
   private async execLoadDataset(params: { id: string; showLegend?: boolean; [key: string]: unknown }): Promise<void> {
     await this.callbacks.loadDataset(params.id)
-    // Expand the info panel if the tour wants the legend visible
+    hideTourLegend() // clear any previous legend
+
     if (params.showLegend) {
-      const infoPanel = document.getElementById('info-panel')
-      const infoHeader = document.getElementById('info-header')
-      if (infoPanel && !infoPanel.classList.contains('expanded')) {
-        infoPanel.classList.add('expanded')
-        infoHeader?.setAttribute('aria-expanded', 'true')
+      const isMobile = window.innerWidth <= 768
+      if (isMobile) {
+        // On mobile, show a floating legend thumbnail (info panel is hidden)
+        const legendEl = document.querySelector('.info-legend-thumb') as HTMLImageElement | null
+        if (legendEl?.src) {
+          showTourLegend(legendEl.src)
+        }
+      } else {
+        // On desktop, expand the info panel so the legend is visible
+        const infoPanel = document.getElementById('info-panel')
+        const infoHeader = document.getElementById('info-header')
+        if (infoPanel && !infoPanel.classList.contains('expanded')) {
+          infoPanel.classList.add('expanded')
+          infoHeader?.setAttribute('aria-expanded', 'true')
+        }
       }
     }
   }
 
   private async execUnloadAll(): Promise<void> {
+    hideTourLegend()
     await this.callbacks.unloadAllDatasets()
   }
 

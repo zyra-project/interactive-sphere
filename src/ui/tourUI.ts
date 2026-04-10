@@ -206,6 +206,46 @@ const videos = createRegistry()
 const popups = createRegistry()
 const questions = createRegistry()
 
+// ── Floating legend for mobile tours ────────────────────────────────
+
+/** Show a small floating legend thumbnail during tours on mobile. */
+export function showTourLegend(legendUrl: string): void {
+  hideTourLegend()
+  const container = getOverlayContainer()
+  const wrapper = document.createElement('div')
+  wrapper.id = 'tour-legend-float'
+  wrapper.style.cssText = `
+    position: absolute;
+    top: 3rem;
+    left: 0.5rem;
+    pointer-events: auto;
+    background: rgba(13, 13, 18, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 0.3rem;
+    animation: tour-box-fadein 0.3s ease;
+    z-index: 5;
+  `
+  const img = document.createElement('img')
+  img.src = legendUrl
+  img.alt = 'Legend'
+  img.style.cssText = 'max-width: 40vw; max-height: 15vh; display: block; border-radius: 4px; cursor: zoom-in;'
+  // Tap to open the full legend modal (if it exists)
+  img.addEventListener('click', () => {
+    const thumb = document.querySelector('.info-legend-thumb') as HTMLElement | null
+    thumb?.click()
+  })
+  wrapper.appendChild(img)
+  container.appendChild(wrapper)
+}
+
+/** Remove the floating legend thumbnail. */
+export function hideTourLegend(): void {
+  document.getElementById('tour-legend-float')?.remove()
+}
+
 // ── Text-box overlays (showRect / hideRect) ──────────────────────────
 
 /** Show a text box overlay at the specified screen-percentage position. */
