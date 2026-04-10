@@ -946,6 +946,7 @@ class InteractiveSphere {
    */
   async playTour(url: string): Promise<void> {
     const gen = ++this.loadGeneration
+    this.tourIsStandalone = true
     await this.startTour(url, gen)
   }
 

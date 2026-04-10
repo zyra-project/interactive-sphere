@@ -63,8 +63,7 @@ export class DataService {
       // Build enriched lookup map by normalized title
       this.enrichedMap = this.buildEnrichedMap(enrichedData)
 
-      // Inject the built-in sample tour in dev mode for testing
-      const rawDatasets = s3Response.data.datasets
+      const rawDatasets = [...s3Response.data.datasets]
       // Built-in Climate Connections tour — always available
       rawDatasets.push({
         id: 'SAMPLE_TOUR',

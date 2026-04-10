@@ -97,20 +97,42 @@ function responsiveFontSize(fontSizePx?: number): string {
   return `clamp(12px, ${vwSize}vw + 0.3rem, ${fontSizePx}px)`
 }
 
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function sanitizeCaptionColor(raw: string): string | null {
+  const color = raw.trim()
+  if (/^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([0-9.,\s%]+\)|hsla?\([0-9.,\s%]+\))$/i.test(color)) {
+    return color
+  }
+  return null
+}
+
 /**
  * Parse SOS-style markup in captions:
  *   \n           → <br>
  *   <i>...</i>   → <em>...</em>
  *   <color=X>    → <span style="color:X">
  *   </color>     → </span>
+ *
+ * All other HTML is escaped so captions cannot inject arbitrary markup.
  */
 function parseCaptionMarkup(raw: string): string {
-  return raw
+  return escapeHtml(raw)
     .replace(/\\n/g, '<br>')
-    .replace(/<i>/gi, '<em>')
-    .replace(/<\/i>/gi, '</em>')
-    .replace(/<color=([^>]+)>/gi, '<span style="color:$1">')
-    .replace(/<\/color>/gi, '</span>')
+    .replace(/&lt;i&gt;/gi, '<em>')
+    .replace(/&lt;\/i&gt;/gi, '</em>')
+    .replace(/&lt;color=([^&]+)&gt;/gi, (_, color: string) => {
+      const safeColor = sanitizeCaptionColor(color)
+      return safeColor ? `<span style="color:${safeColor}">` : ''
+    })
+    .replace(/&lt;\/color&gt;/gi, '</span>')
 }
 
 /** Get or create the tour overlay container (lives inside #ui). */

@@ -42,7 +42,12 @@ const SOS_ALTITUDE_SCALE = 0.2
  * Determine which task key is present in a TourTaskDef and return [key, value].
  */
 function identifyTask(def: TourTaskDef): [string, unknown] {
-  const key = Object.keys(def)[0]
+  const keys = Object.keys(def)
+  if (keys.length !== 1) {
+    logger.warn('[Tour] Invalid task definition: expected exactly one key', def)
+    return ['', undefined]
+  }
+  const key = keys[0]
   return [key, (def as Record<string, unknown>)[key]]
 }
 
