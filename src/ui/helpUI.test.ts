@@ -26,6 +26,7 @@ function setupDom(): void {
       <span class="help-trigger-icon">?</span>
       <span class="help-trigger-label">Help</span>
     </button>
+    <div id="help-backdrop" class="hidden" aria-hidden="true"></div>
     <div id="help-panel" class="hidden" role="dialog" aria-hidden="true">
       <div id="help-header">
         <span id="help-title">Help</span>
@@ -58,8 +59,21 @@ describe('helpUI', () => {
       const trigger = document.getElementById('help-trigger')!
       trigger.click()
       const panel = document.getElementById('help-panel')!
+      const backdrop = document.getElementById('help-backdrop')!
       expect(panel.classList.contains('hidden')).toBe(false)
+      expect(backdrop.classList.contains('hidden')).toBe(false)
       expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    })
+
+    it('closes when the backdrop is clicked', () => {
+      openHelp()
+      const panel = document.getElementById('help-panel')!
+      const backdrop = document.getElementById('help-backdrop')!
+      expect(panel.classList.contains('hidden')).toBe(false)
+
+      backdrop.click()
+      expect(panel.classList.contains('hidden')).toBe(true)
+      expect(backdrop.classList.contains('hidden')).toBe(true)
     })
 
     it('closes when Escape is pressed', () => {

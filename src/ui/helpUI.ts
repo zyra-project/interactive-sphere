@@ -212,6 +212,9 @@ export function openHelp(triggeredBy?: HTMLElement): void {
   }
   panel.classList.remove('hidden')
   panel.setAttribute('aria-hidden', 'false')
+  // Backdrop is visible on desktop only (CSS hides it at tablet and
+  // portrait breakpoints), but we toggle the class unconditionally.
+  document.getElementById('help-backdrop')?.classList.remove('hidden')
   isOpen = true
   lastTrigger = triggeredBy ?? document.getElementById('help-trigger')
   document.getElementById('help-trigger')?.setAttribute('aria-expanded', 'true')
@@ -226,6 +229,7 @@ export function closeHelp(): void {
   if (!panel) return
   panel.classList.add('hidden')
   panel.setAttribute('aria-hidden', 'true')
+  document.getElementById('help-backdrop')?.classList.add('hidden')
   isOpen = false
   document.getElementById('help-trigger')?.setAttribute('aria-expanded', 'false')
   document.getElementById('help-trigger-browse')?.setAttribute('aria-expanded', 'false')

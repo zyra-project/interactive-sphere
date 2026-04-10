@@ -2179,10 +2179,13 @@
 
         #help-panel {
             position: fixed;
-            top: 3.5rem;
-            right: 0.75rem;
-            width: 380px;
-            max-height: calc(100vh - 5rem);
+            /* Desktop: centered modal. Tablet/portrait breakpoints
+               override this to anchor the panel to an edge. */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(640px, calc(100vw - 3rem));
+            max-height: min(80vh, calc(100vh - 4rem));
             z-index: 650;
             display: flex;
             flex-direction: column;
@@ -2191,11 +2194,26 @@
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
             color: #e8eaf0;
             pointer-events: auto;
             overflow: hidden;
         }
         #help-panel.hidden {
+            display: none;
+        }
+
+        /* Desktop backdrop — dims the rest of the app behind the
+           centered modal. Hidden at tablet and portrait breakpoints
+           where the panel anchors to an edge instead. */
+        #help-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 640;
+            background: rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+        #help-backdrop.hidden {
             display: none;
         }
 
@@ -2439,9 +2457,19 @@
                 height: 40px;
                 font-size: 1rem;
             }
+            /* Tablet: revert the desktop centered-modal and anchor
+               the panel to the top-right corner. */
             #help-panel {
+                top: 3.5rem;
+                left: auto;
+                right: 0.75rem;
+                transform: none;
                 width: calc(100vw - 1.5rem);
                 max-height: 70vh;
+                box-shadow: none;
+            }
+            #help-backdrop {
+                display: none;
             }
             #help-feedback-form textarea,
             #help-feedback-form input[type="text"],
@@ -2472,11 +2500,13 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
+                transform: none;
                 width: 100vw;
                 max-height: none;
                 height: 100dvh;
                 border-radius: 0;
                 border: none;
+                box-shadow: none;
             }
             #help-close {
                 display: inline-flex;
@@ -2678,6 +2708,7 @@
                     <span class="help-trigger-icon" aria-hidden="true">?</span>
                     <span class="help-trigger-label">Help</span>
                 </button>
+                <div id="help-backdrop" class="hidden" aria-hidden="true"></div>
                 <div id="help-panel" class="hidden" role="dialog" aria-labelledby="help-title" aria-modal="false" aria-hidden="true">
                     <div id="help-header">
                         <span id="help-title">Help</span>
