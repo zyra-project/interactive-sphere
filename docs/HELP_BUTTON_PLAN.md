@@ -38,11 +38,14 @@ CREATE TABLE IF NOT EXISTS general_feedback (
     app_version TEXT NOT NULL DEFAULT '',  -- from package.json / build env
     platform TEXT NOT NULL DEFAULT '',     -- 'web' | 'desktop'
     dataset_id TEXT,                       -- active dataset, if any
+    screenshot TEXT NOT NULL DEFAULT '',   -- optional base64 JPEG data URL
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_general_feedback_kind ON general_feedback (kind);
 CREATE INDEX IF NOT EXISTS idx_general_feedback_created_at ON general_feedback (created_at);
 ```
+
+Screenshot is stored as a TEXT data URL. The existing `captureGlobeScreenshot()` helper downsamples to max 512px and compresses at JPEG 0.6 — typical payload is 10–30KB, well under D1 row limits. Server-side cap: 200KB to guard against pathological inputs.
 
 ---
 
@@ -52,13 +55,23 @@ CREATE INDEX IF NOT EXISTS idx_general_feedback_created_at ON general_feedback (
 
 | File | Responsibility |
 |---|---|
-| `functions/api/general-feedback.ts` | POST handler modelled on `functions/api/feedback.ts`. Reuses CORS allowlist, in-memory rate limiter (tightened to 5/min because content is higher-effort and spam risk is higher), validation style. Uses the existing `FEEDBACK_DB` binding. Accepts `{ kind, message, contact?, url?, datasetId? }`, server-fills `user_agent` and `platform`. |
+| `functions/api/general-feedback.ts` | POST handler modelled on `functions/api/feedback.ts`. Reuses CORS allowlist, in-memory rate limiter (tightened to 5/min because content is higher-effort and spam risk is higher), validation style. Uses the existing `FEEDBACK_DB` binding. Accepts `{ kind, message, contact?, url?, datasetId?, screenshot? }`, server-fills `user_agent` and `platform`. Caps screenshot at 200KB. |
 
 ### Types
 
 | File | Change |
 |---|---|
-| `src/types/index.ts` | Add `GeneralFeedbackKind = 'bug' \| 'feature' \| 'other'` and `GeneralFeedbackPayload` interface alongside existing `FeedbackPayload` types. |
+| `src/types/index.ts` | Add `GeneralFeedbackKind = 'bug' \| 'feature' \| 'other'` and `GeneralFeedbackPayload` interface (including optional `screenshot?: string`) alongside existing `FeedbackPayload` types. |
+
+### Screenshot helper — extract existing function
+
+The Orbit chatbot already has `captureGlobeScreenshot()` at `src/services/docentService.ts:36-56` — a clean standalone function that returns a JPEG data URL at 0.6 quality, downsampled to max 512px. The MapLibre canvas is already configured with `preserveDrawingBuffer: true` (`mapRenderer.ts:341`). Extraction is trivial.
+
+| File | Change |
+|---|---|
+| `src/services/screenshotService.ts` | **New**. Houses `captureGlobeScreenshot()` and the `VISION_MAX_SIZE = 512` constant, moved verbatim from `docentService.ts`. No behavior change. |
+| `src/services/docentService.ts` | Remove the local `captureGlobeScreenshot()` definition; import from `screenshotService`. Re-export if any external caller depends on the old import path (none found in this search, but worth double-checking during implementation). |
+| `src/services/docentService.test.ts` | Update import paths in the existing tests (lines 589–641 per exploration). Coverage remains identical. |
 
 ### Frontend service
 
@@ -76,7 +89,8 @@ CREATE INDEX IF NOT EXISTS idx_general_feedback_created_at ON general_feedback (
 
 | File | Change |
 |---|---|
-| `src/index.html` | Add `<button id="help-trigger">` and `<div id="help-panel">` inside `<div id="ui">`. Add scoped CSS rules in the existing `<style>` block for `#help-trigger`, `#help-panel`, `.help-tab`, `.help-tabpanel`, `.help-form-*`. Reuse existing glass-surface tokens. |
+| `src/index.html` | Add `<button id="help-trigger">` (floating top-right) and `<div id="help-panel">` inside `<div id="ui">`. Add scoped CSS rules in the existing `<style>` block for `#help-trigger`, `#help-panel`, `.help-tab`, `.help-tabpanel`, `.help-form-*`. Reuse existing glass-surface tokens. |
+| `src/ui/browseUI.ts` | Add a second small `?` trigger button (`#help-trigger-browse`) inside the browse overlay header. Wire it to the same `toggleHelp()` handler. Set/remove a `body.browse-open` class when the overlay opens/closes, so the floating trigger can hide itself via CSS. |
 
 ### Wiring
 
@@ -97,12 +111,13 @@ CREATE INDEX IF NOT EXISTS idx_general_feedback_created_at ON general_feedback (
 Short, scannable sections (2–4 bullets each):
 
 1. **Navigating the globe** — drag to rotate, scroll/pinch to zoom, double-click to focus
-2. **Exploring datasets** — browse button, search, categories, tours
-3. **Talking to Orbit** — what the AI docent can do, opening chat, inline load buttons, thumbs up/down
-4. **Map controls** — labels, boundaries, terrain toggles
-5. **Offline downloads** *(desktop only, gated on `IS_TAURI`)* — how to download, where files live, how to delete
-6. **Keyboard shortcuts** — Escape closes panels, Enter sends chat
-7. **Privacy note** — what data is sent with feedback (explicit, short)
+2. **Exploring datasets** — browse button, search, categories, filters
+3. **Guided tours** — what tours are (camera moves + dataset swaps + narration), how to start one from the browse panel, using the tour transport controls to play/pause/skip, how Q&A pauses work, how to exit a tour
+4. **Talking to Orbit** — what the AI docent can do (explain phenomena, recommend datasets), opening chat, inline load buttons, thumbs up/down feedback on answers
+5. **Map controls** — labels, boundaries, terrain toggles
+6. **Offline downloads** *(desktop only, gated on `IS_TAURI`)* — how to download, where files live, how to delete
+7. **Keyboard shortcuts** — Escape closes panels, Enter sends chat, Space toggles playback
+8. **Privacy note** — what data is sent with feedback (explicit, short; mentions optional screenshot)
 
 Desktop-only sections are conditionally rendered based on `window.__TAURI__`.
 
@@ -110,19 +125,34 @@ Desktop-only sections are conditionally rendered based on `window.__TAURI__`.
 
 ## 5. Responsive layout
 
-The panel adapts across the three breakpoint tiers already used by the codebase.
+The panel adapts across the three breakpoint tiers already used by the codebase. Across all tiers there are **two triggers** sharing one `toggleHelp()` handler, coordinated via a `body.browse-open` class that `browseUI.ts` sets when the overlay is visible:
+
+| Trigger | DOM location | Visible when |
+|---|---|---|
+| `#help-trigger` | Floating, top-right of viewport | Browse overlay is **closed** |
+| `#help-trigger-browse` | Inside `#browse-header` | Browse overlay is **open** (inherits overlay visibility) |
+
+CSS coordinates the floating one:
+
+```css
+body.browse-open #help-trigger { display: none; }
+```
+
+Net effect: exactly one visible help button at any time, always in the user's field of view, with no JS state to synchronize.
 
 ### Tier 1 — Desktop (`> 768px`)
 
-- **Trigger** `#help-trigger` — top-right, `top: 0.75rem; right: 0.75rem;`. Pill-shaped like `#chat-trigger`: `?` glyph + "Help" label, ~36px tall.
-- **Panel** `#help-panel` — floats down from trigger: `top: 3.5rem; right: 0.75rem;`. Width `380px` (matches chat), `max-height: calc(100vh - 5rem)`, scrollable body. Tabs in a horizontal row at top.
+- **Floating trigger** `#help-trigger` — top-right, `top: 0.75rem; right: 0.75rem;`. Pill-shaped like `#chat-trigger`: `?` glyph + "Help" label, ~36px tall.
+- **In-header trigger** `#help-trigger-browse` — small `?` icon button, ~28px, placed at the right end of `#browse-header` next to any existing header controls.
+- **Panel** `#help-panel` — floats down from the *floating* trigger location even when opened from the in-header button: `top: 3.5rem; right: 0.75rem;`. Width `380px` (matches chat), `max-height: calc(100vh - 5rem)`, scrollable body. Tabs in a horizontal row at top. The panel can overlay the browse overlay since it has a higher z-index.
 - Click-outside closes.
 
 ### Tier 2 — Mobile landscape / tablet (`≤ 768px`)
 
 Mirrors `#chat-panel`'s mobile styles (`index.html:2078-2109`):
 
-- **Trigger** collapses to a 48×48px circle with just the `?` glyph; label hidden via `display: none`.
+- **Floating trigger** collapses to a 48×48px circle with just the `?` glyph; label hidden via `display: none`.
+- **In-header trigger** stays the same shape (icon-only was already the desktop design); bumps to 40px to meet the touch-target minimum.
 - **Panel** stretches: `width: calc(100vw - 1.5rem); max-height: 70vh; top: 3.5rem; right: 0.75rem;`.
 - Tab row stays horizontal; Guide sections become single-column.
 - Form inputs get `min-height: 44px` touch targets, matching `#chat-send`.
@@ -160,7 +190,7 @@ The tabpanel gets `flex: 1; overflow-y: auto;` and the submit button lives in a 
 
 #### d. Trigger position & size
 
-Moves closer to the edge and shrinks to 40px (matching `.browse-chat-btn` at this breakpoint, `index.html:2093-2098`):
+Floating trigger moves closer to the edge and shrinks to 40px (matching `.browse-chat-btn` at this breakpoint, `index.html:2093-2098`):
 
 ```css
 @media (max-width: 600px) and (orientation: portrait) {
@@ -172,6 +202,8 @@ Moves closer to the edge and shrinks to 40px (matching `.browse-chat-btn` at thi
   }
 }
 ```
+
+On portrait mobile the browse overlay is already full-width, so `body.browse-open` fully hides the floating trigger and the in-header `#help-trigger-browse` takes over. This is exactly when the dual-trigger design pays off: the help button is never hidden behind the dataset list.
 
 ### Panel coordination at portrait breakpoint
 
@@ -185,11 +217,11 @@ No ResizeObserver coordination is needed (unlike `chatUI.updateTriggerForInfoPan
 
 ### Summary table
 
-| Breakpoint | Help panel treatment |
-|---|---|
-| `> 768px` | Floating 380px panel, top-right, label on trigger |
-| `≤ 768px` | Panel widens to `calc(100vw - 1.5rem)`, trigger collapses to 48px circle |
-| `≤ 600px` + portrait | Full-screen sheet (`100dvh`), sticky-footer submit, in-panel close button, 40px trigger at `0.5rem` inset |
+| Breakpoint | Help panel treatment | Trigger state |
+|---|---|---|
+| `> 768px` | Floating 380px panel, top-right | Floating pill + in-header icon; one visible at a time via `body.browse-open` |
+| `≤ 768px` | Panel widens to `calc(100vw - 1.5rem)` | Floating collapses to 48px circle; in-header at 40px for touch |
+| `≤ 600px` + portrait | Full-screen sheet (`100dvh`), sticky-footer submit, in-panel close button | Floating at 40px / `0.5rem` inset; in-header is the one actually visible whenever browse is open (which on portrait is full-screen) |
 
 ---
 
@@ -219,29 +251,30 @@ No ResizeObserver coordination is needed (unlike `chatUI.updateTriggerForInfoPan
 
 ## 8. Commit order
 
-1. `feat(db): add general_feedback D1 table migration`
-2. `feat(api): add /api/general-feedback Cloudflare Function`
-3. `feat(types): add GeneralFeedbackPayload types`
-4. `feat(ui): add help panel with guide and feedback tabs` (biggest commit — new `helpUI.ts`, HTML, CSS, main.ts wiring, service)
-5. `test(ui): cover help panel toggle, tabs, and form validation`
+1. `refactor(services): extract captureGlobeScreenshot into screenshotService` (moves the helper out of `docentService.ts`, updates tests; no behavior change)
+2. `feat(db): add general_feedback D1 table migration`
+3. `feat(api): add /api/general-feedback Cloudflare Function`
+4. `feat(types): add GeneralFeedbackPayload types`
+5. `feat(ui): add help panel with guide and feedback tabs` (biggest commit — new `helpUI.ts`, HTML, CSS, `main.ts` wiring, in-header trigger in `browseUI.ts`, feedback service, screenshot attach)
+6. `test(ui): cover help panel toggle, tabs, and form validation`
 
 All commits DCO-signed (`-s`) per `CLAUDE.md`.
 
 ---
 
-## 9. Out of scope (flagged for discussion)
+## 9. Decisions (resolved from initial open questions)
 
-- **Screenshots attached to bug reports** — adds significant scope (canvas capture, upload storage, privacy review). Defer to follow-up.
-- **GitHub Issues auto-filing** — requires secrets management and opens abuse vectors. D1 storage first; triage/export tooling later.
-- **Guide content as Markdown files** — keeping it as static HTML in `helpUI.ts` is simpler; no Markdown pipeline exists today. Revisit if the guide grows.
-- **Analytics on help button usage** — no analytics system exists; won't add one for this.
+- **Trigger placement** — two triggers, CSS-coordinated: a floating `#help-trigger` in the top-right visible when the browse overlay is closed, plus a small `#help-trigger-browse` icon inside the browse overlay header that takes over when the overlay is open. Both call the same `toggleHelp()` handler.
+- **D1 table** — confirmed as a new sibling `general_feedback` table, separate from the AI `feedback` table.
+- **Screenshots** — in scope for v1. Reuses the existing `captureGlobeScreenshot()` helper (currently in `docentService.ts:36-56`), extracted into a shared `src/services/screenshotService.ts`. Opt-in checkbox in the feedback form, default off for privacy.
+- **GitHub Issues auto-filing** — out of scope. D1 storage is sufficient for now; triage tooling can come later.
+- **Guide topics** — tours section added as a first-class item between "Exploring datasets" and "Talking to Orbit".
 
 ---
 
-## 10. Open questions
+## 10. Still out of scope
 
-1. **Trigger placement** — top-right corner, or folded into the existing map controls toolbar (top-left)? Top-right keeps it discoverable and avoids conflict with any current element.
-2. **New D1 table vs. overloading `feedback`** — confirm the sibling-table approach.
-3. **Screenshots in bug reports** — in or out of v1? (Recommend out.)
-4. **GitHub Issues auto-filing** — in or out? (Recommend out.)
-5. **Guide topic emphasis** — any sections in §4 to expand, drop, or reorder?
+- **Multiple screenshots or annotated screenshots** — v1 captures a single untouched screenshot via the existing helper. Cropping, drawing, or multi-image attachment can come later.
+- **Uploading arbitrary files** (console logs, crash dumps) — no upload pipeline; sticking with text + optional screenshot only.
+- **Guide content as Markdown files** — keeping it as static HTML in `helpUI.ts` is simpler; no Markdown pipeline exists today. Revisit if the guide grows significantly.
+- **Analytics on help button usage** — no analytics system exists; won't add one for this feature.
