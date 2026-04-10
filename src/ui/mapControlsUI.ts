@@ -60,6 +60,24 @@ export function initMapControls(renderer: MapRenderer): void {
 }
 
 /**
+ * Sync map control button states to match the actual renderer state.
+ * Call this after tours or goHome change labels/borders/terrain
+ * without going through the UI buttons.
+ */
+export function syncMapControlState(labels: boolean, borders: boolean): void {
+  const labelsBtn = document.getElementById('map-ctrl-labels')
+  const bordersBtn = document.getElementById('map-ctrl-borders')
+  if (labelsBtn) {
+    labelsBtn.classList.toggle('active', labels)
+    labelsBtn.setAttribute('aria-pressed', String(labels))
+  }
+  if (bordersBtn) {
+    bordersBtn.classList.toggle('active', borders)
+    bordersBtn.setAttribute('aria-pressed', String(borders))
+  }
+}
+
+/**
  * Update the position of the map controls to sit above the playback controls
  * or auto-rotate button, whichever is visible.
  */

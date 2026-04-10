@@ -10,6 +10,17 @@ import { logger } from '../utils/logger'
 const METADATA_URL = 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/dataset.json'
 const ENRICHED_METADATA_URL = '/assets/sos_dataset_metadata.json'
 
+/**
+ * Tour datasets from the upstream SOS catalog that we suppress from the UI
+ * because they use tour tasks our TourEngine doesn't implement yet (e.g.
+ * 360-degree media, Unity-specific scene controls). Revisit when adding
+ * support for the missing tasks.
+ */
+export const HIDDEN_TOUR_IDS: ReadonlySet<string> = new Set([
+  'INTERNAL_SOS_687',                     // 360 Media - National Marine Sanctuaries
+  'INTERNAL_SOS_HRRR_Smoke_Tour_Mobile',  // Tour - HRRR-Smoke and 2020 Fire Season
+])
+
 interface RawEnrichedEntry {
   url?: string
   title?: string
@@ -63,9 +74,23 @@ export class DataService {
       // Build enriched lookup map by normalized title
       this.enrichedMap = this.buildEnrichedMap(enrichedData)
 
+      const rawDatasets = [...s3Response.data.datasets]
+      // Built-in Climate Connections tour — always available
+      rawDatasets.push({
+        id: 'SAMPLE_TOUR',
+        title: 'Climate Connections — How Earth\'s Systems Tell One Story',
+        format: 'tour/json' as const,
+        dataLink: '/assets/test-tour.json',
+        organization: 'Interactive Sphere',
+        abstractTxt: 'An educational tour exploring how climate change shows up across Earth\'s systems — temperature anomalies, Arctic sea ice loss, sea level rise, ocean acidification, the carbon cycle, and global vegetation. Six datasets, one connected story.',
+        tags: ['Tours'],
+        weight: 50,
+        thumbnailLink: '',
+      })
+
       // Filter, sort, and enrich datasets
-      const datasets = s3Response.data.datasets
-        .filter(d => !d.isHidden && this.isSupportedDataset(d))
+      const datasets = rawDatasets
+        .filter(d => !d.isHidden && !HIDDEN_TOUR_IDS.has(d.id) && this.isSupportedDataset(d))
         .sort((a, b) => (b.weight || 0) - (a.weight || 0))
         .map(d => this.enrichDataset(d))
 
@@ -230,9 +255,9 @@ export class DataService {
     return timeInfo
   }
 
-  /** Check whether a dataset's format is one we can render (video or image). */
+  /** Check whether a dataset's format is one we can render (video, image, or tour). */
   isSupportedDataset(dataset: Dataset): boolean {
-    return this.isVideoDataset(dataset) || this.isImageDataset(dataset)
+    return this.isVideoDataset(dataset) || this.isImageDataset(dataset) || this.isTourDataset(dataset)
   }
 
   /** True if the dataset format is `video/mp4`. */
@@ -243,6 +268,11 @@ export class DataService {
   /** True if the dataset format is a supported image type (PNG or JPEG). */
   isImageDataset(dataset: Dataset): boolean {
     return dataset.format === 'image/png' || dataset.format === 'image/jpg' || dataset.format === 'images/jpg'
+  }
+
+  /** True if the dataset format is a guided tour. */
+  isTourDataset(dataset: Dataset): boolean {
+    return dataset.format === 'tour/json'
   }
 
   /** Invalidate the dataset cache, forcing a fresh fetch on the next call. */

@@ -148,6 +148,14 @@ export interface GlobeRenderer {
   loadCloudOverlay(url: string, onProgress?: (fraction: number) => void): Promise<void>
   removeCloudOverlay(): void
   dispose(): void
+
+  // Tour-specific methods (optional — checked at runtime)
+  toggleLabels?(visible?: boolean): boolean
+  toggleBoundaries?(visible?: boolean): boolean
+  addMarker?(lat: number, lng: number, label?: string): unknown
+  clearMarkers?(): void
+  setRotationRate?(rate: number): void
+  getMap?(): unknown
 }
 
 /**
@@ -264,6 +272,187 @@ export interface QAEntry {
 
 /** Title-keyed index of Q&A entries, loaded from /assets/sos_qa_pairs.json */
 export type QAIndex = Record<string, QAEntry[]>
+
+// --- Tour types ---
+
+/** Raw tour JSON file structure */
+export interface TourFile {
+  tourTasks: TourTaskDef[]
+}
+
+/**
+ * A single task definition from a tour JSON file.
+ * Discriminated by which key is present — each object has exactly one task key.
+ */
+export type TourTaskDef =
+  | { flyTo: FlyToTaskParams }
+  | { tiltRotateCamera: TiltRotateCameraTaskParams }
+  | { resetCameraZoomOut: string }
+  | { resetCameraAndZoomOut: string }
+  | { showRect: ShowRectTaskParams }
+  | { hideRect: string }
+  | { pauseForInput: string }
+  | { pauseSeconds: number }
+  | { pauseSec: number }
+  | { loadDataset: LoadDatasetTaskParams }
+  | { unloadAllDatasets: string }
+  | { datasetAnimation: DatasetAnimationTaskParams }
+  | { envShowDayNightLighting: 'on' | 'off' }
+  | { envShowClouds: 'on' | 'off' }
+  | { envShowStars: 'on' | 'off' }
+  | { envShowWorldBorder: 'on' | 'off' }
+  | { worldBorder: WorldBorderTaskParams }
+  | { setGlobeRotationRate: number }
+  | { loopToBeginning: string }
+  | { enableTourPlayer: 'on' | 'off' }
+  | { tourPlayerWindow: 'on' | 'off' }
+  | { question: QuestionTaskParams }
+  | { playAudio: PlayAudioTaskParams }
+  | { stopAudio: string }
+  | { envShowEarth: 'on' | 'off' }
+  | { playVideo: PlayVideoTaskParams }
+  | { showVideo: PlayVideoTaskParams }
+  | { hideVideo: string }
+  | { hidePlayVideo: string }
+  | { stopVideo: string }
+  | { showImage: ShowImageTaskParams }
+  | { showImg: ShowImageTaskParams }
+  | { hideImage: string }
+  | { hideImg: string }
+  | { showPopupHtml: ShowPopupHtmlTaskParams }
+  | { hidePopupHtml: string }
+  | { addPlacemark: AddPlacemarkTaskParams }
+  | { hidePlacemark: string }
+
+export interface FlyToTaskParams {
+  lat: number
+  lon: number
+  altmi: number
+  animated: boolean
+}
+
+export interface ShowRectTaskParams {
+  rectID: string
+  caption: string
+  captionPos?: 'center' | 'left' | 'right' | 'top' | 'bottom'
+  captionBestFit?: boolean
+  fontSize?: number
+  fontColor?: string
+  isClosable?: boolean
+  xPct: number
+  yPct: number
+  widthPct: number
+  heightPct: number
+  showBorder?: boolean
+}
+
+export interface LoadDatasetTaskParams {
+  id: string
+  /** Additional SOS fields passed through but not required for the web player */
+  [key: string]: unknown
+}
+
+export interface DatasetAnimationTaskParams {
+  animation: 'on' | 'off'
+  frameRate?: string  // e.g. "15 fps"
+}
+
+export interface QuestionTaskParams {
+  id: string
+  imgQuestionFilename: string
+  numberOfAnswers: number
+  correctAnswerIndex: number
+  imgAnswerFilename: string
+  xPct?: number
+  yPct?: number
+  widthPct?: number
+  heightPct?: number
+}
+
+export interface WorldBorderTaskParams {
+  worldBorders: 'on' | 'off'
+  worldBorderColor?: string
+}
+
+export interface TiltRotateCameraTaskParams {
+  tilt: number
+  rotate: number
+  animated: boolean
+}
+
+export interface PlayAudioTaskParams {
+  filename: string
+  asynchronous?: boolean
+}
+
+export interface PlayVideoTaskParams {
+  filename: string
+  xPct?: number
+  yPct?: number
+  sizePct?: number
+  showControls?: boolean
+}
+
+export interface ShowImageTaskParams {
+  imageID: string
+  filename: string
+  xPct?: number
+  yPct?: number
+  widthPct?: number
+  heightPct?: number
+  isAspectRatioLocked?: boolean
+  isDraggable?: boolean
+  isClosable?: boolean
+  isResizable?: boolean
+  caption?: string
+  captionPos?: 'center' | 'left' | 'right' | 'top' | 'bottom'
+  fontSize?: number
+  fontColor?: string
+}
+
+export interface ShowPopupHtmlTaskParams {
+  popupID: string
+  url?: string
+  html?: string
+  xPct?: number
+  yPct?: number
+  widthPct?: number
+  heightPct?: number
+  /**
+   * When a `url` is supplied, opt in to running JavaScript inside the
+   * sandboxed iframe. Defaults to false — only enable for trusted origins.
+   */
+  allowScripts?: boolean
+}
+
+export interface AddPlacemarkTaskParams {
+  placemarkID: string
+  lat: number
+  lon: number
+  name?: string
+  popupHTML?: string
+  iconFilename?: string
+  scale?: number
+}
+
+/** Playback state of the tour engine */
+export type TourState = 'stopped' | 'playing' | 'paused'
+
+/** Callbacks the tour engine uses to drive the app — avoids circular imports */
+export interface TourCallbacks {
+  loadDataset(id: string): Promise<void>
+  unloadAllDatasets(): Promise<void>
+  getRenderer(): GlobeRenderer
+  togglePlayPause(): void
+  isPlaying(): boolean
+  setPlaybackRate(rate: number): void
+  onTourEnd(): void
+  /** Called when the user clicks the stop button in tour controls */
+  onStop(): void
+  announce(message: string): void
+  /** Resolve a media filename relative to the tour's base URL */
+  resolveMediaUrl(filename: string): string
+}
 
 /**
  * In-memory cache for the active dataset's legend image and LLM-generated text description.

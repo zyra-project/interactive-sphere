@@ -1,0 +1,389 @@
+{
+  "tourTasks": [
+
+    {"envShowDayNightLighting": "on"},
+    {"envShowClouds": "on"},
+    {"setGlobeRotationRate": 0.3},
+
+    {"showRect": {
+      "rectID": "welcome",
+      "caption": "Climate Connections\\nHow Earth's Systems Tell One Story\\n\\n<i><color=green>This tour explores how climate change shows up across our planet — in temperature, ice, oceans, ecosystems, and the carbon cycle. Each dataset reveals a piece of the puzzle.</color></i>",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": false,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 45.0,
+      "heightPct": 45.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "welcome"},
+    {"setGlobeRotationRate": 0},
+
+
+    {"showRect": {
+      "rectID": "temp-intro",
+      "caption": "Let's start with the big picture — how has Earth's temperature changed over the past 170 years?",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseSec": 4},
+    {"hideRect": "temp-intro"},
+
+    {"envShowClouds": "off"},
+    {"envShowDayNightLighting": "off"},
+    {"loadDataset": {
+      "id": "INTERNAL_SOS_420_VIDEO",
+      "showLegend": true
+    }},
+    {"worldBorder": {"worldBorders": "on", "worldBorderColor": "white"}},
+    {"datasetAnimation": {
+      "animation": "on",
+      "frameRate": "5 fps"
+    }},
+
+    {"flyTo": {"lat": 40.0, "lon": -95.0, "altmi": 5000.0, "animated": true}},
+
+    {"showRect": {
+      "rectID": "temp-explain",
+      "caption": "This map shows temperature anomalies — how much warmer or cooler each year is compared to the 20th century average.\\n\\n<color=green>Blue means cooler than average. Red and orange mean warmer.</color>\\n\\nWatch how the colors shift from mostly blue to mostly red as the animation plays forward through time.",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 82.0,
+      "yPct": 50.0,
+      "widthPct": 28.0,
+      "heightPct": 65.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "temp-explain"},
+
+    {"flyTo": {"lat": 72.0, "lon": 20.0, "altmi": 4000.0, "animated": true}},
+
+    {"showRect": {
+      "rectID": "temp-arctic",
+      "caption": "Notice how the Arctic warms much faster than the rest of the planet. This is called <i>Arctic amplification</i> — as ice melts, the darker ocean absorbs more heat, causing even more warming.\\n\\n<i><color=green>Where else do you see intense warming? Why might land warm faster than oceans?</color></i>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 82.0,
+      "yPct": 50.0,
+      "widthPct": 28.0,
+      "heightPct": 60.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "temp-arctic"},
+    {"worldBorder": {"worldBorders": "off", "worldBorderColor": "white"}},
+
+
+    {"unloadAllDatasets": ""},
+    {"resetCameraAndZoomOut": ""},
+
+    {"showRect": {
+      "rectID": "ice-intro",
+      "caption": "If the Arctic is warming so fast, what's happening to the ice? Let's look at decades of satellite data on sea ice.",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseSec": 4},
+    {"hideRect": "ice-intro"},
+
+    {"loadDataset": {
+      "id": "INTERNAL_SOS_726_ONLINE",
+      "showLegend": true
+    }},
+    {"datasetAnimation": {
+      "animation": "on",
+      "frameRate": "10 fps"
+    }},
+    {"flyTo": {"lat": 78.0, "lon": 0.0, "altmi": 8000.0, "animated": true}},
+
+    {"worldBorder": {"worldBorders": "on", "worldBorderColor": "white"}},
+
+    {"showRect": {
+      "rectID": "ice-explain",
+      "caption": "The bright white areas show the oldest, thickest sea ice — some of it over 9 years old. The darker blues show younger, thinner ice that formed recently.\\n\\nWatch what happens over the decades: the old ice nearly vanishes.\\n\\n<i><color=green>What happens to Arctic wildlife — polar bears, seals, walruses — when the ice they depend on disappears?</color></i>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 18.0,
+      "yPct": 45.0,
+      "widthPct": 28.0,
+      "heightPct": 70.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "ice-explain"},
+    {"worldBorder": {"worldBorders": "off", "worldBorderColor": "white"}},
+
+
+    {"unloadAllDatasets": ""},
+    {"resetCameraAndZoomOut": ""},
+
+    {"showRect": {
+      "rectID": "sea-intro",
+      "caption": "Melting ice and warming water both cause sea levels to rise. Where are the most vulnerable places on Earth?",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseSec": 4},
+    {"hideRect": "sea-intro"},
+
+    {"loadDataset": {
+      "id": "INTERNAL_SOS_766_ONLINE",
+      "showLegend": true
+    }},
+    {"datasetAnimation": {
+      "animation": "on",
+      "frameRate": "30 fps"
+    }},
+
+    {"flyTo": {"lat": 0.0, "lon": -30.0, "altmi": 6000.0, "animated": true}},
+
+    {"showRect": {
+      "rectID": "sea-explain",
+      "caption": "This simulation shows what happens as sea levels rise. The water creeps inland, swallowing coastlines where billions of people live.\\n\\nLow-lying nations like Bangladesh, island nations in the Pacific, and coastal cities like Miami, Shanghai, and Amsterdam are especially vulnerable.\\n\\nEven a small rise can displace millions and contaminate freshwater with salt water.\\n\\n<i><color=green>What challenges does rising water create for coastal communities? Think about housing, farming, and drinking water.</color></i>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 78.0,
+      "yPct": 45.0,
+      "widthPct": 30.0,
+      "heightPct": 70.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "sea-explain"},
+
+
+    {"unloadAllDatasets": ""},
+    {"resetCameraAndZoomOut": ""},
+
+    {"showRect": {
+      "rectID": "ocean-intro",
+      "caption": "The ocean absorbs about 30% of the CO₂ we release. That sounds helpful — but it comes at a cost.",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseSec": 4},
+    {"hideRect": "ocean-intro"},
+
+    {"loadDataset": {
+      "id": "INTERNAL_SOS_173_VIDEO",
+      "showLegend": true
+    }},
+    {"datasetAnimation": {
+      "animation": "on",
+      "frameRate": "8 fps"
+    }},
+
+    {"flyTo": {"lat": -18.0, "lon": 148.0, "altmi": 4000.0, "animated": true}},
+
+    {"showRect": {
+      "rectID": "ocean-acid",
+      "caption": "This shows the saturation state of aragonite — a mineral that corals, shellfish, and many marine organisms need to build their shells and skeletons.\\n\\nAs CO₂ dissolves in seawater, it forms carbonic acid, lowering the pH and making it harder for these creatures to survive.\\n\\n<i><color=green>We're looking at Australia's Great Barrier Reef — the largest living structure on Earth. Why are coral reefs called 'the rainforests of the sea'?</color></i>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 80.0,
+      "yPct": 50.0,
+      "widthPct": 28.0,
+      "heightPct": 75.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "ocean-acid"},
+
+
+    {"unloadAllDatasets": ""},
+    {"resetCameraAndZoomOut": ""},
+
+    {"showRect": {
+      "rectID": "co2-intro",
+      "caption": "Now let's look at the source of the problem — carbon dioxide itself. Watch how it moves through the atmosphere.",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseSec": 4},
+    {"hideRect": "co2-intro"},
+
+    {"loadDataset": {
+      "id": "INTERNAL_SOS_25_VIDEO",
+      "showLegend": true
+    }},
+    {"worldBorder": {"worldBorders": "on", "worldBorderColor": "white"}},
+    {"datasetAnimation": {
+      "animation": "on",
+      "frameRate": "15 fps"
+    }},
+    {"setGlobeRotationRate": 0.15},
+
+    {"showRect": {
+      "rectID": "co2-explain",
+      "caption": "This is CarbonTracker — a model that traces CO₂ from its sources (fossil fuels, fires) through the atmosphere.\\n\\nNotice the seasonal pulse: every spring and summer, forests in the Northern Hemisphere absorb massive amounts of CO₂, and the concentrations drop. In fall and winter, they release it back.\\n\\n<i><color=green>Can you see the 'breathing' of the planet? Watch the Northern Hemisphere cycle between high and low concentrations.</color></i>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 82.0,
+      "yPct": 45.0,
+      "widthPct": 28.0,
+      "heightPct": 75.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "co2-explain"},
+    {"setGlobeRotationRate": 0},
+    {"worldBorder": {"worldBorders": "off", "worldBorderColor": "white"}},
+
+
+    {"unloadAllDatasets": ""},
+    {"resetCameraAndZoomOut": ""},
+
+    {"showRect": {
+      "rectID": "veg-intro",
+      "caption": "Those forests that absorb CO₂ — let's see them from space. Earth's vegetation is one of our greatest allies against climate change.",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseSec": 4},
+    {"hideRect": "veg-intro"},
+
+    {"loadDataset": {
+      "id": "INTERNAL_SOS_407_VIDEO",
+      "showLegend": true
+    }},
+    {"datasetAnimation": {
+      "animation": "on",
+      "frameRate": "30 fps"
+    }},
+
+    {"flyTo": {"lat": -3.0, "lon": -60.0, "altmi": 5000.0, "animated": true}},
+
+    {"showRect": {
+      "rectID": "veg-amazon",
+      "caption": "The Amazon rainforest — the largest tropical rainforest on Earth. It produces about 6% of the world's oxygen and stores enormous amounts of carbon.\\n\\nWatch the seasonal cycle: green intensifies in the wet season, fades slightly in the dry season. This is Earth breathing.",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 80.0,
+      "yPct": 45.0,
+      "widthPct": 28.0,
+      "heightPct": 60.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "veg-amazon"},
+
+    {"flyTo": {"lat": 55.0, "lon": 90.0, "altmi": 5000.0, "animated": true}},
+
+    {"showRect": {
+      "rectID": "veg-boreal",
+      "caption": "The boreal forests of Russia, Canada, and Scandinavia cover more area than the Amazon. They're a massive carbon sink — but they're also warming faster than almost anywhere else.\\n\\n<i><color=green>As permafrost thaws and forests shift northward, what might happen to the carbon stored in these soils?</color></i>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": true,
+      "xPct": 82.0,
+      "yPct": 50.0,
+      "widthPct": 28.0,
+      "heightPct": 65.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "veg-boreal"},
+
+
+    {"unloadAllDatasets": ""},
+
+    {"envShowDayNightLighting": "on"},
+    {"envShowClouds": "on"},
+    {"setGlobeRotationRate": 0.2},
+    {"resetCameraAndZoomOut": ""},
+
+    {"showRect": {
+      "rectID": "conclusion",
+      "caption": "Climate Connections\\n\\nEvery dataset in this tour tells part of the same story:\\n\\n• Rising temperatures amplify in the Arctic\\n• Sea ice that took decades to form disappears in years\\n• Oceans rise and acidify as they absorb heat and CO₂\\n• The carbon cycle pulses with the seasons — but the baseline keeps climbing\\n• Forests are our allies, but they're under pressure too\\n\\n<color=green>These systems are all connected. Changes in one ripple through the others. Understanding these connections is the first step toward solutions.</color>",
+      "captionPos": "center",
+      "fontSize": 20,
+      "fontColor": "white",
+      "isClosable": false,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 45.0,
+      "heightPct": 65.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "conclusion"},
+
+    {"showRect": {
+      "rectID": "explore",
+      "caption": "<i><color=green>Thanks for exploring Climate Connections!\\n\\nKeep exploring — browse more datasets, ask Orbit questions, or run this tour again anytime.</color></i>",
+      "captionPos": "center",
+      "fontSize": 22,
+      "fontColor": "white",
+      "isClosable": false,
+      "xPct": 50.0,
+      "yPct": 50.0,
+      "widthPct": 40.0,
+      "heightPct": 25.0,
+      "showBorder": false
+    }},
+    {"pauseForInput": ""},
+    {"hideRect": "explore"},
+    {"setGlobeRotationRate": 0}
+  ]
+}

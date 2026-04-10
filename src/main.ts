@@ -10,12 +10,12 @@ import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
 import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
 import { logger } from './utils/logger'
-import type { AppState, VideoTextureHandle } from './types'
+import type { AppState, VideoTextureHandle, TourFile } from './types'
 
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
-import { initMapControls, updateMapControlsPosition } from './ui/mapControlsUI'
+import { initMapControls, updateMapControlsPosition, syncMapControlState } from './ui/mapControlsUI'
 import { initChatUI, openChat, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import {
   createPlaybackState, startPlaybackLoop, stopPlaybackLoop,
@@ -27,6 +27,8 @@ import {
 import {
   loadImageDataset, loadVideoDataset, displayDatasetInfo,
 } from './services/datasetLoader'
+import { TourEngine } from './services/tourEngine'
+import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourImages, hideAllTourVideos, hideAllTourPopups, hideAllTourQuestions } from './ui/tourUI'
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, getCloudTextureUrl } from './utils/deviceCapability'
 
@@ -66,6 +68,8 @@ class InteractiveSphere {
   private playback: PlaybackState = createPlaybackState()
   private loadingHideTimer: ReturnType<typeof setTimeout> | null = null
   private loadGeneration = 0 // guards against concurrent dataset loads
+  private tourEngine: TourEngine | null = null
+  private tourIsStandalone = false // true when tour was loaded as a tour/json dataset (not runTourOnLoad)
 
   /**
    * Boot the application: create the WebGL renderer, fetch the dataset
@@ -170,6 +174,9 @@ class InteractiveSphere {
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
 
+    // Stop any active tour (but don't trigger full goHome — let the new load proceed)
+    this.stopTour()
+
     // Tear down the previous video *before* starting the new load so the old
     // HLS stream stops downloading and the old MediaSource is released.  Two
     // concurrent HLS.js instances fight over bandwidth and can exhaust the
@@ -226,7 +233,11 @@ class InteractiveSphere {
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
-    if (dataService.isImageDataset(dataset)) {
+    if (dataset.format === 'tour/json') {
+      this.tourIsStandalone = true
+      await this.startTour(dataset.dataLink, gen)
+      return
+    } else if (dataService.isImageDataset(dataset)) {
       await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
       if (gen !== this.loadGeneration) return
     } else if (dataService.isVideoDataset(dataset)) {
@@ -249,6 +260,29 @@ class InteractiveSphere {
 
     // Fetch and cache the legend image; generate a text description for non-vision mode.
     initLegendForDataset(dataset, loadConfig())
+
+    // Auto-start a tour if the dataset has one associated via runTourOnLoad.
+    // Skip if a tour is already running (the tour engine triggered this load).
+    // Failures are silently logged — the tour is optional, the dataset already loaded.
+    if (dataset.runTourOnLoad && gen === this.loadGeneration && !this.tourEngine) {
+      const ref = dataset.runTourOnLoad
+      try {
+        if (ref.startsWith('http://') || ref.startsWith('https://') || ref.endsWith('.json')) {
+          logger.info('[App] Auto-starting tour from runTourOnLoad URL:', ref)
+          await this.startTour(ref, gen)
+        } else {
+          const tourDataset = dataService.getDatasetById(ref)
+          if (tourDataset && tourDataset.format === 'tour/json') {
+            logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
+            await this.startTour(tourDataset.dataLink, gen)
+          } else {
+            logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
+          }
+        }
+      } catch (err) {
+        logger.warn('[App] runTourOnLoad failed (tour is optional):', err)
+      }
+    }
   }
 
   /** Start the requestAnimationFrame playback loop that syncs the scrubber, time label, and auto-loop. */
@@ -261,6 +295,199 @@ class InteractiveSphere {
       (time) => this.updateVideoTimeLabel(time),
       () => this.renderer?.getMap()?.triggerRepaint(),
     )
+  }
+
+  /**
+   * Load a dataset on behalf of the tour engine.
+   * Unlike loadDataset(), this does NOT stop the active tour and does NOT
+   * trigger runTourOnLoad — the tour engine is managing the flow.
+   */
+  private async loadDatasetForTour(datasetId: string): Promise<void> {
+    logger.debug('[App] loadDatasetForTour:', datasetId)
+
+    const dataset = dataService.getDatasetById(datasetId)
+    if (!dataset) {
+      logger.warn('[App] Tour loadDataset: dataset not found, skipping:', datasetId)
+      return
+    }
+
+    // Skip re-loading if this dataset is already on the globe
+    if (this.appState.currentDataset?.id === datasetId) {
+      logger.debug('[App] Tour loadDataset: already loaded, skipping:', datasetId)
+      return
+    }
+
+    stopPlaybackLoop(this.playback)
+    this.appState.isPlaying = false
+    resetPlaybackState(this.playback)
+
+    // Tear down previous video/HLS
+    if (this.videoTexture) { this.videoTexture.dispose(); this.videoTexture = null }
+    if (this.hlsService) { this.hlsService.destroy(); this.hlsService = null }
+
+    this.renderer?.removeCloudOverlay()
+    this.renderer?.removeNightLights()
+    this.renderer?.disableSunLighting()
+
+    this.appState.currentDataset = dataset
+    displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id))
+
+    // On small screens, hide the info panel during tours to reduce clutter
+    if (window.innerWidth <= 768) {
+      document.getElementById('info-panel')?.classList.add('hidden')
+    }
+
+    if (!this.renderer) return
+
+    // Show playback controls so users can scrub through time-series data
+    const tourLoaderCallbacks = {
+      showPlaybackControls: (show: boolean) => this.showPlaybackControls(show),
+      showTimeLabel: (show: boolean) => this.showTimeLabel(show),
+    }
+
+    if (dataService.isImageDataset(dataset)) {
+      await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, tourLoaderCallbacks)
+    } else if (dataService.isVideoDataset(dataset)) {
+      const result = await loadVideoDataset(
+        dataset, this.renderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks
+      )
+      this.hlsService = result.hlsService
+      this.videoTexture = result.videoTexture
+      this.doStartPlaybackLoop()
+    }
+
+    initLegendForDataset(dataset, loadConfig())
+    // No runTourOnLoad check — the tour engine is in control
+  }
+
+  /** Reset the globe to default Earth for a tour — like goHome but keeps UI clean (no browse panel). */
+  private async unloadForTour(): Promise<void> {
+    this.cleanupVideo()
+    clearLegendCache()
+    this.appState.currentDataset = null
+    this.showPlaybackControls(false)
+    this.showTimeLabel(false)
+    const infoPanel = document.getElementById('info-panel')
+    if (infoPanel) {
+      infoPanel.classList.add('hidden')
+      infoPanel.classList.remove('expanded')
+    }
+
+    if (this.renderer) {
+      await this.renderer.loadDefaultEarthMaterials()
+      const sun = getSunPosition(new Date())
+      this.renderer.enableSunLighting(sun.lat, sun.lng)
+    }
+  }
+
+  /** Fetch a tour JSON file and start the tour engine. */
+  private async startTour(dataLink: string, gen: number): Promise<void> {
+    // Stop any previous tour
+    this.stopTour()
+
+    const resp = await fetch(dataLink)
+    if (!resp.ok) throw new Error(`Failed to fetch tour: ${resp.status}`)
+    const tourFile: TourFile = await resp.json()
+
+    if (gen !== this.loadGeneration) return
+
+    // Use the final response URL as the base for resolving relative media paths.
+    // This handles redirects and ensures relative URLs work even when dataLink
+    // is a relative path (e.g. /assets/test-tour.json).
+    const tourBaseUrl = resp.url || new URL(dataLink, window.location.href).toString()
+
+    this.tourEngine = new TourEngine(tourFile, {
+      loadDataset: async (id) => {
+        await this.loadDatasetForTour(id)
+      },
+      unloadAllDatasets: async () => {
+        await this.unloadForTour()
+      },
+      getRenderer: () => this.renderer!,
+      togglePlayPause: () => {
+        togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m))
+      },
+      isPlaying: () => this.appState.isPlaying,
+      setPlaybackRate: (rate) => {
+        if (this.hlsService) this.hlsService.playbackRate = rate
+      },
+      onTourEnd: () => this.endTour(),
+      onStop: () => this.stopTour(),
+      announce: (msg) => this.announce(msg),
+      resolveMediaUrl: (filename) => {
+        try {
+          return new URL(filename, tourBaseUrl).toString()
+        } catch {
+          return filename
+        }
+      },
+    })
+
+    showTourControls(this.tourEngine, () => this.stopTour())
+    this.showPlaybackControls(false)
+    hideBrowseUI()
+    closeChat()
+    document.body.classList.add('tour-active')
+
+    // On small screens, hide non-essential UI and shift globe up
+    if (window.innerWidth <= 768) {
+      document.getElementById('map-controls')?.classList.add('hidden')
+      document.getElementById('info-panel')?.classList.add('hidden')
+    }
+
+    void this.tourEngine.play()
+  }
+
+  /** Called when the tour finishes naturally (not via stop button). */
+  private endTour(): void {
+    const wasStandalone = this.tourIsStandalone
+    this.cleanupTourOverlays()
+    this.tourEngine = null
+    this.tourIsStandalone = false
+    this.announce('Tour ended')
+
+    if (wasStandalone) {
+      // Standalone tour (tour/json dataset) — return home so user isn't stuck
+      void this.goHome()
+    } else {
+      // runTourOnLoad tour — stay on the current dataset, restore playback UI
+      this.restorePostTourUI()
+    }
+  }
+
+  /** Stop any active tour without triggering goHome. */
+  private stopTour(): void {
+    if (this.tourEngine) {
+      this.tourEngine.stop()
+      this.tourEngine = null
+      this.tourIsStandalone = false
+      this.cleanupTourOverlays()
+      this.restorePostTourUI()
+    }
+  }
+
+  /** Restore playback/time UI after a tour ends, based on the current dataset. */
+  private restorePostTourUI(): void {
+    const dataset = this.appState.currentDataset
+    if (dataset && dataService.isVideoDataset(dataset)) {
+      this.showPlaybackControls(true)
+      if (this.hlsService) {
+        updatePlayButton(this.hlsService.paused)
+      }
+    }
+    // Restore UI hidden during tour
+    document.getElementById('map-controls')?.classList.remove('hidden')
+    document.body.classList.remove('tour-active')
+  }
+
+  /** Remove all tour UI elements. */
+  private cleanupTourOverlays(): void {
+    hideTourControls()
+    hideAllTourTextBoxes()
+    hideAllTourImages()
+    hideAllTourVideos()
+    hideAllTourPopups()
+    hideAllTourQuestions()
   }
 
   /** Map the current video playback time to a real-world date and update the time label. */
@@ -670,6 +897,7 @@ class InteractiveSphere {
 
   /** Navigate back to the default Earth view: tear down the current dataset, reload Earth materials, and re-show the browse panel. */
   private async goHome(): Promise<void> {
+    this.stopTour()
     this.cleanupVideo()
     clearLegendCache()
     this.appState.currentDataset = null
@@ -677,6 +905,10 @@ class InteractiveSphere {
     this.showTimeLabel(false)
     document.getElementById('info-panel')?.classList.add('hidden')
     this.hideHomeButton()
+    // Reset overlays that tours may have turned on
+    this.renderer?.toggleLabels?.(false)
+    this.renderer?.toggleBoundaries?.(false)
+    syncMapControlState(false, false)
     window.history.pushState({}, '', window.location.pathname)
 
     this.showLoadingScreen('Loading Earth\u2026', 20)
@@ -706,6 +938,16 @@ class InteractiveSphere {
     })
     this.renderer?.setCanvasDescription('Interactive 3D globe showing Earth')
     notifyDatasetChanged(null)
+  }
+
+  /**
+   * Load a tour from a URL — exposed for console testing.
+   * Usage: window.app.playTour('/assets/test-tour.json')
+   */
+  async playTour(url: string): Promise<void> {
+    const gen = ++this.loadGeneration
+    this.tourIsStandalone = true
+    await this.startTour(url, gen)
   }
 
   /** Clean up all resources: video streams, textures, and the WebGL renderer. */
