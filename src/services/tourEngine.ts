@@ -74,6 +74,10 @@ export class TourEngine {
   // Active placemarks keyed by ID for cleanup
   private activePlacemarks = new Map<string, unknown>()
 
+  // Set to true when the tour calls setGlobeRotationRate, so cleanup can
+  // reset rotation and avoid leaving the globe spinning after the tour ends.
+  private rotationRateModified = false
+
   constructor(tourFile: TourFile, callbacks: TourCallbacks) {
     this.tasks = tourFile.tourTasks
     this.callbacks = callbacks
@@ -222,6 +226,14 @@ export class TourEngine {
     hideTourLegend()
     this.stopActiveAudio()
     this.clearPlacemarks()
+    // If the tour drove the rotation rate, stop it so the globe doesn't
+    // keep spinning at the tour-specified speed after "Stop tour". Tours
+    // that never called setGlobeRotationRate leave the user's pre-tour
+    // rotation state untouched.
+    if (this.rotationRateModified) {
+      this.callbacks.getRenderer().setRotationRate?.(0)
+      this.rotationRateModified = false
+    }
   }
 
   /** Read current state without TS narrowing (state can change during awaits). */
@@ -585,6 +597,7 @@ export class TourEngine {
     const renderer = this.callbacks.getRenderer()
     if (renderer.setRotationRate) {
       renderer.setRotationRate(rate)
+      this.rotationRateModified = true
     }
     // No fallback to toggleAutoRotate — it's not idempotent and can't
     // represent specific rates. setRotationRate is always available on

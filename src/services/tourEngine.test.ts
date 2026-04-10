@@ -288,6 +288,48 @@ describe('TourEngine', () => {
       // stop() does NOT call onTourEnd — caller handles cleanup
       expect(cb.onTourEnd).not.toHaveBeenCalled()
     })
+
+    it('resets rotation rate to 0 when the tour modified it', async () => {
+      const renderer = makeRenderer()
+      const cb = makeCallbacks({ getRenderer: () => renderer })
+      const engine = new TourEngine(makeTour([
+        { setGlobeRotationRate: 0.5 },
+        { pauseForInput: '' },
+      ]), cb)
+
+      engine.play()
+      await flush()
+      expect(engine.state).toBe('paused')
+      expect(renderer.setRotationRate).toHaveBeenCalledWith(0.5)
+
+      engine.stop()
+      expect(renderer.setRotationRate).toHaveBeenLastCalledWith(0)
+    })
+
+    it('leaves rotation rate alone when the tour never touched it', async () => {
+      const renderer = makeRenderer()
+      const cb = makeCallbacks({ getRenderer: () => renderer })
+      const engine = new TourEngine(makeTour([
+        { pauseForInput: '' },
+      ]), cb)
+
+      engine.play()
+      await flush()
+      engine.stop()
+      expect(renderer.setRotationRate).not.toHaveBeenCalled()
+    })
+
+    it('resets rotation rate after a natural tour completion too', async () => {
+      const renderer = makeRenderer()
+      const cb = makeCallbacks({ getRenderer: () => renderer })
+      const engine = new TourEngine(makeTour([
+        { setGlobeRotationRate: 0.5 },
+      ]), cb)
+
+      await engine.play()
+      expect(cb.onTourEnd).toHaveBeenCalledOnce()
+      expect(renderer.setRotationRate).toHaveBeenLastCalledWith(0)
+    })
   })
 
   describe('task dispatch', () => {
