@@ -238,7 +238,7 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
       border: ${params.showBorder ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.06)'};
       border-radius: 12px;
       padding: 0.75rem 1rem;
-      color: ${params.fontColor || 'white'};
+      color: ${sanitizeCaptionColor(params.fontColor || '') || 'white'};
       font-size: ${fontSize};
       line-height: 1.45;
       overflow-y: auto;
@@ -273,7 +273,7 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
       border: ${params.showBorder ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.06)'};
       border-radius: 10px;
       padding: 1rem 1.25rem;
-      color: ${params.fontColor || 'white'};
+      color: ${sanitizeCaptionColor(params.fontColor || '') || 'white'};
       font-size: ${fontSize};
       line-height: 1.5;
       overflow-y: auto;
@@ -358,7 +358,7 @@ export function showTourImage(params: ShowImageTaskParams): void {
     cap.style.cssText = `
       margin-top: 0.5rem;
       font-size: ${responsiveFontSize(params.fontSize)};
-      color: ${params.fontColor || '#ddd'};
+      color: ${sanitizeCaptionColor(params.fontColor || '') || '#ddd'};
       text-align: ${{ left: 'left', right: 'right', top: 'center', bottom: 'center', center: 'center' }[params.captionPos || 'center'] ?? 'center'};
     `
     cap.innerHTML = parseCaptionMarkup(params.caption)
@@ -508,10 +508,12 @@ export function showTourPopup(params: ShowPopupHtmlTaskParams): void {
     iframe.setAttribute('sandbox', 'allow-scripts')
     wrapper.appendChild(iframe)
   } else if (params.html) {
-    const content = document.createElement('div')
-    content.style.cssText = 'width:100%;height:100%;overflow:auto;padding:1rem;color:#ddd;font-size:0.85rem;line-height:1.5;'
-    content.innerHTML = params.html
-    wrapper.appendChild(content)
+    // Render untrusted HTML in a sandboxed iframe via srcdoc
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'width:100%;height:100%;border:none;border-radius:10px;'
+    iframe.setAttribute('sandbox', '')
+    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:1rem;background:transparent;color:#ddd;font-size:0.85rem;line-height:1.5;font-family:system-ui,sans-serif;overflow:auto;height:100%;box-sizing:border-box;}</style></head><body>${params.html}</body></html>`
+    wrapper.appendChild(iframe)
   }
 
   addCloseButton(wrapper, () => hideTourPopup(params.popupID))
