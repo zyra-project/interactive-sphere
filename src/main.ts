@@ -436,7 +436,11 @@ class InteractiveSphere {
       // Only shift globe for standalone tours (not runTourOnLoad setup scripts
       // which complete instantly and would cause a distracting bounce)
       if (this.tourIsStandalone) {
-        this.renderer?.getMap()?.easeTo?.({ padding: { bottom: Math.round(window.innerHeight * 0.3) }, duration: 800 })
+        const container = document.getElementById('container')
+        if (container) {
+          container.style.transition = 'transform 0.8s ease'
+          container.style.transform = `translateY(-${Math.round(window.innerHeight * 0.15)}px)`
+        }
       }
     }
 
@@ -483,8 +487,12 @@ class InteractiveSphere {
     // Restore UI hidden during tour
     document.getElementById('map-controls')?.classList.remove('hidden')
     document.body.classList.remove('tour-active')
-    // Reset map padding that was added to shift globe up on mobile
-    this.renderer?.getMap()?.easeTo?.({ padding: { bottom: 0 }, duration: 500 })
+    // Reset globe shift from mobile tour
+    const container = document.getElementById('container')
+    if (container) {
+      container.style.transition = 'transform 0.5s ease'
+      container.style.transform = ''
+    }
   }
 
   /** Remove all tour UI elements. */
