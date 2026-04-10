@@ -433,15 +433,6 @@ class InteractiveSphere {
     if (window.innerWidth <= 768) {
       document.getElementById('map-controls')?.classList.add('hidden')
       document.getElementById('info-panel')?.classList.add('hidden')
-      // Only shift globe for standalone tours (not runTourOnLoad setup scripts
-      // which complete instantly and would cause a distracting bounce)
-      if (this.tourIsStandalone) {
-        const container = document.getElementById('container')
-        if (container) {
-          container.style.transition = 'transform 0.8s ease'
-          container.style.transform = `translateY(-${Math.round(window.innerHeight * 0.15)}px)`
-        }
-      }
     }
 
     void this.tourEngine.play()
@@ -487,12 +478,6 @@ class InteractiveSphere {
     // Restore UI hidden during tour
     document.getElementById('map-controls')?.classList.remove('hidden')
     document.body.classList.remove('tour-active')
-    // Reset globe shift from mobile tour
-    const container = document.getElementById('container')
-    if (container) {
-      container.style.transition = 'transform 0.5s ease'
-      container.style.transform = ''
-    }
   }
 
   /** Remove all tour UI elements. */
