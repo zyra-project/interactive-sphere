@@ -339,9 +339,13 @@ class InteractiveSphere {
 
     if (!this.renderer) return
 
-    // Allow playback controls for video datasets so users can scrub/pause
+    // On small screens, suppress playback controls during tours to reduce clutter.
+    // On desktop, show them so users can scrub/pause.
+    const isMobileTour = window.innerWidth <= 768
     const tourLoaderCallbacks = {
-      showPlaybackControls: (show: boolean) => this.showPlaybackControls(show),
+      showPlaybackControls: (show: boolean) => {
+        if (!isMobileTour) this.showPlaybackControls(show)
+      },
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
@@ -431,11 +435,7 @@ class InteractiveSphere {
     // On small screens, reduce clutter during tours
     if (window.innerWidth <= 768) {
       document.getElementById('map-controls')?.classList.add('hidden')
-      const infoPanel = document.getElementById('info-panel')
-      if (infoPanel) {
-        infoPanel.classList.remove('expanded')
-        infoPanel.querySelector('#info-header')?.setAttribute('aria-expanded', 'false')
-      }
+      document.getElementById('info-panel')?.classList.add('hidden')
     }
 
     void this.tourEngine.play()
