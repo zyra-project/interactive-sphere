@@ -11,6 +11,7 @@ import {
   isDownloading, formatBytes,
 } from '../services/downloadService'
 import { closeDownloadPanel } from './downloadUI'
+import { toggleHelp } from './helpUI'
 
 // --- Browse UI constants ---
 const CARD_DESCRIPTION_MAX_LENGTH = 120
@@ -48,7 +49,18 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   const overlay = document.getElementById('browse-overlay')
   if (!overlay) return
   overlay.classList.remove('hidden')
+  document.body.classList.add('browse-open')
   closeDownloadPanel()
+
+  // Wire the in-header help trigger once (idempotent)
+  const helpBtn = document.getElementById('help-trigger-browse')
+  if (helpBtn && !helpBtn.dataset.wired) {
+    helpBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleHelp(helpBtn)
+    })
+    helpBtn.dataset.wired = 'true'
+  }
 
   const visible = datasets
     .filter(d => !d.isHidden)
@@ -434,4 +446,5 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
 export function hideBrowseUI(): void {
   const overlay = document.getElementById('browse-overlay')
   overlay?.classList.add('hidden')
+  document.body.classList.remove('browse-open')
 }
