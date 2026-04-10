@@ -141,15 +141,12 @@ describe('captureFullScreen', () => {
     expect(ignore(infoPanel)).toBe(false)
   })
 
-  it('replaces the globe canvas in the cloned DOM with an img', async () => {
+  it('paints the pre-captured globe onto the cloned canvas 2D context', async () => {
     const globe = document.createElement('canvas')
     globe.id = 'globe-canvas'
     globe.width = 400
     globe.height = 300
-    // Give it a parent so replaceChild has somewhere to act
-    const wrapper = document.createElement('div')
-    wrapper.appendChild(globe)
-    document.body.appendChild(wrapper)
+    document.body.appendChild(globe)
     globe.toDataURL = vi.fn().mockReturnValue('data:image/jpeg;base64,globe-full')
 
     html2canvasMock.mockResolvedValue({
@@ -161,26 +158,35 @@ describe('captureFullScreen', () => {
     await captureFullScreen()
 
     const opts = html2canvasMock.mock.calls[0][1] as {
-      onclone: (doc: Document) => void
+      onclone: (doc: Document) => Promise<void> | void
     }
 
     // Build a minimal cloned document the way html2canvas would and
-    // run onclone against it. The globe canvas should be replaced by
-    // an <img> pointing at the pre-captured data URL.
+    // run onclone against it. The cloned canvas's 2D context should
+    // receive a drawImage call with an HTMLImageElement sourced from
+    // the pre-captured globe data URL.
     const cloneDoc = document.implementation.createHTMLDocument('clone')
-    const cloneWrapper = cloneDoc.createElement('div')
     const cloneCanvas = cloneDoc.createElement('canvas')
     cloneCanvas.id = 'globe-canvas'
-    cloneWrapper.appendChild(cloneCanvas)
-    cloneDoc.body.appendChild(cloneWrapper)
+    cloneDoc.body.appendChild(cloneCanvas)
 
-    opts.onclone(cloneDoc)
+    // jsdom doesn't provide a real 2D context — stub getContext so we
+    // can observe drawImage calls.
+    const drawImageMock = vi.fn()
+    const mockCtx = { drawImage: drawImageMock } as unknown as CanvasRenderingContext2D
+    cloneCanvas.getContext = vi.fn().mockReturnValue(mockCtx) as never
 
-    const replaced = cloneWrapper.querySelector('img')
-    expect(replaced).not.toBeNull()
-    expect(replaced?.src).toContain('data:image/jpeg;base64,globe-full')
-    // The original canvas should be gone
-    expect(cloneWrapper.querySelector('canvas')).toBeNull()
+    await opts.onclone(cloneDoc)
+
+    // Canvas dimensions should be synced from the live canvas
+    expect(cloneCanvas.width).toBe(400)
+    expect(cloneCanvas.height).toBe(300)
+    // drawImage should have been called with an HTMLImageElement
+    // whose src is the pre-captured data URL
+    expect(drawImageMock).toHaveBeenCalledTimes(1)
+    const [imgArg] = drawImageMock.mock.calls[0]
+    expect(imgArg).toBeInstanceOf(HTMLImageElement)
+    expect((imgArg as HTMLImageElement).src).toContain('data:image/jpeg;base64,globe-full')
   })
 
   it('returns null when html2canvas throws', async () => {

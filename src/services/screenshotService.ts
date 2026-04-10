@@ -132,26 +132,50 @@ export async function captureFullScreen(): Promise<string | null> {
     const { default: html2canvas } = await import('html2canvas')
 
     // 3) Render the full body to a canvas, skipping the help panel
-    //    and swapping the globe canvas for a pre-baked img so
-    //    html2canvas never has to read the WebGL buffer.
+    //    and painting the pre-captured globe onto the cloned canvas's
+    //    2D context so html2canvas never has to read the WebGL buffer.
     const composite = await html2canvas(document.body, {
       backgroundColor: '#0d0d12',
       useCORS: true,
       logging: false,
       scale: 1,
       ignoreElements: (el) => EXCLUDE_IDS.has(el.id),
-      onclone: (clonedDoc) => {
+      onclone: async (clonedDoc) => {
         if (!globeDataUrl) return
-        const canvas = clonedDoc.getElementById('globe-canvas') as HTMLCanvasElement | null
-        if (!canvas) return
-        const img = clonedDoc.createElement('img')
+        const clonedCanvas = clonedDoc.getElementById('globe-canvas') as HTMLCanvasElement | null
+        if (!clonedCanvas) return
+
+        // Match the cloned canvas's backing-store size to the live
+        // canvas so what we paint ends up the right size. The cloned
+        // canvas isn't attached to a rendered viewport, so its own
+        // bounding rect is 0x0 — always read dimensions from the live
+        // canvas.
+        const liveCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement | null
+        if (liveCanvas) {
+          clonedCanvas.width = liveCanvas.width
+          clonedCanvas.height = liveCanvas.height
+          const rect = liveCanvas.getBoundingClientRect()
+          clonedCanvas.style.width = rect.width + 'px'
+          clonedCanvas.style.height = rect.height + 'px'
+        }
+
+        // Decode the globe data URL and draw it onto the cloned
+        // canvas's 2D context. await ensures the decode completes
+        // before html2canvas walks the clone tree to render.
+        const img = new Image()
         img.src = globeDataUrl
-        // Preserve the layout size so surrounding elements don't reflow.
-        const rect = canvas.getBoundingClientRect()
-        img.style.width = rect.width + 'px'
-        img.style.height = rect.height + 'px'
-        img.style.display = 'block'
-        canvas.parentElement?.replaceChild(img, canvas)
+        try {
+          await img.decode()
+        } catch {
+          await new Promise<void>((resolve) => {
+            img.onload = () => resolve()
+            img.onerror = () => resolve()
+          })
+        }
+        const ctx = clonedCanvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, clonedCanvas.width, clonedCanvas.height)
+        }
       },
     })
 
