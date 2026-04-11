@@ -239,20 +239,25 @@ describe('helpUI', () => {
       textarea.value = 'Report where the capture stalls on iOS mobile.'
       screenshotBox.checked = true
 
-      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-      // The handler awaits the (null) capture and then the 800ms
-      // "sending text only" pause. Drive time forward to flush both.
-      await new Promise(resolve => setTimeout(resolve, 0))
-      await new Promise(resolve => setTimeout(resolve, 900))
-      await new Promise(resolve => setTimeout(resolve, 0))
+      vi.useFakeTimers()
+      try {
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+        // The handler awaits the (null) capture and then the 800ms
+        // "sending text only" pause before submitting. Advance
+        // timers to flush the pause deterministically instead of
+        // sleeping in real time.
+        await vi.advanceTimersByTimeAsync(900)
 
-      expect(submitMock).toHaveBeenCalledTimes(1)
-      const payload = submitMock.mock.calls[0][0]
-      expect(payload.screenshot).toBeUndefined()
+        expect(submitMock).toHaveBeenCalledTimes(1)
+        const payload = submitMock.mock.calls[0][0]
+        expect(payload.screenshot).toBeUndefined()
 
-      const status = document.getElementById('help-feedback-status')!
-      expect(status.textContent).toMatch(/Thanks/)
-      expect(status.classList.contains('success')).toBe(true)
+        const status = document.getElementById('help-feedback-status')!
+        expect(status.textContent).toMatch(/Thanks/)
+        expect(status.classList.contains('success')).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 })

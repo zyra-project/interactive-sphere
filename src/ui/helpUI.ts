@@ -220,6 +220,14 @@ export function openHelp(triggeredBy?: HTMLElement): void {
   document.getElementById('help-trigger-browse')?.setAttribute('aria-expanded', 'true')
   renderPanelBody()
   selectTab(currentTab)
+  // Move focus into the dialog for keyboard/screen-reader users.
+  // selectTab() already focuses the feedback textarea when opening
+  // on the feedback tab; for the guide tab, focus the active tab
+  // button so focus isn't stranded outside the dialog.
+  if (currentTab !== 'feedback') {
+    const activeTab = panel.querySelector<HTMLElement>('.help-tab[aria-selected="true"]')
+    activeTab?.focus()
+  }
 }
 
 /** Close the help panel. */
