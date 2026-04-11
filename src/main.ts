@@ -142,7 +142,7 @@ class InteractiveSphere {
       this.panelStates = Array.from({ length: this.viewports.getPanelCount() }, createPanelState)
       const primary = this.viewports.getPrimary()
       if (!primary) throw new Error('Viewport manager failed to create a primary renderer')
-      initMapControls(primary, {
+      initMapControls(this.viewports, {
         onSetLayout: (layout) => this.viewports.setLayout(layout),
         onOpenBrowse: () => this.openBrowsePanel(),
       })
@@ -809,7 +809,9 @@ class InteractiveSphere {
       onSetTime: (isoDate) => seekToDate(isoDate, this.hlsService, this.appState, this.playback),
       onFitBounds: (bounds, _label) => { this.renderer?.fitBounds(bounds) },
       onAddMarker: (lat, lng, label) => { this.renderer?.addMarker(lat, lng, label) },
-      onToggleLabels: (visible) => { this.renderer?.toggleLabels(visible); this.renderer?.toggleBoundaries(visible) },
+      onToggleLabels: (visible) => {
+        for (const r of this.viewports.getAll()) { r.toggleLabels?.(visible); r.toggleBoundaries?.(visible) }
+      },
       onHighlightRegion: (geojson, _label) => { this.renderer?.highlightRegion(geojson) },
       getMapViewContext: () => this.renderer?.getViewContext() ?? null,
       getDatasets: () => this.appState.datasets,
@@ -868,7 +870,9 @@ class InteractiveSphere {
   /**
    * Called by ViewportManager when a setLayout adds/removes panels.
    * Resizes our parallel panelStates array to match, disposing any
-   * videos in slots that are going away.
+   * videos in slots that are going away, and seeds newly-created
+   * panels with the current map-controls toolbar state (labels,
+   * borders, terrain) so they start in sync with the primary.
    */
   private onViewportLayoutChange(newCount: number, oldCount: number): void {
     if (newCount < oldCount) {
@@ -884,6 +888,31 @@ class InteractiveSphere {
       // Add fresh empty slots for new panels
       while (this.panelStates.length < newCount) {
         this.panelStates.push(createPanelState())
+      }
+      // Seed the new viewports with the current toolbar state so
+      // they visually match the primary's labels/borders/terrain.
+      // We read state from the DOM button classes rather than
+      // querying a renderer, since the new renderers may still be
+      // mid-style-load when this fires. MapLibre queues layer
+      // operations internally until the style is ready, so
+      // dispatching the toggle now is safe.
+      const labelsActive = document.getElementById('map-ctrl-labels')?.classList.contains('active') ?? false
+      const bordersActive = document.getElementById('map-ctrl-borders')?.classList.contains('active') ?? false
+      const terrainActive = document.getElementById('map-ctrl-terrain')?.classList.contains('active') ?? false
+      for (let i = oldCount; i < newCount; i++) {
+        const newRenderer = this.viewports.getRendererAt(i)
+        if (!newRenderer) continue
+        const map = newRenderer.getMap()
+        const applyOverlayState = () => {
+          newRenderer.toggleLabels?.(labelsActive)
+          newRenderer.toggleBoundaries?.(bordersActive)
+          if (terrainActive) newRenderer.toggleTerrain?.(true)
+        }
+        if (map && map.isStyleLoaded()) {
+          applyOverlayState()
+        } else {
+          map?.once('load', applyOverlayState)
+        }
       }
     }
   }
@@ -1331,9 +1360,13 @@ class InteractiveSphere {
     this.showTimeLabel(false)
     document.getElementById('info-panel')?.classList.add('hidden')
     this.hideHomeButton()
-    // Reset overlays that tours may have turned on
-    this.renderer?.toggleLabels?.(false)
-    this.renderer?.toggleBoundaries?.(false)
+    // Reset overlays that tours may have turned on. In multi-view
+    // mode we fan out across every panel so siblings don't keep
+    // stale labels/borders after home.
+    for (const r of this.viewports.getAll()) {
+      r.toggleLabels?.(false)
+      r.toggleBoundaries?.(false)
+    }
     syncMapControlState(false, false)
     window.history.pushState({}, '', window.location.pathname)
 

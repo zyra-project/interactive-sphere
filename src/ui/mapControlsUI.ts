@@ -5,10 +5,15 @@
  * markers/highlights, and a Browse button that opens the dataset
  * list overlay. When the `?setview=` dev flag is present, also
  * renders a layout picker (1/2h/2v/4) for multi-viewport testing.
+ *
+ * Toggle actions (labels, borders, terrain, clear) fan out across
+ * every viewport in the current ViewportManager so the visual state
+ * stays synchronised between panels — camera motion already syncs,
+ * and users reasonably expect overlay toggles to as well.
  */
 
 import type { MapRenderer } from '../services/mapRenderer'
-import type { ViewLayout } from '../services/viewportManager'
+import type { ViewportManager, ViewLayout } from '../services/viewportManager'
 
 /** Options passed from the app shell to wire additional callbacks. */
 export interface MapControlsCallbacks {
@@ -18,10 +23,10 @@ export interface MapControlsCallbacks {
   onOpenBrowse?: () => void
 }
 
-/** Show the map controls toolbar and wire events to the MapRenderer.
+/** Show the map controls toolbar and wire events to every viewport.
  *  Idempotent — safe to call multiple times (skips if already initialized). */
 export function initMapControls(
-  renderer: MapRenderer,
+  viewports: ViewportManager,
   callbacks: MapControlsCallbacks = {},
 ): void {
   const { onSetLayout, onOpenBrowse } = callbacks
@@ -95,26 +100,35 @@ export function initMapControls(
   }
 
   labelsBtn.addEventListener('click', () => {
-    const shown = renderer.toggleLabels()
-    labelsBtn.classList.toggle('active', shown)
-    labelsBtn.setAttribute('aria-pressed', String(shown))
+    // Target state is the opposite of the current button state —
+    // deriving from the button avoids depending on any renderer
+    // being ready (a newly-created sibling may still be loading
+    // its style when the click fires).
+    const next = !labelsBtn.classList.contains('active')
+    for (const r of viewports.getAll()) r.toggleLabels(next)
+    labelsBtn.classList.toggle('active', next)
+    labelsBtn.setAttribute('aria-pressed', String(next))
   })
 
   bordersBtn.addEventListener('click', () => {
-    const shown = renderer.toggleBoundaries()
-    bordersBtn.classList.toggle('active', shown)
-    bordersBtn.setAttribute('aria-pressed', String(shown))
+    const next = !bordersBtn.classList.contains('active')
+    for (const r of viewports.getAll()) r.toggleBoundaries(next)
+    bordersBtn.classList.toggle('active', next)
+    bordersBtn.setAttribute('aria-pressed', String(next))
   })
 
   terrainBtn.addEventListener('click', () => {
-    const enabled = renderer.toggleTerrain()
-    terrainBtn.classList.toggle('active', enabled)
-    terrainBtn.setAttribute('aria-pressed', String(enabled))
+    const next = !terrainBtn.classList.contains('active')
+    for (const r of viewports.getAll()) r.toggleTerrain(next)
+    terrainBtn.classList.toggle('active', next)
+    terrainBtn.setAttribute('aria-pressed', String(next))
   })
 
   clearBtn.addEventListener('click', () => {
-    renderer.clearMarkers()
-    renderer.clearHighlights()
+    for (const r of viewports.getAll()) {
+      r.clearMarkers()
+      r.clearHighlights()
+    }
   })
 
   // Re-position on window resize in case playback controls change height
