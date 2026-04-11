@@ -9,7 +9,7 @@ import { MapRenderer } from './services/mapRenderer'
 import { ViewportManager, type ViewLayout } from './services/viewportManager'
 import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
-import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
+import { formatDate, videoTimeToDate, dateToVideoTime, isSubDailyPeriod, getSunPosition } from './utils/time'
 import { logger } from './utils/logger'
 import type { AppState, VideoTextureHandle, TourFile, Dataset } from './types'
 
@@ -915,38 +915,108 @@ class InteractiveSphere {
   }
 
   /**
-   * Sibling video sync. On primary video `timeupdate`/`play`/`pause`,
-   * seek and play/pause all non-primary videos to match. Drift up to
-   * a threshold is tolerated to avoid thrashing decoders.
+   * Sibling video sync — by real-world date, not by video-seconds.
    *
-   * Detach before loading/tearing down the primary video to avoid
-   * stale references.
+   * On every primary `timeupdate`/`play`/`pause`/`seeked`:
+   *
+   *   1. Compute the primary's current real-world date from its
+   *      dataset's temporal range.
+   *   2. For each sibling with a temporal range, reverse-compute the
+   *      sibling's target `currentTime` for that same date.
+   *   3. Seek (tolerating some drift) and mirror play/pause state.
+   *   4. If the date is outside the sibling's range, freeze the
+   *      sibling at the nearest boundary frame, pause it, and mark
+   *      the panel container with `.out-of-range` so CSS can display
+   *      a "No data for current time" ribbon.
+   *
+   * Siblings without a temporal range (images, or videos lacking
+   * `startTime`/`endTime` metadata) are skipped — nothing to sync.
+   *
+   * The naive phase-2 implementation synced by video seconds, which
+   * only produced correct results when both videos happened to have
+   * identical ranges AND identical durations. For any other case it
+   * silently misaligned real-world time, which is the worst kind of
+   * bug for a multi-panel comparison tool.
    */
   private attachPrimaryVideoSync(): void {
     this.detachPrimaryVideoSync()
-    const primaryHls = this.panelStates[this.viewports.getPrimaryIndex()]?.hlsService
+    const primaryIdx = this.viewports.getPrimaryIndex()
+    const primaryPanel = this.panelStates[primaryIdx]
+    const primaryHls = primaryPanel?.hlsService
     const primaryVideo = primaryHls?.getVideo?.() ?? null
     if (!primaryVideo) return
 
     const DRIFT_THRESHOLD_S = 0.3
 
     const syncSiblings = () => {
-      const primaryIdx = this.viewports.getPrimaryIndex()
+      const pIdx = this.viewports.getPrimaryIndex()
+      const pPanel = this.panelStates[pIdx]
+      const pDataset = pPanel?.dataset
+      // Compute the primary's current real-world date. If the primary
+      // dataset has no temporal range we can't sync by date — fall
+      // back to just mirroring play/pause without seeking.
+      let primaryDate: Date | null = null
+      if (pDataset?.startTime && pDataset.endTime && primaryVideo.duration > 0) {
+        primaryDate = videoTimeToDate(
+          primaryVideo.currentTime,
+          primaryVideo.duration,
+          new Date(pDataset.startTime),
+          new Date(pDataset.endTime),
+        )
+      }
+
       for (let i = 0; i < this.panelStates.length; i++) {
-        if (i === primaryIdx) continue
-        const sibHls = this.panelStates[i]?.hlsService
+        if (i === pIdx) continue
+        const sibPanel = this.panelStates[i]
+        const sibHls = sibPanel?.hlsService
         const sibVideo = sibHls?.getVideo?.() ?? null
         if (!sibVideo || sibVideo.readyState < 2) continue
-        if (Math.abs(sibVideo.currentTime - primaryVideo.currentTime) > DRIFT_THRESHOLD_S) {
-          sibVideo.currentTime = primaryVideo.currentTime
+
+        const sibDataset = sibPanel?.dataset
+        const sibHasRange = !!(sibDataset?.startTime && sibDataset.endTime && sibVideo.duration > 0)
+
+        if (primaryDate && sibHasRange) {
+          const { videoTime: targetTime, position } = dateToVideoTime(
+            primaryDate,
+            sibVideo.duration,
+            new Date(sibDataset!.startTime!),
+            new Date(sibDataset!.endTime!),
+          )
+
+          if (position === 'inside') {
+            this.viewports.setOutOfRange(i, false)
+            if (Math.abs(sibVideo.currentTime - targetTime) > DRIFT_THRESHOLD_S) {
+              sibVideo.currentTime = targetTime
+            }
+            // Mirror primary play/pause
+            if (primaryVideo.paused && !sibVideo.paused) {
+              sibVideo.pause()
+            } else if (!primaryVideo.paused && sibVideo.paused) {
+              sibVideo.play().catch(() => { /* autoplay blocked */ })
+            }
+          } else {
+            // Out of range — freeze at the nearest boundary frame and pause
+            this.viewports.setOutOfRange(i, true)
+            if (Math.abs(sibVideo.currentTime - targetTime) > DRIFT_THRESHOLD_S) {
+              sibVideo.currentTime = targetTime
+            }
+            if (!sibVideo.paused) sibVideo.pause()
+          }
+        } else {
+          // Either primary has no temporal range, or sibling has no
+          // temporal range, or the sibling's video isn't a real
+          // time-series. Just mirror play/pause without seeking, and
+          // don't mark it out of range.
+          this.viewports.setOutOfRange(i, false)
+          if (primaryVideo.paused && !sibVideo.paused) {
+            sibVideo.pause()
+          } else if (!primaryVideo.paused && sibVideo.paused) {
+            sibVideo.play().catch(() => { /* autoplay blocked */ })
+          }
         }
-        if (primaryVideo.paused && !sibVideo.paused) {
-          sibVideo.pause()
-        } else if (!primaryVideo.paused && sibVideo.paused) {
-          sibVideo.play().catch(() => { /* ignore autoplay blocks */ })
-        }
-        // Mark the sibling's texture dirty so the globe repaints.
-        const sibTex = this.panelStates[i]?.videoTexture
+
+        // Mark the sibling's texture dirty so the globe repaints
+        const sibTex = sibPanel?.videoTexture
         if (sibTex) sibTex.needsUpdate = true
       }
     }
@@ -957,20 +1027,31 @@ class InteractiveSphere {
       this.primaryVideoSyncListeners.push({ event, handler: syncSiblings as EventListener })
     }
     this.primaryVideoSyncTarget = primaryVideo
+
+    // Run once immediately so siblings reflect the primary's current
+    // state without waiting for the next event.
+    syncSiblings()
   }
 
-  /** Detach all sibling-sync listeners from the previous primary video. */
+  /**
+   * Detach all sibling-sync listeners from the previous primary video
+   * and clear any lingering out-of-range state from siblings. Clearing
+   * the out-of-range class is important because the next primary may
+   * have a completely different temporal range — a previously-frozen
+   * sibling might be fully in range under the new primary.
+   */
   private detachPrimaryVideoSync(): void {
     const target = this.primaryVideoSyncTarget
-    if (!target) {
-      this.primaryVideoSyncListeners = []
-      return
-    }
-    for (const { event, handler } of this.primaryVideoSyncListeners) {
-      target.removeEventListener(event, handler)
+    if (target) {
+      for (const { event, handler } of this.primaryVideoSyncListeners) {
+        target.removeEventListener(event, handler)
+      }
     }
     this.primaryVideoSyncListeners = []
     this.primaryVideoSyncTarget = null
+    for (let i = 0; i < this.panelStates.length; i++) {
+      this.viewports.setOutOfRange(i, false)
+    }
   }
 
   /**

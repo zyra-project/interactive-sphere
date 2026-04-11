@@ -220,6 +220,19 @@ export class ViewportManager {
     }
   }
 
+  /**
+   * Mark a panel as outside the current temporal range (i.e. the
+   * primary's real-world date doesn't overlap with this panel's
+   * dataset). Adds `.out-of-range` to the panel container so CSS can
+   * apply a visual indicator (dim overlay + label). Clears on
+   * `isOutOfRange=false` or when the panel's renderer is destroyed.
+   */
+  setOutOfRange(slot: number, isOutOfRange: boolean): void {
+    const vp = this.viewports[slot]
+    if (!vp) return
+    vp.container.classList.toggle('out-of-range', isOutOfRange)
+  }
+
   /** Dispose all viewports. */
   dispose(): void {
     for (const vp of this.viewports) {

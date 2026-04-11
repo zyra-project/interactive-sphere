@@ -75,6 +75,35 @@
         .map-viewport.is-primary {
             outline-color: rgba(77, 166, 255, 0.5);
         }
+        /* A panel whose dataset doesn't cover the primary's current
+           real-world date. The panel still renders the nearest frame
+           (first or last, whichever is closer) but dims the content
+           and shows a "No data for current time" ribbon so the user
+           knows the frozen frame isn't in sync. */
+        .map-viewport.out-of-range::after {
+            content: "No data for current time";
+            position: absolute;
+            top: 0.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 4;
+            padding: 0.25rem 0.6rem;
+            font-size: 0.65rem;
+            font-weight: 500;
+            letter-spacing: 0.03em;
+            color: #ffcc66;
+            background: rgba(13, 13, 18, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 204, 102, 0.35);
+            border-radius: 12px;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        .map-viewport.out-of-range > .maplibregl-map {
+            opacity: 0.55;
+            transition: opacity 0.2s;
+        }
         /* Small pill button in the top-left of each panel. Numbered
            1..N. Click promotes that panel to primary. Hidden entirely
            in single-viewport mode. Positioned above the WebGL canvas
