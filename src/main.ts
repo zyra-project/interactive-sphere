@@ -6,6 +6,7 @@
  */
 
 import { MapRenderer } from './services/mapRenderer'
+import { ViewportManager, type ViewLayout } from './services/viewportManager'
 import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
 import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
@@ -63,7 +64,15 @@ class InteractiveSphere {
 
   private readonly isMobile = isMobile()
 
-  private renderer: MapRenderer | null = null
+  private viewports: ViewportManager = new ViewportManager()
+  /**
+   * Convenience getter returning the primary viewport's renderer.
+   * Phase 1 wiring: most call sites still operate on a single
+   * "the renderer" — Phase 2/3 will break them out.
+   */
+  private get renderer(): MapRenderer | null {
+    return this.viewports.getPrimary()
+  }
   private hlsService: HLSService | null = null
   private videoTexture: VideoTextureHandle | null = null
   private playback: PlaybackState = createPlaybackState()
@@ -86,19 +95,24 @@ class InteractiveSphere {
 
       const container = document.getElementById('container')
       if (!container) throw new Error('Container element not found')
+      const mapGrid = document.getElementById('map-grid')
+      if (!mapGrid) throw new Error('Map grid element not found')
 
       this.setLoadingStatus('Creating renderer\u2026', 15)
-      this.renderer = new MapRenderer()
-      this.renderer.init(container)
-      initMapControls(this.renderer)
+      const initialLayout = this.getInitialLayoutFromUrl()
+      this.viewports.init(mapGrid, initialLayout)
+      const primary = this.viewports.getPrimary()
+      if (!primary) throw new Error('Viewport manager failed to create a primary renderer')
+      initMapControls(primary, (layout) => this.viewports.setLayout(layout))
       initDownloadUI().catch(err => logger.warn('[App] Download UI init failed:', err))
       initHelpUI()
-      logger.info('[App] Using MapLibre renderer')
+      logger.info('[App] Using MapLibre renderer (layout: %s)', initialLayout)
 
-      // Wire up lat/lng display
+      // Wire up lat/lng display (bind to primary; secondary panels don't
+      // update the display — it follows the primary's mousemove)
       const latlngEl = document.getElementById('latlng-display')
       if (latlngEl) {
-        this.renderer.setLatLngCallbacks(
+        primary.setLatLngCallbacks(
           (lat: number, lng: number) => {
             const ns = lat >= 0 ? 'N' : 'S'
             const ew = lng >= 0 ? 'E' : 'W'
@@ -135,12 +149,12 @@ class InteractiveSphere {
           this.setLoadingStatus('Loading Earth textures\u2026', LOADING_BASE_PROGRESS + Math.round(combined * LOADING_TEXTURE_RANGE))
         }
         await Promise.all([
-          this.renderer.loadDefaultEarthMaterials((f: number) => { earthFraction = f; updateProgress() }),
-          this.renderer.loadCloudOverlay(cloudUrl, (f: number) => { cloudFraction = f; updateProgress() })
+          primary.loadDefaultEarthMaterials((f: number) => { earthFraction = f; updateProgress() }),
+          primary.loadCloudOverlay(cloudUrl, (f: number) => { cloudFraction = f; updateProgress() })
         ])
 
         const sun = getSunPosition(new Date())
-        this.renderer.enableSunLighting(sun.lat, sun.lng)
+        primary.enableSunLighting(sun.lat, sun.lng)
 
         this.setLoading(false)
         showBrowseUI(this.appState.datasets, {
@@ -160,6 +174,20 @@ class InteractiveSphere {
   private getDatasetIdFromUrl(): string | null {
     const params = new URLSearchParams(window.location.search)
     return params.get('dataset')
+  }
+
+  /**
+   * Read the initial viewport layout from the `?setview=` query param.
+   * Phase 1 defaults to `'1'` (single globe); the param is a dev flag
+   * for smoke-testing multi-viewport before the layout picker ships.
+   * Unknown values fall back to single-view.
+   */
+  private getInitialLayoutFromUrl(): ViewLayout {
+    const raw = new URLSearchParams(window.location.search).get('setview')
+    if (raw === '1' || raw === '2h' || raw === '2v' || raw === '4') return raw
+    // Legacy shorthand: ?setview=2 → 2h, ?setview=4 → 4
+    if (raw === '2') return '2h'
+    return '1'
   }
 
   /** Fetch the dataset catalog from the data service and store in app state. */
@@ -955,12 +983,10 @@ class InteractiveSphere {
     await this.startTour(url, gen)
   }
 
-  /** Clean up all resources: video streams, textures, and the WebGL renderer. */
+  /** Clean up all resources: video streams, textures, and every viewport renderer. */
   dispose(): void {
     this.cleanupVideo()
-    if (this.renderer) {
-      this.renderer.dispose()
-    }
+    this.viewports.dispose()
   }
 }
 

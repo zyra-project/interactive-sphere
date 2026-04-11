@@ -3,23 +3,47 @@
  *
  * Provides direct buttons for labels, boundaries, terrain, and clearing
  * markers/highlights without needing the chat.
+ *
+ * When the `?setview=1` dev flag is present, also renders a layout
+ * picker (1/2h/2v/4) for multi-viewport smoke testing. The picker is
+ * hidden by default until Phase 2 ships real per-viewport datasets.
  */
 
 import type { MapRenderer } from '../services/mapRenderer'
+import type { ViewLayout } from '../services/viewportManager'
 
 /** Show the map controls toolbar and wire events to the MapRenderer.
  *  Idempotent — safe to call multiple times (skips if already initialized). */
-export function initMapControls(renderer: MapRenderer): void {
+export function initMapControls(
+  renderer: MapRenderer,
+  onSetLayout?: (layout: ViewLayout) => void,
+): void {
   const container = document.getElementById('map-controls')
   if (!container || container.dataset.initialized) return
   container.dataset.initialized = 'true'
 
+  // The layout picker is a dev-only affordance until multi-viewport
+  // has real per-panel datasets. Show it when the URL carries
+  // `?setview=1` (or any non-empty setview value).
+  const setViewDev = new URLSearchParams(window.location.search).has('setview')
+
   // Build the buttons
+  const layoutPickerHtml = setViewDev
+    ? `
+    <span class="map-ctrl-sep" aria-hidden="true"></span>
+    <button type="button" class="map-ctrl-btn map-ctrl-layout active" id="map-ctrl-layout-1" title="Single globe" aria-label="Single globe" aria-pressed="true">1</button>
+    <button type="button" class="map-ctrl-btn map-ctrl-layout" id="map-ctrl-layout-2h" title="Two globes side-by-side" aria-label="Two globes side-by-side" aria-pressed="false">2&#x2194;</button>
+    <button type="button" class="map-ctrl-btn map-ctrl-layout" id="map-ctrl-layout-2v" title="Two globes stacked" aria-label="Two globes stacked" aria-pressed="false">2&#x2195;</button>
+    <button type="button" class="map-ctrl-btn map-ctrl-layout" id="map-ctrl-layout-4" title="Four globes in a grid" aria-label="Four globes in a grid" aria-pressed="false">4</button>
+  `
+    : ''
+
   container.innerHTML = `
     <button type="button" class="map-ctrl-btn" id="map-ctrl-labels" title="Toggle geographic labels" aria-label="Toggle geographic labels" aria-pressed="false">Labels</button>
     <button type="button" class="map-ctrl-btn" id="map-ctrl-borders" title="Toggle country borders" aria-label="Toggle country borders" aria-pressed="false">Borders</button>
     <button type="button" class="map-ctrl-btn" id="map-ctrl-terrain" title="Toggle 3D terrain" aria-label="Toggle 3D terrain" aria-pressed="false">Terrain</button>
     <button type="button" class="map-ctrl-btn" id="map-ctrl-clear" title="Clear markers &amp; highlights" aria-label="Clear markers and highlights">Clear</button>
+    ${layoutPickerHtml}
   `
 
   // Show the toolbar
@@ -30,6 +54,26 @@ export function initMapControls(renderer: MapRenderer): void {
   const bordersBtn = document.getElementById('map-ctrl-borders')!
   const terrainBtn = document.getElementById('map-ctrl-terrain')!
   const clearBtn = document.getElementById('map-ctrl-clear')!
+
+  // Wire layout picker (only when dev flag is set)
+  if (setViewDev && onSetLayout) {
+    const layouts: ViewLayout[] = ['1', '2h', '2v', '4']
+    const layoutBtns = new Map<ViewLayout, HTMLButtonElement>()
+    for (const l of layouts) {
+      const btn = document.getElementById(`map-ctrl-layout-${l}`) as HTMLButtonElement | null
+      if (btn) layoutBtns.set(l, btn)
+    }
+    for (const [layout, btn] of layoutBtns) {
+      btn.addEventListener('click', () => {
+        onSetLayout(layout)
+        for (const [l, b] of layoutBtns) {
+          const active = l === layout
+          b.classList.toggle('active', active)
+          b.setAttribute('aria-pressed', String(active))
+        }
+      })
+    }
+  }
 
   labelsBtn.addEventListener('click', () => {
     const shown = renderer.toggleLabels()

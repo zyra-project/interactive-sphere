@@ -45,6 +45,31 @@
             touch-action: none;
         }
 
+        /* Multi-viewport grid. In single-viewport mode it's just one
+           cell; ViewportManager rewrites grid-template for 1/2h/2v/4
+           layouts. Sits behind #ui in z-order so overlays stay on top. */
+        #map-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: grid;
+            grid-template: "a" / 1fr;
+            gap: 1px;
+            background: #000;
+        }
+
+        .map-viewport {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
         #ui {
             position: absolute;
             top: 0;
@@ -1430,6 +1455,13 @@
             outline-offset: 2px;
             box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
         }
+        /* Vertical separator between tool buttons and layout picker */
+        #map-controls .map-ctrl-sep {
+            width: 1px;
+            align-self: stretch;
+            margin: 0 0.15rem;
+            background: rgba(255, 255, 255, 0.12);
+        }
         @media (max-width: 768px) {
             #map-controls .map-ctrl-btn {
                 min-width: 36px;
@@ -2572,6 +2604,7 @@
 
     <div id="app">
         <div id="container" role="main" aria-label="Globe visualization" tabindex="-1">
+            <div id="map-grid" aria-hidden="true"></div>
             <div id="status" class="hidden"></div>
             <div id="ui">
                 <div id="time-label" class="hidden">
