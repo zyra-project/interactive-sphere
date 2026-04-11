@@ -59,7 +59,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.1 ndk;28.2.13676358'
+          # Keep these in sync with src-tauri/gen/android/app/build.gradle.kts
+          # (compileSdk / targetSdk). The runner image pre-installs some of
+          # these, but we install them explicitly so the workflow is
+          # self-sufficient and doesn't silently break when the image changes.
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
 
       - name: Install Rust stable with Android targets
         uses: dtolnay/rust-toolchain@stable
