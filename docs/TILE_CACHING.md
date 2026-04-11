@@ -21,9 +21,9 @@ A cache-first service worker intercepts tile requests and serves them from the b
 - `/api/tile/*` — proxied GIBS tile requests (same-origin)
 - `gibs.earthdata.nasa.gov/wmts/epsg3857/best/*` — direct GIBS requests (if any)
 - `s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/*` — cloud texture
-- `/assets/skybox/*`, `/assets/Earth_Specular_2K.jpg`, `/assets/Earth_Normal_2K.jpg`
+- `/assets/skybox/*`, `/assets/Earth_Specular_2K.jpg`
 
-**Cache name:** `gibs-tiles-v1` (old versions are cleaned up on activate)
+**Cache name:** `gibs-tiles-v2` (old versions are cleaned up on activate)
 
 **Registration:** `src/main.ts` registers the SW before `DOMContentLoaded`. The SW uses `skipWaiting()` and `clients.claim()` to activate immediately.
 

@@ -2,7 +2,8 @@
 // These assets never change (Blue Marble 2004, Black Marble 2016), so we cache
 // indefinitely and serve from cache on every subsequent request.
 
-const CACHE_NAME = 'gibs-tiles-v1'
+// v2 — dropped Earth_Normal_2K.jpg (dead asset, no longer shipped).
+const CACHE_NAME = 'gibs-tiles-v2'
 
 // External URLs to cache — scoped to specific paths, not entire hostnames
 const CACHEABLE_EXTERNAL = [
@@ -16,7 +17,6 @@ const CACHEABLE_LOCAL_PATHS = [
   '/api/tile/',
   '/assets/skybox/',
   '/assets/Earth_Specular_2K.jpg',
-  '/assets/Earth_Normal_2K.jpg',
 ]
 
 function shouldCache(url) {
