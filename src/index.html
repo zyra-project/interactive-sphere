@@ -68,6 +68,52 @@
             min-height: 0;
             overflow: hidden;
             background: #000;
+            outline: 1px solid transparent;
+            outline-offset: -1px;
+            transition: outline-color 0.15s;
+        }
+        .map-viewport.is-primary {
+            outline-color: rgba(77, 166, 255, 0.5);
+        }
+        /* Small pill button in the top-left of each panel. Numbered
+           1..N. Click promotes that panel to primary. Hidden entirely
+           in single-viewport mode. Positioned above the WebGL canvas
+           so it receives click events before MapLibre does. */
+        .viewport-indicator {
+            position: absolute;
+            top: 0.5rem;
+            left: 0.5rem;
+            z-index: 5;
+            min-width: 26px;
+            height: 26px;
+            padding: 0 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            background: rgba(13, 13, 18, 0.82);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #bbb;
+            border-radius: 13px;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .viewport-indicator:hover {
+            background: rgba(13, 13, 18, 0.92);
+            color: #fff;
+            border-color: rgba(77, 166, 255, 0.4);
+        }
+        .viewport-indicator.is-primary {
+            background: rgba(77, 166, 255, 0.2);
+            color: #4da6ff;
+            border-color: #4da6ff;
+            cursor: default;
+        }
+        .viewport-indicator:focus-visible {
+            outline: 2px solid rgba(77, 166, 255, 0.7);
+            outline-offset: 2px;
         }
 
         #ui {

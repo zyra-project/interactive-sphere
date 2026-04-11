@@ -11,7 +11,7 @@ import { HLSService } from './services/hlsService'
 import { dataService } from './services/dataService'
 import { formatDate, videoTimeToDate, isSubDailyPeriod, getSunPosition } from './utils/time'
 import { logger } from './utils/logger'
-import type { AppState, VideoTextureHandle, TourFile } from './types'
+import type { AppState, VideoTextureHandle, TourFile, Dataset } from './types'
 
 // Extracted modules
 import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
@@ -50,6 +50,22 @@ const LOADING_HIDE_DELAY_MS = 300
  * fetches the dataset catalog and either displays the default Earth or
  * loads a dataset specified by the `?dataset=` URL parameter.
  */
+/**
+ * Per-panel dataset + video state. Length is kept in sync with the
+ * viewport count by onLayoutChange callbacks from ViewportManager.
+ * Slot 0 is always the first panel; the primary index (which slot
+ * drives the playback transport UI) lives inside ViewportManager.
+ */
+interface PanelState {
+  dataset: Dataset | null
+  hlsService: HLSService | null
+  videoTexture: VideoTextureHandle | null
+}
+
+function createPanelState(): PanelState {
+  return { dataset: null, hlsService: null, videoTexture: null }
+}
+
 class InteractiveSphere {
   private appState: AppState = {
     datasets: [],
@@ -65,16 +81,34 @@ class InteractiveSphere {
   private readonly isMobile = isMobile()
 
   private viewports: ViewportManager = new ViewportManager()
+
+  /** Per-panel dataset state (one entry per active viewport). */
+  private panelStates: PanelState[] = []
+
+  /** Listener attached to the primary video for sibling sync. */
+  private primaryVideoSyncListeners: Array<{ event: string; handler: EventListener }> = []
+  private primaryVideoSyncTarget: HTMLVideoElement | null = null
+
   /**
    * Convenience getter returning the primary viewport's renderer.
-   * Phase 1 wiring: most call sites still operate on a single
-   * "the renderer" — Phase 2/3 will break them out.
+   * Most call sites operate on a single "the renderer" for the
+   * primary panel; per-slot operations go through `this.viewports`
+   * and `this.panelStates` directly.
    */
   private get renderer(): MapRenderer | null {
     return this.viewports.getPrimary()
   }
-  private hlsService: HLSService | null = null
-  private videoTexture: VideoTextureHandle | null = null
+
+  /** Primary panel's HLS service, if any. */
+  private get hlsService(): HLSService | null {
+    return this.panelStates[this.viewports.getPrimaryIndex()]?.hlsService ?? null
+  }
+
+  /** Primary panel's video texture, if any. */
+  private get videoTexture(): VideoTextureHandle | null {
+    return this.panelStates[this.viewports.getPrimaryIndex()]?.videoTexture ?? null
+  }
+
   private playback: PlaybackState = createPlaybackState()
   private loadingHideTimer: ReturnType<typeof setTimeout> | null = null
   private loadGeneration = 0 // guards against concurrent dataset loads
@@ -100,7 +134,12 @@ class InteractiveSphere {
 
       this.setLoadingStatus('Creating renderer\u2026', 15)
       const initialLayout = this.getInitialLayoutFromUrl()
-      this.viewports.init(mapGrid, initialLayout)
+      this.viewports.init(mapGrid, initialLayout, {
+        onLayoutChange: (newCount, oldCount) => this.onViewportLayoutChange(newCount, oldCount),
+        onPrimaryChange: (newIdx, oldIdx) => this.onViewportPrimaryChange(newIdx, oldIdx),
+      })
+      // Parallel per-panel dataset state, one entry per viewport.
+      this.panelStates = Array.from({ length: this.viewports.getPanelCount() }, createPanelState)
       const primary = this.viewports.getPrimary()
       if (!primary) throw new Error('Viewport manager failed to create a primary renderer')
       initMapControls(primary, (layout) => this.viewports.setLayout(layout))
@@ -208,11 +247,10 @@ class InteractiveSphere {
     this.stopTour()
 
     // Tear down the previous video *before* starting the new load so the old
-    // HLS stream stops downloading and the old MediaSource is released.  Two
+    // HLS stream stops downloading and the old MediaSource is released. Two
     // concurrent HLS.js instances fight over bandwidth and can exhaust the
     // browser's MediaSource / SourceBuffer limits, stalling the new load.
-    if (this.videoTexture) { this.videoTexture.dispose(); this.videoTexture = null }
-    if (this.hlsService) { this.hlsService.destroy(); this.hlsService = null }
+    this.cleanupPanelVideo()
 
     this.renderer?.removeCloudOverlay()
     this.renderer?.removeNightLights()
@@ -246,6 +284,12 @@ class InteractiveSphere {
     if (!dataset) throw new Error(`Dataset not found: ${datasetId}`)
 
     this.appState.currentDataset = dataset
+    // Record on the primary panel's state so onPrimaryChange later
+    // knows what's loaded where.
+    const primaryIdx = this.viewports.getPrimaryIndex()
+    if (this.panelStates[primaryIdx]) {
+      this.panelStates[primaryIdx].dataset = dataset
+    }
 
     logger.info('[App] Loading dataset:', {
       id: dataset.id,
@@ -281,8 +325,8 @@ class InteractiveSphere {
         result.hlsService.destroy()
         return
       }
-      this.hlsService = result.hlsService
-      this.videoTexture = result.videoTexture
+      this.storePanelVideoResult(this.viewports.getPrimaryIndex(), result)
+      this.attachPrimaryVideoSync()
       this.doStartPlaybackLoop()
     } else {
       throw new Error(`Unsupported format: ${dataset.format}`)
@@ -351,15 +395,18 @@ class InteractiveSphere {
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
 
-    // Tear down previous video/HLS
-    if (this.videoTexture) { this.videoTexture.dispose(); this.videoTexture = null }
-    if (this.hlsService) { this.hlsService.destroy(); this.hlsService = null }
+    // Tear down previous video/HLS on the primary panel
+    this.cleanupPanelVideo()
 
     this.renderer?.removeCloudOverlay()
     this.renderer?.removeNightLights()
     this.renderer?.disableSunLighting()
 
     this.appState.currentDataset = dataset
+    const tourPrimaryIdx = this.viewports.getPrimaryIndex()
+    if (this.panelStates[tourPrimaryIdx]) {
+      this.panelStates[tourPrimaryIdx].dataset = dataset
+    }
     displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id))
 
     // On small screens, hide the info panel during tours to reduce clutter
@@ -381,8 +428,8 @@ class InteractiveSphere {
       const result = await loadVideoDataset(
         dataset, this.renderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks
       )
-      this.hlsService = result.hlsService
-      this.videoTexture = result.videoTexture
+      this.storePanelVideoResult(this.viewports.getPrimaryIndex(), result)
+      this.attachPrimaryVideoSync()
       this.doStartPlaybackLoop()
     }
 
@@ -392,7 +439,7 @@ class InteractiveSphere {
 
   /** Reset the globe to default Earth for a tour — like goHome but keeps UI clean (no browse panel). */
   private async unloadForTour(): Promise<void> {
-    this.cleanupVideo()
+    this.unloadAllPanels()
     clearLegendCache()
     this.appState.currentDataset = null
     this.showPlaybackControls(false)
@@ -742,16 +789,206 @@ class InteractiveSphere {
     }
   }
 
-  /** Dispose the current video texture and HLS service, and reset playback state. */
-  private cleanupVideo(): void {
-    stopPlaybackLoop(this.playback)
-    if (this.videoTexture) {
-      this.videoTexture.dispose()
-      this.videoTexture = null
+  /**
+   * Called by ViewportManager when a setLayout adds/removes panels.
+   * Resizes our parallel panelStates array to match, disposing any
+   * videos in slots that are going away.
+   */
+  private onViewportLayoutChange(newCount: number, oldCount: number): void {
+    if (newCount < oldCount) {
+      // Tear down slots that are being removed
+      for (let i = newCount; i < oldCount; i++) {
+        const panel = this.panelStates[i]
+        if (!panel) continue
+        if (panel.videoTexture) { panel.videoTexture.dispose() }
+        if (panel.hlsService) { panel.hlsService.destroy() }
+      }
+      this.panelStates.length = newCount
+    } else {
+      // Add fresh empty slots for new panels
+      while (this.panelStates.length < newCount) {
+        this.panelStates.push(createPanelState())
+      }
     }
-    if (this.hlsService) {
-      this.hlsService.destroy()
-      this.hlsService = null
+  }
+
+  /**
+   * Called by ViewportManager when the primary index changes (user
+   * clicked a non-primary panel's indicator badge). Rewires the
+   * singular UI — info panel, playback controls, video sync, URL —
+   * to the new primary's dataset.
+   */
+  private onViewportPrimaryChange(newIndex: number, _oldIndex: number): void {
+    logger.debug('[App] Primary panel changed:', _oldIndex, '→', newIndex)
+    const newPrimaryPanel = this.panelStates[newIndex]
+    const newDataset = newPrimaryPanel?.dataset ?? null
+
+    // Rewire video sync to the new primary's video (if any)
+    this.detachPrimaryVideoSync()
+    stopPlaybackLoop(this.playback)
+
+    // Update the shared appState + info panel
+    this.appState.currentDataset = newDataset
+    if (newDataset) {
+      displayDatasetInfo(newDataset, this.appState.datasets, (id) => this.loadDataset(id))
+      window.history.replaceState({}, '', `?dataset=${encodeURIComponent(newDataset.id)}`)
+      notifyDatasetChanged(newDataset)
+      setHelpActiveDataset(newDataset.id)
+      this.renderer?.setCanvasDescription(`3D globe showing ${newDataset.title}`)
+    } else {
+      const infoPanel = document.getElementById('info-panel')
+      if (infoPanel) infoPanel.classList.add('hidden')
+      window.history.replaceState({}, '', window.location.pathname)
+      notifyDatasetChanged(null)
+      setHelpActiveDataset(null)
+      this.renderer?.setCanvasDescription('Interactive 3D globe showing Earth')
+    }
+
+    // Rewire playback controls based on the new primary's video state
+    const isVideo = newDataset && dataService.isVideoDataset(newDataset) && newPrimaryPanel?.hlsService
+    if (isVideo) {
+      this.showPlaybackControls(true)
+      this.showTimeLabel(true)
+      updatePlayButton(newPrimaryPanel!.hlsService!.paused)
+      this.attachPrimaryVideoSync()
+      this.doStartPlaybackLoop()
+    } else {
+      this.showPlaybackControls(false)
+      if (!newDataset?.startTime) {
+        this.showTimeLabel(false)
+      }
+    }
+    this.announce(newDataset ? `Active panel: ${newDataset.title}` : `Panel ${newIndex + 1} active`)
+  }
+
+  /**
+   * Store a video-load result into a specific panel's state.
+   * Assumes the slot exists (callers must validate the index).
+   */
+  private storePanelVideoResult(
+    slot: number,
+    result: { hlsService: HLSService; videoTexture: VideoTextureHandle },
+  ): void {
+    const panel = this.panelStates[slot]
+    if (!panel) return
+    panel.hlsService = result.hlsService
+    panel.videoTexture = result.videoTexture
+  }
+
+  /**
+   * Sibling video sync. On primary video `timeupdate`/`play`/`pause`,
+   * seek and play/pause all non-primary videos to match. Drift up to
+   * a threshold is tolerated to avoid thrashing decoders.
+   *
+   * Detach before loading/tearing down the primary video to avoid
+   * stale references.
+   */
+  private attachPrimaryVideoSync(): void {
+    this.detachPrimaryVideoSync()
+    const primaryHls = this.panelStates[this.viewports.getPrimaryIndex()]?.hlsService
+    const primaryVideo = primaryHls?.getVideo?.() ?? null
+    if (!primaryVideo) return
+
+    const DRIFT_THRESHOLD_S = 0.3
+
+    const syncSiblings = () => {
+      const primaryIdx = this.viewports.getPrimaryIndex()
+      for (let i = 0; i < this.panelStates.length; i++) {
+        if (i === primaryIdx) continue
+        const sibHls = this.panelStates[i]?.hlsService
+        const sibVideo = sibHls?.getVideo?.() ?? null
+        if (!sibVideo || sibVideo.readyState < 2) continue
+        if (Math.abs(sibVideo.currentTime - primaryVideo.currentTime) > DRIFT_THRESHOLD_S) {
+          sibVideo.currentTime = primaryVideo.currentTime
+        }
+        if (primaryVideo.paused && !sibVideo.paused) {
+          sibVideo.pause()
+        } else if (!primaryVideo.paused && sibVideo.paused) {
+          sibVideo.play().catch(() => { /* ignore autoplay blocks */ })
+        }
+        // Mark the sibling's texture dirty so the globe repaints.
+        const sibTex = this.panelStates[i]?.videoTexture
+        if (sibTex) sibTex.needsUpdate = true
+      }
+    }
+
+    const events = ['timeupdate', 'play', 'pause', 'seeked']
+    for (const event of events) {
+      primaryVideo.addEventListener(event, syncSiblings)
+      this.primaryVideoSyncListeners.push({ event, handler: syncSiblings as EventListener })
+    }
+    this.primaryVideoSyncTarget = primaryVideo
+  }
+
+  /** Detach all sibling-sync listeners from the previous primary video. */
+  private detachPrimaryVideoSync(): void {
+    const target = this.primaryVideoSyncTarget
+    if (!target) {
+      this.primaryVideoSyncListeners = []
+      return
+    }
+    for (const { event, handler } of this.primaryVideoSyncListeners) {
+      target.removeEventListener(event, handler)
+    }
+    this.primaryVideoSyncListeners = []
+    this.primaryVideoSyncTarget = null
+  }
+
+  /**
+   * Dispose the video texture and HLS service for a specific panel.
+   * If `slot` is omitted, operates on the primary panel (common case
+   * for single-viewport flows like goHome / loadDataset teardown).
+   *
+   * When tearing down the primary, also resets the shared playback
+   * state; non-primary slots don't touch that state.
+   */
+  private cleanupPanelVideo(slot?: number): void {
+    const targetSlot = slot ?? this.viewports.getPrimaryIndex()
+    const panel = this.panelStates[targetSlot]
+    if (!panel) return
+
+    const isPrimary = targetSlot === this.viewports.getPrimaryIndex()
+    if (isPrimary) {
+      this.detachPrimaryVideoSync()
+      stopPlaybackLoop(this.playback)
+    }
+
+    if (panel.videoTexture) {
+      panel.videoTexture.dispose()
+      panel.videoTexture = null
+    }
+    if (panel.hlsService) {
+      panel.hlsService.destroy()
+      panel.hlsService = null
+    }
+
+    if (isPrimary) {
+      this.appState.isPlaying = false
+      resetPlaybackState(this.playback)
+    }
+  }
+
+  /**
+   * Legacy alias for `cleanupPanelVideo(primarySlot)`. Kept so
+   * existing call sites that mean "clean up the video that's
+   * currently playing" stay readable.
+   */
+  private cleanupVideo(): void {
+    this.cleanupPanelVideo()
+  }
+
+  /**
+   * Tear down datasets in every panel — used by goHome and unloadForTour.
+   * Clears dataset + hls + video texture per slot and resets shared
+   * playback state. Base Earth textures are re-loaded by the caller.
+   */
+  private unloadAllPanels(): void {
+    this.detachPrimaryVideoSync()
+    stopPlaybackLoop(this.playback)
+    for (const panel of this.panelStates) {
+      if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
+      if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
+      panel.dataset = null
     }
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
@@ -927,10 +1164,10 @@ class InteractiveSphere {
     document.getElementById('home-btn')?.classList.add('hidden')
   }
 
-  /** Navigate back to the default Earth view: tear down the current dataset, reload Earth materials, and re-show the browse panel. */
+  /** Navigate back to the default Earth view: tear down every panel's dataset, reload Earth materials, and re-show the browse panel. */
   private async goHome(): Promise<void> {
     this.stopTour()
-    this.cleanupVideo()
+    this.unloadAllPanels()
     clearLegendCache()
     this.appState.currentDataset = null
     this.showPlaybackControls(false)
@@ -985,8 +1222,9 @@ class InteractiveSphere {
 
   /** Clean up all resources: video streams, textures, and every viewport renderer. */
   dispose(): void {
-    this.cleanupVideo()
+    this.unloadAllPanels()
     this.viewports.dispose()
+    this.panelStates = []
   }
 }
 

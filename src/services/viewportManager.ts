@@ -2,28 +2,33 @@
  * ViewportManager — orchestrates one or more synchronised MapRenderer
  * instances inside a CSS grid container.
  *
- * Phase 1 scope: creates/destroys MapRenderer instances to match a
- * target layout (1, 2h, 2v, or 4 panels), wires each one's `move`
- * event to mirror camera state to every sibling, and tracks a
- * "primary" index that drives playback, screenshots, and the info
- * panel. Each viewport shows the same base Earth — per-viewport
- * datasets come in Phase 2.
+ * **Scope** — creates/destroys MapRenderer instances to match a target
+ * layout (1, 2h, 2v, or 4 panels), wires each one's `move` event to
+ * mirror camera state to every sibling, and tracks a "primary" index
+ * that drives playback, screenshots, and the info panel.
  *
- * The grid element passed to `init()` owns the direct child divs for
- * each panel (`.map-viewport`). UI overlays (#ui) sit above the grid
- * in the DOM tree and are not our concern.
+ * **Dataset-agnostic.** ViewportManager does not load or own datasets.
+ * It exposes renderers via `getPrimary()` / `getRendererAt()`; callers
+ * (main.ts) keep a parallel per-panel dataset state array and load
+ * into the right renderer. ViewportManager fires `onPrimaryChange` and
+ * `onLayoutChange` callbacks so callers can react.
  *
- * Camera sync uses `jumpTo` (not `easeTo`) on siblings so motion is
+ * **Primary affordance.** Each non-primary panel gets a small pill
+ * button ("1" / "2" / "3" / "4") in the top-left that, when clicked,
+ * promotes that panel to primary. The primary panel's button is
+ * styled differently and does nothing on click. The primary panel
+ * also gets a subtle accent border.
+ *
+ * **Camera sync** uses `jumpTo` (not `easeTo`) on siblings so motion is
  * instantaneous and doesn't compound across panels. A `syncLock` flag
  * prevents the move event we dispatch on siblings from re-entering
  * the sync path — without it, every `jumpTo` would fire another
  * `move` and we'd recurse forever.
  *
- * Consumers that previously held a direct `MapRenderer` reference go
- * through `getPrimary()`. The module-level `activeRenderer` singleton
- * in mapRenderer.ts is kept in sync via `setActiveMapRenderer()` so
- * screenshotService (which can't easily take a renderer argument)
- * always captures the primary.
+ * The module-level `activeRenderer` singleton in mapRenderer.ts is
+ * kept in sync via `setActiveMapRenderer()` so screenshotService
+ * (which can't easily take a renderer argument) always captures the
+ * primary.
  */
 
 import { MapRenderer, setActiveMapRenderer } from './mapRenderer'
@@ -48,11 +53,28 @@ const GRID_TEMPLATE: Record<ViewLayout, string> = {
   '4': '"a b" "c d" / 1fr 1fr',
 }
 
+/** Callbacks fired by the manager so callers can keep parallel state. */
+export interface ViewportManagerCallbacks {
+  /**
+   * Fired after a `setLayout` call that changed the panel count, with
+   * the new count. Callers should resize their parallel per-panel
+   * state arrays. Not fired on init — callers know the starting count.
+   */
+  onLayoutChange?(newCount: number, oldCount: number): void
+  /**
+   * Fired when `promoteToPrimary` changes the primary index, with
+   * the new and previous indices. Callers should rewire UI bound to
+   * "the current dataset" (info panel, playback controls, URL, etc.).
+   */
+  onPrimaryChange?(newIndex: number, oldIndex: number): void
+}
+
 /** One panel in the grid. */
 interface Viewport {
   index: number
   container: HTMLDivElement
   renderer: MapRenderer
+  indicator: HTMLButtonElement
   onMove: () => void
 }
 
@@ -63,13 +85,19 @@ export class ViewportManager {
   private primaryIndex = 0
   /** Re-entrancy guard for mirrored camera moves. */
   private syncLock = false
+  private callbacks: ViewportManagerCallbacks = {}
 
   /**
    * Initialize the manager with a grid element and the starting layout.
    * Creates the initial set of panels and their MapRenderers.
    */
-  init(grid: HTMLElement, initialLayout: ViewLayout = '1'): void {
+  init(
+    grid: HTMLElement,
+    initialLayout: ViewLayout = '1',
+    callbacks: ViewportManagerCallbacks = {},
+  ): void {
     this.grid = grid
+    this.callbacks = callbacks
     this.applyGridTemplate(initialLayout)
     this.layout = initialLayout
 
@@ -78,12 +106,16 @@ export class ViewportManager {
       this.addViewport(i)
     }
     this.refreshActiveRenderer()
+    this.refreshPrimaryStyling()
   }
 
   /**
    * Change the layout. Adds or removes panels as needed, reusing
    * existing ones. Camera state is copied from the primary to any
    * newly-created panels so the visual transition is seamless.
+   *
+   * Fires `onLayoutChange` after the panels have been added/removed
+   * so callers can resize their parallel per-panel state arrays.
    */
   setLayout(layout: ViewLayout): void {
     if (!this.grid) {
@@ -93,7 +125,7 @@ export class ViewportManager {
     if (layout === this.layout) return
 
     const targetCount = PANEL_COUNT[layout]
-    const current = this.viewports.length
+    const previousCount = this.viewports.length
 
     // Remove excess panels (back-to-front so indices stay stable)
     while (this.viewports.length > targetCount) {
@@ -111,16 +143,30 @@ export class ViewportManager {
     }
 
     // Primary might have been removed — clamp
+    const previousPrimary = this.primaryIndex
     if (this.primaryIndex >= this.viewports.length) {
       this.primaryIndex = 0
     }
     this.refreshActiveRenderer()
+    this.refreshPrimaryStyling()
     this.resizeAll()
+
+    if (previousCount !== targetCount) {
+      this.callbacks.onLayoutChange?.(targetCount, previousCount)
+    }
+    if (previousPrimary !== this.primaryIndex) {
+      this.callbacks.onPrimaryChange?.(this.primaryIndex, previousPrimary)
+    }
   }
 
   /** Get the primary (drives playback/screenshots/info panel). */
   getPrimary(): MapRenderer | null {
     return this.viewports[this.primaryIndex]?.renderer ?? null
+  }
+
+  /** Get the renderer at a specific slot, or null if out of range. */
+  getRendererAt(slot: number): MapRenderer | null {
+    return this.viewports[slot]?.renderer ?? null
   }
 
   /** Get all current renderers in panel order. */
@@ -138,9 +184,15 @@ export class ViewportManager {
     return this.primaryIndex
   }
 
+  /** Number of active panels. */
+  getPanelCount(): number {
+    return this.viewports.length
+  }
+
   /**
    * Mark a panel as primary. Updates the active-renderer singleton so
-   * screenshot consumers pick up the change.
+   * screenshot consumers pick up the change and fires `onPrimaryChange`
+   * so callers can rewire bound UI.
    */
   promoteToPrimary(index: number): void {
     if (index < 0 || index >= this.viewports.length) {
@@ -148,8 +200,11 @@ export class ViewportManager {
       return
     }
     if (index === this.primaryIndex) return
+    const previous = this.primaryIndex
     this.primaryIndex = index
     this.refreshActiveRenderer()
+    this.refreshPrimaryStyling()
+    this.callbacks.onPrimaryChange?.(this.primaryIndex, previous)
   }
 
   /** Resize all MapLibre instances — call after CSS grid changes. */
@@ -167,6 +222,7 @@ export class ViewportManager {
     this.viewports = []
     setActiveMapRenderer(null)
     this.grid = null
+    this.callbacks = {}
   }
 
   // --- internals ---
@@ -199,6 +255,23 @@ export class ViewportManager {
     const canvasId = index === 0 ? 'globe-canvas' : `globe-canvas-${index}`
     renderer.init(container, { canvasId })
 
+    // Primary-indicator pill: shown on every panel, numbered 1-based.
+    // Click on a non-primary pill promotes that panel to primary. The
+    // primary pill is styled as "active" and does nothing on click.
+    // Hidden entirely when there's only one panel — no need for a
+    // picker when there's nothing to pick.
+    const indicator = document.createElement('button')
+    indicator.type = 'button'
+    indicator.className = 'viewport-indicator'
+    indicator.textContent = String(index + 1)
+    indicator.title = `Panel ${index + 1}`
+    indicator.setAttribute('aria-label', `Switch to panel ${index + 1}`)
+    indicator.addEventListener('click', (ev) => {
+      ev.stopPropagation()
+      this.promoteToPrimary(index)
+    })
+    container.appendChild(indicator)
+
     // If there's already a primary, copy its camera state so new panels
     // don't flash the default center before their first sync.
     const primary = this.viewports[this.primaryIndex]?.renderer.getMap()
@@ -220,7 +293,7 @@ export class ViewportManager {
     const onMove = () => this.syncCameras(index)
     renderer.getMap()?.on('move', onMove)
 
-    this.viewports.push({ index, container, renderer, onMove })
+    this.viewports.push({ index, container, renderer, indicator, onMove })
   }
 
   private destroyViewport(vp: Viewport): void {
@@ -266,5 +339,21 @@ export class ViewportManager {
   private refreshActiveRenderer(): void {
     const primary = this.viewports[this.primaryIndex]?.renderer ?? null
     setActiveMapRenderer(primary)
+  }
+
+  /**
+   * Update `.is-primary` class + indicator state on every panel.
+   * Hides the indicator entirely in single-viewport mode — there's
+   * nothing to switch to.
+   */
+  private refreshPrimaryStyling(): void {
+    const singleView = this.viewports.length <= 1
+    for (const vp of this.viewports) {
+      const isPrimary = vp.index === this.primaryIndex
+      vp.container.classList.toggle('is-primary', isPrimary)
+      vp.indicator.classList.toggle('is-primary', isPrimary)
+      vp.indicator.setAttribute('aria-pressed', String(isPrimary))
+      vp.indicator.style.display = singleView ? 'none' : ''
+    }
   }
 }

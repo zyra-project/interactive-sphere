@@ -330,6 +330,161 @@ describe('ViewportManager.promoteToPrimary', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Callbacks
+// ---------------------------------------------------------------------------
+
+describe('ViewportManager callbacks', () => {
+  it('fires onLayoutChange when panel count grows', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    const onLayoutChange = vi.fn()
+    vm.init(grid, '1', { onLayoutChange })
+    expect(onLayoutChange).not.toHaveBeenCalled()
+
+    vm.setLayout('4')
+    expect(onLayoutChange).toHaveBeenCalledWith(4, 1)
+    vm.dispose()
+  })
+
+  it('fires onLayoutChange when panel count shrinks', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    const onLayoutChange = vi.fn()
+    vm.init(grid, '4', { onLayoutChange })
+
+    vm.setLayout('2h')
+    expect(onLayoutChange).toHaveBeenCalledWith(2, 4)
+    vm.dispose()
+  })
+
+  it('does not fire onLayoutChange when count stays the same', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    const onLayoutChange = vi.fn()
+    vm.init(grid, '2h', { onLayoutChange })
+
+    vm.setLayout('2v')
+    expect(onLayoutChange).not.toHaveBeenCalled()
+    vm.dispose()
+  })
+
+  it('fires onPrimaryChange on promoteToPrimary', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    const onPrimaryChange = vi.fn()
+    vm.init(grid, '2h', { onPrimaryChange })
+    expect(onPrimaryChange).not.toHaveBeenCalled()
+
+    vm.promoteToPrimary(1)
+    expect(onPrimaryChange).toHaveBeenCalledWith(1, 0)
+    vm.dispose()
+  })
+
+  it('fires onPrimaryChange when setLayout clamps the primary', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    const onPrimaryChange = vi.fn()
+    vm.init(grid, '4', { onPrimaryChange })
+    vm.promoteToPrimary(3)
+    onPrimaryChange.mockClear()
+
+    vm.setLayout('1')
+    expect(onPrimaryChange).toHaveBeenCalledWith(0, 3)
+    vm.dispose()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Primary indicator UI
+// ---------------------------------------------------------------------------
+
+describe('ViewportManager primary indicator', () => {
+  it('creates a numbered indicator button per panel', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '4')
+
+    const indicators = grid.querySelectorAll('.viewport-indicator')
+    expect(indicators).toHaveLength(4)
+    expect(indicators[0].textContent).toBe('1')
+    expect(indicators[3].textContent).toBe('4')
+    vm.dispose()
+  })
+
+  it('marks only the primary panel with is-primary class', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '4')
+
+    const primaryPanels = grid.querySelectorAll('.map-viewport.is-primary')
+    expect(primaryPanels).toHaveLength(1)
+    expect((primaryPanels[0] as HTMLElement).dataset.viewportIndex).toBe('0')
+    vm.dispose()
+  })
+
+  it('hides indicator buttons in single-viewport mode', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '1')
+
+    const indicator = grid.querySelector('.viewport-indicator') as HTMLElement
+    expect(indicator.style.display).toBe('none')
+    vm.dispose()
+  })
+
+  it('shows indicator buttons in multi-viewport mode', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '2h')
+
+    const indicators = grid.querySelectorAll('.viewport-indicator') as NodeListOf<HTMLElement>
+    for (const ind of indicators) {
+      expect(ind.style.display).not.toBe('none')
+    }
+    vm.dispose()
+  })
+
+  it('promotes to primary when a non-primary indicator is clicked', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '2h')
+    expect(vm.getPrimaryIndex()).toBe(0)
+
+    const indicators = grid.querySelectorAll('.viewport-indicator')
+    ;(indicators[1] as HTMLButtonElement).click()
+
+    expect(vm.getPrimaryIndex()).toBe(1)
+    vm.dispose()
+  })
+
+  it('moves the is-primary class after promoteToPrimary', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '2h')
+
+    vm.promoteToPrimary(1)
+    const primaryPanels = grid.querySelectorAll('.map-viewport.is-primary')
+    expect(primaryPanels).toHaveLength(1)
+    expect((primaryPanels[0] as HTMLElement).dataset.viewportIndex).toBe('1')
+    vm.dispose()
+  })
+
+  it('toggles indicator is-primary state after layout change clamps primary', () => {
+    const grid = makeGrid()
+    const vm = new ViewportManager()
+    vm.init(grid, '4')
+    vm.promoteToPrimary(3)
+
+    vm.setLayout('1')
+    const indicator = grid.querySelector('.viewport-indicator') as HTMLElement
+    expect(indicator.classList.contains('is-primary')).toBe(true)
+    // Single-view: hidden anyway
+    expect(indicator.style.display).toBe('none')
+    vm.dispose()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Disposal
 // ---------------------------------------------------------------------------
 
