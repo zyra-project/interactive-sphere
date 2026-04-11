@@ -26,9 +26,17 @@ async fn get_tile(
 }
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_http::init());
+
+    // The updater plugin is desktop-only — App Store and Play Store handle
+    // updates on iOS and Android. See docs/MOBILE_APP_PLAN.md.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
             let app_data = app.path().app_data_dir()
                 .expect("failed to resolve app data directory");
