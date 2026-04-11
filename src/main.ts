@@ -17,6 +17,7 @@ import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
 import { initMapControls, updateMapControlsPosition, syncMapControlState } from './ui/mapControlsUI'
 import { initChatUI, openChat, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
+import { initHelpUI, setActiveDataset as setHelpActiveDataset } from './ui/helpUI'
 import {
   createPlaybackState, startPlaybackLoop, stopPlaybackLoop,
   togglePlayPause, rewind, fastForward, stepFrame, onScrub,
@@ -91,6 +92,7 @@ class InteractiveSphere {
       this.renderer.init(container)
       initMapControls(this.renderer)
       initDownloadUI().catch(err => logger.warn('[App] Download UI init failed:', err))
+      initHelpUI()
       logger.info('[App] Using MapLibre renderer')
 
       // Wire up lat/lng display
@@ -706,6 +708,7 @@ class InteractiveSphere {
       this.announce(`Loaded dataset: ${dataset.title}`)
       this.renderer?.setCanvasDescription(`3D globe showing ${dataset.title}`)
       notifyDatasetChanged(dataset)
+      setHelpActiveDataset(dataset.id)
       // Flush deferred globe-control actions (fly-to, set-time) now that the dataset is loaded
       flushPendingGlobeActions()
     }
@@ -848,6 +851,7 @@ class InteractiveSphere {
       this.announce(`Loaded dataset: ${dataset.title}`)
       this.renderer?.setCanvasDescription(`3D globe showing ${dataset.title}`)
       notifyDatasetChanged(dataset)
+      setHelpActiveDataset(dataset.id)
     }
     const playBtn = document.getElementById('play-btn')
     const infoHeader = document.getElementById('info-header')
@@ -938,6 +942,7 @@ class InteractiveSphere {
     })
     this.renderer?.setCanvasDescription('Interactive 3D globe showing Earth')
     notifyDatasetChanged(null)
+    setHelpActiveDataset(null)
   }
 
   /**

@@ -277,12 +277,18 @@
             padding: 0.4rem 0.7rem;
             position: absolute;
             top: 0.75rem;
-            right: 0.75rem;
+            /* Clear the help trigger pill (~80px) + gap */
+            right: 6rem;
             background: rgba(13, 13, 18, 0.88);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 6px;
+        }
+        /* When the browse overlay is open, the help trigger is hidden,
+           so let the time label return to the corner. */
+        body.browse-open #time-label {
+            right: 0.75rem;
         }
 
         #home-btn:hover {
@@ -680,8 +686,10 @@
         }
 
         #browse-header {
+            position: relative;
             flex-shrink: 0;
             margin-bottom: 1.25rem;
+            padding-right: 2.25rem;
         }
 
         .browse-title {
@@ -2107,6 +2115,418 @@
                 min-height: 44px;
             }
         }
+
+        /* --- Help panel --- */
+        #help-trigger {
+            position: fixed;
+            top: 0.75rem;
+            right: 0.75rem;
+            z-index: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.7rem;
+            background: rgba(13, 13, 18, 0.88);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            color: #bbb;
+            font-size: 0.78rem;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            min-height: 36px;
+            pointer-events: auto;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        #help-trigger:hover,
+        #help-trigger:focus-visible {
+            color: #e8eaf0;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        #help-trigger .help-trigger-icon {
+            font-weight: 600;
+            font-size: 0.95rem;
+            line-height: 1;
+        }
+        body.browse-open #help-trigger {
+            display: none;
+        }
+
+        #help-trigger-browse {
+            position: absolute;
+            top: 0.25rem;
+            right: 0;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 50%;
+            color: #bbb;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        #help-trigger-browse:hover,
+        #help-trigger-browse:focus-visible {
+            color: #e8eaf0;
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        #help-panel {
+            position: fixed;
+            /* Desktop: centered modal. Tablet/portrait breakpoints
+               override this to anchor the panel to an edge. */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(640px, calc(100vw - 3rem));
+            max-height: min(80vh, calc(100vh - 4rem));
+            z-index: 650;
+            display: flex;
+            flex-direction: column;
+            background: rgba(13, 13, 18, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+            color: #e8eaf0;
+            pointer-events: auto;
+            overflow: hidden;
+        }
+        #help-panel.hidden {
+            display: none;
+        }
+
+        /* Desktop backdrop — dims the rest of the app behind the
+           centered modal. Hidden at tablet and portrait breakpoints
+           where the panel anchors to an edge instead. */
+        #help-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 640;
+            background: rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+        #help-backdrop.hidden {
+            display: none;
+        }
+
+        #help-header {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+        #help-title {
+            font-size: 0.9rem;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #e8eaf0;
+            flex: 1;
+        }
+        #help-close {
+            display: none; /* shown only on portrait phones */
+            width: 36px;
+            height: 36px;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            color: #bbb;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        #help-close:hover,
+        #help-close:focus-visible {
+            color: #e8eaf0;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .help-tablist {
+            display: flex;
+            gap: 0;
+            padding: 0 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+        .help-tab {
+            flex: 1;
+            padding: 0.6rem 0.75rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #888;
+            font-size: 0.78rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .help-tab:hover {
+            color: #ccc;
+        }
+        .help-tab.active,
+        .help-tab[aria-selected="true"] {
+            color: #e8eaf0;
+            border-bottom-color: #4da6ff;
+        }
+
+        .help-tabpanel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 1.25rem;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        .help-tabpanel.hidden {
+            display: none;
+        }
+
+        .help-guide-section {
+            margin: 0 0 1.25rem;
+        }
+        .help-guide-section:last-child {
+            margin-bottom: 0;
+        }
+        .help-guide-section h3 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #4da6ff;
+            margin: 0 0 0.4rem;
+        }
+        .help-guide-section ul {
+            margin: 0;
+            padding-left: 1.1rem;
+            color: #c8ccd4;
+        }
+        .help-guide-section li {
+            margin-bottom: 0.25rem;
+        }
+        .help-guide-section p {
+            margin: 0;
+            color: #c8ccd4;
+        }
+        .help-guide-section kbd {
+            display: inline-block;
+            padding: 0.1rem 0.4rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+            font-family: inherit;
+            font-size: 0.75rem;
+            color: #e8eaf0;
+        }
+
+        /* Feedback form */
+        #help-feedback-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        .help-form-kind {
+            display: flex;
+            gap: 0.5rem;
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+        .help-kind-option {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            padding: 0.45rem 0.5rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            font-size: 0.78rem;
+            color: #c8ccd4;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .help-kind-option:has(input:checked) {
+            background: rgba(77, 166, 255, 0.15);
+            border-color: rgba(77, 166, 255, 0.4);
+            color: #e8eaf0;
+        }
+        .help-kind-option input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .help-form-label {
+            font-size: 0.75rem;
+            color: #888;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            margin-top: 0.25rem;
+        }
+        #help-feedback-form textarea,
+        #help-feedback-form input[type="text"] {
+            width: 100%;
+            padding: 0.55rem 0.65rem;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 4px;
+            color: #e8eaf0;
+            font-family: inherit;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+        #help-feedback-form textarea:focus,
+        #help-feedback-form input[type="text"]:focus {
+            outline: none;
+            border-color: rgba(77, 166, 255, 0.5);
+        }
+        .help-form-meta {
+            text-align: right;
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: -0.35rem;
+        }
+        .help-form-check {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: #c8ccd4;
+            cursor: pointer;
+        }
+        .help-form-status {
+            min-height: 1.2em;
+            font-size: 0.78rem;
+            color: #888;
+        }
+        .help-form-status.error {
+            color: #f28e8e;
+        }
+        .help-form-status.success {
+            color: #6dc96d;
+        }
+        .help-form-actions {
+            display: flex;
+            justify-content: flex-end;
+            padding-top: 0.25rem;
+        }
+        .help-btn-primary {
+            padding: 0.5rem 1rem;
+            background: rgba(77, 166, 255, 0.2);
+            border: 1px solid rgba(77, 166, 255, 0.4);
+            border-radius: 4px;
+            color: #e8eaf0;
+            font-size: 0.82rem;
+            cursor: pointer;
+            min-height: 36px;
+            transition: background 0.15s;
+        }
+        .help-btn-primary:hover:not(:disabled) {
+            background: rgba(77, 166, 255, 0.35);
+        }
+        .help-btn-primary:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        /* Tier 2 — mobile/tablet */
+        @media (max-width: 768px) {
+            #help-trigger {
+                padding: 0;
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                justify-content: center;
+            }
+            #help-trigger .help-trigger-label {
+                display: none;
+            }
+            #help-trigger-browse {
+                width: 40px;
+                height: 40px;
+                font-size: 1rem;
+            }
+            /* Tablet: revert the desktop centered-modal and anchor
+               the panel to the top-right corner. */
+            #help-panel {
+                top: 3.5rem;
+                left: auto;
+                right: 0.75rem;
+                transform: none;
+                width: calc(100vw - 1.5rem);
+                max-height: 70vh;
+                box-shadow: none;
+            }
+            #help-backdrop {
+                display: none;
+            }
+            #help-feedback-form textarea,
+            #help-feedback-form input[type="text"],
+            .help-btn-primary {
+                min-height: 44px;
+            }
+            /* Clear the 48px circular help trigger */
+            #time-label {
+                right: 4.5rem;
+            }
+        }
+
+        /* Tier 3 — portrait phone: full-screen sheet */
+        @media (max-width: 600px) and (orientation: portrait) {
+            #help-trigger {
+                top: 0.5rem;
+                right: 0.5rem;
+                width: 40px;
+                height: 40px;
+            }
+            /* Clear the 40px help trigger at 0.5rem inset */
+            #time-label {
+                right: 3.5rem;
+                top: 0.5rem;
+            }
+            #help-panel {
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                transform: none;
+                width: 100vw;
+                max-height: none;
+                height: 100dvh;
+                border-radius: 0;
+                border: none;
+                box-shadow: none;
+            }
+            #help-close {
+                display: inline-flex;
+            }
+            .help-tabpanel {
+                flex: 1;
+                overflow-y: auto;
+            }
+            .help-form-actions {
+                position: sticky;
+                bottom: 0;
+                margin: 0 -1.25rem -1rem;
+                padding: 0.75rem 1.25rem;
+                background: rgba(13, 13, 18, 0.92);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border-top: 1px solid rgba(255, 255, 255, 0.06);
+            }
+        }
     </style>
 </head>
 <body>
@@ -2132,6 +2552,7 @@
             <div id="browse-header">
                 <h2 class="browse-title">SOS Explorer</h2>
                 <div class="browse-subtitle">Browse environmental datasets from NOAA Science On a Sphere</div>
+                <button id="help-trigger-browse" type="button" title="Help and feedback" aria-label="Open help and feedback" aria-expanded="false">?</button>
             </div>
             <div role="search" class="browse-search-wrap">
                 <label for="browse-search" class="sr-only">Search datasets</label>
@@ -2281,6 +2702,25 @@
                 <div id="error-message" class="hidden" role="alert">
                     <span id="error-text"></span>
                     <button id="error-dismiss" aria-label="Dismiss error">&#x2715;</button>
+                </div>
+
+                <!-- Help button and panel -->
+                <button id="help-trigger" type="button" title="Help and feedback" aria-label="Open help and feedback" aria-expanded="false">
+                    <span class="help-trigger-icon" aria-hidden="true">?</span>
+                    <span class="help-trigger-label">Help</span>
+                </button>
+                <div id="help-backdrop" class="hidden" aria-hidden="true"></div>
+                <div id="help-panel" class="hidden" role="dialog" aria-labelledby="help-title" aria-modal="true" aria-hidden="true">
+                    <div id="help-header">
+                        <span id="help-title">Help</span>
+                        <button id="help-close" type="button" aria-label="Close help">&#x2715;</button>
+                    </div>
+                    <div class="help-tablist" role="tablist" aria-label="Help sections">
+                        <button class="help-tab active" type="button" role="tab" data-tab="guide" id="help-tab-guide" aria-selected="true" aria-controls="help-tabpanel-guide">Guide</button>
+                        <button class="help-tab" type="button" role="tab" data-tab="feedback" id="help-tab-feedback" aria-selected="false" tabindex="-1" aria-controls="help-tabpanel-feedback">Feedback</button>
+                    </div>
+                    <div id="help-tabpanel-guide" class="help-tabpanel" role="tabpanel" aria-labelledby="help-tab-guide"></div>
+                    <div id="help-tabpanel-feedback" class="help-tabpanel hidden" role="tabpanel" aria-labelledby="help-tab-feedback"></div>
                 </div>
             </div>
         </div>

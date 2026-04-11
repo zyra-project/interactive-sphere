@@ -11,6 +11,12 @@ import {
   isDownloading, formatBytes,
 } from '../services/downloadService'
 import { closeDownloadPanel } from './downloadUI'
+import { toggleHelp } from './helpUI'
+import { escapeHtml, escapeAttr } from './domUtils'
+
+// Re-export so existing callers (chatUI, downloadUI, datasetLoader)
+// continue to import these from browseUI.
+export { escapeHtml, escapeAttr }
 
 // --- Browse UI constants ---
 const CARD_DESCRIPTION_MAX_LENGTH = 120
@@ -26,20 +32,6 @@ export interface BrowseCallbacks {
   onOpenChat?: (query?: string) => void
 }
 
-/** Escape HTML special characters to prevent XSS in rendered content. */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-/** Escape a string for safe use inside an HTML attribute value. */
-export function escapeAttr(value: string): string {
-  return value.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-}
-
 /**
  * Render and display the dataset browse overlay with category filters,
  * search, sort controls, and dataset cards.
@@ -48,7 +40,18 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   const overlay = document.getElementById('browse-overlay')
   if (!overlay) return
   overlay.classList.remove('hidden')
+  document.body.classList.add('browse-open')
   closeDownloadPanel()
+
+  // Wire the in-header help trigger once (idempotent)
+  const helpBtn = document.getElementById('help-trigger-browse')
+  if (helpBtn && !helpBtn.dataset.wired) {
+    helpBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleHelp(helpBtn)
+    })
+    helpBtn.dataset.wired = 'true'
+  }
 
   const visible = datasets
     .filter(d => !d.isHidden)
@@ -434,4 +437,5 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
 export function hideBrowseUI(): void {
   const overlay = document.getElementById('browse-overlay')
   overlay?.classList.add('hidden')
+  document.body.classList.remove('browse-open')
 }

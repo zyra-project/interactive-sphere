@@ -274,6 +274,23 @@ function createGlobeStyle(): StyleSpecification {
   }
 }
 
+/**
+ * Module-level reference to the currently active MapRenderer instance.
+ * Set in init() and cleared in dispose(). Used by screenshotService so
+ * screenshot consumers (vision flow, feedback form) can drive a proper
+ * triggerRepaint + once('render') cycle rather than fighting the WebGL
+ * drawing-buffer preservation quirks on their own.
+ */
+let activeRenderer: MapRenderer | null = null
+
+/** Get the currently active MapRenderer, if any. */
+export function getActiveMapRenderer(): MapRenderer | null {
+  return activeRenderer
+}
+
+/** Max dimension for a captured screenshot — keeps payload small. */
+const SCREENSHOT_MAX_SIZE = 512
+
 /** MapLibre-based globe renderer. */
 export class MapRenderer implements GlobeRenderer {
   private map: MaplibreMap | null = null
@@ -291,6 +308,7 @@ export class MapRenderer implements GlobeRenderer {
    */
   init(container: HTMLElement): void {
     this.container = container
+    activeRenderer = this
 
     // Inject dark popup styles (idempotent — skips if already present)
     if (!document.getElementById('sos-popup-style')) {
@@ -440,6 +458,77 @@ export class MapRenderer implements GlobeRenderer {
   /** Return the map canvas element for screenshot capture. */
   getCanvas(): HTMLCanvasElement | null {
     return this.map?.getCanvas() ?? null
+  }
+
+  /**
+   * Force MapLibre to render a fresh frame and resolve once the render
+   * event fires. Used as a prelude to screenshot capture so the WebGL
+   * drawing buffer is guaranteed to be populated when we read pixels.
+   *
+   * Falls back to a short timeout if the render event never fires
+   * (map hidden, disposed, or otherwise quiescent) so screenshot
+   * callers don't hang forever.
+   */
+  async triggerFreshRender(): Promise<void> {
+    const map = this.map
+    if (!map) return
+    const RENDER_WAIT_TIMEOUT_MS = 1000
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const timeoutId = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolve()
+      }, RENDER_WAIT_TIMEOUT_MS)
+      map.once('render', () => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(timeoutId)
+        resolve()
+      })
+      map.triggerRepaint()
+    })
+  }
+
+  /**
+   * Capture the current globe view as a JPEG data URL.
+   *
+   * A naive `canvas.toDataURL()` is unreliable on MapLibre — even with
+   * `preserveDrawingBuffer: true`, the WebGL drawing buffer can be
+   * cleared between frames when the map is idle, producing a black
+   * image. We force a fresh repaint and wait for MapLibre to finish
+   * rendering before reading pixels.
+   *
+   * @param options.maxSize Max dimension (px) on the longer edge of the
+   * output image. Defaults to SCREENSHOT_MAX_SIZE (512) for the vision
+   * flow. Pass `Infinity` (or a very large number) to skip the
+   * downsample step — useful when compositing into a larger capture.
+   *
+   * Returns null if the map isn't initialized or the capture fails.
+   */
+  async captureScreenshot(options?: { maxSize?: number }): Promise<string | null> {
+    const map = this.map
+    if (!map) return null
+    const maxSize = options?.maxSize ?? SCREENSHOT_MAX_SIZE
+    try {
+      await this.triggerFreshRender()
+      const canvas = map.getCanvas()
+      const { width, height } = canvas
+      const scale = Math.min(1, maxSize / Math.max(width, height))
+      if (scale < 1) {
+        const offscreen = document.createElement('canvas')
+        offscreen.width = Math.round(width * scale)
+        offscreen.height = Math.round(height * scale)
+        const ctx = offscreen.getContext('2d')
+        if (!ctx) return canvas.toDataURL('image/jpeg', 0.6)
+        ctx.drawImage(canvas, 0, 0, offscreen.width, offscreen.height)
+        return offscreen.toDataURL('image/jpeg', 0.6)
+      }
+      return canvas.toDataURL('image/jpeg', 0.6)
+    } catch (err) {
+      logger.warn('[MapRenderer] captureScreenshot failed:', err)
+      return null
+    }
   }
 
   // --- Navigation ---
@@ -904,5 +993,8 @@ export class MapRenderer implements GlobeRenderer {
     const mapDiv = this.container?.querySelector('#maplibre-container')
     if (mapDiv) mapDiv.remove()
     this.container = null
+    if (activeRenderer === this) {
+      activeRenderer = null
+    }
   }
 }

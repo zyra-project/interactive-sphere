@@ -8,9 +8,10 @@
 
 import type { ChatMessage, ChatAction, ChatSession, DocentConfig, MapViewContext, ReadingLevel, FeedbackRating, FeedbackPayload } from '../types'
 import type { Dataset } from '../types'
-import { escapeHtml, escapeAttr } from './browseUI'
+import { escapeHtml, escapeAttr } from './domUtils'
 import { createMessageId } from '../services/docentEngine'
-import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureGlobeScreenshot, captureViewContext } from '../services/docentService'
+import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureViewContext } from '../services/docentService'
+import { captureGlobeScreenshot } from '../services/screenshotService'
 import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
 import { setLogLevel, logger } from '../utils/logger'
@@ -532,7 +533,7 @@ async function handleSend(): Promise<void> {
     // Capture globe screenshot + overlay context only when vision mode and LLM are both active
     const config = await loadConfigWithKey()
     const shouldCaptureVision = config.visionEnabled && config.enabled && !!config.apiUrl
-    const screenshot = shouldCaptureVision ? captureGlobeScreenshot() : null
+    const screenshot = shouldCaptureVision ? await captureGlobeScreenshot() : null
     const viewContext = shouldCaptureVision ? captureViewContext() : undefined
 
     // Capture map geographic context for the LLM system prompt (skip in local-only mode)
