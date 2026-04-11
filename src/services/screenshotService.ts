@@ -30,6 +30,17 @@ export const SCREENSHOT_MAX_SIZE = 512
 const FULL_SCREEN_MAX_SIZE = 1280
 
 /**
+ * Max dimension for the globe pre-capture that feeds the full-screen
+ * composite. Capped at 1920px so the intermediate image doesn't
+ * balloon on high-DPI mobile devices, where a naive full-resolution
+ * capture can run into memory pressure and stall html2canvas — the
+ * leading suspect for the iOS Safari hang reported in feedback.
+ * 1920 is still well above the 1280px final output, so the composite
+ * looks crisp without oversampling.
+ */
+const GLOBE_PRECAPTURE_MAX_SIZE = 1920
+
+/**
  * Upper bound (ms) on captureFullScreen(). html2canvas has known
  * issues on iOS Safari where it can hang — especially on large DOM
  * trees, memory pressure, or stalled iframe clones. Rather than
@@ -173,14 +184,16 @@ export async function captureGlobeScreenshot(): Promise<string | null> {
  * operation against a timeout.
  */
 async function doCaptureFullScreen(): Promise<string | null> {
-  // 1) Grab the globe at full resolution so the composite renders
-  //    it at the canvas's natural display size.
+  // 1) Grab the globe at a capped resolution. Using Infinity here
+  //    would pull the full backing-store size (CSS width x DPR),
+  //    which on a retina iPhone is ~12MB decoded and the leading
+  //    suspect for the iOS html2canvas hang.
   let globeDataUrl: string | null = null
   const renderer = getActiveMapRenderer()
   if (renderer) {
-    globeDataUrl = await renderer.captureScreenshot({ maxSize: Infinity })
+    globeDataUrl = await renderer.captureScreenshot({ maxSize: GLOBE_PRECAPTURE_MAX_SIZE })
   } else {
-    globeDataUrl = captureFromDom(Infinity)
+    globeDataUrl = captureFromDom(GLOBE_PRECAPTURE_MAX_SIZE)
   }
 
   // 2) Preload the globe image so onclone can paint it synchronously
@@ -216,17 +229,30 @@ async function doCaptureFullScreen(): Promise<string | null> {
       const clonedCanvas = clonedDoc.getElementById('globe-canvas') as HTMLCanvasElement | null
       if (!clonedCanvas) return
 
-      // Match the cloned canvas's backing-store size to the live
-      // canvas so what we paint ends up the right size. Assigning
-      // to width/height also clears the surface per spec, wiping
-      // whatever html2canvas's createCanvasClone put there.
+      // Size the cloned canvas's backing store to the live canvas's
+      // CSS display size rather than its backing-store size. On a
+      // retina iPhone the live canvas is CSS width x DPR (3), which
+      // means a naive width=liveCanvas.width gives a ~12MB cloned
+      // buffer. Using CSS dimensions instead is ~9x smaller, which
+      // drastically cuts html2canvas's peak memory on mobile. The
+      // final composite downsamples to FULL_SCREEN_MAX_SIZE anyway,
+      // so we don't lose any visible quality.
+      //
+      // Assigning to width/height also clears the surface per spec,
+      // wiping whatever html2canvas's createCanvasClone put there.
       const liveCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement | null
       if (liveCanvas) {
-        clonedCanvas.width = liveCanvas.width
-        clonedCanvas.height = liveCanvas.height
         const rect = liveCanvas.getBoundingClientRect()
-        clonedCanvas.style.width = rect.width + 'px'
-        clonedCanvas.style.height = rect.height + 'px'
+        // Prefer CSS display dimensions; fall back to the backing-
+        // store size if the rect is 0 (happens in jsdom tests and
+        // when the canvas is hidden), so we still get something
+        // drawable rather than a 1x1 buffer.
+        const cssW = rect.width > 0 ? rect.width : liveCanvas.width
+        const cssH = rect.height > 0 ? rect.height : liveCanvas.height
+        clonedCanvas.width = Math.max(1, Math.round(cssW))
+        clonedCanvas.height = Math.max(1, Math.round(cssH))
+        clonedCanvas.style.width = cssW + 'px'
+        clonedCanvas.style.height = cssH + 'px'
       }
 
       const ctx = clonedCanvas.getContext('2d')
