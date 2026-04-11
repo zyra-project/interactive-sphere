@@ -53,6 +53,21 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
     helpBtn.dataset.wired = 'true'
   }
 
+  // Wire the in-header close button once (idempotent). Uses the
+  // same single-view hide / multi-view collapse split as the
+  // post-load dismiss — single-view fully hides, multi-view keeps
+  // the aside in the DOM so scroll position persists. Either way,
+  // the Tools menu's Browse button re-opens it.
+  const closeBtn = document.getElementById('browse-close')
+  if (closeBtn && !closeBtn.dataset.wired) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      hideBrowseUI()
+      callbacks.announce('Dataset browser closed')
+    })
+    closeBtn.dataset.wired = 'true'
+  }
+
   const visible = datasets
     .filter(d => !d.isHidden)
     .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0) || a.title.localeCompare(b.title))

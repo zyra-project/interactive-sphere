@@ -2439,6 +2439,34 @@
             border-color: rgba(255, 255, 255, 0.25);
         }
 
+        /* Close (✕) button in the browse panel header. Matches the
+           help button visually but anchors to the left of it so
+           both sit in the same top-right cluster. */
+        #browse-close {
+            position: absolute;
+            top: 0.25rem;
+            right: 2.25rem;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 50%;
+            color: #bbb;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        #browse-close:hover,
+        #browse-close:focus-visible {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
         #help-panel {
             position: fixed;
             /* Desktop: centered modal. Tablet/portrait breakpoints
@@ -2720,6 +2748,12 @@
                 height: 40px;
                 font-size: 1rem;
             }
+            #browse-close {
+                right: 3rem;
+                width: 40px;
+                height: 40px;
+                font-size: 1rem;
+            }
             /* Tablet: revert the desktop centered-modal and anchor
                the panel to the top-right corner. */
             #help-panel {
@@ -2813,6 +2847,7 @@
             <div id="browse-header">
                 <h2 class="browse-title">SOS Explorer</h2>
                 <div class="browse-subtitle">Browse environmental datasets from NOAA Science On a Sphere</div>
+                <button id="browse-close" type="button" title="Close dataset browser" aria-label="Close dataset browser">&#x2715;</button>
                 <button id="help-trigger-browse" type="button" title="Help and feedback" aria-label="Open help and feedback" aria-expanded="false">?</button>
             </div>
             <div role="search" class="browse-search-wrap">

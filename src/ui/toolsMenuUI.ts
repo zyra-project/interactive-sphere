@@ -1,5 +1,5 @@
 /**
- * Tools Menu UI — single gear-icon button plus a collapsible popover
+ * Tools Menu UI — single wrench-icon button plus a collapsible popover
  * that hosts every map-related toggle, the viewport layout picker,
  * the Clear action, and an entry point to Orbit settings.
  *
@@ -85,7 +85,7 @@ export function initToolsMenu(
       <span class="tools-menu-btn-label">Browse</span>
     </button>
     <button type="button" class="tools-menu-btn tools-menu-toggle" id="tools-menu-toggle" title="Tools and settings" aria-label="Tools and settings" aria-expanded="false" aria-haspopup="true">
-      <span class="tools-menu-btn-icon" aria-hidden="true">&#x2699;&#xFE0E;</span>
+      <span class="tools-menu-btn-icon" aria-hidden="true">&#x1F527;&#xFE0E;</span>
     </button>
     <div id="tools-menu-popover" class="tools-menu-popover hidden" role="dialog" aria-modal="false" aria-label="Tools and settings">
       <div class="tools-menu-popover-header">
