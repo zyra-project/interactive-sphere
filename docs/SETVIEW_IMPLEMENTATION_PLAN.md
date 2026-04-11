@@ -1,12 +1,14 @@
 # setView Implementation Plan
 
-The legacy SOS Explorer `setView` tour task switches the display between a single globe and multi-panel layouts. The legacy app supported multi-globe views (2 or 4 synchronised globes) but did **not** support multi-map views — the `FLAT_*` view names referred to a single flat map, not a grid of flat maps. Multi-panel meant multi-globe.
+> Colloquially called "setView" throughout this repo and our design conversations. The actual legacy SOS tour task is named **`setEnvView`** — the plan uses the real task name in code references and the colloquial name in prose.
 
-**This plan treats `setView` as "how many synchronised globes are on screen".** We're skipping flat projection entirely: MapLibre GL JS only offers `mercator` and `globe` as built-in projections, and mercator is actively wrong for a polar-heavy Earth-science dataset (it literally cannot display latitudes above ~85°). A true equirectangular or polar-stereographic render would require writing a second custom WebGL render path; that's out of scope here and tracked as a follow-up under "Future extensions" below.
+The legacy SOS Explorer `setEnvView` tour task switches the display between a single globe and multi-globe layouts. The legacy app supported multi-globe views (2 or 4 synchronised globes) but did **not** support multi-map views — the `FLAT_*` view names referred to a single flat map, not a grid of flat maps. Multi-panel meant multi-globe.
+
+**This plan treats setView as "how many synchronised globes are on screen".** We're skipping flat projection entirely: MapLibre GL JS only offers `mercator` and `globe` as built-in projections, and mercator is actively wrong for a polar-heavy Earth-science dataset (it literally cannot display latitudes above ~85°). A true equirectangular or polar-stereographic render would require writing a second custom WebGL render path; that's out of scope here and tracked as a follow-up under "Future extensions" below.
 
 Primary user value: **load different datasets into 2 or 4 synchronised globe panels to compare them side-by-side** — restoring legacy parity with the multi-globe feature. Legacy `FLAT_*` tour strings (which meant single flat map) get remapped to single-globe with a deprecation log note.
 
-**Reference**: [Tour Task Reference Guide — setView](https://sos.noaa.gov/support/sosx/manuals/tour-builder-guide-complete/tour-task-reference-guide/)
+**Reference**: [Tour Task Reference Guide](https://sos.noaa.gov/support/sosx/manuals/tour-builder-guide-complete/tour-task-reference-guide/)
 
 ---
 
@@ -15,7 +17,7 @@ Primary user value: **load different datasets into 2 or 4 synchronised globe pan
 1. **Multi-viewport layout** — support 1/2/4 synchronised globe panels in a CSS grid.
 2. **Camera lockstep** — dragging, zooming, or flying any panel moves all of them together.
 3. **Per-panel datasets** — each panel can show a different dataset, animated in sync.
-4. **Tour task `setView`** — so existing SOS tour JSON plays through the engine with no authoring changes.
+4. **Tour task `setEnvView`** (plus `worldIndex` routing on `loadDataset` and a new `unloadDataset` task) — so existing SOS tour JSON plays through the engine with no authoring changes.
 5. **User-visible UI toggle** — a layout picker in the map controls, usable outside a tour.
 6. **No regression to the default single-globe experience.**
 
@@ -31,22 +33,47 @@ Primary user value: **load different datasets into 2 or 4 synchronised globe pan
 
 ## Legacy semantics & compatibility mapping
 
-The legacy SOS `setView` task accepts a view name. Two categories existed:
+The legacy SOS `setEnvView` task accepts a view-name string. Two categories exist:
 
-- **Single-surface views** — `GLOBE` / `SPHERE` for the 3D globe, and `FLAT` / `FLAT_1` (possibly others) for the single flat map. Only one dataset visible at a time.
+- **Single-surface views** — `GLOBE` / `SPHERE` for the 3D globe, and `FLAT` / `FLAT_*` for single flat maps. Only one dataset visible at a time.
 - **Multi-globe views** — 2 or 4 synchronised globes, each potentially showing a different dataset. This is the capability we're restoring.
 
-The exact legacy tour-string values for the multi-globe views are **not yet verified** — they need to be confirmed against a reference tour JSON or the SOS docs before we finalise the parser lookup table. Candidate strings seen in the wild include things like `DUAL_GLOBE`, `QUAD_GLOBE`, `GLOBE_2`, `GLOBE_4`; we'll be liberal in what we accept and log a warning on unknown values.
+Verified from a reference legacy tour JSON:
 
 | Legacy string | Internal layout | Notes |
 |---|---|---|
-| `GLOBE` / `SPHERE` | `1` | Default, no-op if already single |
-| `FLAT` / `FLAT_1` / any other `FLAT_*` | `1` | Flat projection not supported — falls back to single-globe with a one-time deprecation log note |
-| *multi-globe strings (TBD)* | `2h` or `4` | Verified before Phase 3 lands |
+| `1globe` | `1` | Single globe — verified in reference tour |
+| `2globes` | `2h` | Two synchronised globes side-by-side — verified in reference tour |
+| `4globes` | `4` | Four globes in a 2×2 — inferred by extrapolation from `1globe` / `2globes`, not yet seen in a reference tour. Safe to guess; will be confirmed when we get a 4-globe reference tour |
+| `GLOBE` / `SPHERE` | `1` | Alternate spelling accepted for compatibility |
+| `FLAT` / `FLAT_*` | `1` | Flat projection not supported — falls back to single-globe with a one-time deprecation log note |
 
-New tours can pass `{layout}` directly via an extended task param shape. The legacy string is stored verbatim on the task object for round-tripping.
+Parser policy: case-insensitive match, liberal on whitespace, log a warning on unknown values and default to single-globe. The legacy string is stored verbatim on the task object for round-tripping.
 
-Each panel binds to loaded datasets in load order: panel `N` shows the `N`-th loaded dataset. Extra datasets beyond the panel count are hidden. Missing datasets leave the panel showing the base earth layer only.
+### Panel assignment: `worldIndex`
+
+Panel assignment is **explicit, not load-order-based**. Every `loadDataset` task in a legacy tour carries a `worldIndex` field that specifies which globe it targets:
+
+```json
+{ "loadDataset": {
+    "id": "ID_OMGMDNKQFG",
+    "datasetID": "dataset3",
+    "worldIndex": 1,
+    ...
+}}
+```
+
+- `worldIndex: 1` → first globe panel (index 0 in our array)
+- `worldIndex: 2` → second globe panel
+- etc. 1-indexed to match legacy convention
+
+When the current layout is single-globe, any `worldIndex` value maps to the only panel. When the layout is `2globes`, `worldIndex: 3` or higher is clamped to the last panel with a warning.
+
+### `datasetID` — local tour handles
+
+Every `loadDataset` task also carries a `datasetID` field (e.g. `"dataset1"`, `"dataset3"`). This is a **local handle** the tour uses to refer back to that loaded dataset later — it's separate from the catalog `id`. Handles are scoped to the tour run, and the engine maintains a `Map<datasetID, {slot: number, catalogId: string}>`. The `unloadDataset` task takes a `datasetID` and removes that specific dataset from its slot. This replaces the "load order + nextLoadSlot cursor" fiction I had in earlier drafts.
+
+Ignored legacy fields (stored but unused): `activeLayer`, `vizName`, `colorPaletteIndex`, `contourNbr`, `contourStartValue`, `contourInterval`, `barbSize`, `barbDensity`, `transparencyPct`, `imageMinValue`, `imageMaxValue`, `showLegend`, `legendxPct`, `legendyPct`, `legendWidthPct`, `legendHeightPct`, `initHeightWheel`, `filterIntervalHrs`, `displays`. We parse them off so tours don't error but we don't act on them — most map to SOS rendering pipeline knobs that don't translate to MapLibre.
 
 ---
 
@@ -127,63 +154,85 @@ Let each panel show a different dataset while playback stays synchronised.
 
 **Design decisions**
 
-1. **`AppState` gains an ordered list** of currently-loaded datasets:
+1. **`AppState` gains a per-slot dataset array**:
    ```ts
    interface AppState {
      datasets: Dataset[]              // catalog (unchanged)
-     loadedDatasets: Dataset[]        // NEW — ordered, length == viewport count
+     loadedDatasets: (Dataset | null)[] // NEW — length == viewport count, nulls for empty slots
      primaryDataset: Dataset | null   // NEW — alias for loadedDatasets[primaryIndex]
      // currentDataset stays as a deprecated getter for back-compat
      ...
    }
    ```
-2. **Assignment rule**: datasets are assigned to viewports by load order. Loading a new dataset fills the first empty slot; if all slots are full, it replaces the primary slot. A click-to-assign affordance is a follow-up, not a Phase 2 requirement.
-3. **Playback sync**:
+2. **Explicit slot assignment, not load order**. The public API is `loadDataset(dataset, { slot })`:
+   - Tour callers pass `slot = worldIndex - 1` (converting from legacy 1-indexed to our 0-indexed).
+   - Non-tour callers (user clicking a dataset in the browse panel, Orbit loading a dataset) default `slot` to `primaryIndex`.
+   - Out-of-range slots are clamped to the last panel with a console warning.
+   - Loading into a slot that already has a dataset replaces it (legacy tours rely on this for overlays).
+3. **`datasetID` handle map**. The tour engine maintains a per-run `Map<string, { slot: number, catalogId: string }>` from local handle → slot. `unloadDataset: "dataset1"` looks up the handle and clears its slot. `unloadAllDatasets` clears the map and all slots.
+4. **Playback sync**:
    - Video datasets share a single master transport (the primary's playback controller). Each non-primary viewport gets its own `<video>` element that's seeked to the primary's `currentTime` on `timeupdate`. HLS.js instances are per-video.
    - Image datasets have nothing to sync.
    - Scrubber + time cursor remain singular, driven by the primary.
-4. **`datasetLoader.ts` gets a target renderer param** — it already accepts a renderer, so this is mostly wiring. Playback-controller wiring is guarded on `isPrimary` so non-primary panels don't try to install scrubbers or mute buttons.
-5. **Info panel** shows primary viewport's dataset. Clicking a non-primary panel promotes it to primary (updates `primaryIndex`, re-syncs playback transport, updates info panel).
+5. **`datasetLoader.ts` gets a target renderer param** — it already accepts a renderer, so this is mostly wiring. Playback-controller wiring is guarded on `isPrimary` so non-primary panels don't try to install scrubbers or mute buttons.
+6. **Info panel** shows primary viewport's dataset. Clicking a non-primary panel promotes it to primary (updates `primaryIndex`, re-syncs playback transport, updates info panel).
 
 **Changes**
 
-1. `src/services/viewportManager.ts` — `loadDataset(dataset, slot?)`, `promoteToPrimary(idx)`, `getPanelDataset(idx)`, `nextLoadSlot` cursor (used by tours).
+1. `src/services/viewportManager.ts` — `loadDataset(dataset, opts: { slot?: number })`, `unloadDatasetAt(slot)`, `promoteToPrimary(idx)`, `getPanelDataset(idx)`.
 2. `src/services/datasetLoader.ts` — drop any lingering single-renderer assumptions; playback-controller wiring guarded on `isPrimary`.
 3. `src/ui/playbackController.ts` — emit `timeupdate` that ViewportManager fans out to non-primary video elements.
-4. `src/ui/chatUI.ts` — Orbit's "Load this dataset" button calls `viewports.loadDataset(id)`; Orbit's prompt stays single-view-aware, the viewport manager handles assignment silently.
+4. `src/ui/chatUI.ts` — Orbit's "Load this dataset" button calls `viewports.loadDataset(id)` without a slot, which defaults to the primary. Orbit's prompt stays single-view-aware.
 5. Visual cue: subtle border highlight on the primary panel.
 
-**Exit criteria**: in the 4-panel layout, the user can load four different datasets, they animate in sync, dragging any panel moves all four, and clicking a panel promotes it to primary.
+**Exit criteria**: in the 4-panel layout, the user can load four different datasets (via the browse panel or dev-tools calls with explicit slots), they animate in sync, dragging any panel moves all four, and clicking a panel promotes it to primary.
 
-### Phase 3 — `setView` tour task
+### Phase 3 — `setEnvView` tour task + `worldIndex` routing + `unloadDataset`
 
-With the machinery in place, the tour task is a thin executor.
+With the machinery in place, wiring the tour tasks is a thin executor. Three tour tasks need work in this phase: `setEnvView` (new), `loadDataset` (extend to route `worldIndex`), `unloadDataset` (new).
 
 **Changes**
 
-1. **Before coding**: verify the exact legacy tour-string values used for multi-globe views. Source a reference tour JSON or the SOS docs and finalise the parser lookup table. Phase 3 shouldn't land with a table built on guesses.
-2. `src/types/index.ts`
-   - Add to the `TourTaskDef` union:
+1. `src/types/index.ts`
+   - Add `setEnvView` and `unloadDataset` to the `TourTaskDef` union:
      ```ts
-     | { setView: SetViewTaskParams }
+     | { setEnvView: string }
+     | { unloadDataset: string }   // value is the local datasetID handle
      ```
+   - Extend `LoadDatasetTaskParams` with the fields we now act on:
      ```ts
-     export interface SetViewTaskParams {
-       /** Legacy view name — GLOBE/SPHERE, FLAT_*, and the multi-globe strings (verified in step 1) */
-       view: string
+     export interface LoadDatasetTaskParams {
+       id: string              // catalog ID (e.g. ID_OMGMDNKQFG)
+       datasetID?: string      // local tour handle (e.g. "dataset3")
+       worldIndex?: number     // 1-indexed target globe; defaults to 1
+       [key: string]: unknown  // preserve ignored legacy fields
      }
      ```
-3. `src/services/tourEngine.ts`
-   - `executeSetView(params)`:
-     - Parse legacy string → `ViewLayout` via the lookup from step 1. Log a one-time deprecation note when falling back on `FLAT_*` → single-globe. Log a warning on an unknown view name and default to single-globe.
-     - Call `callbacks.setView({ layout })`.
-     - Reset the `nextLoadSlot` cursor to 0 so subsequent `loadDataset` tasks fill panels in order.
+2. `src/services/tourEngine.ts`
+   - `executeSetEnvView(view)`:
+     - Normalise the string (lowercase, trim) and look up in the parser table above.
+     - Log a one-time deprecation note when falling back on `flat*` → single-globe. Log a warning on an unknown view name and default to single-globe.
+     - Call `callbacks.setEnvView({ layout })`.
      - Await `moveend` so subsequent `flyTo` tasks see the new camera.
-4. `TourCallbacks` — add `setView(opts: { layout: ViewLayout }): Promise<void>`.
-5. `src/main.ts` — implement the callback against `ViewportManager.setLayout(...)`.
-6. Fixture: `test-setview-tour.json` exercising a single-globe → multi-globe → single-globe sequence with 4 datasets, verifying lockstep camera motion and panel assignment order. Exact transitions depend on the verified multi-globe view names.
+   - Extend the existing `executeLoadDataset`:
+     - Translate `worldIndex` (1-indexed, default 1) into `slot` (0-indexed).
+     - If `datasetID` is provided, record `{ handle → { slot, catalogId } }` in a per-run map on the engine.
+     - Call `callbacks.loadDataset(catalogId, { slot })`.
+   - New `executeUnloadDataset(handle)`:
+     - Look up `handle` in the map.
+     - Call `callbacks.unloadDatasetAt(slot)`.
+     - Delete the map entry.
+   - `executeUnloadAllDatasets` clears the handle map.
+3. `TourCallbacks` (in `types/index.ts`) — add:
+   ```ts
+   setEnvView(opts: { layout: ViewLayout }): Promise<void>
+   unloadDatasetAt(slot: number): Promise<void>
+   ```
+   Extend existing `loadDataset(id, opts?: { slot?: number }): Promise<void>`.
+4. `src/main.ts` — implement the callbacks against `ViewportManager`.
+5. Fixture: use the user-provided reference tour as `public/tours/test-setenvview-tour.json` (stripped of SOS-specific image paths we can't resolve) — it exercises `1globe → 2globes → 1globe`, uses `worldIndex` routing, loads and unloads datasets by handle, and ends with a `flyTo`. Perfect smoke test. The tour references datasets that may not be in our catalog; either substitute real IDs from our catalog or accept "dataset not found" logs and focus on layout / routing behaviour.
 
-**Exit criteria**: a legacy SOS tour JSON file containing `setView` tasks plays through the engine without authoring changes, and four datasets loaded after a 4-panel `setView` land in panels 0–3 rather than clobbering each other.
+**Exit criteria**: the reference tour JSON plays through the engine without authoring changes. `2globes` puts two globes on screen, `worldIndex: 1` and `worldIndex: 2` land in their correct panels, `unloadDataset: "dataset1"` unloads the right panel, and lockstep camera motion holds through a `flyTo`.
 
 ---
 
@@ -195,7 +244,9 @@ With the machinery in place, the tour task is a thin executor.
 - **Layout state is not persisted.** Reloads reset to single-globe. Layout is intentionally a tour/session-scoped choice; persisting it would surprise users who loaded the app expecting a globe and got a 2×2 grid from last week.
 - **Orbit stays single-view-aware.** The system prompt doesn't mention panels; `viewports.loadDataset()` handles assignment silently. Revisit if users complain Orbit is loading into the "wrong" slot.
 - **Multi-globe defaults to side-by-side (`2h`) for the 2-panel layout.** New tours can specify `2v` directly if they need stacked.
-- **Exact legacy multi-globe tour strings need verification before Phase 3.** Placeholder in the plan until confirmed against a reference tour or SOS docs.
+- **Legacy task name is `setEnvView`**, not `setView`. Verified from a reference tour JSON. The `setView` naming survives colloquially (branch name, plan filename) because that's how we've been referring to the feature in conversation.
+- **Legacy multi-globe strings verified: `1globe`, `2globes`.** `4globes` inferred but not yet seen in a reference tour — safe to implement.
+- **Panel assignment is via `worldIndex`, not load order.** Verified in the reference tour. Each `loadDataset` task declares which globe it targets.
 
 ---
 
@@ -204,7 +255,7 @@ With the machinery in place, the tour task is a thin executor.
 - **Camera sync feedback loop.** MapLibre fires `move` even on `jumpTo`. The `syncLock` re-entrancy guard must be airtight or we recurse. Covered by a unit test that asserts `syncCameras` doesn't re-trigger during an in-flight sync.
 - **4× tile + video bandwidth.** Four instances means 4× GIBS tile requests and up to 4× HLS streams. Tile preloader cache helps for base layers but not dataset textures. Mobile gate mitigates the worst case. Worth a Tauri desktop smoke test — multiple WebGL contexts in one webview should work, but confirm before shipping.
 - **Playback drift.** HLS.js instances aren't frame-accurate. We seek non-primary videos to the primary's `currentTime` on `timeupdate`, which is ~4/sec — visible drift on fast-moving datasets. Acceptable for parity with legacy SOS. Noted in release notes.
-- **Layout churn during tours.** `map.resize()` + instance construction is not free. Rapid `setView` toggles could cause visible reflow. Mitigation: reuse existing renderer instances across `setLayout` calls where the count doesn't change, only restyling the grid; when adding panels, create them hidden and reveal only once initialised.
+- **Layout churn during tours.** `map.resize()` + instance construction is not free. Rapid `setEnvView` toggles could cause visible reflow. Mitigation: reuse existing renderer instances across `setLayout` calls where the count doesn't change, only restyling the grid; when adding panels, create them hidden and reveal only once initialised.
 - **Screenshot scope.** `captureScreenshot` currently grabs one canvas. In multi-view the default is primary-only; a `composite: true` option to grab all panels into one image is a future extension.
 
 ---
@@ -223,15 +274,15 @@ With the machinery in place, the tour task is a thin executor.
 **New files**
 - `src/services/viewportManager.ts` — viewport orchestration
 - `test/viewportManager.test.ts` — layout transitions + sync re-entrancy
-- `public/tours/test-setview-tour.json` — fixture (location TBD per existing fixture conventions)
+- `public/tours/test-setenvview-tour.json` — reference tour fixture (derived from the user-provided legacy tour JSON)
 
 **Modified files**
 - `src/services/mapRenderer.ts` — accept caller-provided container, drop module-level singleton
 - `src/services/datasetLoader.ts` — remove primary-only assumptions, guard playback wiring on `isPrimary`
 - `src/services/screenshotService.ts` — take renderer as an argument instead of reading the singleton
-- `src/services/tourEngine.ts` — `setView` task executor, `nextLoadSlot` cursor handling
+- `src/services/tourEngine.ts` — `setEnvView` + `unloadDataset` executors, extend `loadDataset` to route `worldIndex`, per-run `datasetID → slot` handle map
 - `src/ui/mapControlsUI.ts` — layout picker button
 - `src/ui/playbackController.ts` — fan-out `timeupdate` events to sibling viewports
-- `src/main.ts` — `ViewportManager` wiring, `setView` tour callback
-- `src/types/index.ts` — `ViewLayout`, `SetViewTaskParams`, extend `AppState`, extend `TourCallbacks`
+- `src/main.ts` — `ViewportManager` wiring, `setEnvView` / `loadDataset` / `unloadDatasetAt` tour callbacks
+- `src/types/index.ts` — `ViewLayout`, extend `TourTaskDef` with `setEnvView` + `unloadDataset`, extend `LoadDatasetTaskParams` with `datasetID` + `worldIndex`, extend `AppState`, extend `TourCallbacks`
 - `src/index.html` — grid CSS for `#container`, layout picker button wiring
