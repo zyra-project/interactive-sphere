@@ -433,9 +433,30 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   updateDownloadButtons()
 }
 
-/** Hide the browse overlay. */
+/** Hide the browse overlay entirely (aside becomes `display: none`). */
 export function hideBrowseUI(): void {
   const overlay = document.getElementById('browse-overlay')
   overlay?.classList.add('hidden')
   document.body.classList.remove('browse-open')
+}
+
+/**
+ * Collapse the browse overlay — keeps the aside rendered and its
+ * toggle-button tab visible at the right edge of the viewport, but
+ * slides the panel itself off-screen via `.collapsed`. The user can
+ * click the toggle to slide it back in. Use this in multi-view mode
+ * where the user needs to come back to the browse panel repeatedly
+ * to load datasets into additional panels.
+ */
+export function collapseBrowseUI(): void {
+  const overlay = document.getElementById('browse-overlay')
+  const toggle = document.getElementById('browse-toggle')
+  if (!overlay) return
+  overlay.classList.remove('hidden')
+  overlay.classList.add('collapsed')
+  if (toggle) {
+    toggle.innerHTML = '&#9656;'
+    toggle.setAttribute('aria-label', 'Open dataset browser')
+    toggle.setAttribute('aria-expanded', 'false')
+  }
 }

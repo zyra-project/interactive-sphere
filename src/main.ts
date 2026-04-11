@@ -14,7 +14,7 @@ import { logger } from './utils/logger'
 import type { AppState, VideoTextureHandle, TourFile, Dataset } from './types'
 
 // Extracted modules
-import { showBrowseUI, hideBrowseUI } from './ui/browseUI'
+import { showBrowseUI, hideBrowseUI, collapseBrowseUI } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
 import { initMapControls, updateMapControlsPosition, syncMapControlState } from './ui/mapControlsUI'
 import { initChatUI, openChat, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
@@ -177,6 +177,19 @@ class InteractiveSphere {
         await this.loadDataset(datasetId)
         this.setLoading(false)
         showChatTrigger()
+        // In multi-viewport mode, pre-render the browse panel in its
+        // collapsed state so users can slide it open to load datasets
+        // into the remaining panels. In single-view mode we don't —
+        // the URL-specified dataset is the only thing the user wanted.
+        if (this.viewports.getPanelCount() > 1) {
+          showBrowseUI(this.appState.datasets, {
+            onSelectDataset: (id) => this.selectDatasetFromBrowse(id),
+            announce: (msg) => this.announce(msg),
+            isMobile: this.isMobile,
+            onOpenChat: (query) => this.openChatWithQuery(query),
+          })
+          collapseBrowseUI()
+        }
       } else {
         this.setLoadingStatus('Loading Earth textures\u2026', 20)
         const cloudUrl = CLOUD_TEXTURE_URL
@@ -627,6 +640,24 @@ class InteractiveSphere {
     updateMapControlsPosition()
   }
 
+  /**
+   * Decide how to dismiss the browse panel after a dataset loads.
+   *
+   * - Single-viewport mode: full hide — the user has picked their
+   *   dataset and wants an unobstructed view of it. Home button
+   *   brings it back.
+   * - Multi-viewport mode: collapse only — leaves the toggle tab at
+   *   the right edge so the user can slide the panel back in to pick
+   *   datasets for the remaining panels without going through home.
+   */
+  private dismissBrowseAfterLoad(): void {
+    if (this.viewports.getPanelCount() > 1) {
+      collapseBrowseUI()
+    } else {
+      hideBrowseUI()
+    }
+  }
+
   /** Detect WebGL support. If unavailable, display troubleshooting instructions and return false. */
   private checkWebGLSupport(): boolean {
     const canvas = document.createElement('canvas')
@@ -775,7 +806,7 @@ class InteractiveSphere {
   private async selectDatasetFromChat(id: string): Promise<void> {
     const gen = ++this.loadGeneration
     logger.debug('[App] selectDatasetFromChat:', id, 'gen:', gen)
-    hideBrowseUI()
+    this.dismissBrowseAfterLoad()
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
@@ -1110,7 +1141,7 @@ class InteractiveSphere {
   /** Load a dataset selected via the browse panel, updating URL and shifting focus to playback controls. */
   private async selectDatasetFromBrowse(id: string): Promise<void> {
     const gen = ++this.loadGeneration
-    hideBrowseUI()
+    this.dismissBrowseAfterLoad()
     closeChat()
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)

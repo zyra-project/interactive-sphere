@@ -45,11 +45,17 @@ const PANEL_COUNT: Record<ViewLayout, number> = {
   '4': 4,
 }
 
-/** CSS grid-template for each layout. */
+/**
+ * CSS `grid-template` shorthand for each layout. The number of columns
+ * in the area strings MUST match the number of column sizes after `/`
+ * or CSS grid falls back to implicit tracks and the visible area
+ * shrinks (bug seen in Phase 2: `2v` was written as `"a" "b" / 1fr 1fr`
+ * which only populated the left half of the container).
+ */
 const GRID_TEMPLATE: Record<ViewLayout, string> = {
   '1': '"a" / 1fr',
   '2h': '"a b" / 1fr 1fr',
-  '2v': '"a" "b" / 1fr 1fr',
+  '2v': '"a" "b" / 1fr',
   '4': '"a b" "c d" / 1fr 1fr',
 }
 
