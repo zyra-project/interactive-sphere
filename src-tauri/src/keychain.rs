@@ -48,17 +48,23 @@ mod real {
 
 #[cfg(target_os = "android")]
 mod stub {
-    /// Android stub — no secure storage backend wired up yet.
-    /// Always returns an empty string. Tracked in MOBILE_APP_PLAN.md.
-    #[tauri::command]
-    pub fn get_api_key() -> Result<String, String> {
-        Ok(String::new())
-    }
+    // Error message the frontend recognises (via try/catch) and falls back
+    // to localStorage storage on. See saveConfig() in docentService.ts.
+    const UNSUPPORTED: &str = "keychain unsupported on android";
 
-    /// Android stub — silently succeeds without persisting.
+    /// Android stub — no secure storage backend wired up yet. Returns an
+    /// explicit error so the frontend's saveConfig() knows to fall back to
+    /// plaintext localStorage instead of silently losing the API key.
     /// Tracked in MOBILE_APP_PLAN.md.
     #[tauri::command]
+    pub fn get_api_key() -> Result<String, String> {
+        Err(UNSUPPORTED.to_string())
+    }
+
+    /// Android stub — returns an explicit error so the frontend keeps the
+    /// API key in localStorage as a fallback. Tracked in MOBILE_APP_PLAN.md.
+    #[tauri::command]
     pub fn set_api_key(_key: String) -> Result<(), String> {
-        Ok(())
+        Err(UNSUPPORTED.to_string())
     }
 }

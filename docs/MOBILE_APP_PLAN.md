@@ -81,8 +81,10 @@ Additive — existing desktop and web scripts unchanged:
 
 **Android (any host OS, including Linux):**
 - JDK 17+ (JDK 21 also works)
-- Android SDK: `cmdline-tools`, `platform-tools`, `platforms;android-35`,
-  `build-tools;35.0.1`
+- Android SDK: `cmdline-tools`, `platform-tools`, `platforms;android-36`,
+  `build-tools;36.0.0` (matches `compileSdk = 36` / `targetSdk = 36` in
+  `src-tauri/gen/android/app/build.gradle.kts` and
+  `.github/workflows/mobile.yml`)
 - Android NDK r28c (`28.2.13676358`)
 - `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`
 - `ANDROID_HOME` and `NDK_HOME` env vars set
