@@ -17,7 +17,7 @@ import type { AppState, VideoTextureHandle, TourFile, Dataset } from './types'
 import { showBrowseUI, hideBrowseUI, collapseBrowseUI } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
 import { updateMapControlsPosition } from './ui/mapControlsUI'
-import { initToolsMenu, syncToolsMenuState, pulseBrowseButton } from './ui/toolsMenuUI'
+import { initToolsMenu, syncToolsMenuState, syncToolsMenuLayout, pulseBrowseButton } from './ui/toolsMenuUI'
 import { initChatUI, openChat, openChatSettings, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from './utils/viewPreferences'
 import { initHelpUI, setActiveDataset as setHelpActiveDataset } from './ui/helpUI'
@@ -546,7 +546,7 @@ class InteractiveSphere {
 
   /** Reset the globe to default Earth for a tour — like goHome but keeps UI clean (no browse panel). */
   private async unloadForTour(): Promise<void> {
-    this.unloadAllPanels()
+    await this.unloadAllPanels()
     clearLegendCache()
     this.appState.currentDataset = null
     this.showPlaybackControls(false)
@@ -1216,6 +1216,7 @@ class InteractiveSphere {
     }
     this.refreshPanelLegends()
     this.renderInfoPanel()
+    syncToolsMenuLayout(this.viewports.getLayout())
   }
 
   /**
@@ -1260,15 +1261,16 @@ class InteractiveSphere {
 
     // Rewire playback controls based on the new primary's video state
     const isVideo = newDataset && dataService.isVideoDataset(newDataset) && newPrimaryPanel?.hlsService
+    const hasTemporalRange = Boolean(newDataset?.startTime && newDataset?.endTime)
     if (isVideo) {
       this.showPlaybackControls(true)
-      this.showTimeLabel(true)
+      this.showTimeLabel(hasTemporalRange)
       updatePlayButton(newPrimaryPanel!.hlsService!.paused)
       this.attachPrimaryVideoSync()
       this.doStartPlaybackLoop()
     } else {
       this.showPlaybackControls(false)
-      if (!newDataset?.startTime) {
+      if (!hasTemporalRange) {
         this.showTimeLabel(false)
       }
     }
@@ -1781,7 +1783,7 @@ class InteractiveSphere {
   /** Navigate back to the default Earth view: tear down every panel's dataset, reload Earth materials, and re-show the browse panel. */
   private async goHome(): Promise<void> {
     this.stopTour()
-    this.unloadAllPanels()
+    await this.unloadAllPanels()
     clearLegendCache()
     this.appState.currentDataset = null
     this.showPlaybackControls(false)
@@ -1838,9 +1840,28 @@ class InteractiveSphere {
     await this.startTour(url, gen)
   }
 
+  /**
+   * Synchronously release video/HLS resources across all panels
+   * without the async Earth-material reload that `unloadAllPanels`
+   * performs. Used by `dispose()` where the renderers are about to
+   * be torn down and awaiting async work is neither necessary nor
+   * safe.
+   */
+  private teardownAllPanelResources(): void {
+    this.detachPrimaryVideoSync()
+    stopPlaybackLoop(this.playback)
+    this.appState.isPlaying = false
+    resetPlaybackState(this.playback)
+    for (const panel of this.panelStates) {
+      if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
+      if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
+      panel.dataset = null
+    }
+  }
+
   /** Clean up all resources: video streams, textures, and every viewport renderer. */
   dispose(): void {
-    this.unloadAllPanels()
+    this.teardownAllPanelResources()
     this.viewports.dispose()
     this.panelStates = []
   }

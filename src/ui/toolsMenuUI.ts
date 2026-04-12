@@ -197,6 +197,9 @@ export function initToolsMenu(
         toggle?.focus()
       }
     })
+    // Keep the Tools bar positioned above the playback transport
+    // on window resize / orientation change.
+    window.addEventListener('resize', updateMapControlsPosition)
   }
 
   // --- View toggles ---
@@ -299,10 +302,6 @@ export function initToolsMenu(
     }
   }
 
-  // Keep the Tools bar positioned above the playback transport
-  // on window resize / orientation change. The old initMapControls
-  // had this listener; the new Tools menu needs it too.
-  window.addEventListener('resize', updateMapControlsPosition)
 }
 
 /** Open the popover and focus its close button for keyboard users. */
@@ -405,6 +404,23 @@ export function syncToolsMenuState(state: {
   if (state.legend !== undefined) {
     const btn = document.getElementById('tools-menu-legend')
     if (btn) setButtonState(btn, state.legend)
+  }
+}
+
+/**
+ * Sync the layout picker buttons to the given layout. Called by
+ * main.ts when a layout change comes from a non-UI path (tours,
+ * URL init, `setEnvView` API) so the picker buttons stay in sync.
+ */
+export function syncToolsMenuLayout(layout: ViewLayout): void {
+  const layouts: ViewLayout[] = ['1', '2h', '2v', '4']
+  for (const l of layouts) {
+    const btn = document.getElementById(`tools-menu-layout-${l}`)
+    if (btn) {
+      const active = l === layout
+      btn.classList.toggle('active', active)
+      btn.setAttribute('aria-pressed', String(active))
+    }
   }
 }
 
