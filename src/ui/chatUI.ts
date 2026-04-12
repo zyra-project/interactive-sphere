@@ -398,6 +398,22 @@ function seedModelSelect(currentModel: string): void {
   select.disabled = true
 }
 
+/**
+ * Phase 4: prepend "Local (Apple Intelligence)" to a model select if available.
+ * Works offline — the check goes through the Tauri plugin, not HTTP.
+ */
+function addAppleIntelligenceOption(select: HTMLSelectElement, selected: string): void {
+  isAppleIntelligenceAvailable().then(available => {
+    if (!available || !select) return
+    if (Array.from(select.options).some(o => o.value === 'apple-intelligence')) return
+    const opt = document.createElement('option')
+    opt.value = 'apple-intelligence'
+    opt.textContent = 'Local (Apple Intelligence)'
+    opt.selected = selected === 'apple-intelligence'
+    select.insertBefore(opt, select.firstChild)
+  }).catch(() => { /* not available, silently skip */ })
+}
+
 /** Fetch models from the API and populate the select, preserving the current selection. */
 async function refreshModelSelect(apiUrl: string, preferredModel?: string): Promise<void> {
   const select = document.getElementById('chat-settings-model') as HTMLSelectElement | null
@@ -416,6 +432,8 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
     opt.textContent = selected || 'No models found'
     select.appendChild(opt)
     select.disabled = false
+    // Still check for Apple Intelligence — it's local and works offline
+    addAppleIntelligenceOption(select, selected)
     return
   }
 
@@ -430,20 +448,7 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
   }
   select.disabled = false
 
-  // Phase 4: if Apple Intelligence is available on this device, prepend it
-  // as an option. The model value 'apple-intelligence' is a sentinel that
-  // docentService checks to route through the on-device provider instead
-  // of the HTTP provider.
-  isAppleIntelligenceAvailable().then(available => {
-    if (!available || !select) return
-    // Don't add if already present (e.g. from a previous refresh)
-    if (Array.from(select.options).some(o => o.value === 'apple-intelligence')) return
-    const opt = document.createElement('option')
-    opt.value = 'apple-intelligence'
-    opt.textContent = 'Local (Apple Intelligence)'
-    opt.selected = selected === 'apple-intelligence'
-    select.insertBefore(opt, select.firstChild)
-  }).catch(() => { /* not available, silently skip */ })
+  addAppleIntelligenceOption(select, selected)
 
   // Auto-persist the first model when config has none (e.g. fresh Tauri install)
   if (!selected && models.length > 0) {

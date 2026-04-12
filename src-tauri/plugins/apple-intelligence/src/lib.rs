@@ -76,18 +76,19 @@ pub struct ErrorPayload {
 
 /// Check whether the on-device Foundation Models are available.
 ///
-/// On iOS, this delegates to the Swift plugin which checks
-/// `SystemLanguageModel.default.availability`. On all other platforms,
-/// returns `{ available: false, reason: "..." }`.
+/// Currently iOS-only. On iOS, this delegates to the Swift plugin which
+/// checks `SystemLanguageModel.default.availability`. macOS support
+/// (via a similar Swift plugin) is a future extension. On all other
+/// platforms, returns `{ available: false, reason: "..." }`.
 #[tauri::command]
 async fn is_available() -> AvailabilityResult {
-    // On non-iOS platforms, Apple Intelligence is never available.
-    // The iOS implementation overrides this via the mobile plugin bridge.
+    // Currently only iOS has the Swift plugin bridge. macOS desktop
+    // could use Foundation Models too but needs its own plugin path.
     #[cfg(not(target_os = "ios"))]
     {
         AvailabilityResult {
             available: false,
-            reason: Some("Apple Intelligence requires iOS 26+ or macOS 26+".to_string()),
+            reason: Some("Apple Intelligence is currently only supported on iOS".to_string()),
         }
     }
 

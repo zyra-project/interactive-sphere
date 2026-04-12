@@ -184,6 +184,7 @@ export async function* streamChatLocal(
       push({ type: 'error', message: p.message })
     }))
   } catch (err) {
+    for (const unlisten of unlisteners) unlisten()
     yield { type: 'error', message: 'Failed to subscribe to Apple Intelligence events' }
     return
   }
@@ -222,6 +223,7 @@ export async function* streamChatLocal(
       // Wait for the next event or timeout
       const remaining = timeoutAt - Date.now()
       if (remaining <= 0) {
+        done = true
         yield { type: 'error', message: 'Apple Intelligence response timed out' }
         return
       }

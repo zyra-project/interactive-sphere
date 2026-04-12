@@ -88,17 +88,20 @@ class AppleIntelligencePlugin: Plugin {
     /// model reads to make dataset recommendations. Tool calling can be added
     /// in a future iteration using Swift Tool protocol + @Generable structs.
     @objc public func chat(_ invoke: Invoke) {
+        // Parse sessionId early so all error paths can include it for JS filtering
+        let earlySessionId = ((invoke.data as? [String: Any])?["sessionId"] as? String) ?? "unknown"
+
         #if canImport(FoundationModels)
         guard #available(iOS 26, macOS 26, *) else {
-            emitError(invoke, sessionId: "unknown", message: "Requires iOS 26+ or macOS 26+")
+            emitError(invoke, sessionId: earlySessionId, message: "Requires iOS 26+ or macOS 26+")
             return
         }
 
-        // Parse arguments from the invoke payload
+        // Parse remaining arguments
         guard let args = invoke.data as? [String: Any],
               let sessionId = args["sessionId"] as? String,
               let messagesRaw = args["messages"] as? [[String: Any]] else {
-            emitError(invoke, sessionId: "unknown", message: "Invalid arguments: expected sessionId and messages")
+            emitError(invoke, sessionId: earlySessionId, message: "Invalid arguments: expected sessionId and messages")
             return
         }
 
@@ -145,8 +148,7 @@ class AppleIntelligencePlugin: Plugin {
             invoke.resolve()
         }
         #else
-        let sessionId = (invoke.data as? [String: Any])?["sessionId"] as? String ?? "unknown"
-        emitError(invoke, sessionId: sessionId, message: "FoundationModels framework not available")
+        emitError(invoke, sessionId: earlySessionId, message: "FoundationModels framework not available")
         #endif
     }
 

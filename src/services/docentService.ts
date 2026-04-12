@@ -866,9 +866,6 @@ export async function* processMessage(
     // When it is, we route through streamChatLocal (Tauri plugin) instead of
     // streamChat (HTTP). The provider selection is transparent to the rest of
     // processMessage — both yield the same StreamChunk union.
-    // When it is, we route through streamChatLocal (Tauri plugin) instead of
-    // streamChat (HTTP). The provider selection is transparent to the rest of
-    // processMessage — both yield the same StreamChunk union.
     const useAppleIntelligence = cfg.model === 'apple-intelligence' && await isAppleIntelligenceAvailable()
 
     const llmContext: LLMContextSnapshot = {
