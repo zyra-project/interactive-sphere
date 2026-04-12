@@ -23,8 +23,8 @@ interface ContentPart {
 }
 
 interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string | ContentPart[]
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | ContentPart[] | null
 }
 
 interface RequestBody {
@@ -83,6 +83,9 @@ function extractImageAndNormalise(
   const textMessages = messages.map(msg => {
     if (typeof msg.content === 'string') {
       return { role: msg.role, content: msg.content }
+    }
+    if (!Array.isArray(msg.content)) {
+      return { role: msg.role, content: '' }
     }
     // Multimodal content array — extract image + concatenate text
     const textParts: string[] = []
@@ -289,13 +292,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       })
     }
 
-    // Plain text, no tools, no images: real streaming path (unchanged)
-    const textMessages = truncated.map(m => ({
-      role: m.role,
-      content: typeof m.content === 'string'
-        ? m.content
-        : m.content.filter(p => p.type === 'text').map(p => p.text ?? '').join('\n'),
-    }))
+    // Plain text, no tools, no images: real streaming path (unchanged).
+    // Guard against content: null (assistant tool-call echoes) and
+    // role: 'tool' messages that shouldn't reach this path but might
+    // if supportsTools is false and the client sends stale history.
+    const textMessages = truncated
+      .filter(m => m.role !== 'tool')
+      .map(m => ({
+        role: m.role,
+        content: typeof m.content === 'string'
+          ? m.content
+          : Array.isArray(m.content)
+            ? m.content.filter(p => p.type === 'text').map(p => p.text ?? '').join('\n')
+            : '',
+      }))
     if (body.stream) {
       return await streamResponse(context.env.AI, cfModel, textMessages, cors)
     }

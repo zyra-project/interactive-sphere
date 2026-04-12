@@ -38,8 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   // Keep this list in sync with MODEL_MAP in functions/api/chat/completions.ts.
-  // Ordering matters: the first entry is surfaced as the default in the
-  // settings model picker dropdown.
+  // The client sorts models alphabetically before displaying in the picker.
   return new Response(
     JSON.stringify({
       object: 'list',

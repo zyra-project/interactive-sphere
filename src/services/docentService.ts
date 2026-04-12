@@ -813,10 +813,14 @@ export async function* processMessage(
       .split(/\s+/)
       .filter(w => w.length > 1 && !PRE_SEARCH_STOP_WORDS.has(w.toLowerCase()))
       .join(' ')
-    const preSearchCatalogResults = executeSearchCatalog(
-      { query: preSearchQuery || input, limit: 5 },
-      datasets,
-    )
+    // Only pre-search for intents that actually need dataset discovery.
+    // Greetings, help, explain-current, and what-is-this don't benefit
+    // from injecting a [RELEVANT DATASETS] block and would just add
+    // noise tokens + risk steering the model toward irrelevant recs.
+    const needsPreSearch = intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
+    const preSearchCatalogResults = needsPreSearch
+      ? executeSearchCatalog({ query: preSearchQuery || input, limit: 5 }, datasets)
+      : []
 
     let preSearchContext = ''
     if (preSearchCatalogResults.length > 0) {

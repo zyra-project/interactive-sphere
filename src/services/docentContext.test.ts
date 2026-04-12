@@ -152,7 +152,7 @@ describe('buildSystemPrompt', () => {
     // forbids this. See PR #27 screenshot discussion for context.
     const prompt = buildSystemPrompt(datasets, null)
     expect(prompt).toMatch(/CALL TOOLS SILENTLY/i)
-    expect(prompt).toContain('Do NOT narrate your tool calls')
+    expect(prompt).toContain('do NOT narrate')
   })
 
   it('requires a <<LOAD:...>> marker for every dataset recommended from tool results', () => {
