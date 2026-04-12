@@ -1356,6 +1356,22 @@ class InteractiveSphere {
             new Date(sibDataset!.endTime!),
           )
 
+          // Match the sibling's playback speed so it advances through
+          // real-world time at the same pace as the primary, even if
+          // the two videos have different durations (e.g. daily vs
+          // weekly frames). Without this, a shorter sibling finishes
+          // its entire date range while the primary is still early in
+          // its timeline, causing constant drift corrections.
+          const primaryRangeMs = new Date(pDataset!.endTime!).getTime() - new Date(pDataset!.startTime!).getTime()
+          const sibRangeMs = new Date(sibDataset!.endTime!).getTime() - new Date(sibDataset!.startTime!).getTime()
+          if (primaryRangeMs > 0 && sibRangeMs > 0) {
+            // rate = (sib video seconds per real-world ms) / (primary video seconds per real-world ms)
+            // Simplifies to: (sibDuration / sibRangeMs) / (primaryDuration / primaryRangeMs)
+            const rate = (sibVideo.duration / sibRangeMs) / (primaryVideo.duration / primaryRangeMs)
+            // Clamp to browser limits (typically 0.0625–16×)
+            sibVideo.playbackRate = Math.max(0.0625, Math.min(16, rate))
+          }
+
           if (position === 'inside') {
             this.viewports.setOutOfRange(i, false)
             sibVideo.currentTime = targetTime
@@ -1484,8 +1500,12 @@ class InteractiveSphere {
     }
     this.primaryVideoSyncListeners = []
     this.primaryVideoSyncTarget = null
+    // Reset sibling playback rates to 1.0 so videos don't stay at
+    // the adjusted speed after sync is torn down.
     for (let i = 0; i < this.panelStates.length; i++) {
       this.viewports.setOutOfRange(i, false)
+      const sibVideo = this.panelStates[i]?.hlsService?.getVideo?.() ?? null
+      if (sibVideo) sibVideo.playbackRate = 1.0
     }
   }
 
