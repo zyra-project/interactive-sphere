@@ -2,6 +2,8 @@
 
 > Colloquially called "setView" throughout this repo and our design conversations. The actual legacy SOS tour task is named **`setEnvView`** — the plan uses the real task name in code references and the colloquial name in prose.
 
+> **Status: Complete.** All three phases shipped on the `claude/implement-setview-feature-tnv4k` branch (PR #28). The plan below is retained as a historical reference for the design decisions and architecture rationale.
+
 The legacy SOS Explorer `setEnvView` tour task switches the display between a single globe and multi-globe layouts. The legacy app supported multi-globe views (2 or 4 synchronised globes) but did **not** support multi-map views — the `FLAT_*` view names referred to a single flat map, not a grid of flat maps. Multi-panel meant multi-globe.
 
 **This plan treats setView as "how many synchronised globes are on screen".** We're skipping flat projection entirely: MapLibre GL JS only offers `mercator` and `globe` as built-in projections, and mercator is actively wrong for a polar-heavy Earth-science dataset (it literally cannot display latitudes above ~85°). A true equirectangular or polar-stereographic render would require writing a second custom WebGL render path; that's out of scope here and tracked as a follow-up under "Future extensions" below.
