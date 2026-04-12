@@ -99,7 +99,10 @@ jobs:
 
   ios-build:
     name: Build (iOS)
-    runs-on: macos-latest
+    # Phase 4: macos-26 provides Xcode 26 with the iOS 26 SDK, which includes
+    # the Foundation Models framework needed by the apple-intelligence plugin.
+    # Free for public repos, same as macos-latest.
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v4
@@ -110,9 +113,6 @@ jobs:
         with:
           node-version: 20
           cache: npm
-
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
 
       - name: Install Rust stable with iOS targets
         uses: dtolnay/rust-toolchain@stable
@@ -145,17 +145,9 @@ jobs:
             echo "iOS scaffold already exists — skipping init"
           fi
 
-      # Compile-check the Rust lib for both iOS device and simulator targets.
-      # We deliberately do NOT run `tauri ios build` here because that drives
-      # `xcodebuild` against the Tauri-generated Xcode scheme, which lacks
-      # simulator destinations out of the box (the full xcodebuild path will
-      # come back in Phase 6 alongside signed release builds). Cargo check
-      # validates exactly what we care about in Phase 2: that our Rust code
-      # compiles for iOS. Skips signing and scheme configuration entirely.
-      - name: Check Rust compiles for iOS device
-        working-directory: src-tauri
-        run: cargo check --target aarch64-apple-ios --lib
-
-      - name: Check Rust compiles for iOS arm64 simulator
-        working-directory: src-tauri
-        run: cargo check --target aarch64-apple-ios-sim --lib
+      # Full iOS build: compiles Rust AND Swift (including the apple-
+      # intelligence plugin's Foundation Models code) via xcodebuild.
+      # Validated working on macos-26 with Xcode 26.2 — the simulator
+      # destination issue from Xcode 16 is resolved.
+      - name: Build iOS app (debug, simulator)
+        run: npx tauri ios build --debug --target aarch64-sim

@@ -14,6 +14,7 @@ import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnecti
 import { captureGlobeScreenshot } from '../services/screenshotService'
 import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
+import { isAvailable as isAppleIntelligenceAvailable } from '../services/appleIntelligenceProvider'
 import { setLogLevel, logger } from '../utils/logger'
 
 // --- Constants ---
@@ -397,6 +398,22 @@ function seedModelSelect(currentModel: string): void {
   select.disabled = true
 }
 
+/**
+ * Phase 4: prepend "Local (Apple Intelligence)" to a model select if available.
+ * Works offline — the check goes through the Tauri plugin, not HTTP.
+ */
+function addAppleIntelligenceOption(select: HTMLSelectElement, selected: string): void {
+  isAppleIntelligenceAvailable().then(available => {
+    if (!available || !select) return
+    if (Array.from(select.options).some(o => o.value === 'apple-intelligence')) return
+    const opt = document.createElement('option')
+    opt.value = 'apple-intelligence'
+    opt.textContent = 'Local (Apple Intelligence)'
+    opt.selected = selected === 'apple-intelligence'
+    select.insertBefore(opt, select.firstChild)
+  }).catch(() => { /* not available, silently skip */ })
+}
+
 /** Fetch models from the API and populate the select, preserving the current selection. */
 async function refreshModelSelect(apiUrl: string, preferredModel?: string): Promise<void> {
   const select = document.getElementById('chat-settings-model') as HTMLSelectElement | null
@@ -415,6 +432,8 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
     opt.textContent = selected || 'No models found'
     select.appendChild(opt)
     select.disabled = false
+    // Still check for Apple Intelligence — it's local and works offline
+    addAppleIntelligenceOption(select, selected)
     return
   }
 
@@ -428,6 +447,8 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
     select.appendChild(opt)
   }
   select.disabled = false
+
+  addAppleIntelligenceOption(select, selected)
 
   // Auto-persist the first model when config has none (e.g. fresh Tauri install)
   if (!selected && models.length > 0) {
