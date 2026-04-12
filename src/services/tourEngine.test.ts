@@ -64,12 +64,20 @@ function makeRenderer(): GlobeRenderer {
 
 function makeCallbacks(overrides: Partial<TourCallbacks> = {}): TourCallbacks {
   const renderer = makeRenderer()
+  // If the caller overrides getRenderer with a custom renderer, we
+  // need getAllRenderers to return the same one — otherwise the
+  // environment executors (worldBorder, dayNight, clouds) that fan
+  // out across getAllRenderers() would operate on a different mock
+  // than the test is asserting against.
+  const customRenderer = overrides.getRenderer?.()
+  const rendererForAll = customRenderer ?? renderer
   return {
     loadDataset: vi.fn(() => Promise.resolve()),
     unloadAllDatasets: vi.fn(() => Promise.resolve()),
     unloadDatasetAt: vi.fn(() => Promise.resolve()),
     setEnvView: vi.fn(() => Promise.resolve()),
     getRenderer: vi.fn(() => renderer),
+    getAllRenderers: vi.fn(() => [rendererForAll]),
     togglePlayPause: vi.fn(),
     isPlaying: vi.fn(() => false),
     setPlaybackRate: vi.fn(),

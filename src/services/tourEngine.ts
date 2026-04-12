@@ -682,30 +682,33 @@ export class TourEngine {
   // ── Environment executors ──────────────────────────────────────────
 
   private execDayNight(state: 'on' | 'off'): void {
-    const renderer = this.callbacks.getRenderer()
-    if (state === 'on') {
-      const sun = getSunPosition(new Date())
-      renderer.enableSunLighting(sun.lat, sun.lng)
-    } else {
-      renderer.disableSunLighting()
+    for (const renderer of this.callbacks.getAllRenderers()) {
+      if (state === 'on') {
+        const sun = getSunPosition(new Date())
+        renderer.enableSunLighting(sun.lat, sun.lng)
+      } else {
+        renderer.disableSunLighting()
+      }
     }
   }
 
   private async execClouds(state: 'on' | 'off'): Promise<void> {
-    const renderer = this.callbacks.getRenderer()
-    if (state === 'on') {
-      const cloudUrl = getCloudTextureUrl()
-      await renderer.loadCloudOverlay(cloudUrl)
-    } else {
-      renderer.removeCloudOverlay()
+    const cloudUrl = getCloudTextureUrl()
+    for (const renderer of this.callbacks.getAllRenderers()) {
+      if (state === 'on') {
+        await renderer.loadCloudOverlay(cloudUrl)
+      } else {
+        renderer.removeCloudOverlay()
+      }
     }
   }
 
   private execWorldBorder(state: 'on' | 'off'): void {
-    const renderer = this.callbacks.getRenderer()
     const on = state === 'on'
-    renderer.toggleBoundaries?.(on)
-    renderer.toggleLabels?.(on)
+    for (const renderer of this.callbacks.getAllRenderers()) {
+      renderer.toggleBoundaries?.(on)
+      renderer.toggleLabels?.(on)
+    }
     syncToolsMenuState({ labels: on, borders: on })
   }
 

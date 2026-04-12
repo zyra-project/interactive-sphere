@@ -518,6 +518,12 @@ export interface TourCallbacks {
    */
   setEnvView(opts: { layout: TourViewLayout }): Promise<void>
   getRenderer(): GlobeRenderer
+  /**
+   * Get every active renderer (one per viewport panel). Used by
+   * environment executors (day/night, clouds, borders) that need
+   * to fan out across all panels, not just the primary.
+   */
+  getAllRenderers(): GlobeRenderer[]
   togglePlayPause(): void
   isPlaying(): boolean
   setPlaybackRate(rate: number): void

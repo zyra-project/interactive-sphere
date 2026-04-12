@@ -594,6 +594,7 @@ class InteractiveSphere {
         this.viewports.setLayout(layout)
       },
       getRenderer: () => this.renderer!,
+      getAllRenderers: () => this.viewports.getAll(),
       togglePlayPause: () => {
         togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m))
       },
