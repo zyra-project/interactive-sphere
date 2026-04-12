@@ -775,12 +775,42 @@ export async function* processMessage(
       ? `[GLOBE STATE: "${currentDataset.title}" is currently loaded on the globe.${currentTime ? ` Showing: ${currentTime}.` : ''}]\n`
       : '[GLOBE STATE: No dataset is loaded. The globe shows the default Earth view.]\n'
 
+    // Phase 3 pre-search: run the catalog search locally BEFORE sending to
+    // the LLM, and inject the top results into the user message as context.
+    // This is the primary discovery mechanism — it works on every model
+    // regardless of function-calling support. The `search_catalog` tool is
+    // kept as an optional upgrade path for models that can use it to refine
+    // or do follow-up searches.
+    const preSearchResults = searchDatasets(datasets, input, 5)
+    const preSearchCatalogResults: CatalogSearchResult[] = preSearchResults.map(({ dataset: d }) => {
+      const desc = d.enriched?.description ?? d.abstractTxt ?? ''
+      const shortDesc = desc.length > SEARCH_CATALOG_DESC_LEN
+        ? desc.slice(0, SEARCH_CATALOG_DESC_LEN).trim() + '…'
+        : desc
+      const result: CatalogSearchResult = {
+        id: d.id,
+        title: d.title,
+        categories: Object.keys(d.enriched?.categories ?? {}),
+        description: shortDesc,
+      }
+      if (d.format === 'tour/json') result.isTour = true
+      return result
+    })
+
+    let preSearchContext = ''
+    if (preSearchCatalogResults.length > 0) {
+      const lines = preSearchCatalogResults.map(r =>
+        `- ${r.id} | ${r.title}${r.isTour ? ' [Tour]' : ''} | ${r.categories.join(', ')} | ${r.description}`
+      )
+      preSearchContext = `[RELEVANT DATASETS for your query:\n${lines.join('\n')}\nRefer to these by exact title and include <<LOAD:ID>> markers.]\n`
+    }
+
     const userMessage: LLMMessage = visionActive
       ? { role: 'user', content: [
           { type: 'image_url' as const, image_url: { url: screenshotDataUrl! } },
-          { type: 'text' as const, text: statePrefix + visionText },
+          { type: 'text' as const, text: statePrefix + preSearchContext + visionText },
         ] as LLMContentPart[] }
-      : { role: 'user', content: statePrefix + input }
+      : { role: 'user', content: statePrefix + preSearchContext + input }
 
     const llmMessages: LLMMessage[] = [
       { role: 'system' as const, content: systemPrompt },
