@@ -78,7 +78,7 @@ function renderGuideHtml(): string {
         <li><strong>View</strong> — toggle labels, borders, 3D terrain, auto-rotation, the dataset info panel, and dataset legends.</li>
         <li><strong>Dataset info</strong> — show or hide the dataset metadata panel in the bottom-left. Hidden by default if you've turned it off previously; your preference is remembered.</li>
         <li><strong>Legend</strong> — show or hide the legend for each loaded dataset. In multi-globe layouts each panel shows its own legend; tap a legend to enlarge.</li>
-        <li><strong>Layout</strong> — switch between a single globe or 2–4 synchronised globes that move together but can show different datasets side-by-side (currently gated behind the <code>?setview=</code> URL flag).</li>
+        <li><strong>Layout</strong> — switch between a single globe or 2–4 synchronised globes that move together but can show different datasets side-by-side.</li>
         <li><strong>Clear</strong> — remove any markers or highlighted regions.</li>
         <li><strong>Orbit settings</strong> — configure the AI docent's endpoint, model, and preferences.</li>
         <li>Tap outside the popover or press <kbd>Esc</kbd> to close it.</li>

@@ -76,11 +76,6 @@ export function initToolsMenu(
 
   const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, announce } = callbacks
 
-  // The layout picker is a dev-only affordance until multi-viewport
-  // has real per-panel datasets. Show it when the URL carries
-  // `?setview=` (any value).
-  const setViewDev = new URLSearchParams(window.location.search).has('setview')
-
   container.classList.remove('hidden')
   container.classList.add('tools-menu-host')
   container.innerHTML = `
@@ -124,7 +119,6 @@ export function initToolsMenu(
           <span class="tools-menu-item-label">Legend</span>
         </button>
       </section>
-      ${setViewDev ? `
       <section class="tools-menu-section" aria-label="Layout">
         <h4 class="tools-menu-section-title">Layout</h4>
         <div class="tools-menu-layout-row" role="radiogroup" aria-label="Globe layout">
@@ -134,7 +128,6 @@ export function initToolsMenu(
           <button type="button" class="tools-menu-layout-btn" id="tools-menu-layout-4" aria-pressed="false" title="Four globes in a grid">4</button>
         </div>
       </section>
-      ` : ''}
       <section class="tools-menu-section" aria-label="Actions">
         <h4 class="tools-menu-section-title">Actions</h4>
         <button type="button" class="tools-menu-item" id="tools-menu-clear">
@@ -284,7 +277,7 @@ export function initToolsMenu(
 
   // --- Layout picker (dev flag only) ---
 
-  if (setViewDev && onSetLayout) {
+  if (onSetLayout) {
     const layouts: ViewLayout[] = ['1', '2h', '2v', '4']
     const layoutBtns = new Map<ViewLayout, HTMLButtonElement>()
     for (const l of layouts) {

@@ -118,16 +118,7 @@ describe('initToolsMenu', () => {
     expect(document.getElementById('tools-menu-orbit-settings')).toBeTruthy()
   })
 
-  it('omits the layout picker when ?setview= is not set', () => {
-    const vm = makeViewports(1)
-    initToolsMenu(vm as any)
-
-    expect(document.getElementById('tools-menu-layout-1')).toBeNull()
-    expect(document.getElementById('tools-menu-layout-4')).toBeNull()
-  })
-
-  it('renders the layout picker when ?setview=1 is set', () => {
-    setUrl('?setview=1')
+  it('always renders the layout picker', () => {
     const vm = makeViewports(1)
     initToolsMenu(vm as any)
 
@@ -388,7 +379,6 @@ describe('Tools menu callbacks', () => {
   })
 
   it('calls onSetLayout and updates active layout button when picker is used', () => {
-    setUrl('?setview=1')
     const vm = makeViewports(1)
     const onSetLayout = vi.fn()
     initToolsMenu(vm as any, { onSetLayout })
