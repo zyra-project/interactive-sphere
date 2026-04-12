@@ -394,7 +394,9 @@ describe('TourEngine', () => {
 
       await engine.play()
       expect(renderer.toggleBoundaries).toHaveBeenCalledWith(true)
-      expect(renderer.toggleLabels).toHaveBeenCalledWith(true)
+      // worldBorder no longer toggles labels — labels are a separate
+      // user-controlled toggle (fixed in 0ad1146).
+      expect(renderer.toggleLabels).not.toHaveBeenCalled()
     })
 
     it('dispatches envShowWorldBorder string format', async () => {
