@@ -220,10 +220,11 @@ const tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unk
 const DEFAULT_CONFIG: DocentConfig = {
   apiUrl: IS_TAURI ? '' : '/api',
   apiKey: '',
-  // Default to llama-4-scout on the CF proxy. It's natively multimodal and
-  // supports function calling, so the new catalog-as-tool flow and the
-  // vision screenshot path both work on the same model.
-  model: IS_TAURI ? '' : 'llama-4-scout',
+  // Default to llama-3.1-70b on the CF proxy. It reliably follows the
+  // <<LOAD:...>> marker format in prose, which produces inline Load buttons.
+  // llama-4-scout is available via the settings dropdown for users who want
+  // multimodal + tool-calling support, but it doesn't emit markers reliably.
+  model: IS_TAURI ? '' : 'llama-3.1-70b',
   enabled: true,
   readingLevel: 'general',
   visionEnabled: false,
@@ -859,7 +860,10 @@ export async function* processMessage(
       // Track all datasets returned by search_catalog across rounds in this
       // attempt so we can auto-inject Load buttons for any the LLM mentions
       // by title but forgets to tag with <<LOAD:...>> markers.
-      const searchResultsThisAttempt: CatalogSearchResult[] = []
+      // Seed with pre-search results so the auto-inject safety net can match
+      // dataset titles in the LLM's prose even when the model doesn't call
+      // the search_catalog tool. Any tool-call results are appended later.
+      const searchResultsThisAttempt: CatalogSearchResult[] = [...preSearchCatalogResults]
 
       try {
         toolLoop: while (round < MAX_TOOL_CALL_ROUNDS) {
