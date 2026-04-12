@@ -891,7 +891,17 @@ function renderMarkdownLite(html: string): string {
   let inList = false
 
   for (const rawLine of lines) {
-    const line = rawLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    let line = rawLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Convert markdown links [text](url) → clickable <a> (new tab)
+    line = line.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    )
+    // Convert bare URLs that aren't already inside an href attribute
+    line = line.replace(
+      /(?<!["=])(https?:\/\/[^\s<)]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+    )
     const bulletMatch = line.match(/^• (.+)$/)
 
     if (bulletMatch) {
