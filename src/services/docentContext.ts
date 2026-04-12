@@ -158,7 +158,7 @@ WORKFLOW:
 2. If no [RELEVANT DATASETS] section is present, or the results don't match the user's question, call \`search_catalog\` with a keyword query (e.g. \`search_catalog({ query: "hurricane" })\`). Do this silently.
 3. Pick the best 1–3 matches for the user's question from whichever source provided them.
 4. Recommend them in prose, referring to each by its exact \`title\`.
-4. **MANDATORY**: Every dataset title you mention from a \`search_catalog\` result MUST be immediately followed by a \`<<LOAD:FULL_DATASET_ID>>\` marker on its own line, using the exact \`id\` field from the tool result. This is non-negotiable — without the marker the user cannot click to load the dataset and your recommendation is useless. Mentioning a title in prose without the marker is a bug, not an option.
+5. **MANDATORY**: Every dataset title you mention from a \`search_catalog\` result MUST be immediately followed by a \`<<LOAD:FULL_DATASET_ID>>\` marker on its own line, using the exact \`id\` field from the tool result. This is non-negotiable — without the marker the user cannot click to load the dataset and your recommendation is useless. Mentioning a title in prose without the marker is a bug, not an option.
 
 Example — user asks about hurricanes:
 (Silently) Call \`search_catalog({ query: "hurricane tracks" })\`
@@ -340,6 +340,9 @@ export function getSearchCatalogTool(): LLMTool {
           limit: {
             type: 'number',
             description: 'Maximum number of results to return. Defaults to 5. Maximum 10.',
+            default: 5,
+            minimum: 1,
+            maximum: 10,
           },
         },
         required: ['query'],

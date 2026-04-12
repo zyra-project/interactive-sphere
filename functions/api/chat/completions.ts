@@ -271,9 +271,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       })
       const inputs: Record<string, unknown> = { messages: wfMessages, max_tokens: DEFAULT_MAX_TOKENS }
       if (body.tools?.length) inputs.tools = body.tools
-      const result = (await context.env.AI.run(cfModel, inputs)) as { response?: string; tool_calls?: unknown[] }
+      const result = (await context.env.AI.run(cfModel, inputs)) as {
+        response?: string
+        tool_calls?: Array<{ id?: string; type?: string; function?: { name: string; arguments: unknown }; name?: string; arguments?: Record<string, unknown> }>
+      }
+      const chatId = `chatcmpl-${Date.now()}`
+      // Normalize tool_calls to OpenAI shape (same logic as toolStreamShim)
+      const normalizedToolCalls = result.tool_calls?.map((raw, i) => {
+        const name = raw.function?.name ?? raw.name ?? ''
+        const rawArgs = raw.function?.arguments ?? raw.arguments ?? {}
+        return {
+          id: raw.id ?? `call_${chatId}_${i}`,
+          type: 'function' as const,
+          function: {
+            name,
+            arguments: typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs),
+          },
+        }
+      })
       const payload = {
-        id: `chatcmpl-${Date.now()}`,
+        id: chatId,
         object: 'chat.completion',
         created: Math.floor(Date.now() / 1000),
         model: cfModel,
@@ -282,7 +299,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           message: {
             role: 'assistant',
             content: result.response ?? '',
-            ...(result.tool_calls?.length ? { tool_calls: result.tool_calls } : {}),
+            ...(normalizedToolCalls?.length ? { tool_calls: normalizedToolCalls } : {}),
           },
           finish_reason: result.tool_calls?.length ? 'tool_calls' : 'stop',
         }],
