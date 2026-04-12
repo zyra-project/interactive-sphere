@@ -16,8 +16,14 @@ import { logger } from '../utils/logger'
 // --- Constants ---
 const CONFIG_STORAGE_KEY = 'sos-docent-config'
 
-/** The default vision-capable model for Cloudflare Workers AI. */
-const CF_VISION_MODEL = 'llama-3.2-11b-vision'
+/**
+ * Default vision-capable model for Cloudflare Workers AI. `llama-4-scout`
+ * is natively multimodal AND supports function calling, so the eye-icon
+ * screenshot path can now call `search_catalog` alongside the image —
+ * which was impossible with the previous `llama-3.2-11b-vision` fallback
+ * (that model doesn't support tools and has a separate non-OpenAI API).
+ */
+const CF_VISION_MODEL = 'llama-4-scout'
 const VISION_TIMEOUT_MS = 60000
 
 /** Detect localhost dev where the Cloudflare /api proxy may be unavailable. */
@@ -214,7 +220,10 @@ const tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unk
 const DEFAULT_CONFIG: DocentConfig = {
   apiUrl: IS_TAURI ? '' : '/api',
   apiKey: '',
-  model: IS_TAURI ? '' : 'llama-3.1-70b',
+  // Default to llama-4-scout on the CF proxy. It's natively multimodal and
+  // supports function calling, so the new catalog-as-tool flow and the
+  // vision screenshot path both work on the same model.
+  model: IS_TAURI ? '' : 'llama-4-scout',
   enabled: true,
   readingLevel: 'general',
   visionEnabled: false,
