@@ -334,6 +334,9 @@ class InteractiveSphere {
       this.showHomeButton()
       logger.debug('[App] loadDataset complete:', datasetId)
     } catch (error) {
+      // Clear the loading overlay on the primary panel regardless of
+      // whether the load was superseded or genuinely failed.
+      this.viewports.setPanelLoading(this.viewports.getPrimaryIndex(), false)
       if (gen !== this.loadGeneration) {
         logger.debug('[App] loadDataset superseded (error ignored):', datasetId)
         this.cleanupVideo()
@@ -379,17 +382,24 @@ class InteractiveSphere {
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
+    // Show a per-panel loading overlay so the user sees "Loading…"
+    // instead of the confusing Blue Marble intermediate state.
+    this.viewports.setPanelLoading(primaryIdx, true, `Loading ${dataset.title}\u2026`)
+
     if (dataset.format === 'tour/json') {
+      this.viewports.setPanelLoading(primaryIdx, false)
       this.tourIsStandalone = true
       await this.startTour(dataset.dataLink, gen)
       return
     } else if (dataService.isImageDataset(dataset)) {
       await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
+      this.viewports.setPanelLoading(primaryIdx, false)
       if (gen !== this.loadGeneration) return
     } else if (dataService.isVideoDataset(dataset)) {
       const result = await loadVideoDataset(
         dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
       )
+      this.viewports.setPanelLoading(primaryIdx, false)
       // If a newer load started while we were awaiting, discard these results.
       // Don't dispose videoTexture here — setVideoTexture already placed it on
       // the sphere material, so the next load's setVideoTexture will replace it.
@@ -508,6 +518,10 @@ class InteractiveSphere {
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
+    // Per-panel loading indicator so the user sees "Loading…" on the
+    // target globe instead of a confusing Blue Marble intermediate.
+    this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
+
     if (dataService.isImageDataset(dataset)) {
       await loadImageDataset(
         dataset, targetRenderer, this.appState, this.isMobile, tourLoaderCallbacks,
@@ -525,6 +539,7 @@ class InteractiveSphere {
       }
     }
 
+    this.viewports.setPanelLoading(targetSlot, false)
     initLegendForDataset(dataset, loadConfig())
     // No runTourOnLoad check — the tour engine is in control
   }

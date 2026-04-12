@@ -149,6 +149,45 @@
         }
         .panel-legend.hidden { display: none; }
 
+        /* Per-panel loading overlay. Shown while a dataset is being
+           fetched + decoded into a specific panel so the user sees
+           "loading" instead of a confusing Blue Marble intermediate
+           state. Centered spinner + optional message, translucent
+           dark backdrop so the panel beneath is dimmed but visible. */
+        .panel-loading {
+            position: absolute;
+            inset: 0;
+            z-index: 7;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.6rem;
+            background: rgba(0, 0, 0, 0.55);
+            pointer-events: none;
+        }
+        .panel-loading.hidden { display: none; }
+        .panel-loading-spinner {
+            width: 28px;
+            height: 28px;
+            border: 3px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #4da6ff;
+            border-radius: 50%;
+            animation: panel-spin 0.8s linear infinite;
+        }
+        @keyframes panel-spin {
+            to { transform: rotate(360deg); }
+        }
+        .panel-loading-label {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.7);
+            letter-spacing: 0.03em;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .panel-loading-spinner { animation: none; }
+        }
+
         /* Last panel (viewport bottom-right) — the Tools bar sits
            there too, so lift the legend up to clear it. The Tools
            bar is ~3.2rem from the bottom when no playback transport

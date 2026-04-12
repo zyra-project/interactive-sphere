@@ -295,6 +295,34 @@ export class ViewportManager {
     vp.legend.classList.remove('hidden')
   }
 
+  /**
+   * Show or hide a loading overlay on a specific panel. The overlay
+   * is lazily created on first use and toggled via a `.hidden` class
+   * thereafter. When `isLoading` is true, the panel shows a centered
+   * spinner + optional message and the globe content dims behind it.
+   * When false, the overlay is hidden and the panel is fully visible.
+   */
+  setPanelLoading(slot: number, isLoading: boolean, message?: string): void {
+    const vp = this.viewports[slot]
+    if (!vp) return
+
+    let overlay = vp.container.querySelector('.panel-loading') as HTMLDivElement | null
+    if (!overlay) {
+      overlay = document.createElement('div')
+      overlay.className = 'panel-loading hidden'
+      overlay.innerHTML = `
+        <div class="panel-loading-spinner"></div>
+        <span class="panel-loading-label">Loading\u2026</span>
+      `
+      vp.container.appendChild(overlay)
+    }
+
+    const label = overlay.querySelector('.panel-loading-label')
+    if (label) label.textContent = message || 'Loading\u2026'
+
+    overlay.classList.toggle('hidden', !isLoading)
+  }
+
   /** Show/hide every panel's legend element without changing the
    *  underlying dataset binding. Used by the Legend toggle in Tools. */
   setAllLegendsVisible(visible: boolean): void {
