@@ -789,12 +789,12 @@ export async function* processMessage(
       ? `[GLOBE STATE: "${currentDataset.title}" is currently loaded on the globe.${currentTime ? ` Showing: ${currentTime}.` : ''}]\n`
       : '[GLOBE STATE: No dataset is loaded. The globe shows the default Earth view.]\n'
 
-    // Phase 3 pre-search: run the catalog search locally BEFORE sending to
-    // the LLM, and inject the top results into the user message as context.
-    // This is the primary discovery mechanism — it works on every model
-    // regardless of function-calling support. The `search_catalog` tool is
-    // kept as an optional upgrade path for models that can use it to refine
-    // or do follow-up searches.
+    // Phase 3 discovery: pre-search the catalog locally and inject the top
+    // results into the user message as [RELEVANT DATASETS] context. This is
+    // the primary discovery path — it works on every model regardless of
+    // function-calling support. The system prompt tells the LLM to prefer
+    // these pre-searched results and only call `search_catalog` as a
+    // fallback for follow-up queries on a different topic.
     //
     // Strip punctuation and common question/stop words so the scoring in
     // searchDatasets isn't diluted. "What datasets show sea level rise?" →
