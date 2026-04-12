@@ -37,30 +37,19 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     )
   }
 
+  // Keep this list in sync with MODEL_MAP in functions/api/chat/completions.ts.
+  // Ordering matters: the first entry is surfaced as the default in the
+  // settings model picker dropdown.
   return new Response(
     JSON.stringify({
       object: 'list',
       data: [
-        {
-          id: 'llama-3.1-70b',
-          object: 'model',
-          owned_by: 'cloudflare',
-        },
-        {
-          id: 'llama-3.1-8b',
-          object: 'model',
-          owned_by: 'cloudflare',
-        },
-        {
-          id: 'llama-3.2-3b',
-          object: 'model',
-          owned_by: 'cloudflare',
-        },
-        {
-          id: 'llama-3.2-11b-vision',
-          object: 'model',
-          owned_by: 'cloudflare',
-        },
+        { id: 'llama-4-scout', object: 'model', owned_by: 'cloudflare' },
+        { id: 'llama-3.3-70b', object: 'model', owned_by: 'cloudflare' },
+        { id: 'llama-3.1-70b', object: 'model', owned_by: 'cloudflare' },
+        { id: 'llama-3.1-8b', object: 'model', owned_by: 'cloudflare' },
+        { id: 'llama-3.2-3b', object: 'model', owned_by: 'cloudflare' },
+        { id: 'llama-3.2-11b-vision', object: 'model', owned_by: 'cloudflare' },
       ],
     }),
     { headers },
