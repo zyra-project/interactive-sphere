@@ -121,6 +121,21 @@ class InteractiveSphere {
   private viewPrefs: ViewPreferences = loadViewPreferences()
 
   /**
+   * Which slot's dataset the info panel currently displays.
+   *
+   * - `null` → follow the primary. The info panel re-renders whenever
+   *   the primary changes.
+   * - A slot index → "pinned" to that slot. The user explicitly picked
+   *   a non-primary dataset from the picker dropdown. Resets to null
+   *   whenever the primary changes (via `onViewportPrimaryChange`) so
+   *   a fresh promotion doesn't silently keep pointing at an old slot.
+   */
+  private infoDisplayOverride: number | null = null
+
+  /** True once the info-selector change handler has been wired. */
+  private infoSelectorWired = false
+
+  /**
    * Boot the application: create the WebGL renderer, fetch the dataset
    * catalog, and either load a URL-specified dataset or show the default
    * Earth with the browse panel.
@@ -349,10 +364,10 @@ class InteractiveSphere {
       hasTimeData: !!(dataset.startTime && dataset.endTime)
     })
 
-    displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id))
-    // Apply info-panel visibility pref + refresh per-panel legends
-    // now that the primary's dataset is recorded.
-    this.applyDatasetInfoVisibility()
+    // Loading a new dataset into the primary resets any picker
+    // override — the user probably wants to see their fresh load.
+    this.infoDisplayOverride = null
+    this.renderInfoPanel()
     this.refreshPanelLegends()
 
     if (!this.renderer) throw new Error('Renderer not initialized')
@@ -462,8 +477,8 @@ class InteractiveSphere {
     if (this.panelStates[tourPrimaryIdx]) {
       this.panelStates[tourPrimaryIdx].dataset = dataset
     }
-    displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id))
-    this.applyDatasetInfoVisibility()
+    this.infoDisplayOverride = null
+    this.renderInfoPanel()
     this.refreshPanelLegends()
 
     // On small screens, hide the info panel during tours to reduce clutter
@@ -720,6 +735,105 @@ class InteractiveSphere {
       return
     }
     panel.classList.toggle('hidden', !this.viewPrefs.infoPanelVisible)
+  }
+
+  /**
+   * Which slot's dataset the info panel is currently displaying —
+   * the override if set, otherwise the primary. Returns -1 if no
+   * panel has a loaded dataset.
+   */
+  private getInfoDisplayIndex(): number {
+    if (
+      this.infoDisplayOverride !== null &&
+      this.panelStates[this.infoDisplayOverride]?.dataset
+    ) {
+      return this.infoDisplayOverride
+    }
+    const primaryIdx = this.viewports.getPrimaryIndex()
+    if (this.panelStates[primaryIdx]?.dataset) return primaryIdx
+    // Fall back to the first slot with a loaded dataset so the info
+    // panel isn't blank when the primary happens to be empty.
+    for (let i = 0; i < this.panelStates.length; i++) {
+      if (this.panelStates[i]?.dataset) return i
+    }
+    return -1
+  }
+
+  /**
+   * Render the info panel for whichever slot `getInfoDisplayIndex`
+   * points at, repopulate the picker dropdown with all loaded
+   * datasets, and show/hide the picker based on how many are loaded.
+   *
+   * Call after: dataset load/unload, primary change, layout change,
+   * info-panel-visibility toggle. Idempotent — safe to call
+   * repeatedly.
+   */
+  private renderInfoPanel(): void {
+    const idx = this.getInfoDisplayIndex()
+    const dataset = idx >= 0 ? this.panelStates[idx]?.dataset ?? null : null
+
+    if (!dataset) {
+      // Nothing to show — hide the whole panel.
+      document.getElementById('info-panel')?.classList.add('hidden')
+      return
+    }
+
+    // Render the currently-selected dataset into the info panel body.
+    displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id))
+
+    // Repopulate the picker with every loaded dataset (in panel order)
+    // and wire the change handler once.
+    const picker = document.getElementById('info-panel-picker')
+    const select = document.getElementById('info-selector') as HTMLSelectElement | null
+    if (!picker || !select) return
+
+    const entries: Array<{ slot: number; label: string }> = []
+    for (let slot = 0; slot < this.panelStates.length; slot++) {
+      const d = this.panelStates[slot]?.dataset
+      if (!d) continue
+      const label = this.panelStates.length > 1
+        ? `Panel ${slot + 1}: ${d.title}`
+        : d.title
+      entries.push({ slot, label })
+    }
+
+    // Only show the picker when there's a choice to make.
+    if (entries.length > 1) {
+      picker.classList.remove('hidden')
+      // Rebuild options only if the set changed — a naive innerHTML
+      // rewrite would lose focus if the user is mid-interaction.
+      const wantSignature = entries.map(e => `${e.slot}:${e.label}`).join('|')
+      if (select.dataset.signature !== wantSignature) {
+        select.innerHTML = ''
+        for (const e of entries) {
+          const opt = document.createElement('option')
+          opt.value = String(e.slot)
+          opt.textContent = e.label
+          select.appendChild(opt)
+        }
+        select.dataset.signature = wantSignature
+      }
+      select.value = String(idx)
+    } else {
+      picker.classList.add('hidden')
+    }
+
+    if (!this.infoSelectorWired) {
+      this.infoSelectorWired = true
+      select.addEventListener('click', (ev) => { ev.stopPropagation() })
+      select.addEventListener('change', () => {
+        const newSlot = parseInt(select.value, 10)
+        if (Number.isFinite(newSlot)) {
+          this.infoDisplayOverride = newSlot
+          this.renderInfoPanel()
+        }
+      })
+    }
+
+    // Now that the body has content, apply the user's visibility
+    // preference — the panel may still be hidden if they toggled it
+    // off in Tools.
+    this.applyDatasetInfoVisibility()
   }
 
   /**
@@ -1048,9 +1162,18 @@ class InteractiveSphere {
       }
     }
     // Layout change can affect whether a panel's legend is a
-    // floating element vs inside the info panel (single-view vs
-    // multi-view rules) — refresh to resolve.
+    // floating element vs inside the info panel, and the set of
+    // available datasets in the info-panel picker — refresh both.
+    // Also clear any picker override if the pinned slot just
+    // vanished on a shrink.
+    if (
+      this.infoDisplayOverride !== null &&
+      this.infoDisplayOverride >= newCount
+    ) {
+      this.infoDisplayOverride = null
+    }
     this.refreshPanelLegends()
+    this.renderInfoPanel()
   }
 
   /**
@@ -1068,11 +1191,13 @@ class InteractiveSphere {
     this.detachPrimaryVideoSync()
     stopPlaybackLoop(this.playback)
 
-    // Update the shared appState + info panel
+    // Update the shared appState + info panel. Promoting a different
+    // panel clears any picker override so the info panel follows the
+    // new primary instead of silently pointing at a stale slot.
     this.appState.currentDataset = newDataset
+    this.infoDisplayOverride = null
     if (newDataset) {
-      displayDatasetInfo(newDataset, this.appState.datasets, (id) => this.loadDataset(id))
-      this.applyDatasetInfoVisibility()
+      this.renderInfoPanel()
       window.history.replaceState({}, '', `?dataset=${encodeURIComponent(newDataset.id)}`)
       notifyDatasetChanged(newDataset)
       setHelpActiveDataset(newDataset.id)
@@ -1320,8 +1445,11 @@ class InteractiveSphere {
     }
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
-    // Clear every floating legend since no panel has a dataset now.
+    // Clear every floating legend + info-panel override since no
+    // panel has a dataset now.
+    this.infoDisplayOverride = null
     this.refreshPanelLegends()
+    this.renderInfoPanel()
   }
 
   // --- Event listeners ---
