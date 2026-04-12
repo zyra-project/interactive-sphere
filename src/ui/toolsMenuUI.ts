@@ -37,6 +37,7 @@
  */
 
 import type { ViewportManager, ViewLayout } from '../services/viewportManager'
+import { updateMapControlsPosition } from './mapControlsUI'
 
 /** Callbacks the tools menu fires out into the rest of the app. */
 export interface ToolsMenuCallbacks {
@@ -75,6 +76,7 @@ export function initToolsMenu(
   isOpen = false
 
   const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, announce } = callbacks
+  const currentLayout = viewports.getLayout()
 
   container.classList.remove('hidden')
   container.classList.add('tools-menu-host')
@@ -110,11 +112,11 @@ export function initToolsMenu(
           <span class="tools-menu-item-label">Auto-rotate</span>
         </button>
         <div class="tools-menu-subsep" aria-hidden="true"></div>
-        <button type="button" class="tools-menu-item" id="tools-menu-info" aria-pressed="true">
+        <button type="button" class="tools-menu-item active" id="tools-menu-info" aria-pressed="true">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Dataset info</span>
         </button>
-        <button type="button" class="tools-menu-item" id="tools-menu-legend" aria-pressed="true">
+        <button type="button" class="tools-menu-item active" id="tools-menu-legend" aria-pressed="true">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Legend</span>
         </button>
@@ -122,10 +124,10 @@ export function initToolsMenu(
       <section class="tools-menu-section" aria-label="Layout">
         <h4 class="tools-menu-section-title">Layout</h4>
         <div class="tools-menu-layout-row" role="radiogroup" aria-label="Globe layout">
-          <button type="button" class="tools-menu-layout-btn active" id="tools-menu-layout-1" aria-pressed="true" title="Single globe">1</button>
-          <button type="button" class="tools-menu-layout-btn" id="tools-menu-layout-2h" aria-pressed="false" title="Two globes side-by-side">2&#x2194;</button>
-          <button type="button" class="tools-menu-layout-btn" id="tools-menu-layout-2v" aria-pressed="false" title="Two globes stacked">2&#x2195;</button>
-          <button type="button" class="tools-menu-layout-btn" id="tools-menu-layout-4" aria-pressed="false" title="Four globes in a grid">4</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '1' ? ' active' : ''}" id="tools-menu-layout-1" aria-pressed="${currentLayout === '1'}" title="Single globe">1</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '2h' ? ' active' : ''}" id="tools-menu-layout-2h" aria-pressed="${currentLayout === '2h'}" title="Two globes side-by-side">2&#x2194;</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '2v' ? ' active' : ''}" id="tools-menu-layout-2v" aria-pressed="${currentLayout === '2v'}" title="Two globes stacked">2&#x2195;</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '4' ? ' active' : ''}" id="tools-menu-layout-4" aria-pressed="${currentLayout === '4'}" title="Four globes in a grid">4</button>
         </div>
       </section>
       <section class="tools-menu-section" aria-label="Actions">
@@ -296,6 +298,11 @@ export function initToolsMenu(
       })
     }
   }
+
+  // Keep the Tools bar positioned above the playback transport
+  // on window resize / orientation change. The old initMapControls
+  // had this listener; the new Tools menu needs it too.
+  window.addEventListener('resize', updateMapControlsPosition)
 }
 
 /** Open the popover and focus its close button for keyboard users. */

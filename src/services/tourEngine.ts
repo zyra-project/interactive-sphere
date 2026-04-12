@@ -576,13 +576,16 @@ export class TourEngine {
 
   private async execLoadDataset(params: LoadDatasetTaskParams): Promise<void> {
     // Resolve worldIndex (1-indexed from the tour JSON) to a 0-indexed
-    // slot. Omitted/zero/negative values default to slot 0 (the first
-    // globe). An out-of-range worldIndex > active panel count is
-    // clamped silently; with setEnvView sequencing this only happens
-    // if tour authors specify a worldIndex before issuing the
-    // matching setEnvView, which is worth a warning but not fatal.
+    // slot. Omitted/zero/negative values default to slot 0. Out-of-
+    // range values are clamped to the last active panel so the load
+    // doesn't silently no-op when a tour specifies worldIndex before
+    // the matching setEnvView expands the layout.
     const raw = typeof params.worldIndex === 'number' ? params.worldIndex : 1
-    const slot = Math.max(0, Math.round(raw) - 1)
+    const panelCount = this.callbacks.getAllRenderers().length || 1
+    const slot = Math.max(0, Math.min(panelCount - 1, Math.round(raw) - 1))
+    if (Math.round(raw) - 1 >= panelCount) {
+      logger.warn(`[Tour] loadDataset: worldIndex ${raw} exceeds panel count ${panelCount}, clamped to slot ${slot}`)
+    }
 
     await this.callbacks.loadDataset(params.id, { slot })
 

@@ -38,12 +38,14 @@ function makeRenderer(): FakeRenderer {
 function makeViewports(count: number): {
   getAll: ReturnType<typeof vi.fn>
   getPrimary: ReturnType<typeof vi.fn>
+  getLayout: ReturnType<typeof vi.fn>
   renderers: FakeRenderer[]
 } {
   const renderers = Array.from({ length: count }, () => makeRenderer())
   return {
     getAll: vi.fn(() => renderers),
     getPrimary: vi.fn(() => renderers[0]),
+    getLayout: vi.fn(() => '1'),
     renderers,
   }
 }
@@ -309,12 +311,13 @@ describe('Tools menu dataset info / legend toggles', () => {
     const onToggleDatasetInfo = vi.fn()
     initToolsMenu(vm as any, { onToggleDatasetInfo })
 
+    // Starts active (on), first click turns it off
     const btn = document.getElementById('tools-menu-info') as HTMLButtonElement
     btn.click()
-    expect(onToggleDatasetInfo).toHaveBeenCalledWith(true)
+    expect(onToggleDatasetInfo).toHaveBeenCalledWith(false)
 
     btn.click()
-    expect(onToggleDatasetInfo).toHaveBeenLastCalledWith(false)
+    expect(onToggleDatasetInfo).toHaveBeenLastCalledWith(true)
   })
 
   it('calls onToggleLegend with the new state when clicked', () => {
@@ -322,9 +325,10 @@ describe('Tools menu dataset info / legend toggles', () => {
     const onToggleLegend = vi.fn()
     initToolsMenu(vm as any, { onToggleLegend })
 
+    // Starts active (on), first click turns it off
     const btn = document.getElementById('tools-menu-legend') as HTMLButtonElement
     btn.click()
-    expect(onToggleLegend).toHaveBeenCalledWith(true)
+    expect(onToggleLegend).toHaveBeenCalledWith(false)
   })
 
   it('syncToolsMenuState applies datasetInfo and legend flags', () => {
@@ -343,11 +347,12 @@ describe('Tools menu dataset info / legend toggles', () => {
     const announce = vi.fn()
     initToolsMenu(vm as any, { announce })
 
+    // Both start active (on), so first click turns them off
     ;(document.getElementById('tools-menu-info') as HTMLButtonElement).click()
-    expect(announce).toHaveBeenCalledWith('Dataset info shown')
+    expect(announce).toHaveBeenCalledWith('Dataset info hidden')
 
     ;(document.getElementById('tools-menu-legend') as HTMLButtonElement).click()
-    expect(announce).toHaveBeenCalledWith('Legend shown')
+    expect(announce).toHaveBeenCalledWith('Legend hidden')
   })
 })
 

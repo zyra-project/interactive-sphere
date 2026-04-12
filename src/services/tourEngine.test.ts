@@ -71,13 +71,17 @@ function makeCallbacks(overrides: Partial<TourCallbacks> = {}): TourCallbacks {
   // than the test is asserting against.
   const customRenderer = overrides.getRenderer?.()
   const rendererForAll = customRenderer ?? renderer
+  // Return 4 renderers so worldIndex routing tests (up to 4 panels)
+  // don't get clamped. Environment-executor tests assert on the
+  // first element which is `rendererForAll`.
+  const fourRenderers = [rendererForAll, makeRenderer(), makeRenderer(), makeRenderer()]
   return {
     loadDataset: vi.fn(() => Promise.resolve()),
     unloadAllDatasets: vi.fn(() => Promise.resolve()),
     unloadDatasetAt: vi.fn(() => Promise.resolve()),
     setEnvView: vi.fn(() => Promise.resolve()),
     getRenderer: vi.fn(() => renderer),
-    getAllRenderers: vi.fn(() => [rendererForAll]),
+    getAllRenderers: vi.fn(() => fourRenderers),
     togglePlayPause: vi.fn(),
     isPlaying: vi.fn(() => false),
     setPlaybackRate: vi.fn(),

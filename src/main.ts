@@ -1571,20 +1571,18 @@ class InteractiveSphere {
   /**
    * Tear down datasets in every panel — used by goHome and unloadForTour.
    * Clears dataset + hls + video texture per slot and resets shared
-   * playback state. Base Earth textures are re-loaded by the caller.
+   * Delegates to the per-panel unload path so every slot gets the
+   * same dataset/video teardown AND renderer reset (back to default
+   * Earth materials) behavior.
    */
-  private unloadAllPanels(): void {
+  private async unloadAllPanels(): Promise<void> {
     this.detachPrimaryVideoSync()
     stopPlaybackLoop(this.playback)
-    for (const panel of this.panelStates) {
-      if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
-      if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
-      panel.dataset = null
-    }
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
-    // Clear every floating legend + info-panel override since no
-    // panel has a dataset now.
+    for (let slot = 0; slot < this.panelStates.length; slot++) {
+      await this.unloadPanelDataset(slot)
+    }
     this.infoDisplayOverride = null
     this.refreshPanelLegends()
     this.renderInfoPanel()
