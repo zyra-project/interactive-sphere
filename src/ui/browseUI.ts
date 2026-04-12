@@ -53,6 +53,21 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
     helpBtn.dataset.wired = 'true'
   }
 
+  // Wire the in-header close button once (idempotent). Uses the
+  // same single-view hide / multi-view collapse split as the
+  // post-load dismiss — single-view fully hides, multi-view keeps
+  // the aside in the DOM so scroll position persists. Either way,
+  // the Tools menu's Browse button re-opens it.
+  const closeBtn = document.getElementById('browse-close')
+  if (closeBtn && !closeBtn.dataset.wired) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      hideBrowseUI()
+      callbacks.announce('Dataset browser closed')
+    })
+    closeBtn.dataset.wired = 'true'
+  }
+
   const visible = datasets
     .filter(d => !d.isHidden)
     .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0) || a.title.localeCompare(b.title))
@@ -433,9 +448,30 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   updateDownloadButtons()
 }
 
-/** Hide the browse overlay. */
+/** Hide the browse overlay entirely (aside becomes `display: none`). */
 export function hideBrowseUI(): void {
   const overlay = document.getElementById('browse-overlay')
   overlay?.classList.add('hidden')
   document.body.classList.remove('browse-open')
+}
+
+/**
+ * Collapse the browse overlay — keeps the aside rendered and its
+ * toggle-button tab visible at the right edge of the viewport, but
+ * slides the panel itself off-screen via `.collapsed`. The user can
+ * click the toggle to slide it back in. Use this in multi-view mode
+ * where the user needs to come back to the browse panel repeatedly
+ * to load datasets into additional panels.
+ */
+export function collapseBrowseUI(): void {
+  const overlay = document.getElementById('browse-overlay')
+  const toggle = document.getElementById('browse-toggle')
+  if (!overlay) return
+  overlay.classList.remove('hidden')
+  overlay.classList.add('collapsed')
+  if (toggle) {
+    toggle.innerHTML = '&#9656;'
+    toggle.setAttribute('aria-label', 'Open dataset browser')
+    toggle.setAttribute('aria-expanded', 'false')
+  }
 }
