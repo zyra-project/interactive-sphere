@@ -30,6 +30,10 @@ describe('parseDatasetFromUrl', () => {
     expect(parseDatasetFromUrl('https://evil.com/dataset/INTERNAL_SOS_123')).toBeNull()
   })
 
+  it('rejects unknown hosts for query param URLs', () => {
+    expect(parseDatasetFromUrl('https://evil.com/?dataset=INTERNAL_SOS_123')).toBeNull()
+  })
+
   it('returns null for URLs with no dataset reference', () => {
     expect(parseDatasetFromUrl('https://sphere.zyra-project.org/')).toBeNull()
   })

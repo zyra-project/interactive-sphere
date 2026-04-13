@@ -74,11 +74,11 @@ export function parseDatasetFromUrl(url: string): string | null {
     if (isKnownHost) {
       const pathMatch = parsed.pathname.match(/\/dataset\/([A-Z0-9_]+)/i)
       if (pathMatch) return pathMatch[1]
-    }
 
-    // Query param: ?dataset=INTERNAL_SOS_123 (validated)
-    const queryId = parsed.searchParams.get('dataset')
-    if (queryId && ID_PATTERN.test(queryId)) return queryId
+      // Query param: ?dataset=INTERNAL_SOS_123 (validated, known hosts only)
+      const queryId = parsed.searchParams.get('dataset')
+      if (queryId && ID_PATTERN.test(queryId)) return queryId
+    }
 
     return null
   } catch {
