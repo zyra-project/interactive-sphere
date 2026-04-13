@@ -378,7 +378,7 @@ breakpoint, which gives mobile a head start. New work needed:
 ### iOS
 
 - Existing Apple Developer Program account
-- App ID using existing bundle identifier `org.zyra-project.interactive-sphere`
+- App ID using existing bundle identifier `org.zyra-project.terraviz`
 - Distribution certificate (.p12) and App Store provisioning profile, both
   stored as encrypted GitHub secrets
 - Build via `tauri ios build --export-method app-store-connect`
