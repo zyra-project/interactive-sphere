@@ -1,0 +1,110 @@
+{
+  "component": {
+    "browse": {
+      "panel-width": {
+        "$value": "420px",
+        "$type": "dimension",
+        "$description": "Browse overlay width",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "420px",
+            "phone-portrait": "100%"
+          }
+        }
+      },
+      "panel-max-height": {
+        "$value": "none",
+        "$type": "dimension",
+        "$description": "Browse overlay max-height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "none",
+            "phone-portrait": "70vh"
+          }
+        }
+      },
+      "card-padding": {
+        "$value": "0.875rem",
+        "$type": "dimension"
+      },
+      "card-radius": {
+        "$value": "8px",
+        "$type": "dimension"
+      },
+      "card-gap": {
+        "$value": "0.75rem",
+        "$type": "dimension"
+      },
+      "thumb-size": {
+        "$value": "64px",
+        "$type": "dimension",
+        "$description": "Collapsed card thumbnail size"
+      },
+      "thumb-size-expanded": {
+        "$value": "96px",
+        "$type": "dimension",
+        "$description": "Expanded card thumbnail size"
+      },
+      "thumb-radius": {
+        "$value": "4px",
+        "$type": "dimension"
+      },
+      "grid-col-min": {
+        "$value": "260px",
+        "$type": "dimension",
+        "$description": "Minimum column width for auto-fill grid"
+      },
+      "grid-gap": {
+        "$value": "0.75rem",
+        "$type": "dimension"
+      },
+      "title-size": {
+        "$value": "0.8rem",
+        "$type": "dimension"
+      },
+      "title-weight": {
+        "$value": "600",
+        "$type": "fontWeight"
+      },
+      "desc-size": {
+        "$value": "0.7rem",
+        "$type": "dimension"
+      },
+      "keyword-size": {
+        "$value": "0.58rem",
+        "$type": "dimension"
+      },
+      "keyword-radius": {
+        "$value": "3px",
+        "$type": "dimension"
+      },
+      "chip-size": {
+        "$value": "0.7rem",
+        "$type": "dimension"
+      },
+      "chip-radius": {
+        "$value": "999px",
+        "$type": "dimension"
+      },
+      "search-size": {
+        "$value": "0.875rem",
+        "$type": "dimension"
+      },
+      "search-radius": {
+        "$value": "6px",
+        "$type": "dimension"
+      },
+      "chat-btn-size": {
+        "$value": "36px",
+        "$type": "dimension",
+        "$description": "Docent button in browse search bar",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "36px",
+            "tablet": "40px"
+          }
+        }
+      }
+    }
+  }
+}

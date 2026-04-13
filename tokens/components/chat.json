@@ -1,0 +1,130 @@
+{
+  "component": {
+    "chat": {
+      "panel-width": {
+        "$value": "380px",
+        "$type": "dimension",
+        "$description": "Chat panel width",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "380px",
+            "tablet": "calc(100vw - 1.5rem)",
+            "phone-portrait": "100%"
+          }
+        }
+      },
+      "panel-max-height": {
+        "$value": "calc(100vh - 8rem)",
+        "$type": "dimension",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "calc(100vh - 8rem)",
+            "tablet": "60vh",
+            "phone-portrait": "75vh"
+          }
+        }
+      },
+      "panel-radius": {
+        "$value": "10px",
+        "$type": "dimension"
+      },
+      "trigger-height": {
+        "$value": "44px",
+        "$type": "dimension",
+        "$description": "Chat trigger button height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "44px",
+            "tablet": "48px"
+          }
+        }
+      },
+      "trigger-width-collapsed": {
+        "$value": "44px",
+        "$type": "dimension",
+        "$description": "Chat trigger width when collapsed to icon-only",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "44px",
+            "tablet": "48px"
+          }
+        }
+      },
+      "msg-font-size": {
+        "$value": "0.73rem",
+        "$type": "dimension"
+      },
+      "msg-line-height": {
+        "$value": "1.55",
+        "$type": "number"
+      },
+      "msg-radius": {
+        "$value": "8px",
+        "$type": "dimension"
+      },
+      "msg-max-width": {
+        "$value": "88%",
+        "$type": "dimension"
+      },
+      "input-font-size": {
+        "$value": "0.78rem",
+        "$type": "dimension"
+      },
+      "input-radius": {
+        "$value": "6px",
+        "$type": "dimension"
+      },
+      "input-min-height": {
+        "$value": "1.8rem",
+        "$type": "dimension"
+      },
+      "input-max-height": {
+        "$value": "6rem",
+        "$type": "dimension"
+      },
+      "send-btn-min-size": {
+        "$value": "34px",
+        "$type": "dimension",
+        "$description": "Send button minimum width and height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "34px",
+            "tablet": "44px"
+          }
+        }
+      },
+      "send-btn-radius": {
+        "$value": "6px",
+        "$type": "dimension"
+      },
+      "header-title-size": {
+        "$value": "0.75rem",
+        "$type": "dimension"
+      },
+      "header-title-weight": {
+        "$value": "600",
+        "$type": "fontWeight"
+      },
+      "suggestion-size": {
+        "$value": "0.65rem",
+        "$type": "dimension"
+      },
+      "suggestion-radius": {
+        "$value": "999px",
+        "$type": "dimension"
+      },
+      "action-title-size": {
+        "$value": "0.68rem",
+        "$type": "dimension"
+      },
+      "action-title-weight": {
+        "$value": "600",
+        "$type": "fontWeight"
+      },
+      "action-btn-radius": {
+        "$value": "6px",
+        "$type": "dimension"
+      }
+    }
+  }
+}
