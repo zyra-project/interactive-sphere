@@ -1,0 +1,82 @@
+{
+  "component": {
+    "playback": {
+      "transport-btn-min-width": {
+        "$value": "28px",
+        "$type": "dimension",
+        "$description": "Transport button minimum width",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "28px",
+            "tablet": "40px"
+          }
+        }
+      },
+      "transport-btn-font-size": {
+        "$value": "0.7rem",
+        "$type": "dimension",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "0.7rem",
+            "tablet": "1rem"
+          }
+        }
+      },
+      "home-btn-min-width": {
+        "$value": "36px",
+        "$type": "dimension",
+        "$description": "Home button minimum width",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "36px",
+            "tablet": "44px"
+          }
+        }
+      },
+      "home-btn-min-height": {
+        "$value": "36px",
+        "$type": "dimension",
+        "$description": "Home button minimum height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "36px",
+            "tablet": "44px"
+          }
+        }
+      },
+      "home-btn-font-size": {
+        "$value": "0.85rem",
+        "$type": "dimension",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "0.85rem",
+            "tablet": "1rem"
+          }
+        }
+      },
+      "time-label-font-size": {
+        "$value": "0.8rem",
+        "$type": "dimension"
+      },
+      "time-label-font-weight": {
+        "$value": "500",
+        "$type": "fontWeight"
+      },
+      "time-label-radius": {
+        "$value": "6px",
+        "$type": "dimension"
+      },
+      "range-height": {
+        "$value": "20px",
+        "$type": "dimension",
+        "$description": "Scrubber input height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "20px",
+            "tablet": "28px"
+          }
+        }
+      }
+    }
+  }
+}
