@@ -40,6 +40,7 @@ import { TourEngine } from './services/tourEngine'
 import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourImages, hideAllTourVideos, hideAllTourPopups, hideAllTourQuestions } from './ui/tourUI'
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, IS_MOBILE_NATIVE, getCloudTextureUrl } from './utils/deviceCapability'
+import { initDeepLinks } from './services/deepLinkService'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
 // (larger touch targets, bottom sheets, etc.) without JS per-component.
@@ -222,6 +223,12 @@ class InteractiveSphere {
         this.setLoadingStatus('Loading dataset\u2026', 50)
         await this.loadDataset(datasetId)
         this.setLoading(false)
+
+      // Phase 5: listen for deep links (zyra://dataset/ID or app links)
+      // so the app can load a dataset when opened from an external URL.
+      initDeepLinks((id) => {
+        this.loadDataset(id)
+      })
         showChatTrigger()
         // In multi-viewport mode, pre-render the browse panel in its
         // collapsed state so users can slide it open to load datasets
