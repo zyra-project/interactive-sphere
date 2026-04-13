@@ -1,0 +1,191 @@
+{
+  "color": {
+    "accent": {
+      "$value": "#4da6ff",
+      "$type": "color",
+      "$description": "Primary accent — links, active states, focus rings"
+    },
+    "accent-hover": {
+      "$value": "#6ab8ff",
+      "$type": "color",
+      "$description": "Accent hover state"
+    },
+    "accent-dark": {
+      "$value": "#0066cc",
+      "$type": "color",
+      "$description": "Primary action buttons"
+    },
+    "accent-darker": {
+      "$value": "#0052a3",
+      "$type": "color",
+      "$description": "Primary button hover"
+    },
+    "bg": {
+      "$value": "#0d0d12",
+      "$type": "color",
+      "$description": "Page background"
+    },
+    "surface": {
+      "$value": "rgba(255, 255, 255, 0.06)",
+      "$type": "color",
+      "$description": "Panel/element backgrounds"
+    },
+    "surface-alt": {
+      "$value": "rgba(255, 255, 255, 0.04)",
+      "$type": "color",
+      "$description": "Alternate surface (cards)"
+    },
+    "surface-hover": {
+      "$value": "rgba(255, 255, 255, 0.12)",
+      "$type": "color",
+      "$description": "Surface hover state"
+    },
+    "surface-active": {
+      "$value": "rgba(255, 255, 255, 0.15)",
+      "$type": "color",
+      "$description": "Surface active/pressed state"
+    },
+    "surface-border": {
+      "$value": "rgba(255, 255, 255, 0.1)",
+      "$type": "color",
+      "$description": "Default surface borders"
+    },
+    "surface-border-subtle": {
+      "$value": "rgba(255, 255, 255, 0.08)",
+      "$type": "color",
+      "$description": "Subtle borders — glass panels"
+    },
+    "text": {
+      "$value": "#e8eaf0",
+      "$type": "color",
+      "$description": "Primary text — titles, headings"
+    },
+    "text-secondary": {
+      "$value": "#bbb",
+      "$type": "color",
+      "$description": "Body text, labels"
+    },
+    "text-muted": {
+      "$value": "#999",
+      "$type": "color",
+      "$description": "Metadata, timestamps (min 4.5:1 contrast)"
+    },
+    "text-dim": {
+      "$value": "#888",
+      "$type": "color",
+      "$description": "Counts, status text (min 4.5:1 contrast)"
+    },
+    "text-faint": {
+      "$value": "#666",
+      "$type": "color",
+      "$description": "Decorative/disabled text"
+    },
+    "success": {
+      "$value": "#22c55e",
+      "$type": "color",
+      "$description": "Success state"
+    },
+    "success-soft": {
+      "$value": "#6dc96d",
+      "$type": "color",
+      "$description": "Success state — softer variant"
+    },
+    "error": {
+      "$value": "#ef4444",
+      "$type": "color",
+      "$description": "Error state"
+    },
+    "error-soft": {
+      "$value": "#ff6b6b",
+      "$type": "color",
+      "$description": "Error state — softer variant"
+    },
+    "warning": {
+      "$value": "#ffcc66",
+      "$type": "color",
+      "$description": "Warning state"
+    }
+  },
+  "glass": {
+    "bg": {
+      "$value": "rgba(13, 13, 18, 0.92)",
+      "$type": "color",
+      "$description": "Glass panel background — dark"
+    },
+    "bg-light": {
+      "$value": "rgba(13, 13, 18, 0.88)",
+      "$type": "color",
+      "$description": "Glass panel background — lighter variant"
+    },
+    "blur": {
+      "$value": "12px",
+      "$type": "dimension",
+      "$description": "Backdrop blur radius for frosted-glass effect"
+    }
+  },
+  "radius": {
+    "xs": { "$value": "3px", "$type": "dimension" },
+    "sm": { "$value": "4px", "$type": "dimension" },
+    "md": { "$value": "6px", "$type": "dimension" },
+    "lg": {
+      "$value": "8px",
+      "$type": "dimension",
+      "$extensions": {
+        "com.tokens-studio.modes": {
+          "default": "8px",
+          "mobile-native": "10px"
+        }
+      }
+    },
+    "xl": {
+      "$value": "10px",
+      "$type": "dimension",
+      "$extensions": {
+        "com.tokens-studio.modes": {
+          "default": "10px",
+          "mobile-native": "14px"
+        }
+      }
+    },
+    "2xl": { "$value": "12px", "$type": "dimension" },
+    "pill": { "$value": "999px", "$type": "dimension" }
+  },
+  "touch": {
+    "min": {
+      "$value": "44px",
+      "$type": "dimension",
+      "$description": "Minimum touch target size (Apple HIG / WCAG)",
+      "$extensions": {
+        "com.tokens-studio.modes": {
+          "default": "44px",
+          "mobile-native": "48px"
+        }
+      }
+    }
+  },
+  "accent-opacity": {
+    "o05": { "$value": "rgba(77, 166, 255, 0.05)", "$type": "color" },
+    "o08": { "$value": "rgba(77, 166, 255, 0.08)", "$type": "color" },
+    "o12": { "$value": "rgba(77, 166, 255, 0.12)", "$type": "color" },
+    "o15": { "$value": "rgba(77, 166, 255, 0.15)", "$type": "color" },
+    "o18": { "$value": "rgba(77, 166, 255, 0.18)", "$type": "color" },
+    "o20": { "$value": "rgba(77, 166, 255, 0.2)", "$type": "color" },
+    "o25": { "$value": "rgba(77, 166, 255, 0.25)", "$type": "color" },
+    "o30": { "$value": "rgba(77, 166, 255, 0.3)", "$type": "color" },
+    "o35": { "$value": "rgba(77, 166, 255, 0.35)", "$type": "color" },
+    "o40": { "$value": "rgba(77, 166, 255, 0.4)", "$type": "color" },
+    "o50": { "$value": "rgba(77, 166, 255, 0.5)", "$type": "color" },
+    "o70": { "$value": "rgba(77, 166, 255, 0.7)", "$type": "color" }
+  },
+  "white-opacity": {
+    "o05": { "$value": "rgba(255, 255, 255, 0.05)", "$type": "color" },
+    "o08": { "$value": "rgba(255, 255, 255, 0.08)", "$type": "color" },
+    "o10": { "$value": "rgba(255, 255, 255, 0.1)", "$type": "color" },
+    "o12": { "$value": "rgba(255, 255, 255, 0.12)", "$type": "color" },
+    "o15": { "$value": "rgba(255, 255, 255, 0.15)", "$type": "color" },
+    "o20": { "$value": "rgba(255, 255, 255, 0.2)", "$type": "color" },
+    "o30": { "$value": "rgba(255, 255, 255, 0.3)", "$type": "color" },
+    "o50": { "$value": "rgba(255, 255, 255, 0.5)", "$type": "color" },
+    "o70": { "$value": "rgba(255, 255, 255, 0.7)", "$type": "color" }
+  }
+}

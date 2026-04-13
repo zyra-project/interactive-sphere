@@ -351,14 +351,23 @@ Component CSS files then replace hardcoded values with
 
 **Before writing custom code:** investigate the
 [`@tokens-studio/sd-transforms`](https://github.com/tokens-studio/sd-transforms)
-package. Style Dictionary v4 has native support for Tokens Studio's
-`$extensions` via this package, which may handle multi-mode CSS output
-out of the box — avoiding the need for a custom format.
+package for its token **transforms** (color conversion, dimension
+handling, etc.). However, its multi-mode output generates **separate
+CSS files per mode** (e.g., `desktop.css`, `tablet.css`) — it does
+not output a single file with `:root`, `.mobile-native`, and `@media`
+blocks. A custom Style Dictionary format (`custom/multi-mode-css`) is
+required for our single-file architecture.
+
+> **Note:** The latest `sd-transforms` requires Style Dictionary v5
+> (not v4). Use `style-dictionary@^5.0.0`.
 
 **Tasks:**
-- [ ] Install `style-dictionary` as a devDependency
-- [ ] Evaluate `@tokens-studio/sd-transforms` — if it handles mode
-      output, use it instead of writing `custom/multi-mode-css`
+- [ ] Install `style-dictionary@^5.0.0` as a devDependency
+- [ ] Install `@tokens-studio/sd-transforms` for token transforms
+      (color, dimension, fontWeight handling)
+- [ ] Write the `custom/multi-mode-css` format that reads
+      `com.tokens-studio.modes` extensions and generates `:root`,
+      `.mobile-native`, and `@media` blocks in a single CSS file
 - [ ] Create `tokens/style-dictionary.config.mjs`
 - [ ] Handle composite tokens: `--glass-border` is
       `1px solid var(--color-surface-border-subtle)` — needs a custom
@@ -574,8 +583,8 @@ prose outside the markers is preserved.
 
 | Package | Version | Purpose | Cost |
 |---|---|---|---|
-| `style-dictionary` | `^4.0.0` | Token → CSS build | Free (Apache 2.0) |
-| `@tokens-studio/sd-transforms` | `^1.0.0` | SD plugin for Tokens Studio mode support (evaluate first) | Free (open source) |
+| `style-dictionary` | `^5.0.0` | Token → CSS build | Free (Apache 2.0) |
+| `@tokens-studio/sd-transforms` | latest | Token transforms (color, dimension, etc.) | Free (open source) |
 | Tokens Studio plugin | latest | Figma ↔ Git sync | Free tier |
 | Figma | Free plan | Design tool | $0 — modes managed via Tokens Studio UI |
 
