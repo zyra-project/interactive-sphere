@@ -95,8 +95,17 @@ type RotationMode =
     }
   | {
       kind: 'two-hand'
-      /** Unit direction from controller 0 to controller 1 when the two-hand gesture began. */
-      startAxis: THREE.Vector3
+      /**
+       * Orientation of the virtual "rigid body" defined by the two
+       * controllers at gesture start. Derived from the axis between
+       * them (primary direction) + the average of each controller's
+       * up-vector projected onto the perpendicular plane. Capturing
+       * this — instead of just the axis direction — means wrist
+       * twists around the connecting axis also rotate the globe,
+       * which matches the user's mental model of "grabbing the
+       * globe with both hands".
+       */
+      startOrientation: THREE.Quaternion
       /** Distance between controllers when the two-hand gesture began. */
       startDistance: number
       /** Globe uniform scale when the two-hand gesture began. */
@@ -218,6 +227,47 @@ export function createVrInteraction(
     }
   }
 
+  /**
+   * Build the quaternion of the virtual "rigid body" the two
+   * controllers define at their current poses. The frame is:
+   *
+   *   X axis — along the connecting axis (controller 0 → 1)
+   *   Y axis — average of each controller's world +Y, projected onto
+   *            the plane perpendicular to X (captures wrist rolls)
+   *   Z axis — derived via cross product for right-handedness
+   *
+   * Fallback: if the averaged up-vector is parallel to the axis
+   * (hands perfectly side-by-side with both aligned), pick a
+   * perpendicular from world-up; if that too is parallel (axis
+   * vertical), fall back to world-right. Fallback paths still
+   * produce a stable rotation because the ambiguity is around a
+   * vertical axis, which matters less for globe manipulation.
+   */
+  function computeTwoHandOrientation(): THREE.Quaternion {
+    const pos0 = new THREE_.Vector3()
+    const pos1 = new THREE_.Vector3()
+    controllers[0].getWorldPosition(pos0)
+    controllers[1].getWorldPosition(pos1)
+    const axis = pos1.sub(pos0).normalize()
+
+    const up0 = new THREE_.Vector3(0, 1, 0).applyQuaternion(controllers[0].getWorldQuaternion(new THREE_.Quaternion()))
+    const up1 = new THREE_.Vector3(0, 1, 0).applyQuaternion(controllers[1].getWorldQuaternion(new THREE_.Quaternion()))
+    const avgUp = up0.add(up1).multiplyScalar(0.5)
+    // Remove the component along the axis to get a perpendicular up.
+    const perpUp = avgUp.sub(axis.clone().multiplyScalar(avgUp.dot(axis)))
+    if (perpUp.lengthSq() < 0.001) {
+      perpUp.crossVectors(axis, new THREE_.Vector3(0, 1, 0))
+      if (perpUp.lengthSq() < 0.001) {
+        perpUp.crossVectors(axis, new THREE_.Vector3(1, 0, 0))
+      }
+    }
+    perpUp.normalize()
+
+    const forward = new THREE_.Vector3().crossVectors(axis, perpUp)
+    const basis = new THREE_.Matrix4().makeBasis(axis, perpUp, forward)
+    return new THREE_.Quaternion().setFromRotationMatrix(basis)
+  }
+
   /** Snapshot the two-hand baseline. Both controllers assumed on-globe. */
   function captureTwoHandMode(): RotationMode {
     const p0 = new THREE_.Vector3()
@@ -230,7 +280,7 @@ export function createVrInteraction(
     if (startDistance < 0.001) return { kind: 'idle' }
     return {
       kind: 'two-hand',
-      startAxis: p1.sub(p0).normalize(),
+      startOrientation: computeTwoHandOrientation(),
       startDistance,
       startScale: ctx.globe.scale.x,
       globeStartQuat: ctx.globe.quaternion.clone(),
@@ -324,7 +374,6 @@ export function createVrInteraction(
   const deltaQ = new THREE_.Quaternion()
   const p0 = new THREE_.Vector3()
   const p1 = new THREE_.Vector3()
-  const currentAxis = new THREE_.Vector3()
 
   /** Apply the surface-pinned rotation for the active single-drag. */
   function updateSingle(mode: Extract<RotationMode, { kind: 'single' }>): void {
@@ -339,7 +388,7 @@ export function createVrInteraction(
     ctx.globe.quaternion.copy(mode.globeStartQuat).premultiply(deltaQ)
   }
 
-  /** Apply pinch-scale + axis-rotate for the active two-hand gesture. */
+  /** Apply pinch-scale + full rigid-body rotation for the two-hand gesture. */
   function updateTwoHand(mode: Extract<RotationMode, { kind: 'two-hand' }>): void {
     controllers[0].getWorldPosition(p0)
     controllers[1].getWorldPosition(p1)
@@ -347,7 +396,6 @@ export function createVrInteraction(
     // Degenerate mid-gesture (hands coincident) — freeze to avoid a
     // divide-by-zero-ish blow-up.
     if (currentDistance < 0.001) return
-    currentAxis.copy(p1).sub(p0).normalize()
 
     // Pinch zoom: scale is proportional to the distance ratio,
     // clamped to the globe's configured min/max.
@@ -357,10 +405,15 @@ export function createVrInteraction(
     )
     ctx.globe.scale.setScalar(scale)
 
-    // Axis rotation: minimum-angle rotation from the start axis to
-    // the current axis. Captures 2 of 3 rotation DoF — the third
-    // (twist around the connecting axis) is out of scope for MVP.
-    deltaQ.setFromUnitVectors(mode.startAxis, currentAxis)
+    // Rotation: full rigid-body delta. Earlier version only
+    // considered the axis direction between the hands, so wrist
+    // twists produced no globe rotation — users reported that
+    // rotation "didn't keep up with the controllers". Capturing
+    // the average up-vector inside the two-hand orientation picks
+    // up wrist rolls too.
+    const currentOrientation = computeTwoHandOrientation()
+    // delta = current * start⁻¹, then globe = delta * globeStart
+    deltaQ.copy(mode.startOrientation).invert().premultiply(currentOrientation)
     ctx.globe.quaternion.copy(mode.globeStartQuat).premultiply(deltaQ)
   }
 
