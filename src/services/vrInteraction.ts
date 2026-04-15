@@ -31,8 +31,15 @@ import { logger } from '../utils/logger'
  */
 const THUMBSTICK_DEADZONE = 0.15
 
-/** Zoom rate at full-deflection — scale factor multiplier per second. */
-const ZOOM_RATE_PER_SECOND = 1.3
+/**
+ * Zoom rate at full-deflection — scale factor multiplier per second.
+ *
+ * At 2.5 it takes ~1 s at full thumbstick to cross half the
+ * MIN→MAX range, which testers reported feels responsive without
+ * being twitchy. The previous value of 1.3 took ~3.5 s for the same
+ * range — called "slightly slow" on-headset.
+ */
+const ZOOM_RATE_PER_SECOND = 2.5
 
 /**
  * Length of the visible controller ray in metres. Matches the
