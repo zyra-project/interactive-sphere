@@ -42,6 +42,25 @@ const THUMBSTICK_DEADZONE = 0.15
 const ZOOM_RATE_PER_SECOND = 2.5
 
 /**
+ * Inertia parameters — match the 2D MapLibre "flick the globe and it
+ * keeps spinning" feel.
+ *
+ * - `MIN_INERTIA_SPEED`: kick-off threshold (rad/s). Slow drags below
+ *   this produce no inertia (no annoying micro-spins after a careful
+ *   release). Also serves as the stop threshold — inertia ends when
+ *   decayed velocity drops below it.
+ * - `INERTIA_TIME_CONSTANT`: exponential decay τ in seconds. Velocity
+ *   decays to 37 % at 1τ, 13 % at 2τ, 5 % at 3τ. A confident flick at
+ *   ~5 rad/s lasts ≈ 3.5 s before stopping.
+ * - `VELOCITY_SMOOTHING_ALPHA`: how much the per-frame measured
+ *   velocity contributes to the running average. Lower = more
+ *   smoothing, less jitter, but also more lag in capturing a flick.
+ */
+const MIN_INERTIA_SPEED = 0.5
+const INERTIA_TIME_CONSTANT = 1.5
+const VELOCITY_SMOOTHING_ALPHA = 0.4
+
+/**
  * Length of the visible controller ray in metres. Matches the
  * Three.js WebXR examples' convention.
  */
@@ -113,6 +132,17 @@ type RotationMode =
       /** Globe quaternion when the two-hand gesture began. */
       globeStartQuat: THREE.Quaternion
     }
+  | {
+      kind: 'inertia'
+      /**
+       * Angular velocity in world space — direction = rotation axis,
+       * magnitude = radians per second. Decays exponentially each
+       * frame; mode reverts to `idle` when speed drops below
+       * `MIN_INERTIA_SPEED`. Cancelled instantly by any new trigger
+       * press that hits the globe.
+       */
+      velocity: THREE.Vector3
+    }
 
 /**
  * Build a simple line segment extending from the controller along -Z.
@@ -167,6 +197,27 @@ export function createVrInteraction(
   const hudArmed: (VrHudAction | null)[] = [null, null]
   /** Current rotation mode — recomputed on every trigger state change. */
   let rotationMode: RotationMode = { kind: 'idle' }
+
+  /**
+   * Running track of the globe's angular velocity during single +
+   * two-hand modes. We measure the actual quaternion delta produced
+   * by each frame's rotation update (rather than deriving from
+   * controller motion) so the tracker is agnostic to single vs.
+   * two-hand math — both feed the same source.
+   *
+   * On release (mode → idle), if the smoothed velocity exceeds
+   * `MIN_INERTIA_SPEED`, we transition to inertia mode instead and
+   * the globe keeps spinning with exponential decay. This mirrors
+   * the 2D MapLibre flick-to-spin behaviour requested by testers.
+   */
+  const velocityTracker = {
+    /** Globe quaternion at the previous tick — used to compute deltas. */
+    prevQuat: new THREE_.Quaternion(),
+    /** Smoothed angular velocity (axis * rad/s). */
+    velocity: new THREE_.Vector3(),
+    /** True while we're actively tracking; false in idle / inertia. */
+    active: false,
+  }
 
   /**
    * Update `raycaster` so its ray matches the given controller's
@@ -291,8 +342,15 @@ export function createVrInteraction(
    * Rebuild `rotationMode` from the current `triggersOnGlobe` state.
    * Idempotent for mode kinds that are already correct — avoids
    * re-snapshotting on unrelated updates (e.g. HUD arming).
+   *
+   * On the rotation → idle transition, kicks off `inertia` mode if
+   * the user was rotating fast enough at release. New presses on
+   * the globe always cancel inertia (rotationMode becomes `single`
+   * or `two-hand`, replacing the inertia state).
    */
   function reevaluateRotationMode(): void {
+    const wasRotating =
+      rotationMode.kind === 'single' || rotationMode.kind === 'two-hand'
     const g0 = triggersOnGlobe[0]
     const g1 = triggersOnGlobe[1]
     if (g0 && g1) {
@@ -306,7 +364,17 @@ export function createVrInteraction(
         rotationMode = captureSingleMode(1)
       }
     } else {
-      rotationMode = { kind: 'idle' }
+      // Releasing the last trigger. If the velocity tracker has a
+      // significant signal, transition to inertia rather than
+      // idle so the spin continues with decay.
+      if (wasRotating && velocityTracker.velocity.length() > MIN_INERTIA_SPEED) {
+        rotationMode = {
+          kind: 'inertia',
+          velocity: velocityTracker.velocity.clone(),
+        }
+      } else {
+        rotationMode = { kind: 'idle' }
+      }
     }
   }
 
@@ -417,6 +485,74 @@ export function createVrInteraction(
     ctx.globe.quaternion.copy(mode.globeStartQuat).premultiply(deltaQ)
   }
 
+  /**
+   * Continue the decaying spin from a release-time velocity. Stops
+   * (transitions to idle) when speed drops below `MIN_INERTIA_SPEED`
+   * so we don't burn frames applying invisible rotations.
+   */
+  function updateInertia(
+    mode: Extract<RotationMode, { kind: 'inertia' }>,
+    deltaSeconds: number,
+  ): void {
+    // Exponential decay of velocity over wall-clock time.
+    const decay = Math.exp(-deltaSeconds / INERTIA_TIME_CONSTANT)
+    mode.velocity.multiplyScalar(decay)
+    const speed = mode.velocity.length()
+    if (speed < MIN_INERTIA_SPEED) {
+      rotationMode = { kind: 'idle' }
+      return
+    }
+    const angle = speed * deltaSeconds
+    deltaQ.setFromAxisAngle(mode.velocity.clone().normalize(), angle)
+    ctx.globe.quaternion.premultiply(deltaQ)
+  }
+
+  /** Quaternion scratch reused for velocity-delta math. */
+  const velDelta = new THREE_.Quaternion()
+  const velPrevInverse = new THREE_.Quaternion()
+  const velSampleAxis = new THREE_.Vector3()
+  const velSample = new THREE_.Vector3()
+
+  /**
+   * Track the globe's angular velocity each frame during single +
+   * two-hand modes. Activates on first frame of rotation, deactivates
+   * outside those modes. Smoothes via `lerp` so a single jittery
+   * frame doesn't poison the velocity captured at release.
+   */
+  function updateVelocityTracking(deltaSeconds: number, isRotating: boolean): void {
+    if (!isRotating) {
+      velocityTracker.active = false
+      return
+    }
+    if (!velocityTracker.active) {
+      // First frame of a fresh rotation — initialize, no sample yet.
+      velocityTracker.prevQuat.copy(ctx.globe.quaternion)
+      velocityTracker.velocity.set(0, 0, 0)
+      velocityTracker.active = true
+      return
+    }
+    if (deltaSeconds <= 0) return
+
+    // delta = current * prev⁻¹  (rotation that takes prev → current).
+    velPrevInverse.copy(velocityTracker.prevQuat).invert()
+    velDelta.copy(ctx.globe.quaternion).multiply(velPrevInverse)
+
+    // Convert delta quaternion to angular velocity vector. Take the
+    // shortest-path interpretation (flip sign if w < 0).
+    const w = Math.max(-1, Math.min(1, velDelta.w < 0 ? -velDelta.w : velDelta.w))
+    const sign = velDelta.w < 0 ? -1 : 1
+    const angle = 2 * Math.acos(w)
+    if (angle > 1e-5) {
+      const sinHalf = Math.sin(angle / 2)
+      velSampleAxis.set(velDelta.x, velDelta.y, velDelta.z).multiplyScalar(sign / sinHalf)
+      velSample.copy(velSampleAxis).multiplyScalar(angle / deltaSeconds)
+    } else {
+      velSample.set(0, 0, 0)
+    }
+    velocityTracker.velocity.lerp(velSample, VELOCITY_SMOOTHING_ALPHA)
+    velocityTracker.prevQuat.copy(ctx.globe.quaternion)
+  }
+
   /** Poll thumbstick Y across controllers and scale globe accordingly. */
   function updateThumbstickZoom(deltaSeconds: number): void {
     // The WebXR `inputSources` list is the source of truth for
@@ -457,12 +593,22 @@ export function createVrInteraction(
         case 'two-hand':
           updateTwoHand(rotationMode)
           break
+        case 'inertia':
+          updateInertia(rotationMode, deltaSeconds)
+          break
       }
 
-      // Thumbstick zoom runs in idle + single modes but is
-      // suppressed during two-hand because pinch already drives
-      // scale and the two would fight for the same axis.
-      if (rotationMode.kind !== 'two-hand') {
+      // Velocity tracker only runs during user-driven rotation;
+      // inertia drives itself from a captured velocity and would
+      // otherwise feed back into its own decay calculation.
+      const isUserRotating =
+        rotationMode.kind === 'single' || rotationMode.kind === 'two-hand'
+      updateVelocityTracking(deltaSeconds, isUserRotating)
+
+      // Thumbstick zoom runs in idle + single modes. Suppressed
+      // during two-hand (pinch owns scale) and inertia (avoid
+      // accidental scale during a flick spin).
+      if (rotationMode.kind !== 'two-hand' && rotationMode.kind !== 'inertia') {
         updateThumbstickZoom(deltaSeconds)
       }
     },
