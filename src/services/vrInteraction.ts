@@ -65,28 +65,45 @@ export interface VrInteractionHandle {
 }
 
 /**
- * Per-controller state tracked during a trigger-drag.
+ * Rotation mode — mutually-exclusive union of the three states the
+ * globe can be in based on how many triggers are on the globe:
  *
- * We use a "surface-pinned raycast" rotation model rather than a
- * quaternion-grab. On-headset testing found quaternion-grab (rotate
- * the globe by the wrist's rotational delta) felt wrong compared to
- * the 2D MapLibre drag, because purely translating the controller
- * without twisting the wrist did nothing — and that's how most users
- * naturally move a pointer.
+ * - `idle` — no rotation happening
+ * - `single` — one trigger on globe; surface-pinned raycast drag.
+ *   Lateral controller motion rotates the globe because the grab
+ *   point stays pinned under the current ray. Matches MapLibre's
+ *   "drag the surface under your cursor" feel.
+ * - `two-hand` — both triggers on globe; mobile-style pinch + axis
+ *   rotate. Distance between controllers scales the globe; the axis
+ *   connecting them rotates it. Captures 5 of 6 DoF; twist around
+ *   the connecting axis is deliberately dropped (Phase 4 polish).
  *
- * Surface-pinned: the world-space vector from the globe center to
- * the point where the drag started stays pinned under the current
- * ray. On each frame we compute the rotation needed to map the
- * grab direction to the current ray-globe intersection direction
- * and apply it on top of the start quaternion. Feels much closer to
- * MapLibre's "drag the surface under your cursor" behaviour.
+ * Transitions recapture the baseline so switching modes never
+ * introduces drift. Thumbstick zoom is active in `idle` + `single`
+ * but suppressed in `two-hand` because pinch already handles zoom
+ * and the two inputs would fight.
  */
-interface DragState {
-  /** Unit vector from globe center to the grabbed surface point at drag start, in world space. */
-  worldGrabDir: THREE.Vector3
-  /** Globe quaternion at the moment `selectstart` fired — rotations compose on top of this. */
-  globeStartQuat: THREE.Quaternion
-}
+type RotationMode =
+  | { kind: 'idle' }
+  | {
+      kind: 'single'
+      index: 0 | 1
+      /** Unit vector from globe center to grabbed surface point, world-space. */
+      worldGrabDir: THREE.Vector3
+      /** Globe quaternion when the single drag began. */
+      globeStartQuat: THREE.Quaternion
+    }
+  | {
+      kind: 'two-hand'
+      /** Unit direction from controller 0 to controller 1 when the two-hand gesture began. */
+      startAxis: THREE.Vector3
+      /** Distance between controllers when the two-hand gesture began. */
+      startDistance: number
+      /** Globe uniform scale when the two-hand gesture began. */
+      startScale: number
+      /** Globe quaternion when the two-hand gesture began. */
+      globeStartQuat: THREE.Quaternion
+    }
 
 /**
  * Build a simple line segment extending from the controller along -Z.
@@ -125,8 +142,13 @@ export function createVrInteraction(
   // grip exits, either thumbstick zooms.
   const controllers: THREE.XRTargetRaySpace[] = []
   const rayLines: THREE.Line[] = []
-  /** Active drag per controller index. Null when not trigger-held on the globe. */
-  const drags: (DragState | null)[] = [null, null]
+  /**
+   * Per-controller "is this trigger actively rotating the globe?".
+   * True while a trigger was pressed while pointing at the globe
+   * and has not yet been released. Separate from HUD arming so that
+   * pointing at HUD buttons doesn't disturb rotation state.
+   */
+  const triggersOnGlobe: boolean[] = [false, false]
   /**
    * Whether each controller's most recent selectstart hit the HUD
    * instead of the globe. We only fire a HUD action on `selectend`
@@ -134,6 +156,8 @@ export function createVrInteraction(
    * button).
    */
   const hudArmed: (VrHudAction | null)[] = [null, null]
+  /** Current rotation mode — recomputed on every trigger state change. */
+  let rotationMode: RotationMode = { kind: 'idle' }
 
   /**
    * Update `raycaster` so its ray matches the given controller's
@@ -175,7 +199,68 @@ export function createVrInteraction(
     return null
   }
 
-  function onSelectStart(index: number): void {
+  /**
+   * Snapshot the single-drag baseline for the given controller.
+   * Raycasts the controller against the globe; if the ray misses
+   * (user's aim slipped during a mode transition) we fall back to
+   * `idle` and the user can re-grab. Returns the new mode.
+   */
+  function captureSingleMode(index: 0 | 1): RotationMode {
+    const controller = controllers[index]
+    setRaycasterFromController(controller)
+    const hits = raycaster.intersectObject(ctx.globe, false)
+    if (hits.length === 0 || !hits[0].point) return { kind: 'idle' }
+    return {
+      kind: 'single',
+      index,
+      worldGrabDir: hits[0].point.clone().sub(ctx.globe.position).normalize(),
+      globeStartQuat: ctx.globe.quaternion.clone(),
+    }
+  }
+
+  /** Snapshot the two-hand baseline. Both controllers assumed on-globe. */
+  function captureTwoHandMode(): RotationMode {
+    const p0 = new THREE_.Vector3()
+    const p1 = new THREE_.Vector3()
+    controllers[0].getWorldPosition(p0)
+    controllers[1].getWorldPosition(p1)
+    const startDistance = p0.distanceTo(p1)
+    // Guard against degenerate start distance (controllers coincident).
+    // Fall back to idle; user can release and re-grab.
+    if (startDistance < 0.001) return { kind: 'idle' }
+    return {
+      kind: 'two-hand',
+      startAxis: p1.sub(p0).normalize(),
+      startDistance,
+      startScale: ctx.globe.scale.x,
+      globeStartQuat: ctx.globe.quaternion.clone(),
+    }
+  }
+
+  /**
+   * Rebuild `rotationMode` from the current `triggersOnGlobe` state.
+   * Idempotent for mode kinds that are already correct — avoids
+   * re-snapshotting on unrelated updates (e.g. HUD arming).
+   */
+  function reevaluateRotationMode(): void {
+    const g0 = triggersOnGlobe[0]
+    const g1 = triggersOnGlobe[1]
+    if (g0 && g1) {
+      if (rotationMode.kind !== 'two-hand') rotationMode = captureTwoHandMode()
+    } else if (g0) {
+      if (!(rotationMode.kind === 'single' && rotationMode.index === 0)) {
+        rotationMode = captureSingleMode(0)
+      }
+    } else if (g1) {
+      if (!(rotationMode.kind === 'single' && rotationMode.index === 1)) {
+        rotationMode = captureSingleMode(1)
+      }
+    } else {
+      rotationMode = { kind: 'idle' }
+    }
+  }
+
+  function onSelectStart(index: 0 | 1): void {
     const controller = controllers[index]
     const hit = pickHit(controller)
     if (!hit) return
@@ -185,24 +270,14 @@ export function createVrInteraction(
       return
     }
 
-    // Globe hit — re-run the intersection so we can grab the
-    // world-space point on the surface. pickHit() already raycasted
-    // so the raycaster is primed; intersectObject is cheap.
-    const hits = raycaster.intersectObject(ctx.globe, false)
-    if (hits.length === 0 || !hits[0].point) return
-
-    const worldGrabDir = hits[0].point
-      .clone()
-      .sub(ctx.globe.position)
-      .normalize()
-
-    drags[index] = {
-      worldGrabDir,
-      globeStartQuat: ctx.globe.quaternion.clone(),
-    }
+    // Globe hit — flip this trigger's rotation bit and let the
+    // reevaluator pick the right mode (single or two-hand based on
+    // the other trigger's state).
+    triggersOnGlobe[index] = true
+    reevaluateRotationMode()
   }
 
-  function onSelectEnd(index: number): void {
+  function onSelectEnd(index: 0 | 1): void {
     // HUD actions fire on release (mirrors DOM click semantics).
     if (hudArmed[index]) {
       const controller = controllers[index]
@@ -215,7 +290,10 @@ export function createVrInteraction(
       }
       hudArmed[index] = null
     }
-    drags[index] = null
+    if (triggersOnGlobe[index]) {
+      triggersOnGlobe[index] = false
+      reevaluateRotationMode()
+    }
   }
 
   function onSqueezeStart(): void {
@@ -226,7 +304,7 @@ export function createVrInteraction(
 
   // --- Wire up both controllers ---
 
-  for (let i = 0; i < 2; i++) {
+  for (const i of [0, 1] as const) {
     const controller = ctx.renderer.xr.getController(i) as THREE.XRTargetRaySpace
     controllers.push(controller)
     const ray = buildRayLine(THREE_)
@@ -240,68 +318,99 @@ export function createVrInteraction(
     controller.addEventListener('squeezestart', () => onSqueezeStart())
   }
 
-  // Scratch vector + quaternion reused per drag update; avoids per-
-  // frame allocation in the XR hot path.
+  // Scratch vectors + quaternion reused every frame; avoids
+  // allocation in the XR hot path.
   const currentWorldDir = new THREE_.Vector3()
   const deltaQ = new THREE_.Quaternion()
+  const p0 = new THREE_.Vector3()
+  const p1 = new THREE_.Vector3()
+  const currentAxis = new THREE_.Vector3()
+
+  /** Apply the surface-pinned rotation for the active single-drag. */
+  function updateSingle(mode: Extract<RotationMode, { kind: 'single' }>): void {
+    const controller = controllers[mode.index]
+    setRaycasterFromController(controller)
+    const hits = raycaster.intersectObject(ctx.globe, false)
+    // Ray swung off-globe — freeze rotation until it lands back on
+    // the surface. Matches 2D mouse-off-canvas semantics.
+    if (hits.length === 0 || !hits[0].point) return
+    currentWorldDir.copy(hits[0].point).sub(ctx.globe.position).normalize()
+    deltaQ.setFromUnitVectors(mode.worldGrabDir, currentWorldDir)
+    ctx.globe.quaternion.copy(mode.globeStartQuat).premultiply(deltaQ)
+  }
+
+  /** Apply pinch-scale + axis-rotate for the active two-hand gesture. */
+  function updateTwoHand(mode: Extract<RotationMode, { kind: 'two-hand' }>): void {
+    controllers[0].getWorldPosition(p0)
+    controllers[1].getWorldPosition(p1)
+    const currentDistance = p0.distanceTo(p1)
+    // Degenerate mid-gesture (hands coincident) — freeze to avoid a
+    // divide-by-zero-ish blow-up.
+    if (currentDistance < 0.001) return
+    currentAxis.copy(p1).sub(p0).normalize()
+
+    // Pinch zoom: scale is proportional to the distance ratio,
+    // clamped to the globe's configured min/max.
+    const scale = Math.max(
+      MIN_GLOBE_SCALE,
+      Math.min(MAX_GLOBE_SCALE, mode.startScale * (currentDistance / mode.startDistance)),
+    )
+    ctx.globe.scale.setScalar(scale)
+
+    // Axis rotation: minimum-angle rotation from the start axis to
+    // the current axis. Captures 2 of 3 rotation DoF — the third
+    // (twist around the connecting axis) is out of scope for MVP.
+    deltaQ.setFromUnitVectors(mode.startAxis, currentAxis)
+    ctx.globe.quaternion.copy(mode.globeStartQuat).premultiply(deltaQ)
+  }
+
+  /** Poll thumbstick Y across controllers and scale globe accordingly. */
+  function updateThumbstickZoom(deltaSeconds: number): void {
+    // The WebXR `inputSources` list is the source of truth for
+    // gamepad axes — Three.js doesn't abstract this for us. Each
+    // Quest controller maps axes [2, 3] to the thumbstick (axes
+    // [0, 1] are the touchpad, which the Quest doesn't have).
+    const session = ctx.renderer.xr.getSession()
+    if (!session) return
+    let zoomAxis = 0
+    for (const source of session.inputSources) {
+      const gp = source.gamepad
+      if (!gp) continue
+      // Prefer the primary thumbstick axis pair; fall back to the
+      // legacy pair for older devices that expose only it.
+      const y = gp.axes[3] ?? gp.axes[1] ?? 0
+      if (Math.abs(y) > THUMBSTICK_DEADZONE) {
+        // Invert so pushing up → zoom in. Take the strongest signal
+        // across controllers (user might use either hand).
+        const signed = -y
+        if (Math.abs(signed) > Math.abs(zoomAxis)) zoomAxis = signed
+      }
+    }
+    if (zoomAxis === 0) return
+    const factor = Math.pow(ZOOM_RATE_PER_SECOND, zoomAxis * deltaSeconds)
+    const next = ctx.globe.scale.x * factor
+    const clamped = Math.max(MIN_GLOBE_SCALE, Math.min(MAX_GLOBE_SCALE, next))
+    ctx.globe.scale.setScalar(clamped)
+  }
 
   return {
     update(deltaSeconds) {
-      // --- Surface-pinned drag rotation ---
-      for (let i = 0; i < 2; i++) {
-        const drag = drags[i]
-        if (!drag) continue
-        const controller = controllers[i]
-        setRaycasterFromController(controller)
-        const hits = raycaster.intersectObject(ctx.globe, false)
-        // If the ray has swung off the globe (fast user motion,
-        // controller pointed at the void) we freeze the current
-        // rotation rather than jumping. Dragging resumes naturally
-        // when the ray lands back on the surface.
-        if (hits.length === 0 || !hits[0].point) continue
-
-        currentWorldDir
-          .copy(hits[0].point)
-          .sub(ctx.globe.position)
-          .normalize()
-
-        // Rotation that maps the original grab direction to where
-        // the ray points now. Applied on top of the start
-        // quaternion so the drag is idempotent — releasing and
-        // re-grabbing doesn't drift.
-        deltaQ.setFromUnitVectors(drag.worldGrabDir, currentWorldDir)
-        ctx.globe.quaternion
-          .copy(drag.globeStartQuat)
-          .premultiply(deltaQ)
+      switch (rotationMode.kind) {
+        case 'idle':
+          break
+        case 'single':
+          updateSingle(rotationMode)
+          break
+        case 'two-hand':
+          updateTwoHand(rotationMode)
+          break
       }
 
-      // --- Thumbstick zoom ---
-      // The WebXR `inputSources` list is the source of truth for
-      // gamepad axes — Three.js doesn't abstract this for us. Each
-      // Quest controller maps axes [2, 3] to the thumbstick (axes
-      // [0, 1] are the touchpad, which the Quest doesn't have).
-      const session = ctx.renderer.xr.getSession()
-      if (session) {
-        let zoomAxis = 0
-        for (const source of session.inputSources) {
-          const gp = source.gamepad
-          if (!gp) continue
-          // Prefer the primary thumbstick axis pair; fall back to
-          // the legacy pair for older devices that expose only it.
-          const y = gp.axes[3] ?? gp.axes[1] ?? 0
-          if (Math.abs(y) > THUMBSTICK_DEADZONE) {
-            // Invert so pushing up → zoom in. Take the strongest
-            // signal across controllers (user might use either hand).
-            const signed = -y
-            if (Math.abs(signed) > Math.abs(zoomAxis)) zoomAxis = signed
-          }
-        }
-        if (zoomAxis !== 0) {
-          const factor = Math.pow(ZOOM_RATE_PER_SECOND, zoomAxis * deltaSeconds)
-          const next = ctx.globe.scale.x * factor
-          const clamped = Math.max(MIN_GLOBE_SCALE, Math.min(MAX_GLOBE_SCALE, next))
-          ctx.globe.scale.setScalar(clamped)
-        }
+      // Thumbstick zoom runs in idle + single modes but is
+      // suppressed during two-hand because pinch already drives
+      // scale and the two would fight for the same axis.
+      if (rotationMode.kind !== 'two-hand') {
+        updateThumbstickZoom(deltaSeconds)
       }
     },
 
