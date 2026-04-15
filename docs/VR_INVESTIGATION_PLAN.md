@@ -165,12 +165,19 @@ What must work:
 
 Explicitly out of scope for MVP (→ Phase 2+):
 
-- GIBS tile pyramid in VR
-- Day/night/cloud/specular composite shaders
-- Browse panel in VR (switch datasets → exit to 2D)
-- 2D ↔ VR camera sync (entering VR always starts from default pose)
-- Orbit chat in VR
-- Tours in VR
+- GIBS tile pyramid in VR (Phase 2)
+- Day/night/cloud/specular composite shaders (Phase 2)
+- Multi-globe / setview parity with 2D viewport manager (Phase 2.5)
+- Browse panel in VR (Phase 3; switch datasets → exit to 2D for now)
+- 2D ↔ VR camera sync (Phase 4; entering VR always starts from default pose)
+- Orbit chat in VR (Phase 5)
+- Tours in VR (Phase 5)
+
+Note on multi-globe specifically: the MVP always renders one globe
+bound to the primary panel, even if the 2D app is currently in 2- or
+4-globe layout. Entering VR from a multi-globe 2D view falls back to
+showing just the primary; other panels keep rendering in 2D behind
+the scenes and are restored on VR exit.
 
 ---
 
@@ -220,6 +227,64 @@ imported by anything on the hot path.
   equirectangular per dataset (open question below).
 - Replace `Earth_Specular_2K.jpg` placeholder with a proper Blue
   Marble equirectangular base texture.
+
+### Phase 2.5 — multi-globe layout (parity with 2D viewport manager)
+
+The 2D app already supports 1/2/4 synchronised globes via
+`src/services/viewportManager.ts` — camera lockstep, a "primary"
+designation that drives the playback transport, and sibling video
+sync in `main.ts:attachPrimaryVideoSync`. Porting this to VR is
+deferred from the MVP because of scope and a hardware unknown, but
+the MVP modules are designed to extend cleanly.
+
+**Candidate layouts** — pick before implementation:
+
+1. **Arc** — N globes at eye height, ~30° apart. Closest spiritual
+   port of the 2D side-by-side grid. A slight head-turn switches
+   focus.
+2. **Tabletop diorama** — smaller globes (~20 cm radius) arranged on
+   a waist-height virtual surface in a 2×2 grid. User walks around
+   or leans in. Feels more spatial, loses the "dashboard" metaphor.
+3. **Primary + companions** — one full-size anchored globe with
+   smaller companions beside it. Good for "focus + context".
+
+Leaning **arc** for 2D parity, or **diorama** if we want VR to feel
+distinct from the 2D experience.
+
+**Sync model** — two options:
+
+- **Full lockstep** (match 2D): grabbing one globe rotates all. In
+  VR the user's head already is the camera, so this degrades to
+  globe-orientation lockstep only.
+- **Independent rotate, shared time**: each globe can be grabbed and
+  rotated independently but scrubbing or pause/play affects all.
+  Probably feels more natural in VR since you can physically move
+  between globes rather than "aiming" a camera.
+
+**Hardware constraint (important):** Quest 2 typically ships with
+1–2 simultaneous H.264 hardware decoders. Four live HLS streams
+→ four VideoTextures → four decoders may overflow and fall back to
+software decode, which will tank framerate. The 2D app already
+manages this on mobile; in VR it's a harder ceiling because stereo
+rendering leaves less headroom. **Ship 2-globe support first; treat
+4-globe as aspirational pending on-device testing.**
+
+**Extension points already built into the MVP modules:**
+
+| MVP module | Phase 2.5 extension |
+|---|---|
+| `vrScene.ts` | Grow a `setPanelCount(n)` + `setPanelVideo(slot, video)` API. Today it holds a single globe mesh; becomes an array keyed by slot index. |
+| `vrSession.ts` | No change — scene creation is already parameterised. |
+| `vrInteraction.ts` | Raycast hit → which slot? → promote to primary. New intent: "select primary panel". |
+| `vrHud.ts` | Grows a panel-indicator strip (the 2D app does the same thing via the `info-selector` dropdown in `main.ts`). |
+
+**Reuses from the 2D app unchanged:**
+
+- `viewportManager` owns the concept of panel slots and the primary
+  index. The VR scene consumes that state rather than reinventing it.
+- `attachPrimaryVideoSync` — already does all the hard work of
+  keeping sibling videos in time. The VR scene binds VideoTextures
+  to already-synced videos, so VR doesn't need its own sync logic.
 
 ### Phase 3 — in-VR dataset switching
 - Floating browse panel rendered as a CanvasTexture with dataset
