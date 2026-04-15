@@ -15,22 +15,30 @@
 
 import type * as THREE from 'three'
 
-/** World-space size of the HUD plane. Tall-thin strip that tucks below the globe. */
-const HUD_WIDTH = 0.5
-const HUD_HEIGHT = 0.1
+/** World-space size of the HUD plane. Wide strip that tucks below the globe. */
+const HUD_WIDTH = 0.6
+const HUD_HEIGHT = 0.15
 
 /**
  * Local-floor placement. Globe sits at `(0, 1.3, -1.5)` with 0.5 m
- * radius, so its bottom is at y≈0.8 and its nearest point at z≈-1.0.
- * HUD at (0, 0.75, -1.05) is just below the globe's visible bottom
- * edge and slightly closer to the user — natural glance-down zone
- * for both seated and standing poses.
+ * radius; its nearest surface point to the user is roughly z=-1.0.
+ * HUD at (0, 1.0, -1.0) sits just below the globe's visible bottom
+ * edge and in front of its nearest surface, which puts it inside
+ * the natural gaze cone when looking at the globe — no deliberate
+ * head-tilt needed to notice it. `depthTest: false` + `renderOrder`
+ * on the mesh means any z-coincidence with the globe surface
+ * doesn't cause z-fighting.
+ *
+ * An earlier position (y=0.75, z=-1.05) put the HUD at chest level
+ * for a standing user — it was technically in the field of view
+ * but required looking down deliberately, so on-headset testing
+ * missed it entirely. Kept here as a note for future re-tuning.
  */
-const HUD_POSITION = { x: 0, y: 0.75, z: -1.05 }
+const HUD_POSITION = { x: 0, y: 1.0, z: -1.0 }
 
-/** Canvas resolution. 5:1 ratio mirrors the plane's 0.5 × 0.1 m shape. */
+/** Canvas resolution. 4:1 ratio matches the 0.6 × 0.15 m plane. */
 const CANVAS_WIDTH = 1024
-const CANVAS_HEIGHT = 205
+const CANVAS_HEIGHT = 256
 
 /**
  * Hit-region layout in UV space. `u` runs 0 (left) → 1 (right), `v`
@@ -103,13 +111,13 @@ function drawCanvas(
     ctx.fillStyle = 'rgba(77, 166, 255, 0.9)' // --color-accent
     if (state.isPlaying) {
       // Pause icon — two vertical bars
-      const barW = 14
-      const barH = 60
-      ctx.fillRect(ppCenterX - barW - 6, ppCenterY - barH / 2, barW, barH)
-      ctx.fillRect(ppCenterX + 6, ppCenterY - barH / 2, barW, barH)
+      const barW = 18
+      const barH = 80
+      ctx.fillRect(ppCenterX - barW - 8, ppCenterY - barH / 2, barW, barH)
+      ctx.fillRect(ppCenterX + 8, ppCenterY - barH / 2, barW, barH)
     } else {
       // Play icon — right-pointing triangle
-      const size = 36
+      const size = 48
       ctx.beginPath()
       ctx.moveTo(ppCenterX - size / 2, ppCenterY - size)
       ctx.lineTo(ppCenterX - size / 2, ppCenterY + size)
@@ -120,9 +128,12 @@ function drawCanvas(
   }
 
   // --- Middle: dataset title ---
-  const titleText = state.datasetTitle || 'No dataset loaded'
+  // When no dataset is loaded the MVP has nothing to play, so steer
+  // the user back to the 2D browse panel. Dataset switching inside
+  // VR is Phase 3 work (see VR_INVESTIGATION_PLAN.md).
+  const titleText = state.datasetTitle || 'Load a dataset in 2D view first'
   ctx.fillStyle = '#e8eaf0' // --color-text
-  ctx.font = '500 48px system-ui, -apple-system, sans-serif'
+  ctx.font = '500 54px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const titleMaxWidth = w * 0.6
@@ -141,9 +152,9 @@ function drawCanvas(
   const exCenterX = (exMinX + exMaxX) / 2
   const exCenterY = h / 2
   ctx.strokeStyle = 'rgba(232, 234, 240, 0.85)'
-  ctx.lineWidth = 6
+  ctx.lineWidth = 7
   ctx.lineCap = 'round'
-  const armLength = 24
+  const armLength = 32
   ctx.beginPath()
   ctx.moveTo(exCenterX - armLength, exCenterY - armLength)
   ctx.lineTo(exCenterX + armLength, exCenterY + armLength)
