@@ -45,6 +45,15 @@ npm run build:desktop # tsc + vite build + tauri build
 | `src/ui/mapControlsUI.ts` | Map controls positioning helper — keeps the Tools bar above the playback transport |
 | `src/ui/playbackController.ts` | Playback transport controls + portrait-mobile positioning |
 | `src/ui/toolsMenuUI.ts` | Tools popover — Browse button, view toggles (labels, borders, terrain, auto-rotate, info, legend), layout picker, Orbit settings entry point |
+| `src/ui/vrButton.ts` | Enter AR / Enter VR button — feature-gated (hidden on non-WebXR browsers), lazy-loads Three.js on tap |
+| `src/services/vrSession.ts` | WebXR session lifecycle — requests `immersive-ar` or `immersive-vr`, wires renderer.xr, drives the per-frame loop, handles anchor persistence |
+| `src/services/vrScene.ts` | Three.js scene — globe mesh, photoreal Earth stack (diffuse / night lights / specular / atmosphere / clouds / sun / ground shadow), dataset texture swap |
+| `src/services/vrInteraction.ts` | Controller input — surface-pinned drag, two-hand pinch+rotate, thumbstick zoom, flick-to-spin inertia, raycast hit routing |
+| `src/services/vrHud.ts` | In-VR floating HUD — dataset title + play/pause + exit-VR as a CanvasTexture panel with UV hit regions |
+| `src/services/vrPlacement.ts` | AR spatial placement — reticle + Place button; WebXR hit-test to anchor the globe on a real surface |
+| `src/services/vrLoading.ts` | 3D loading scene — orbiting rings, progress bar, status text; fades out when dataset is ready |
+| `src/utils/vrCapability.ts` | Feature detection — `navigator.xr`, `immersive-vr`, `immersive-ar` support |
+| `src/utils/vrPersistence.ts` | WebXR anchor persistent-handle save/load (localStorage) for cross-session placement stability |
 | `src/utils/viewPreferences.ts` | Persists Dataset info + Legend toggle state to localStorage |
 
 ---
@@ -95,6 +104,81 @@ Stored in `localStorage` under `sos-docent-config`. Defaults:
 - `action` — load a dataset (renders as an inline button)
 - `auto-load` — auto-loaded dataset with alternatives
 - `done` — stream complete; `fallback: true` if local engine was used
+
+---
+
+## VR / AR — Immersive mode
+
+The app ships an optional WebXR immersive mode for Meta Quest (and
+any other WebXR-capable headset). Entirely feature-gated — browsers
+without `navigator.xr` never load the Three.js chunk and see no UI
+change. Design doc: [`docs/VR_INVESTIGATION_PLAN.md`](docs/VR_INVESTIGATION_PLAN.md).
+
+### Key architectural points
+
+- **Two renderers, one DOM.** The 2D app's MapLibre canvas is untouched
+  by VR. When the user taps Enter AR / Enter VR, `vrSession.ts` creates
+  a parallel Three.js `WebGLRenderer` attached to its own canvas,
+  calls `renderer.xr.setSession(session)`, and drives a separate XR
+  render loop. MapLibre keeps running behind the scenes and takes
+  over again on session-end.
+
+- **Lazy-loaded Three.js.** `import('three')` only fires on the
+  first Enter AR/VR tap — same lazy-import pattern used for Tauri
+  plugins in `llmProvider.ts` / `downloadService.ts`. Three.js
+  chunks separately at ~183 KB gzipped; the main bundle is unchanged
+  for non-VR users. `XRControllerModelFactory` chunks alongside at
+  ~16 KB gzipped.
+
+- **AR-first button.** `vrButton.ts` prefers `immersive-ar` when the
+  device supports it (Quest 2/3/Pro all do), falls back to
+  `immersive-vr` on PCVR, hides entirely on non-XR browsers.
+
+- **Dataset texture reuse.** Video datasets reuse the existing HLS
+  `<video>` element directly via `THREE.VideoTexture`. Image datasets
+  reuse the already-decoded `HTMLImageElement` stored in
+  `panelStates[slot].image` (set by `loadImageDataset`). Zero
+  re-fetches.
+
+- **Earth-as-planet vs. data-as-surface modes.** When no dataset is
+  loaded, `vrScene.ts` renders the full photoreal Earth stack
+  (diffuse + night lights + specular + atmosphere + clouds + sun +
+  ground shadow + day/night shader gated by real UTC sun position).
+  When a dataset is loaded, all Earth-specific decoration is hidden
+  so the data reads uniformly across the sphere.
+
+- **Spatial placement (AR only).** `vrPlacement.ts` uses WebXR
+  `hit-test` to let the user point at a real-world surface and tap
+  to anchor the globe there. `vrPersistence.ts` stores the anchor's
+  persistent-handle UUID in localStorage so the globe stays in the
+  same physical spot across sessions (Quest's Meta Anchors extension).
+
+### Session-start ordering is subtle
+
+`vrSession.enterImmersive()` has a specific async ordering that
+matters for correctness:
+
+1. `loadThree()` — Three.js chunk
+2. **`import XRControllerModelFactory`** — must finish before
+   `setTexture` fires its synchronous `onReady`, otherwise the
+   loading-scene fade-out race loses (see commit 90279c5)
+3. Build renderer + camera, request session, `setSession`
+4. AR: set up hit-test source + restore persistent anchor
+5. Build `scene`, `hud`, `loading`; hide globe + HUD; show loading
+6. `setTexture` → fires `onReady` → schedules 250 ms → fade-out
+7. Build `interaction`, assign `active`, start animation loop
+
+### Per-frame ordering in the render loop
+
+1. Hit-test (placement, AR only)
+2. Anchor-pose sync (AR only — writes into `globe.position`)
+3. Dataset texture swap (idempotent no-op in steady state)
+4. HUD state update (debounced)
+5. Interaction update (rotation, zoom, inertia)
+6. Scene update (shadow, atmosphere, sun — tracked to `globe.position`)
+7. HUD + Place button position sync (follows globe)
+8. Loading-scene animation (rings spin, fade)
+9. `renderer.render(scene, camera)`
 
 ---
 

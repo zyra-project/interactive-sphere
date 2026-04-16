@@ -63,7 +63,7 @@ export async function loadImageDataset(
   isMobile: boolean,
   callbacks: DatasetLoaderCallbacks,
   options: DatasetLoaderOptions = {},
-): Promise<void> {
+): Promise<HTMLImageElement> {
   const isPrimary = options.isPrimary ?? true
 
   // Check for offline-cached version first
@@ -96,6 +96,7 @@ export async function loadImageDataset(
   }
 
   logger.info(`[App] Image dataset loaded successfully: ${img.src}`)
+  return img
 }
 
 /** Load an image from the network with progressive resolution fallback. */

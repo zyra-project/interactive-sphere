@@ -41,6 +41,7 @@ import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourIm
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, IS_MOBILE_NATIVE, getCloudTextureUrl } from './utils/deviceCapability'
 import { initDeepLinks } from './services/deepLinkService'
+import { initVrButton } from './ui/vrButton'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
 // (larger touch targets, bottom sheets, etc.) without JS per-component.
@@ -74,10 +75,12 @@ interface PanelState {
   dataset: Dataset | null
   hlsService: HLSService | null
   videoTexture: VideoTextureHandle | null
+  /** Decoded image element for image datasets — passed to VR to avoid re-fetching. */
+  image: HTMLImageElement | null
 }
 
 function createPanelState(): PanelState {
-  return { dataset: null, hlsService: null, videoTexture: null }
+  return { dataset: null, hlsService: null, videoTexture: null, image: null }
 }
 
 class InteractiveSphere {
@@ -218,6 +221,11 @@ class InteractiveSphere {
 
       // Initialize digital docent chat (available on all views)
       this.initChat()
+
+      // Enter VR button — feature-gated internally; hides itself on
+      // non-WebXR browsers and warm-loads Three.js in the background
+      // on devices that can enter VR.
+      void this.wireVrButton()
 
       const datasetId = this.getDatasetIdFromUrl()
       if (datasetId) {
@@ -412,10 +420,16 @@ class InteractiveSphere {
       await this.startTour(dataset.dataLink, gen)
       return
     } else if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
+      const img = await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
       this.viewports.setPanelLoading(primaryIdx, false)
       if (gen !== this.loadGeneration) return
+      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = img
     } else if (dataService.isVideoDataset(dataset)) {
+      // Clear any previously-cached image element for this slot —
+      // if the user just switched from an image dataset to a video
+      // dataset, the old decoded image is no longer referenced and
+      // should be released so its backing bytes can be GC'd.
+      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = null
       const result = await loadVideoDataset(
         dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
       )
@@ -543,11 +557,17 @@ class InteractiveSphere {
     this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
     if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(
+      const img = await loadImageDataset(
         dataset, targetRenderer, this.appState, this.isMobile, tourLoaderCallbacks,
         { isPrimary: isPrimarySlot },
       )
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
     } else if (dataService.isVideoDataset(dataset)) {
+      // Clear any previously-cached image element for this slot —
+      // if the user just switched from an image dataset to a video
+      // dataset, the old decoded image is no longer referenced and
+      // should be released so its backing bytes can be GC'd.
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
       const result = await loadVideoDataset(
         dataset, targetRenderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks,
         { isPrimary: isPrimarySlot },
@@ -1107,6 +1127,50 @@ class InteractiveSphere {
     }
   }
 
+  /**
+   * Wire the Enter VR button. The button hides itself on browsers
+   * without WebXR, so calling this unconditionally is safe — the
+   * Three.js chunk only downloads on devices that advertise
+   * `immersive-vr` support (see src/ui/vrButton.ts). VR mode always
+   * uses the primary panel's dataset; in multi-globe layouts the
+   * other panels keep rendering in 2D behind the scenes.
+   *
+   * Both image and video datasets are supported: image datasets
+   * reuse the primary panel's already-decoded `HTMLImageElement`
+   * (stored in `panelStates[slot].image` after `loadImageDataset`
+   * returns), so VR doesn't re-fetch or re-decode the bytes;
+   * video datasets reuse the existing HLS `<video>` element.
+   */
+  private async wireVrButton(): Promise<void> {
+    await initVrButton({
+      getDatasetTexture: () => {
+        const ds = this.appState.currentDataset
+        if (!ds) return null
+        const primaryIdx = this.viewports.getPrimaryIndex()
+        if (dataService.isImageDataset(ds)) {
+          const img = this.panelStates[primaryIdx]?.image
+          if (img) return { kind: 'image', element: img }
+          return null
+        }
+        const video = this.hlsService?.getVideo()
+        if (video) return { kind: 'video', element: video }
+        return null
+      },
+      getDatasetTitle: () => this.appState.currentDataset?.title ?? null,
+      hasVideoDataset: () => {
+        const ds = this.appState.currentDataset
+        return !!ds && dataService.isVideoDataset(ds)
+      },
+      isPlaying: () => this.appState.isPlaying,
+      togglePlayPause: () => togglePlayPause(
+        this.hlsService, this.appState, (m) => this.announce(m),
+      ),
+      onSessionEnd: () => {
+        this.announce('Exited VR')
+      },
+    })
+  }
+
   /** Initialize the Orbit chat panel and wire playback positioning observers. */
   private initChat(): void {
     initPlaybackPositioning()
@@ -1633,6 +1697,7 @@ class InteractiveSphere {
     // specific panel's renderer so it doesn't keep showing a stale
     // texture.
     panel.dataset = null
+    panel.image = null
     const renderer = this.viewports.getRendererAt(slot)
     if (renderer) {
       renderer.removeCloudOverlay?.()
@@ -1877,6 +1942,7 @@ class InteractiveSphere {
       if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
       if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
       panel.dataset = null
+      panel.image = null
     }
   }
 
