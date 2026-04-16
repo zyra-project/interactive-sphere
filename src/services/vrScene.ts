@@ -120,6 +120,23 @@ const ATMOSPHERE_OUTER_RADIUS = GLOBE_RADIUS * 1.012
 const ATMOSPHERE_SEGMENTS = 64
 
 /**
+ * Sun sprite placement (VR mode only — AR mode has the user's real
+ * room as backdrop, a glowing disc floating in it would be odd).
+ * Positioned at `globe.position + sunDir * SUN_DISTANCE` each frame
+ * so it tracks the real subsolar direction and moves with the globe
+ * when the globe is placed/translated.
+ *
+ * Angular size at arm's-length viewing: core ≈ 1.7° (readable as
+ * "a sun" without dominating the view), glow halo ≈ 8.5° (a soft
+ * bloom that fades out before reaching the globe).
+ */
+const SUN_DISTANCE = 10
+const SUN_CORE_SCALE = 0.3
+const SUN_GLOW_SCALE = 1.5
+const SUN_GLOW_OPACITY = 0.4
+const SUN_GLOW_TEXTURE_SIZE = 256
+
+/**
  * Cloud overlay — a slightly-larger translucent sphere above the
  * globe surface with a day/night shader patch so clouds dim to
  * near-black on the night side (otherwise they'd obscure the city
@@ -472,6 +489,82 @@ export function createVrScene(
   const atmosphereOuter = new THREE_.Mesh(atmosphereOuterGeometry, atmosphereOuterMaterial)
   atmosphereOuter.position.copy(globe.position)
   scene.add(atmosphereOuter)
+
+  // --- Sun sprite (VR only) ---
+  // Two billboard sprites: a small bright core and a larger soft
+  // glow halo. Both use procedural CanvasTextures (radial gradients)
+  // so we don't need a new asset hosted anywhere. Positioned each
+  // frame in update() at `globe.position + sunDir * SUN_DISTANCE`
+  // so they track the real subsolar direction as UTC advances.
+  //
+  // Skipped in AR mode — a glowing disc floating in the user's real
+  // room would read as weird rather than celestial. The atmosphere
+  // rim is subtle enough to work in AR; the sun isn't.
+  //
+  // Direct port from the pre-MapLibre `earthMaterials.ts` sun
+  // visual (commit 3911300^), scaled for our 0.5 m globe.
+  let sunCoreSprite: THREE.Sprite | null = null
+  let sunGlowSprite: THREE.Sprite | null = null
+  if (!transparentBackground) {
+    /**
+     * Build a canvas with a radial gradient from opaque centre to
+     * transparent edge. Used for both sun core (bright white) and
+     * sun glow (warm, larger, lower peak opacity).
+     */
+    const buildGlowTexture = (
+      size: number,
+      coreRadius: number,
+      color: [number, number, number],
+      peakAlpha: number,
+    ): THREE.CanvasTexture => {
+      const canvas = document.createElement('canvas')
+      canvas.width = size
+      canvas.height = size
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('[VR sun] 2D canvas context unavailable')
+      const mid = size / 2
+      const grad = ctx.createRadialGradient(mid, mid, 0, mid, mid, mid)
+      grad.addColorStop(0, `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${peakAlpha})`)
+      grad.addColorStop(coreRadius, `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${peakAlpha * 0.6})`)
+      grad.addColorStop(coreRadius + 0.15, `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${peakAlpha * 0.15})`)
+      grad.addColorStop(1, `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0)`)
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, size, size)
+      const tex = new THREE_.CanvasTexture(canvas)
+      tex.colorSpace = THREE_.SRGBColorSpace
+      return tex
+    }
+
+    // Core: small, bright, near-white. Additive blending so it reads
+    // as emissive rather than a coloured disc.
+    const coreTexture = buildGlowTexture(SUN_GLOW_TEXTURE_SIZE, 0.25, [255, 252, 230], 1.0)
+    const coreMaterial = new THREE_.SpriteMaterial({
+      map: coreTexture,
+      blending: THREE_.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+    })
+    sunCoreSprite = new THREE_.Sprite(coreMaterial)
+    sunCoreSprite.scale.set(SUN_CORE_SCALE, SUN_CORE_SCALE, 1)
+    sunCoreSprite.renderOrder = -2 // behind HUD + globe, but atmosphere is additive so order only matters against opaques
+    scene.add(sunCoreSprite)
+
+    // Glow: larger, warmer, softer. Gives the sun a bloomy halo
+    // without an actual post-process pass.
+    const glowTexture = buildGlowTexture(SUN_GLOW_TEXTURE_SIZE, 0.1, [255, 220, 170], SUN_GLOW_OPACITY)
+    const glowMaterial = new THREE_.SpriteMaterial({
+      map: glowTexture,
+      blending: THREE_.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+    })
+    sunGlowSprite = new THREE_.Sprite(glowMaterial)
+    sunGlowSprite.scale.set(SUN_GLOW_SCALE, SUN_GLOW_SCALE, 1)
+    sunGlowSprite.renderOrder = -3 // behind the core
+    scene.add(sunGlowSprite)
+  }
 
   // --- Cloud overlay ---
   // Slightly-larger translucent sphere above the Earth surface.
@@ -895,6 +988,19 @@ export function createVrScene(
       // TOWARD the origin. Place it along the sun direction at some
       // distance so shading matches the shader's uSunDir.
       sunLight.position.copy(sunDir).multiplyScalar(10)
+
+      // Sun sprite + glow (VR only). Positioned at `globe.position +
+      // sunDir * SUN_DISTANCE` so the sun tracks the real subsolar
+      // direction AND translates with the globe when the globe is
+      // placed on a real surface. Hidden in AR mode (sprites are
+      // null in that case).
+      if (sunCoreSprite && sunGlowSprite) {
+        const worldSunPos = sunDir.clone()
+          .multiplyScalar(SUN_DISTANCE)
+          .add(globe.position)
+        sunCoreSprite.position.copy(worldSunPos)
+        sunGlowSprite.position.copy(worldSunPos)
+      }
     },
 
     dispose() {
@@ -927,6 +1033,18 @@ export function createVrScene(
       atmosphereInnerMaterial.dispose()
       atmosphereOuterGeometry.dispose()
       atmosphereOuterMaterial.dispose()
+      if (sunCoreSprite) {
+        scene.remove(sunCoreSprite)
+        const mat = sunCoreSprite.material as THREE.SpriteMaterial
+        mat.map?.dispose()
+        mat.dispose()
+      }
+      if (sunGlowSprite) {
+        scene.remove(sunGlowSprite)
+        const mat = sunGlowSprite.material as THREE.SpriteMaterial
+        mat.map?.dispose()
+        mat.dispose()
+      }
       scene.remove(shadow)
       shadowGeometry.dispose()
       shadowMaterial.dispose()
