@@ -75,6 +75,13 @@ export interface VrSceneHandle {
    *   listener.
    */
   setTexture(spec: VrDatasetTexture | null, onReady?: () => void): void
+  /**
+   * Per-frame update — currently syncs the ground shadow scale to
+   * the globe's zoom. Safe to skip if the caller doesn't need a
+   * frame-accurate shadow (e.g. during loading), but cheap enough
+   * to call every frame.
+   */
+  update(): void
   /** Release every GPU resource. Safe to call multiple times. */
   dispose(): void
 }
@@ -132,6 +139,50 @@ export function createVrScene(
   const globe = new THREE_.Mesh(geometry, material)
   globe.position.set(GLOBE_POSITION.x, GLOBE_POSITION.y, GLOBE_POSITION.z)
   scene.add(globe)
+
+  // --- Ground shadow ---
+  // Subtle dark radial gradient on a horizontal plane below the
+  // globe. Helps the globe feel spatially anchored — especially in
+  // AR mode where there's no dark void to ground it visually.
+  // Scales with globe scale each frame so a zoomed-in globe casts a
+  // correspondingly larger shadow.
+  const shadowCanvas = document.createElement('canvas')
+  shadowCanvas.width = 256
+  shadowCanvas.height = 256
+  const shadowCtx = shadowCanvas.getContext('2d')
+  if (shadowCtx) {
+    const grad = shadowCtx.createRadialGradient(128, 128, 0, 128, 128, 128)
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.55)')
+    grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.28)')
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    shadowCtx.fillStyle = grad
+    shadowCtx.fillRect(0, 0, 256, 256)
+  }
+  const shadowTexture = new THREE_.CanvasTexture(shadowCanvas)
+  shadowTexture.colorSpace = THREE_.SRGBColorSpace
+  shadowTexture.minFilter = THREE_.LinearFilter
+  shadowTexture.magFilter = THREE_.LinearFilter
+
+  const shadowMaterial = new THREE_.MeshBasicMaterial({
+    map: shadowTexture,
+    transparent: true,
+    depthWrite: false, // shadow shouldn't occlude the globe or HUD
+  })
+  // Slightly larger than the globe's diameter so the shadow's soft
+  // edges fall off well outside its silhouette.
+  const shadowGeometry = new THREE_.PlaneGeometry(GLOBE_RADIUS * 3, GLOBE_RADIUS * 3)
+  const shadow = new THREE_.Mesh(shadowGeometry, shadowMaterial)
+  // Rotate flat (facing up, normal along +Y) and tuck just below the
+  // globe's visible bottom. Inherits the globe's position so it
+  // moves with it; scale is synced each frame in update().
+  shadow.rotation.x = -Math.PI / 2
+  shadow.position.set(
+    GLOBE_POSITION.x,
+    GLOBE_POSITION.y - GLOBE_RADIUS - 0.005,
+    GLOBE_POSITION.z,
+  )
+  shadow.renderOrder = -1 // draw before everything else
+  scene.add(shadow)
 
   // Current dataset texture + a key for change detection. The key
   // lets vrSession compare cheaply each frame and call setTexture
@@ -219,6 +270,14 @@ export function createVrScene(
       material.needsUpdate = true
     },
 
+    update() {
+      // Mirror globe zoom to the shadow plane so a zoomed-in globe
+      // casts a bigger shadow. Only X/Z scale — Y is the plane's
+      // normal axis and doesn't matter after the 90° rotation.
+      shadow.scale.x = globe.scale.x
+      shadow.scale.y = globe.scale.x
+    },
+
     dispose() {
       if (activeDatasetTexture) {
         activeDatasetTexture.dispose()
@@ -229,6 +288,10 @@ export function createVrScene(
       material.dispose()
       geometry.dispose()
       scene.remove(globe)
+      scene.remove(shadow)
+      shadowGeometry.dispose()
+      shadowMaterial.dispose()
+      shadowTexture.dispose()
     },
   }
 }

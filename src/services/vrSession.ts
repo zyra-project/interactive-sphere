@@ -280,6 +280,11 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     })
 
     active.interaction.update(delta)
+    // Scene-level per-frame sync (e.g. ground shadow scale matching
+    // globe zoom). Cheap and always runs even when the loading
+    // scene is still up so the shadow is correct the moment the
+    // globe becomes visible.
+    active.scene.update()
     // Drive the loading scene's animation (rings spin, sphere
     // pulses, fade-out tween, progress bar ease) — only while the
     // loading group is still alive.
