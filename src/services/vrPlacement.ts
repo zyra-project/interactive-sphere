@@ -316,14 +316,27 @@ export function createVrPlacement(
   }
 }
 
-/** Compute the world position the globe should occupy when placed at a hit-test point. */
+/**
+ * Compute the world position the globe should occupy when placed at
+ * a hit-test point. The hit point is ON the surface; lifting by
+ * PLACE_LIFT_Y puts the globe's centre above the surface so the
+ * visible bottom rests on top.
+ *
+ * Accepts any object with {x, y, z} numeric fields — lets callers
+ * pass either a `THREE.Vector3` (placement-confirm callback) or a
+ * `DOMPointReadOnly` direct from `anchorPose.transform.position`
+ * (per-frame anchor sync) without conversion.
+ *
+ * @param out Optional target to write into. Hot paths (per-frame
+ *   anchor pose sync) pass the globe's own position vector to
+ *   avoid allocation; one-shot paths can omit and get a new one.
+ */
 export function liftedPlacementPosition(
   THREE_: typeof THREE,
-  hitPosition: THREE.Vector3,
+  hitPosition: { x: number; y: number; z: number },
+  out?: THREE.Vector3,
 ): THREE.Vector3 {
-  return new THREE_.Vector3(
-    hitPosition.x,
-    hitPosition.y + PLACE_LIFT_Y,
-    hitPosition.z,
-  )
+  const target = out ?? new THREE_.Vector3()
+  target.set(hitPosition.x, hitPosition.y + PLACE_LIFT_Y, hitPosition.z)
+  return target
 }

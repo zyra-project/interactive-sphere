@@ -485,15 +485,17 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // The anchor's anchorSpace is resolved in local-floor coords
     // each frame — but critically, the system adjusts what
     // "(anchor.x, anchor.y, anchor.z)" means as local-floor gets
-    // re-based, so the globe stays bolted to the real surface. Lift
-    // offset keeps the visible bottom resting on the surface.
+    // re-based, so the globe stays bolted to the real surface.
+    // Lift offset (PLACE_LIFT_Y, owned by vrPlacement) keeps the
+    // visible bottom resting on the surface. Writing directly into
+    // globe.position avoids per-frame allocation.
     if (currentAnchor && frame && active.refSpace) {
       const anchorPose = frame.getPose(currentAnchor.anchorSpace, active.refSpace)
       if (anchorPose) {
-        active.scene.globe.position.set(
-          anchorPose.transform.position.x,
-          anchorPose.transform.position.y + 0.5, // PLACE_LIFT_Y from vrPlacement
-          anchorPose.transform.position.z,
+        liftedPlacementPosition(
+          THREE_,
+          anchorPose.transform.position,
+          active.scene.globe.position,
         )
       }
     }

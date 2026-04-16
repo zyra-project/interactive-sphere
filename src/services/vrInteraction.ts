@@ -276,9 +276,21 @@ export function createVrInteraction(
   ctx: VrInteractionContext,
 ): VrInteractionHandle {
   const raycaster = new THREE_.Raycaster()
-  /** Scratch vectors reused per frame to avoid allocation in the hot path. */
+  // Scratch vectors + quaternions reused across frames. The VR
+  // render loop calls these helpers 90+ times/sec; allocating new
+  // Vector3 / Quaternion instances every call shows up as GC churn
+  // on-device. Keep a small pool and `.set()` / `.copy()` them.
   const rayOrigin = new THREE_.Vector3()
   const rayDirection = new THREE_.Vector3()
+  const scratchQuat = new THREE_.Quaternion()
+  const scratchVec3A = new THREE_.Vector3()
+  const scratchVec3B = new THREE_.Vector3()
+  const scratchVec3C = new THREE_.Vector3()
+  const scratchVec3D = new THREE_.Vector3()
+  const scratchMatrix4 = new THREE_.Matrix4()
+  const scratchQuatB = new THREE_.Quaternion()
+  /** Quaternion that computeTwoHandOrientation writes into when called per-frame. */
+  const twoHandOrientationScratch = new THREE_.Quaternion()
 
   // One controller per hand. Three.js assigns indices 0 and 1; the
   // mapping to left/right is set by the platform at runtime. For MVP
@@ -334,8 +346,10 @@ export function createVrInteraction(
     controller.getWorldPosition(rayOrigin)
     // Controllers point down their local -Z axis. Rotating the
     // unit -Z vector by the controller's world quaternion gives us
-    // the forward direction in world space.
-    rayDirection.set(0, 0, -1).applyQuaternion(controller.getWorldQuaternion(new THREE_.Quaternion()))
+    // the forward direction in world space. Reuses scratchQuat to
+    // avoid per-call allocation — this runs 90+ times/sec in VR.
+    controller.getWorldQuaternion(scratchQuat)
+    rayDirection.set(0, 0, -1).applyQuaternion(scratchQuat)
     raycaster.ray.origin.copy(rayOrigin)
     raycaster.ray.direction.copy(rayDirection)
     return true
@@ -417,29 +431,70 @@ export function createVrInteraction(
    * produce a stable rotation because the ambiguity is around a
    * vertical axis, which matters less for globe manipulation.
    */
-  function computeTwoHandOrientation(): THREE.Quaternion {
-    const pos0 = new THREE_.Vector3()
-    const pos1 = new THREE_.Vector3()
+  /**
+   * Build a world-space orientation quaternion from the two
+   * controllers' current poses. Called from updateTwoHand() every
+   * frame during a two-hand gesture, so this must not allocate —
+   * uses only the closure-scoped scratch vectors / quaternions /
+   * matrix declared above.
+   *
+   * @param out Target quaternion to write into. Callers who need
+   *   a persistent copy (e.g. `captureTwoHandMode` storing the
+   *   start orientation) pass a fresh Quaternion; per-frame
+   *   callers pass a scratch.
+   */
+  function computeTwoHandOrientation(out: THREE.Quaternion): THREE.Quaternion {
+    // pos0, pos1 → positions of both controllers in world space.
+    const pos0 = scratchVec3A
+    const pos1 = scratchVec3B
     controllers[0].getWorldPosition(pos0)
     controllers[1].getWorldPosition(pos1)
-    const axis = pos1.sub(pos0).normalize()
 
-    const up0 = new THREE_.Vector3(0, 1, 0).applyQuaternion(controllers[0].getWorldQuaternion(new THREE_.Quaternion()))
-    const up1 = new THREE_.Vector3(0, 1, 0).applyQuaternion(controllers[1].getWorldQuaternion(new THREE_.Quaternion()))
-    const avgUp = up0.add(up1).multiplyScalar(0.5)
-    // Remove the component along the axis to get a perpendicular up.
-    const perpUp = avgUp.sub(axis.clone().multiplyScalar(avgUp.dot(axis)))
+    // axis = unit vector from controller 0 → controller 1.
+    const axis = scratchVec3C
+    axis.copy(pos1).sub(pos0).normalize()
+
+    // pos0 / pos1 no longer needed; reuse their slots as up0 / up1
+    // (each controller's local +Y in world space).
+    const up0 = pos0
+    const up1 = pos1
+    controllers[0].getWorldQuaternion(scratchQuat)
+    up0.set(0, 1, 0).applyQuaternion(scratchQuat)
+    controllers[1].getWorldQuaternion(scratchQuatB)
+    up1.set(0, 1, 0).applyQuaternion(scratchQuatB)
+
+    // avgUp = mean of both controller ups — the "which way is up"
+    // for the virtual rigid body, including wrist-roll input.
+    const avgUp = scratchVec3D
+    avgUp.copy(up0).add(up1).multiplyScalar(0.5)
+
+    // perpUp = component of avgUp perpendicular to the axis.
+    // Remove the axis-parallel projection by subtracting
+    // axis * (avgUp · axis). Reuses up0 as the projection scratch.
+    const projection = up0
+    projection.copy(axis).multiplyScalar(avgUp.dot(axis))
+    const perpUp = up1
+    perpUp.copy(avgUp).sub(projection)
+
+    // Degenerate case: avgUp was parallel to axis. Fall back on
+    // cross products against world-up then world-right.
     if (perpUp.lengthSq() < 0.001) {
-      perpUp.crossVectors(axis, new THREE_.Vector3(0, 1, 0))
+      const worldAxis = scratchVec3A
+      worldAxis.set(0, 1, 0)
+      perpUp.crossVectors(axis, worldAxis)
       if (perpUp.lengthSq() < 0.001) {
-        perpUp.crossVectors(axis, new THREE_.Vector3(1, 0, 0))
+        worldAxis.set(1, 0, 0)
+        perpUp.crossVectors(axis, worldAxis)
       }
     }
     perpUp.normalize()
 
-    const forward = new THREE_.Vector3().crossVectors(axis, perpUp)
-    const basis = new THREE_.Matrix4().makeBasis(axis, perpUp, forward)
-    return new THREE_.Quaternion().setFromRotationMatrix(basis)
+    // forward = axis × perpUp — completes the right-handed basis.
+    const forward = scratchVec3D // reuse avgUp; no longer needed
+    forward.crossVectors(axis, perpUp)
+
+    scratchMatrix4.makeBasis(axis, perpUp, forward)
+    return out.setFromRotationMatrix(scratchMatrix4)
   }
 
   /** Snapshot the two-hand baseline. Both controllers assumed on-globe. */
@@ -454,7 +509,9 @@ export function createVrInteraction(
     if (startDistance < 0.001) return { kind: 'idle' }
     return {
       kind: 'two-hand',
-      startOrientation: computeTwoHandOrientation(),
+      // Fresh quaternion — this is stored as the two-hand baseline
+      // and needs to survive beyond the next frame's scratch reuse.
+      startOrientation: computeTwoHandOrientation(new THREE_.Quaternion()),
       startDistance,
       startScale: ctx.globe.scale.x,
       globeStartQuat: ctx.globe.quaternion.clone(),
@@ -705,7 +762,8 @@ export function createVrInteraction(
     // rotation "didn't keep up with the controllers". Capturing
     // the average up-vector inside the two-hand orientation picks
     // up wrist rolls too.
-    const currentOrientation = computeTwoHandOrientation()
+    // Writes into scratch — no allocation, per-frame safe.
+    const currentOrientation = computeTwoHandOrientation(twoHandOrientationScratch)
     // delta = current * start⁻¹, then globe = delta * globeStart
     deltaQ.copy(mode.startOrientation).invert().premultiply(currentOrientation)
     scaleRotationAngle(deltaQ, ROTATION_SENSITIVITY)
