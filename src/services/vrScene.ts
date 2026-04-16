@@ -62,11 +62,19 @@ export interface VrSceneHandle {
   /**
    * Swap the globe texture. Pass `null` to revert to the base Earth
    * texture; `{ kind: 'video' }` to stream from an HTMLVideoElement
-   * (live HLS stream); or `{ kind: 'image', url }` to load a static
-   * equirectangular image. Idempotent — repeated calls with an
-   * unchanged spec are no-ops.
+   * (live HLS stream); or `{ kind: 'image', element }` to use an
+   * already-decoded HTMLImageElement. Idempotent — repeated calls
+   * with an unchanged spec are no-ops.
+   *
+   * @param onReady Optional callback fired the moment the dataset
+   *   texture is actually visible on the globe (not the placeholder
+   *   base Earth shown during video decode wait). Fires synchronously
+   *   for null specs (instant), images (already decoded), and videos
+   *   that already have a frame buffered. For paused video that
+   *   needs decode time, fires later from the `seeked` or `playing`
+   *   listener.
    */
-  setTexture(spec: VrDatasetTexture | null): void
+  setTexture(spec: VrDatasetTexture | null, onReady?: () => void): void
   /** Release every GPU resource. Safe to call multiple times. */
   dispose(): void
 }
@@ -124,9 +132,11 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
     globe,
     globeAnchor: globe.position.clone(),
 
-    setTexture(spec) {
+    setTexture(spec, onReady) {
       // Skip if the spec is unchanged — repeated polls from the
-      // session loop are a no-op in the steady state.
+      // session loop are a no-op in the steady state. Don't fire
+      // onReady on a no-op either; the caller already saw the
+      // previous ready signal.
       const nextKey = spec?.kind === 'video' ? spec.element : spec?.kind === 'image' ? spec.element : null
       if (nextKey === activeKey) return
 
@@ -141,6 +151,8 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
       if (!spec) {
         material.map = baseEarthTexture
         activeKey = null
+        // No dataset to wait for — readiness is immediate.
+        onReady?.()
       } else if (spec.kind === 'video') {
         const video = spec.element
         activeKey = video
@@ -157,8 +169,9 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
         activeDatasetTexture = tex
 
         if (video.readyState >= 2) {
-          // Frame already decoded — swap immediately.
+          // Frame already decoded — swap immediately and signal ready.
           material.map = tex
+          onReady?.()
         } else {
           // No frame yet — keep the base Earth visible instead of
           // showing a black ball. Swap in the VideoTexture as soon
@@ -171,6 +184,7 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
             if (activeKey !== video) return
             material.map = tex
             material.needsUpdate = true
+            onReady?.()
           }
           video.addEventListener('seeked', onFrame, { once: true })
           video.addEventListener('playing', onFrame, { once: true })
@@ -187,6 +201,7 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
         activeDatasetTexture = tex
         material.map = tex
         activeKey = spec.element
+        onReady?.()
       }
       material.needsUpdate = true
     },

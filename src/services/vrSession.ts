@@ -19,6 +19,7 @@ import type * as THREE from 'three'
 import { createVrScene, type VrSceneHandle, type VrDatasetTexture } from './vrScene'
 import { createVrHud, type VrHudHandle } from './vrHud'
 import { createVrInteraction, type VrInteractionHandle } from './vrInteraction'
+import { createVrLoading, type VrLoadingHandle } from './vrLoading'
 import { logger } from '../utils/logger'
 
 /**
@@ -68,6 +69,8 @@ interface ActiveSession {
   scene: VrSceneHandle
   hud: VrHudHandle
   interaction: VrInteractionHandle
+  /** Loading scene shown during entry; null after fade-out + dispose. */
+  loading: VrLoadingHandle | null
 }
 
 let active: ActiveSession | null = null
@@ -155,9 +158,41 @@ export async function enterVr(ctx: VrSessionContext): Promise<void> {
   const hud = createVrHud(THREE_)
   scene.scene.add(hud.mesh)
 
-  // Initial HUD state + texture (before the first frame, so the
-  // first render already shows real data).
-  scene.setTexture(ctx.getDatasetTexture())
+  // --- Loading scene ---
+  // Visible from the moment the session starts until the dataset
+  // texture has a decoded frame on the globe. Hides the real globe
+  // + HUD initially so the user sees a clean transition.
+  const loading = createVrLoading(THREE_)
+  scene.scene.add(loading.group)
+  scene.globe.visible = false
+  hud.mesh.visible = false
+  // Most of the slow part (Three.js download, session request) is
+  // already done by the time we reach this point — most of the visible
+  // loading time is the texture-decode wait. Start at a meaningful
+  // baseline so the user sees motion not "stuck at 0%".
+  loading.setProgress(0.6, 'Building scene\u2026')
+
+  // Initial HUD state + texture. Wait for texture readiness before
+  // hiding the loading scene; for video this can take several hundred
+  // ms (the forced seek decode). For images / no dataset it's instant.
+  loading.setProgress(0.8, 'Loading dataset\u2026')
+  scene.setTexture(ctx.getDatasetTexture(), () => {
+    if (!active) return // session already ended
+    loading.setProgress(1.0, 'Ready')
+    // Brief pause at 100% so the user perceives completion, then fade.
+    setTimeout(() => {
+      if (!active || !active.loading) return
+      void active.loading.fadeOut().then(() => {
+        if (!active || !active.loading) return
+        active.scene.scene.remove(active.loading.group)
+        active.loading.dispose()
+        active.loading = null
+        // Reveal the real scene now that loading has cleared.
+        active.scene.globe.visible = true
+        active.hud.mesh.visible = true
+      })
+    }, 250)
+  })
   hud.setState({
     datasetTitle: ctx.getDatasetTitle(),
     isPlaying: ctx.isPlaying(),
@@ -202,6 +237,7 @@ export async function enterVr(ctx: VrSessionContext): Promise<void> {
     scene,
     hud,
     interaction,
+    loading,
   }
 
   // --- Render loop ---
@@ -228,6 +264,10 @@ export async function enterVr(ctx: VrSessionContext): Promise<void> {
     })
 
     active.interaction.update(delta)
+    // Drive the loading scene's animation (rings spin, sphere
+    // pulses, fade-out tween, progress bar ease) — only while the
+    // loading group is still alive.
+    active.loading?.update(delta)
     active.renderer.render(active.scene.scene, active.camera)
   })
 
@@ -240,6 +280,13 @@ export async function enterVr(ctx: VrSessionContext): Promise<void> {
     a.renderer.setAnimationLoop(null)
     a.interaction.dispose()
     a.hud.dispose()
+    // Loading scene may still be present if the user exited before
+    // dataset finished loading. Dispose it explicitly so we don't
+    // leak the canvases + textures.
+    if (a.loading) {
+      a.scene.scene.remove(a.loading.group)
+      a.loading.dispose()
+    }
     a.scene.dispose()
     a.renderer.dispose()
     a.renderer.domElement.remove()
