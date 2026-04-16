@@ -285,6 +285,50 @@ room instead of a dark void.
   responds to the real environment. Optional feature, not widely
   supported yet — treat as aspirational.
 
+### Phase 2.2 — controller tooltips (button affordance hints)
+
+Polished VR apps overlay short text labels next to controller buttons
+to teach the input model — "Trigger: rotate", "Grip: exit". For a
+museum-style experience like this one (many users will be picking up
+a Quest for the first time), these labels are the difference between
+"how do I use this?" and "I get it."
+
+**Approach:** floating sprites attached to the controller grip
+space. Sprites always face the camera so text stays readable from
+any angle. Hand-tuned position offsets for Quest Touch buttons
+ship first; programmatic positioning via the XR Input Profiles
+mesh names follows if we want to support PSVR2 / Vision Pro /
+Index controllers without per-device code.
+
+**Labels to ship:**
+
+| Label | Position | Notes |
+|---|---|---|
+| Trigger: rotate | Near trigger | Most common action |
+| Grip: exit | Near grip | Less obvious; worth the hint |
+| Thumbstick: zoom | Near thumbstick | Optional — less critical |
+| Both triggers: pinch | Below grip | Discoverability hint for two-hand |
+
+**Show / hide strategy** — first-session-and-on-idle pattern:
+
+- New users see hints immediately on session start
+- Hints fade out after ~10-15 s of activity
+- Hints reappear after ~5 s of zero input (idle help)
+- HUD toggle for "Show hints" gives experienced users explicit
+  control to keep them off entirely
+
+**Effort:**
+
+| Piece | LOC est. |
+|---|---|
+| Always-on labels (Quest Touch hand-tuned positions) | ~80-100 |
+| Fade in/out on activity / idle | +50 |
+| HUD "Show hints" toggle | +30 |
+| Programmatic positioning via XR Input Profiles (cross-device) | +50 |
+
+Basic version (always-on labels + Quest Touch) is one small commit.
+Polish (fade + toggle + cross-device) follows as separate commits.
+
 ### Phase 2.5 — multi-globe layout (parity with 2D viewport manager)
 
 The 2D app already supports 1/2/4 synchronised globes via
