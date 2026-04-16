@@ -549,6 +549,37 @@ rendering leaves less headroom. **Ship 2-globe support first; treat
   keeping sibling videos in time. The VR scene binds VideoTextures
   to already-synced videos, so VR doesn't need its own sync logic.
 
+**Commit sequence (branch: `claude/vr-multi-globe-phase-2.5`):**
+
+Decisions baked in before the first code change:
+
+- **Layout: arc** — matches the 2D side-by-side grid's spiritual
+  model and is the path of least surprise for users who already
+  use the 2-globe view in 2D. Diorama / primary+companions
+  remain as future-polish alternatives.
+- **Sync model: independent rotate + shared time** — each globe
+  can be grabbed and rotated independently, but playback state
+  (play/pause/scrub) affects all. Feels more natural in VR where
+  you can physically look at one globe without the other spinning.
+- **Ship 2-globe first.** 4-globe is documented above as
+  aspirational pending Quest decoder-budget testing; first
+  release validates the architecture at 2 before attempting 4.
+
+Commit breakdown:
+
+| # | Commit | Scope |
+|---|---|---|
+| 1 | Plan doc: Phase 2.5 commit breakdown | This table |
+| 2 | `vrScene: support N globes internally` | Internal refactor — single globe → array of globes. All existing code paths use index 0 as primary. No user-visible change when panelCount is 1. |
+| 3 | `VrSessionContext: multi-panel getters` | `getPanelCount()`, `getPrimaryIndex()`, `getPanelTexture(slot)`, `getPanelTitle(slot)` — main.ts wires to existing `viewports` + `panelStates` |
+| 4 | `vrSession: arc layout + per-slot texture sync` | Per-frame poll of panel count + textures. 2-globe arc: globes at `(±0.9, 1.3, -1.5)`, slight inward rotation |
+| 5 | `vrInteraction: promote-to-primary` | Trigger on non-primary globe fires `onPromotePanel(slot)` callback; main.ts forwards to `viewports.setPrimaryIndex()` |
+| 6 | `vrHud: primary-aware panel indicator strip` | Small dot strip showing panel count with primary highlighted; dataset title reflects primary |
+
+Commits 2-4 are the "visible 2-globe arc" milestone. 5-6 add
+interaction + UI polish. 4-globe is a stretch commit 7 after
+on-device validation.
+
 ### Phase 3 — in-VR dataset switching
 - Floating browse panel rendered as a CanvasTexture with dataset
   thumbnails.
