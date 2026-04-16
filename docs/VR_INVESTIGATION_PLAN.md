@@ -170,8 +170,8 @@ Explicitly out of scope for MVP (→ Phase 2+):
 - Multi-globe / setview parity with 2D viewport manager (Phase 2.5)
 - Browse panel in VR (Phase 3; switch datasets → exit to 2D for now)
 - 2D ↔ VR camera sync (Phase 4; entering VR always starts from default pose)
+- Tours in VR (Phase 3.5; the killer app for the museum use case)
 - Orbit chat in VR (Phase 5)
-- Tours in VR (Phase 5)
 
 Note on multi-globe specifically: the MVP always renders one globe
 bound to the primary panel, even if the 2D app is currently in 2- or
@@ -392,6 +392,105 @@ rendering leaves less headroom. **Ship 2-globe support first; treat
   thumbnails.
 - Controller raycast → select → triggers `loadDataset()` without
   exiting VR.
+
+### Phase 3.5 — VR tours (the museum experience)
+
+Tours are the killer app for VR Science On a Sphere. A real museum
+SOS installation runs curated, narrated dataset sequences with
+contextual graphics and the occasional interactive question — that
+is _exactly_ the existing tour engine, just rendered on a virtual
+sphere instead of a physical one. Bringing tours to VR turns the
+app from "cool tech demo" into "actual SOS exhibit you can take
+home."
+
+**The good news:** the tour engine is already transport-agnostic.
+`src/services/tourEngine.ts` plays SOS-format JSON files as a
+sequence of tasks, calling back into the host for `loadDataset`,
+`unloadDataset`, `setEnvView`, `togglePlayPause`, `setPlaybackRate`,
+`announce`, and `resolveMediaUrl`. The intelligence is all there —
+VR just needs to satisfy the callbacks and provide VR-equivalent
+overlays for the parts that currently render to DOM.
+
+**Module port matrix:**
+
+| 2D module / behaviour | VR equivalent | Effort |
+|---|---|---|
+| `tourEngine.ts` task loop | Reuse unchanged | 0 |
+| Tour text overlays (`tourUI.ts`) | CanvasTexture panels in 3D space | ~150 LOC |
+| Tour image overlays | Plane mesh + image texture | ~50 LOC |
+| Tour video overlays | Plane mesh + VideoTexture | ~50 LOC |
+| Tour popup overlays | Floating CanvasTexture near globe | ~50 LOC |
+| Interactive question overlays | CanvasTexture + controller raycast | ~150 LOC |
+| Tour controls (play/pause/prev/next/stop) | Extend `vrHud.ts` | ~80 LOC |
+| `setEnvView` (multi-globe) | Routes through Phase 2.5 multi-globe | reused |
+| `worldIndex` routing | Per-panel `setTexture()` from Phase 2.5 | reused |
+| Audio narration | `<audio>` element survives session lifecycle | ~30 LOC |
+
+Total estimate: ~600 LOC for the new VR overlay surfaces +
+plumbing. Substantially smaller than the MVP itself because the
+heavy lifting (engine, dataset loading, sync) is reused.
+
+**Dependencies:**
+
+- **Phase 2.5 (multi-globe) is required**, not optional. Several
+  tours use `setEnvView` to compare datasets across panels. Without
+  multi-globe support, those tours break partway through. Tours
+  without `setEnvView` would work earlier, but the experience is
+  incomplete.
+- Phase 3 (in-VR dataset switching) is **not** required — tours
+  drive their own dataset loads through the engine, not through
+  user-initiated browse. But the CanvasTexture infrastructure built
+  for Phase 3's browse panel is directly reusable, so doing them
+  in sequence is efficient.
+
+**Overlay placement** — design decision:
+
+Tour overlays in 2D float over the globe canvas at fixed screen
+positions. In VR there's no fixed screen — the user can look
+anywhere. Two options:
+
+1. **World-anchored** — overlays float at fixed positions in the
+   room (e.g. "above the globe", "to the right at chest height").
+   User can look away if they want; overlays stay where they were.
+   More immersive, but the user might miss content if they're not
+   looking that way.
+2. **Gaze-anchored** — overlays follow the user's head with a
+   slight delay, always visible. Like reading subtitles on a
+   movie. Less immersive but ensures content is seen.
+
+Probably **world-anchored by default with an optional gaze-follow
+toggle.** Tours can also specify an anchor in the tour JSON if a
+specific spatial layout matters (e.g. "this graphic should appear
+to the left of the Atlantic"). Hybrid is the right answer.
+
+**Interactive questions:**
+
+Tour questions in 2D show a panel with multiple-choice answers and
+buttons. In VR: same panel as a CanvasTexture, with controller
+raycast for selection. Hit-test logic mirrors the HUD's `hitTest(uv)`
+pattern from `vrHud.ts`. Single trigger-press + release on an answer
+fires the selection.
+
+**Audio narration:**
+
+Tour narration is `<audio>` playback. The `<audio>` element is
+DOM-level and continues playing across the WebXR session boundary
+unchanged — no session-specific handling needed. Volume balance
+might want a HUD slider eventually (museum environments vary in
+ambient noise) but a fixed level is fine for v1.
+
+**Effort sequencing:**
+
+Within Phase 3.5 itself, the work breaks into ~5 commits:
+1. Tour controls in HUD (extend `vrHud.ts` + state plumbing)
+2. Text + popup overlays as CanvasTexture panels
+3. Image + video overlays
+4. Interactive questions with raycast selection
+5. Multi-globe routing for `setEnvView` / `worldIndex` (depends on
+   Phase 2.5 landed)
+
+Each is independently testable on a known tour file (the existing
+`/assets/test-tour.json` is a good fixture).
 
 ### Phase 4 — camera sync
 - Entering VR inherits the current MapLibre view (lat/lng/zoom)
