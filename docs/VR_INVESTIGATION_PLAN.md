@@ -220,7 +220,24 @@ imported by anything on the hot path.
 
 ## Roadmap after MVP
 
-### Phase 2 — visual polish & tile support
+### Phase 2 — visual polish, loading gate & tile support
+
+**VR loading gate.** The MVP has a pragmatic workaround for "no
+decoded frame yet" (forced seek + base-Earth fallback). The real
+answer is a proper loading state that gates VR entry:
+
+1. User taps Enter VR → VR shows a loading environment (dark room +
+   spinner, or base Earth with a loading overlay).
+2. Gate clears when ALL of: Three.js initialized, XR session live,
+   dataset texture has a decoded frame (video `readyState >= 2` or
+   image element `.complete`).
+3. Scene fades in / transition completes.
+
+This also handles edge cases we haven't hit yet but will: slow
+Three.js chunk download on first entry, HLS stream that hasn't
+buffered, texture decode lag on lower-end Quest hardware.
+
+**Visual polish:**
 - Port `earthTileLayer.ts`'s day/night/cloud/specular composite into
   Three.js materials.
 - Tile pyramid: either UV-reproject Mercator in-shader or pre-stitch
