@@ -164,7 +164,15 @@ export async function enterVr(ctx: VrSessionContext): Promise<void> {
     hasVideo: ctx.hasVideoDataset(),
   })
 
-  const interaction = createVrInteraction(THREE_, {
+  // Lazy-load the controller-model addon alongside Three.js. The
+  // factory fetches per-controller glTF models from a CDN at runtime
+  // (e.g. Quest Touch), so the addon itself is small but enables a
+  // big polish win: users see their actual controllers in VR.
+  const { XRControllerModelFactory } = await import(
+    'three/examples/jsm/webxr/XRControllerModelFactory.js'
+  )
+
+  const interaction = createVrInteraction(THREE_, XRControllerModelFactory, {
     scene: scene.scene,
     globe: scene.globe,
     hud,

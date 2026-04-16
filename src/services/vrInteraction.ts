@@ -20,6 +20,7 @@
  */
 
 import type * as THREE from 'three'
+import type { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js'
 import type { VrHudAction, VrHudHandle } from './vrHud'
 import { MAX_GLOBE_SCALE, MIN_GLOBE_SCALE } from './vrScene'
 import { logger } from '../utils/logger'
@@ -166,11 +167,11 @@ type RotationMode =
     }
 
 /**
- * Build a simple line segment extending from the controller along -Z.
- * Gives the user a visual reference for where the ray is pointing —
- * without it, aiming at the HUD is frustrating. We deliberately skip
- * `XRControllerModelFactory` (which would fetch a glTF Quest model)
- * for MVP bundle simplicity.
+ * Build a line segment extending from the controller along -Z. The
+ * line is full-length (RAY_LENGTH) by default; the per-frame
+ * `updateRayVisuals()` shortens it to the raycast hit distance via
+ * `line.scale.z` so it visually "lands" on whatever the user is
+ * pointing at, rather than poking through.
  */
 function buildRayLine(THREE_: typeof THREE): THREE.Line {
   const geometry = new THREE_.BufferGeometry().setFromPoints([
@@ -189,6 +190,7 @@ function buildRayLine(THREE_: typeof THREE): THREE.Line {
 
 export function createVrInteraction(
   THREE_: typeof THREE,
+  ControllerModelFactory: typeof XRControllerModelFactory,
   ctx: VrInteractionContext,
 ): VrInteractionHandle {
   const raycaster = new THREE_.Raycaster()
@@ -443,6 +445,19 @@ export function createVrInteraction(
 
   // --- Wire up both controllers ---
 
+  // One factory shared between both controllers; the addon caches
+  // model fetches internally so each controller doesn't re-download.
+  const modelFactory = new ControllerModelFactory()
+
+  // Per-controller grip spaces (where the controller body sits) and
+  // small white dots placed at the raycast hit point each frame.
+  // Grip space is distinct from the target-ray space (`getController`)
+  // — the ray fires from a sensible "pointer" origin while the grip
+  // tracks the physical controller body, which is what we want to
+  // attach the visual model to.
+  const grips: THREE.XRGripSpace[] = []
+  const dots: THREE.Mesh[] = []
+
   for (const i of [0, 1] as const) {
     const controller = ctx.renderer.xr.getController(i) as THREE.XRTargetRaySpace
     controllers.push(controller)
@@ -450,6 +465,30 @@ export function createVrInteraction(
     rayLines.push(ray)
     controller.add(ray)
     ctx.scene.add(controller)
+
+    // Controller model — auto-detects which Quest controller (Touch,
+    // Touch Pro, etc.) and downloads the matching glTF from the
+    // WebXR Input Profiles CDN. The model animates trigger pulls
+    // and button presses automatically.
+    const grip = ctx.renderer.xr.getControllerGrip(i) as THREE.XRGripSpace
+    grip.add(modelFactory.createControllerModel(grip))
+    ctx.scene.add(grip)
+    grips.push(grip)
+
+    // Intersection dot — small white sphere positioned at the
+    // raycast hit point each frame. Hidden when the ray misses.
+    // Disable depth test so the dot never gets clipped behind the
+    // surface it's resting on (robust against floating-point z-fight).
+    const dotGeometry = new THREE_.SphereGeometry(0.008, 12, 12)
+    const dotMaterial = new THREE_.MeshBasicMaterial({
+      color: 0xffffff,
+      depthTest: false,
+    })
+    const dot = new THREE_.Mesh(dotGeometry, dotMaterial)
+    dot.renderOrder = 11 // above HUD (which is 10)
+    dot.visible = false
+    ctx.scene.add(dot)
+    dots.push(dot)
 
     // Bind captured index so the shared handlers know which slot.
     controller.addEventListener('selectstart', () => onSelectStart(i))
@@ -607,6 +646,36 @@ export function createVrInteraction(
     velocityTracker.prevQuat.copy(ctx.globe.quaternion)
   }
 
+  /**
+   * Per-frame: position the laser dot at each controller's raycast
+   * intersection point and shorten the ray line so it visually
+   * "lands" on the surface instead of poking through. Hides the dot
+   * + restores full-length ray when the ray misses everything.
+   *
+   * Raycasts against the globe AND the HUD because the dot should
+   * land on whichever the user is pointing at. Run after rotation
+   * updates so the dot reflects the current globe orientation.
+   */
+  function updateRayVisuals(): void {
+    for (let i = 0; i < 2; i++) {
+      const controller = controllers[i]
+      setRaycasterFromController(controller)
+      // Closest hit across both interactive surfaces wins.
+      const hits = raycaster.intersectObjects([ctx.globe, ctx.hud.mesh], false)
+      if (hits.length > 0 && hits[0].point) {
+        const distance = hits[0].distance
+        // Scale Z so the line ends exactly at the hit. Min clamp
+        // avoids a degenerate zero-length scale on extreme close-up.
+        rayLines[i].scale.z = Math.max(0.001, distance / RAY_LENGTH)
+        dots[i].position.copy(hits[0].point)
+        dots[i].visible = true
+      } else {
+        rayLines[i].scale.z = 1
+        dots[i].visible = false
+      }
+    }
+  }
+
   /** Poll thumbstick Y across controllers and scale globe accordingly. */
   function updateThumbstickZoom(deltaSeconds: number): void {
     // The WebXR `inputSources` list is the source of truth for
@@ -665,6 +734,10 @@ export function createVrInteraction(
       if (rotationMode.kind !== 'two-hand' && rotationMode.kind !== 'inertia') {
         updateThumbstickZoom(deltaSeconds)
       }
+
+      // Update the visible laser dot + ray length last so it
+      // reflects the current globe position after rotation/scale.
+      updateRayVisuals()
     },
 
     dispose() {
@@ -679,6 +752,18 @@ export function createVrInteraction(
         const line = rayLines[i]
         ;(line.geometry as THREE.BufferGeometry).dispose()
         ;(line.material as THREE.Material).dispose()
+      }
+      for (let i = 0; i < grips.length; i++) {
+        // Removing the grip from the scene also removes the
+        // controller-model child + releases its glTF resources via
+        // Three.js' standard scene-graph disposal.
+        ctx.scene.remove(grips[i])
+      }
+      for (let i = 0; i < dots.length; i++) {
+        const dot = dots[i]
+        ctx.scene.remove(dot)
+        ;(dot.geometry as THREE.BufferGeometry).dispose()
+        ;(dot.material as THREE.Material).dispose()
       }
     },
   }
