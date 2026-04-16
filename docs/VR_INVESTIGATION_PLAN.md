@@ -3,10 +3,22 @@
 Feasibility investigation for running Interactive Sphere as an immersive
 web experience on Meta Quest (and other WebXR-capable) headsets.
 
-Status: **MVP in progress.** Feature-gated "Enter VR" button opens an
-immersive session that renders the currently-loaded HLS video dataset
-onto a globe, with controller-based rotate/zoom and in-VR play/pause.
-The 2D experience is unchanged when WebXR is absent.
+Status: **MVP + Phase 2 + Phase 2.1/2.2 shipped.** Feature-gated
+"Enter AR" / "Enter VR" button opens an immersive WebXR session
+that renders the currently-loaded dataset (or a photoreal
+day/night Earth with atmosphere, clouds, night lights, specular,
+and a tracked sun when no dataset is loaded) on a globe. Full
+spatial placement on real-world surfaces via hit-test, with
+cross-session persistence via WebXR anchors. Controller
+interaction (surface-pinned drag, two-hand pinch+rotate, thumbstick
+zoom, flick-to-spin inertia), floating HUD, animated 3D loading
+scene. The 2D experience is unchanged when WebXR is absent.
+
+Remaining phases not yet built: multi-globe (2.5), in-VR dataset
+switching (3), VR tours (3.5), 2D↔VR camera sync (4), voice docent
++ hand tracking (5), AR-native enhancements (spatial audio,
+annotations, capture/share, real-time data, co-presence, layered
+datasets).
 
 ---
 
@@ -194,10 +206,19 @@ be reverted without rolling back the whole feature.
 |---|---|---|---|
 | 1 | `vr: scaffold WebXR investigation (Phase 1, not yet wired up)` ✅ | `vrCapability`, initial doc | No |
 | 2 | `vr: revise plan to MVP scope and adopt Three.js (lazy-loaded)` ✅ | Revised plan, `vrScene`, deps | No |
-| 3 | `vr: add vrHud — floating play/pause + title panel` | `vrHud.ts` (CanvasTexture panel, hit regions) | No |
-| 4 | `vr: add vrInteraction — controller raycast + trigger handling` | `vrInteraction.ts` (XRInputSource events) | No |
-| 5 | `vr: add vrSession — lazy-load Three.js + XR lifecycle` | `vrSession.ts` (renderer.xr session management) | No |
-| 6 | `vr: wire Enter VR button into main.ts` | `vrButton.ts`, `vr.css`, `main.ts` + `index.html` edits | **Yes** |
+| 3 | `vr: add vrHud — floating play/pause + title panel` ✅ | `vrHud.ts` (CanvasTexture panel, hit regions) | No |
+| 4 | `vr: add vrInteraction — controller raycast + trigger handling` ✅ | `vrInteraction.ts` (XRInputSource events) | No |
+| 5 | `vr: add vrSession — lazy-load Three.js + XR lifecycle` ✅ | `vrSession.ts` (renderer.xr session management) | No |
+| 6 | `vr: wire Enter VR button into main.ts` ✅ | `vrButton.ts`, `vr.css`, `main.ts` + `index.html` edits | **Yes** |
+
+All 6 MVP commits landed, plus ~50 follow-up commits for Phase 2
+(visual polish: photoreal Earth, atmosphere, clouds, sun sprite,
+loading scene, ground shadow), Phase 2.1 (AR passthrough, spatial
+placement with WebXR anchors + cross-session persistence), Phase
+2.2 (controller tooltips), and on-headset-iteration fixes
+(rotation feel, inertia tuning, sun-orbits-with-globe semantics,
+HUD follows placed globe, zoom-aware lift offsets, Copilot review
+round 1 + 2).
 
 Rationale for incremental over one-shot:
 
@@ -220,7 +241,7 @@ imported by anything on the hot path.
 
 ## Roadmap after MVP
 
-### Phase 2 — visual polish, loading gate & tile support
+### Phase 2 — visual polish, loading gate & tile support ✅ *(loading gate, day/night shader, atmosphere, clouds, sun sprite, ground shadow shipped; GIBS tile pyramid deferred)*
 
 **VR loading gate.** ✅ Shipped. The 3D loading scene
 (src/services/vrLoading.ts) replaces the "brief flash of base
@@ -300,7 +321,7 @@ variant case (the existing MVP code). GIBS tiles are only needed
 if we want tile-level zoom detail on the base Earth beyond 2K,
 which is a much later polish concern.
 
-### Phase 2.1 — AR passthrough mode (virtual SOS in your room)
+### Phase 2.1 — AR passthrough mode (virtual SOS in your room) ✅ *(basic passthrough, spatial placement via hit-test, WebXR anchors with cross-session persistent handles, ground shadow shipped; lighting estimation aspirational)*
 
 Video passthrough turns the VR experience into something very close
 to visiting a physical Science On a Sphere installation: a virtual
@@ -426,7 +447,7 @@ focused ~160-LOC commit.
   shading responds to the real environment. Optional feature,
   not widely supported yet — treat as aspirational.
 
-### Phase 2.2 — controller tooltips (button affordance hints)
+### Phase 2.2 — controller tooltips (button affordance hints) ✅ *(basic always-on labels shipped; fade-on-idle + HUD toggle + cross-device XR Input Profiles positioning still polish backlog)*
 
 Polished VR apps overlay short text labels next to controller buttons
 to teach the input model — "Trigger: rotate", "Grip: exit". For a
