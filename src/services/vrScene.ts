@@ -724,12 +724,21 @@ export function createVrScene(
     globeAnchor: globe.position.clone(),
 
     setTexture(spec, onReady) {
-      // Skip if the spec is unchanged — repeated polls from the
-      // session loop are a no-op in the steady state. Don't fire
-      // onReady on a no-op either; the caller already saw the
-      // previous ready signal.
+      // Skip texture-swap work if the spec is unchanged — repeated
+      // polls from the session loop are a no-op in the steady state.
+      // BUT still fire onReady: the caller (vrSession) is waiting
+      // for the "texture is live and visible" signal to trigger its
+      // loading-scene fade-out, and for the initial null → null
+      // case (user enters VR with no dataset loaded in 2D) the
+      // state transition is trivial but the caller still needs to
+      // hear that readiness is achieved. Callers dedupe via their
+      // own "already fired" flag so firing on every no-op is
+      // harmless.
       const nextKey = spec?.kind === 'video' ? spec.element : spec?.kind === 'image' ? spec.element : null
-      if (nextKey === activeKey) return
+      if (nextKey === activeKey) {
+        onReady?.()
+        return
+      }
 
       // Dispose any previously-loaded dataset texture. VideoTexture
       // holds a reference to the source <video> element and an
