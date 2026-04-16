@@ -7,10 +7,22 @@
  * dataset title, exit button) lives in `vrHud.ts` and is attached by
  * the caller.
  *
+ * Day/night shading — when no dataset is loaded, the globe shows a
+ * photorealistic day/night composite:
+ *   - Diffuse (day Earth) from external CDN
+ *   - Specular map for ocean glint (local asset)
+ *   - Emissive map (night lights) gated to the unlit side via a
+ *     `smoothstep` shader patch, ported from the pre-MapLibre
+ *     `earthMaterials.ts` (commit 3911300^).
+ * When a dataset texture (video/image) is loaded, emissive gating
+ * is disabled so the dataset covers both hemispheres uniformly.
+ *
  * See {@link file://./../../docs/VR_INVESTIGATION_PLAN.md VR_INVESTIGATION_PLAN.md}.
  */
 
 import type * as THREE from 'three'
+import { getSunPosition } from '../utils/time'
+import { logger } from '../utils/logger'
 
 /**
  * Placement of the globe in the local-floor reference space.
@@ -29,11 +41,60 @@ export const MIN_GLOBE_SCALE = 0.3
 export const MAX_GLOBE_SCALE = 2.5
 
 /**
- * Placeholder base Earth texture. Monochrome specular map shipped
- * with the repo; swapping this for a real Blue Marble equirectangular
- * is Phase 2 polish.
+ * Fallback Earth texture — monochrome specular map shipped with
+ * the repo. Used as the initial `material.map` while the full
+ * diffuse loads from the CDN, and as a permanent fallback if the
+ * CDN fetch fails. Also serves as the specular map regardless.
  */
 const BASE_EARTH_TEXTURE_URL = '/assets/Earth_Specular_2K.jpg'
+
+/**
+ * External CDN URLs for the full Earth day/night textures.
+ *
+ * Hosted on the same S3 bucket as the cloud texture (see
+ * `getCloudTextureUrl()` in `utils/deviceCapability.ts`). **Not**
+ * LFS-tracked — the previous `Earth_Diffuse_6K.jpg` asset was
+ * deliberately removed from LFS in commit `34167f2` when the
+ * zyra-project account hit 9 GB / 10 GB LFS bandwidth/month.
+ * External CDN keeps that problem from recurring.
+ *
+ * 2K is intentional. At the VR globe's ~40° visible FOV, 2K is
+ * perceptually equivalent to 6K; the size saving is ~9×.
+ *
+ * If these URLs 404 (e.g. not yet hosted), `loadDayNightTextures`
+ * falls back gracefully and the monochrome specular map remains
+ * the visible texture — so the code is correct whether or not the
+ * bucket is populated.
+ */
+const EARTH_DIFFUSE_URL =
+  'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/earth_diffuse_2048.jpg'
+const EARTH_LIGHTS_URL =
+  'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/earth_lights_2048.jpg'
+
+// --- Day/night material constants (ported from earthMaterials.ts) ---
+const EARTH_SHININESS = 40
+const NIGHT_LIGHT_STRENGTH = 0.5
+
+/**
+ * Convert the subsolar geographic lat/lng (degrees) into a
+ * world-space unit direction vector. Matches the convention used
+ * by the old `EarthMaterials.setSun()` — note the negated Z so
+ * the result lines up with Three.js `SphereGeometry`'s default
+ * equirectangular UV wrap.
+ */
+function sunDirectionFromLatLng(
+  THREE_: typeof THREE,
+  lat: number,
+  lng: number,
+): THREE.Vector3 {
+  const latRad = (lat * Math.PI) / 180
+  const lngRad = (lng * Math.PI) / 180
+  return new THREE_.Vector3(
+    Math.cos(latRad) * Math.cos(lngRad),
+    Math.sin(latRad),
+    -Math.cos(latRad) * Math.sin(lngRad),
+  )
+}
 
 /**
  * What's currently driving the globe's surface texture. Mirrors the
@@ -111,28 +172,84 @@ export function createVrScene(
     scene.background = new THREE_.Color(0x000814) // deep space blue
   }
 
-  // Ambient + directional. The base specular texture is monochrome
-  // and looks dead flat without some shading; a single directional
-  // light from "the sun" gives it enough form to read as a globe.
-  // Once we swap in the video dataset, the directional light still
-  // helps hint at the sphere's roundness.
-  scene.add(new THREE_.AmbientLight(0xffffff, 0.6))
-  const sun = new THREE_.DirectionalLight(0xffffff, 0.8)
-  sun.position.set(2, 1.5, 1)
-  scene.add(sun)
+  // Ambient fill so the night side isn't pitch black. The main
+  // light comes from `sunLight` below, positioned at the current
+  // subsolar direction in world space — so the globe's day/night
+  // terminator matches real UTC time.
+  scene.add(new THREE_.AmbientLight(0xffffff, 0.35))
+  const sunLight = new THREE_.DirectionalLight(0xffffff, 1.8)
+  // Initial position — update() repositions each frame based on
+  // current UTC time via getSunPosition().
+  sunLight.position.set(2, 1.5, 1)
+  scene.add(sunLight)
 
-  // Load the base Earth texture. The TextureLoader fires async but
-  // the material starts visible immediately (black sphere) and
-  // updates when the decode lands — fine for MVP.
+  // Shader-uniform handle for the sun direction. Shared between the
+  // Earth material's `onBeforeCompile` patch and the per-frame
+  // `update()` which writes the current subsolar direction.
+  const sunDirUniform = { value: new THREE_.Vector3(1, 0, 0) }
+
+  // Load the initial fallback texture (monochrome specular). Serves
+  // double duty: the `map` until the diffuse CDN fetch lands, AND
+  // the `specularMap` permanently so oceans get glint.
   const textureLoader = new THREE_.TextureLoader()
   const baseEarthTexture = textureLoader.load(BASE_EARTH_TEXTURE_URL)
   baseEarthTexture.colorSpace = THREE_.SRGBColorSpace
+  const specularMapTexture = textureLoader.load(BASE_EARTH_TEXTURE_URL)
 
-  const material = new THREE_.MeshStandardMaterial({
+  // MeshPhongMaterial — matches the pre-MapLibre earthMaterials.ts
+  // shader style. Phong is simpler than StandardMaterial (no PBR)
+  // and runs faster on Quest. The `emissive: white` + `emissiveMap`
+  // combination is what the shader patch uses for night-lights
+  // gating; emissiveMap starts null and gets set once the lights
+  // texture finishes loading.
+  const material = new THREE_.MeshPhongMaterial({
     map: baseEarthTexture,
-    roughness: 0.95,
-    metalness: 0.0,
+    specularMap: specularMapTexture,
+    specular: new THREE_.Color(0xaaaaaa),
+    shininess: EARTH_SHININESS,
+    emissiveMap: null,
+    emissive: new THREE_.Color(0xffffff),
   })
+
+  // Shader patch: gate the emissive map (night city lights) to the
+  // dark side of the globe only, using a smoothstep over the sun
+  // direction dot product. Night lights become invisible on the lit
+  // side even though the emissiveMap texture is sampled everywhere.
+  //
+  // Direct port from earthMaterials.ts (pre-MapLibre). Three.js'
+  // standard Phong shader is patched in-place via onBeforeCompile
+  // rather than rolled from scratch, so lighting / shadows / etc.
+  // all still work out of the box.
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uSunDir = sunDirUniform
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>
+       uniform vec3 uSunDir;
+       varying float vNdotL;`,
+    )
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+       vec3 wNormal = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);
+       vNdotL = dot(wNormal, uSunDir);`,
+    )
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>
+       varying float vNdotL;`,
+    )
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `#ifdef USE_EMISSIVEMAP
+         vec4 emissiveColor = texture2D( emissiveMap, vEmissiveMapUv );
+         float nightFactor = smoothstep( 0.0, -0.2, vNdotL );
+         totalEmissiveRadiance *= emissiveColor.rgb * nightFactor * ${NIGHT_LIGHT_STRENGTH.toFixed(2)};
+       #endif`,
+    )
+  }
 
   // 64×64 is plenty for a globe that fills ~40° of the viewer's FOV.
   const geometry = new THREE_.SphereGeometry(GLOBE_RADIUS, 64, 64)
@@ -191,6 +308,70 @@ export function createVrScene(
   /** Identity of the currently-loaded spec — element reference for change detection. */
   let activeKey: HTMLVideoElement | HTMLImageElement | null = null
 
+  /**
+   * Base diffuse texture once the CDN fetch lands — kept so we can
+   * restore it after a dataset texture is cleared. While CDN is
+   * pending or failed, this stays null and `baseEarthTexture`
+   * (the monochrome specular) is what `map` falls back to.
+   */
+  let baseDiffuseTexture: THREE.Texture | null = null
+  /**
+   * Night-lights emissive texture once the CDN fetch lands. Null
+   * while pending or failed — in which case the day/night shader
+   * patch reads an unbound sampler and the `#ifdef USE_EMISSIVEMAP`
+   * guards keep the effect disabled.
+   */
+  let lightsTexture: THREE.Texture | null = null
+
+  // --- Load CDN textures in the background ---
+  // Diffuse replaces the monochrome fallback as `material.map`;
+  // lights becomes `material.emissiveMap` and activates the
+  // day/night shader path. Each texture loads independently so a
+  // 404 on one doesn't prevent the other from applying.
+  //
+  // These URLs 404 gracefully if the bucket isn't populated — the
+  // monochrome specular map remains visible and the code behaves
+  // correctly regardless of hosting status.
+  const loadImage = (url: string): Promise<HTMLImageElement> =>
+    new Promise((resolve, reject) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error(`Failed to load ${url}`))
+      img.src = url
+    })
+
+  loadImage(EARTH_DIFFUSE_URL)
+    .then(img => {
+      const tex = new THREE_.Texture(img)
+      tex.colorSpace = THREE_.SRGBColorSpace
+      tex.needsUpdate = true
+      baseDiffuseTexture = tex
+      // Apply only if no dataset has taken over during the fetch.
+      if (activeKey === null) {
+        material.map = tex
+        material.needsUpdate = true
+      }
+    })
+    .catch(err =>
+      logger.warn('[VR] Earth diffuse CDN fetch failed; keeping specular fallback:', err),
+    )
+
+  loadImage(EARTH_LIGHTS_URL)
+    .then(img => {
+      const tex = new THREE_.Texture(img)
+      tex.colorSpace = THREE_.SRGBColorSpace
+      tex.needsUpdate = true
+      lightsTexture = tex
+      if (activeKey === null) {
+        material.emissiveMap = tex
+        material.needsUpdate = true
+      }
+    })
+    .catch(err =>
+      logger.warn('[VR] Earth lights CDN fetch failed; no night-side city lights:', err),
+    )
+
   return {
     scene,
     globe,
@@ -213,13 +394,24 @@ export function createVrScene(
       }
 
       if (!spec) {
-        material.map = baseEarthTexture
+        // Restore the base Earth — diffuse if CDN loaded, specular
+        // fallback otherwise — AND the night-lights emissive so the
+        // day/night shader becomes visible again.
+        material.map = baseDiffuseTexture ?? baseEarthTexture
+        material.emissiveMap = lightsTexture
+        material.emissive.setHex(0xffffff)
         activeKey = null
         // No dataset to wait for — readiness is immediate.
         onReady?.()
       } else if (spec.kind === 'video') {
         const video = spec.element
         activeKey = video
+
+        // Dataset textures cover the entire globe uniformly, so
+        // hide the night-lights emissive — otherwise they'd bleed
+        // ADDITIVELY on top of the dataset's dark regions.
+        material.emissiveMap = null
+        material.emissive.setHex(0x000000)
 
         // Force the decoder to produce a frame at the current
         // position. Without this, paused HLS streams may have no
@@ -263,6 +455,10 @@ export function createVrScene(
         tex.magFilter = THREE_.LinearFilter
         tex.needsUpdate = true
         activeDatasetTexture = tex
+        // Dataset covers the globe uniformly — disable day/night
+        // emissive gating (same rationale as the video branch).
+        material.emissiveMap = null
+        material.emissive.setHex(0x000000)
         material.map = tex
         activeKey = spec.element
         onReady?.()
@@ -276,6 +472,19 @@ export function createVrScene(
       // normal axis and doesn't matter after the 90° rotation.
       shadow.scale.x = globe.scale.x
       shadow.scale.y = globe.scale.x
+
+      // Refresh sun direction from real UTC time. The subsolar
+      // point moves ~0.25° per minute, so updating every frame is
+      // overkill but cheap; keeping it per-frame avoids a separate
+      // throttled timer and guarantees the day/night terminator
+      // stays correct if the user lingers in VR.
+      const { lat, lng } = getSunPosition(new Date())
+      const sunDir = sunDirectionFromLatLng(THREE_, lat, lng)
+      sunDirUniform.value.copy(sunDir)
+      // DirectionalLight convention: light shines FROM its position
+      // TOWARD the origin. Place it along the sun direction at some
+      // distance so shading matches the shader's uSunDir.
+      sunLight.position.copy(sunDir).multiplyScalar(10)
     },
 
     dispose() {
@@ -285,6 +494,9 @@ export function createVrScene(
         activeKey = null
       }
       baseEarthTexture.dispose()
+      specularMapTexture.dispose()
+      baseDiffuseTexture?.dispose()
+      lightsTexture?.dispose()
       material.dispose()
       geometry.dispose()
       scene.remove(globe)
