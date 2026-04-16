@@ -75,10 +75,12 @@ interface PanelState {
   dataset: Dataset | null
   hlsService: HLSService | null
   videoTexture: VideoTextureHandle | null
+  /** Decoded image element for image datasets — passed to VR to avoid re-fetching. */
+  image: HTMLImageElement | null
 }
 
 function createPanelState(): PanelState {
-  return { dataset: null, hlsService: null, videoTexture: null }
+  return { dataset: null, hlsService: null, videoTexture: null, image: null }
 }
 
 class InteractiveSphere {
@@ -418,9 +420,10 @@ class InteractiveSphere {
       await this.startTour(dataset.dataLink, gen)
       return
     } else if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
+      const img = await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
       this.viewports.setPanelLoading(primaryIdx, false)
       if (gen !== this.loadGeneration) return
+      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = img
     } else if (dataService.isVideoDataset(dataset)) {
       const result = await loadVideoDataset(
         dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
@@ -549,10 +552,11 @@ class InteractiveSphere {
     this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
     if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(
+      const img = await loadImageDataset(
         dataset, targetRenderer, this.appState, this.isMobile, tourLoaderCallbacks,
         { isPrimary: isPrimarySlot },
       )
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
     } else if (dataService.isVideoDataset(dataset)) {
       const result = await loadVideoDataset(
         dataset, targetRenderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks,
@@ -1132,8 +1136,11 @@ class InteractiveSphere {
       getDatasetTexture: () => {
         const ds = this.appState.currentDataset
         if (!ds) return null
+        const primaryIdx = this.viewports.getPrimaryIndex()
         if (dataService.isImageDataset(ds)) {
-          return { kind: 'image', url: ds.dataLink }
+          const img = this.panelStates[primaryIdx]?.image
+          if (img) return { kind: 'image', element: img }
+          return null
         }
         const video = this.hlsService?.getVideo()
         if (video) return { kind: 'video', element: video }
@@ -1680,6 +1687,7 @@ class InteractiveSphere {
     // specific panel's renderer so it doesn't keep showing a stale
     // texture.
     panel.dataset = null
+    panel.image = null
     const renderer = this.viewports.getRendererAt(slot)
     if (renderer) {
       renderer.removeCloudOverlay?.()
@@ -1924,6 +1932,7 @@ class InteractiveSphere {
       if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
       if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
       panel.dataset = null
+      panel.image = null
     }
   }
 

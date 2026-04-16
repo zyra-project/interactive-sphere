@@ -38,12 +38,19 @@ const BASE_EARTH_TEXTURE_URL = '/assets/Earth_Specular_2K.jpg'
 /**
  * What's currently driving the globe's surface texture. Mirrors the
  * 2D dataset model: image datasets (Age of Sea Floor, Bathymetry,
- * etc.) are static URLs; video datasets stream through HLS into an
- * `HTMLVideoElement`. Null falls back to the base Earth placeholder.
+ * etc.) are pre-decoded `HTMLImageElement`s; video datasets stream
+ * through HLS into an `HTMLVideoElement`. Null falls back to the
+ * base Earth placeholder.
+ *
+ * Image datasets carry the already-decoded `HTMLImageElement` from
+ * the 2D loader rather than a URL so we skip the re-fetch + the
+ * resolution-fallback dance that `datasetLoader.ts` does — the
+ * browser has already resolved which URL succeeded and decoded the
+ * pixels into this element.
  */
 export type VrDatasetTexture =
   | { readonly kind: 'video'; readonly element: HTMLVideoElement }
-  | { readonly kind: 'image'; readonly url: string }
+  | { readonly kind: 'image'; readonly element: HTMLImageElement }
 
 export interface VrSceneHandle {
   /** The Three.js scene — attach/detach objects (controllers, HUD) here. */
@@ -109,8 +116,8 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
   // lets vrSession compare cheaply each frame and call setTexture
   // only when the dataset actually changed.
   let activeDatasetTexture: THREE.Texture | null = null
-  /** Identifier of the currently-loaded spec — video element identity or image URL. */
-  let activeKey: HTMLVideoElement | string | null = null
+  /** Identity of the currently-loaded spec — element reference for change detection. */
+  let activeKey: HTMLVideoElement | HTMLImageElement | null = null
 
   return {
     scene,
@@ -120,7 +127,7 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
     setTexture(spec) {
       // Skip if the spec is unchanged — repeated polls from the
       // session loop are a no-op in the steady state.
-      const nextKey = spec?.kind === 'video' ? spec.element : spec?.kind === 'image' ? spec.url : null
+      const nextKey = spec?.kind === 'video' ? spec.element : spec?.kind === 'image' ? spec.element : null
       if (nextKey === activeKey) return
 
       // Dispose any previously-loaded dataset texture. VideoTexture
@@ -143,22 +150,17 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
         material.map = tex
         activeKey = spec.element
       } else if (spec.kind === 'image') {
-        // Browser HTTP cache will hit immediately if the 2D loader
-        // already fetched this URL (which is the normal flow —
-        // user loads dataset in 2D, then enters VR). Three.js'
-        // TextureLoader fires async, so the material updates as
-        // soon as the image decodes; the placeholder is visible
-        // for a frame or two.
-        const tex = textureLoader.load(spec.url, () => {
-          // Texture decoded; force a material refresh.
-          material.needsUpdate = true
-        })
+        // The 2D loader already decoded this image (including the
+        // resolution-fallback dance), so we wrap the live
+        // HTMLImageElement directly — no re-fetch, no async.
+        const tex = new THREE_.Texture(spec.element)
         tex.colorSpace = THREE_.SRGBColorSpace
         tex.minFilter = THREE_.LinearFilter
         tex.magFilter = THREE_.LinearFilter
+        tex.needsUpdate = true
         activeDatasetTexture = tex
         material.map = tex
-        activeKey = spec.url
+        activeKey = spec.element
       }
       material.needsUpdate = true
     },
