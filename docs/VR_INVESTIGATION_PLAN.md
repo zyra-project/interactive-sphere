@@ -353,9 +353,59 @@ rendering leaves less headroom. **Ship 2-globe support first; treat
 - Entering VR inherits the current MapLibre view (lat/lng/zoom)
 - Exiting VR writes the last VR camera pose back to MapLibre
 
-### Phase 5 — richer interaction
+### Phase 5 — richer interaction & voice-driven Orbit
+
+**Orbit as a VR docent.** Typing is impractical in VR; voice is
+the natural replacement. The Quest browser is Chromium-based and
+exposes the standard Web Speech API — both `SpeechRecognition`
+(speech-to-text, cloud-based via Google STT) and `SpeechSynthesis`
+(text-to-speech, works offline with built-in voices). Neither is
+blocked by an active WebXR session.
+
+The interaction loop:
+
+```
+User holds "talk" button → speaks question
+  → SpeechRecognition → transcript text
+  → docentService.processMessage(transcript)  [existing, unchanged]
+  → LLM streams response chunks                [existing, unchanged]
+  → VR chat panel renders text (CanvasTexture)  [new]
+  → SpeechSynthesis reads response aloud        [new, optional]
+  → <<LOAD:...>> markers swap globe texture     [new, small]
+```
+
+Most of Orbit's backend is transport-agnostic already:
+`docentService`, `docentContext`, `docentEngine`, `llmProvider` all
+take a string in and stream chunks out — none are DOM-specific.
+Only `chatUI.ts` (the DOM rendering layer) is 2D-only. VR needs a
+parallel rendering surface, not a rewrite of the intelligence.
+
+**New modules (~450 LOC total):**
+
+| Component | LOC est. | Notes |
+|---|---|---|
+| Voice input | ~100-150 | `SpeechRecognition` + push-to-talk (controller button or HUD mic icon). Visual: recording indicator, live transcript on the chat panel. |
+| VR chat panel | ~200-300 | CanvasTexture panel (larger than the HUD — subtitle-panel sized, floating near the globe). Word-wrap, auto-scroll, streaming text append. |
+| Voice output | ~50 | `SpeechSynthesis` reads Orbit's response. Strip `<<LOAD:...>>` markers before speaking. Toggle on/off via HUD. |
+| Dataset actions | ~50 | `<<LOAD:DATASET_ID>>` markers trigger `vrScene.setTexture()` directly — partial delivery of Phase 3 without the browse panel. |
+| Feature detection | ~20 | `'SpeechRecognition' in window` — hide voice features if unavailable. |
+
+**End-to-end latency:** ~1 s for speech recognition + 2-3 s for
+LLM first token. Comparable to asking a museum docent a question
+and waiting for them to think — feels natural in a spatial context.
+
+**Caveats:**
+- `SpeechRecognition` requires network (Google cloud STT). The
+  local docent engine (`docentEngine.ts`) still works as a fallback
+  if the LLM is unreachable, but the voice INPUT itself needs
+  connectivity.
+- Quest microphone picks up room audio; recognition accuracy may
+  vary in noisy environments.
+- Long Orbit responses need careful typography on the VR chat panel
+  (font size, line height, scroll behaviour on a CanvasTexture).
+
+**Other Phase 5 items:**
 - Pinch-gesture hand tracking as an alternative to controllers
-- Orbit chat ("Ask Orbit") as a floating in-VR panel
 
 ---
 
