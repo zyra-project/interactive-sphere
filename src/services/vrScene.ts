@@ -142,13 +142,39 @@ export function createVrScene(THREE_: typeof THREE): VrSceneHandle {
         material.map = baseEarthTexture
         activeKey = null
       } else if (spec.kind === 'video') {
-        const tex = new THREE_.VideoTexture(spec.element)
+        const video = spec.element
+        activeKey = video
+
+        // Force the decoder to produce a frame at the current
+        // position. Without this, paused HLS streams may have no
+        // decoded frame available and VideoTexture reads as black.
+        try { video.currentTime = video.currentTime } catch { /* no-op */ }
+
+        const tex = new THREE_.VideoTexture(video)
         tex.colorSpace = THREE_.SRGBColorSpace
         tex.minFilter = THREE_.LinearFilter
         tex.magFilter = THREE_.LinearFilter
         activeDatasetTexture = tex
-        material.map = tex
-        activeKey = spec.element
+
+        if (video.readyState >= 2) {
+          // Frame already decoded — swap immediately.
+          material.map = tex
+        } else {
+          // No frame yet — keep the base Earth visible instead of
+          // showing a black ball. Swap in the VideoTexture as soon
+          // as the forced seek decodes a frame or the user presses
+          // play (whichever fires first). { once: true } ensures
+          // each listener self-removes after firing.
+          material.map = baseEarthTexture
+          const onFrame = () => {
+            // Guard: dataset may have changed while we waited.
+            if (activeKey !== video) return
+            material.map = tex
+            material.needsUpdate = true
+          }
+          video.addEventListener('seeked', onFrame, { once: true })
+          video.addEventListener('playing', onFrame, { once: true })
+        }
       } else if (spec.kind === 'image') {
         // The 2D loader already decoded this image (including the
         // resolution-fallback dance), so we wrap the live
