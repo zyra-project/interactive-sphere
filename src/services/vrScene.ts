@@ -97,6 +97,21 @@ const EARTH_SHININESS = 40
 const NIGHT_LIGHT_STRENGTH = 0.5
 
 /**
+ * Atmosphere shell radii relative to the globe. Two concentric
+ * spheres render additively over the globe to fake Rayleigh +
+ * Mie scattering: the inner shell is a soft day-side glow with
+ * sunset warm tones near the terminator; the outer shell is a
+ * wider fresnel rim that extends beyond the planet's silhouette.
+ *
+ * Values match the pre-MapLibre `earthMaterials.ts` constants,
+ * scaled by GLOBE_RADIUS so the relationship to the globe is
+ * preserved at our half-metre sphere.
+ */
+const ATMOSPHERE_INNER_RADIUS = GLOBE_RADIUS * 1.003
+const ATMOSPHERE_OUTER_RADIUS = GLOBE_RADIUS * 1.012
+const ATMOSPHERE_SEGMENTS = 64
+
+/**
  * Convert the subsolar geographic lat/lng (degrees) into a
  * world-space unit direction vector. Matches the convention used
  * by the old `EarthMaterials.setSun()` — note the negated Z so
@@ -277,6 +292,141 @@ export function createVrScene(
   const globe = new THREE_.Mesh(geometry, material)
   globe.position.set(GLOBE_POSITION.x, GLOBE_POSITION.y, GLOBE_POSITION.z)
   scene.add(globe)
+
+  // --- Atmosphere ---
+  // Direct port of earthMaterials.ts's Rayleigh scattering shader.
+  // Two concentric transparent shells use additive blending over
+  // the Earth surface:
+  //
+  //   Inner shell (FrontSide)  — rim-glow on the day side, warm
+  //     sunset colour near the terminator, darker on the night
+  //     side. Simulates in-scattering of sunlight through the
+  //     daytime atmosphere.
+  //   Outer shell (BackSide)   — wider halo extending beyond the
+  //     planet's silhouette, sampled with a fresnel-weighted
+  //     Rayleigh+Mie phase mix. Makes the planet look like it
+  //     has a proper hazy edge rather than a hard sphere outline.
+  //
+  // Both share the uSunDir uniform with the Earth material so the
+  // day/night terminator and atmosphere glow move together.
+  //
+  // Position + scale sync to the globe each frame in update() —
+  // they're NOT children of the globe mesh so they don't inherit
+  // the user's rotation input (atmosphere doesn't rotate with the
+  // surface in reality).
+  const atmosphereVertexShader = `
+    varying vec3 vWorldNormal;
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPos.xyz;
+      vWorldNormal = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * worldPos;
+    }
+  `
+
+  const atmosphereScatteringConstants = `
+    const vec3 betaR = vec3(5.5e-6, 13.0e-6, 22.4e-6);
+    const vec3 betaNorm = betaR / 22.4e-6;
+  `
+
+  const atmosphereInnerFrag = `
+    uniform vec3 uSunDir;
+    varying vec3 vWorldNormal;
+    varying vec3 vWorldPosition;
+    ${atmosphereScatteringConstants}
+
+    void main() {
+      vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+      vec3 N = normalize(vWorldNormal);
+
+      float NdotV = dot(viewDir, N);
+      float rim = exp(-8.0 * NdotV * NdotV);
+
+      float sunNdot = dot(N, uSunDir);
+      float atmosphereLit = smoothstep(-0.15, 0.4, sunNdot);
+
+      float opticalDepth = 1.0 / max(NdotV, 0.05);
+
+      vec3 extinction = exp(-betaR * opticalDepth * 4e5);
+      vec3 rayleighColor = betaNorm * (1.0 - extinction);
+
+      float terminator = exp(-6.0 * sunNdot * sunNdot);
+      vec3 sunsetWarm = vec3(1.0, 0.4, 0.1);
+      vec3 color = mix(rayleighColor, sunsetWarm, terminator * rim * 0.5);
+
+      float alpha = rim * atmosphereLit * 0.35;
+      gl_FragColor = vec4(color, alpha);
+    }
+  `
+
+  const atmosphereOuterFrag = `
+    uniform vec3 uSunDir;
+    varying vec3 vWorldNormal;
+    varying vec3 vWorldPosition;
+    ${atmosphereScatteringConstants}
+
+    void main() {
+      vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+      vec3 N = normalize(vWorldNormal);
+
+      float fresnel = 1.0 - dot(viewDir, N);
+      float rim = pow(fresnel, 1.5);
+
+      float sunNdot = dot(N, uSunDir);
+      float atmosphereLit = smoothstep(-0.15, 0.4, sunNdot);
+
+      float cosTheta = dot(viewDir, uSunDir);
+      float rayleighPhase = 0.75 * (1.0 + cosTheta * cosTheta);
+
+      float g = 0.758;
+      float g2 = g * g;
+      float miePhase = (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
+      miePhase *= 0.12;
+
+      vec3 scatterColor = betaNorm * rayleighPhase;
+      scatterColor += vec3(1.0, 0.95, 0.85) * miePhase;
+
+      float terminator = exp(-8.0 * sunNdot * sunNdot);
+      vec3 sunsetColor = vec3(1.0, 0.4, 0.08);
+      scatterColor = mix(scatterColor, sunsetColor, terminator * 0.35);
+
+      float alpha = rim * atmosphereLit * 0.18;
+      gl_FragColor = vec4(scatterColor, alpha);
+    }
+  `
+
+  const atmosphereInnerGeometry = new THREE_.SphereGeometry(
+    ATMOSPHERE_INNER_RADIUS, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS,
+  )
+  const atmosphereInnerMaterial = new THREE_.ShaderMaterial({
+    vertexShader: atmosphereVertexShader,
+    fragmentShader: atmosphereInnerFrag,
+    uniforms: { uSunDir: sunDirUniform },
+    transparent: true,
+    side: THREE_.FrontSide,
+    depthWrite: false,
+    blending: THREE_.AdditiveBlending,
+  })
+  const atmosphereInner = new THREE_.Mesh(atmosphereInnerGeometry, atmosphereInnerMaterial)
+  atmosphereInner.position.copy(globe.position)
+  scene.add(atmosphereInner)
+
+  const atmosphereOuterGeometry = new THREE_.SphereGeometry(
+    ATMOSPHERE_OUTER_RADIUS, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS,
+  )
+  const atmosphereOuterMaterial = new THREE_.ShaderMaterial({
+    vertexShader: atmosphereVertexShader,
+    fragmentShader: atmosphereOuterFrag,
+    uniforms: { uSunDir: sunDirUniform },
+    transparent: true,
+    side: THREE_.BackSide,
+    depthWrite: false,
+    blending: THREE_.AdditiveBlending,
+  })
+  const atmosphereOuter = new THREE_.Mesh(atmosphereOuterGeometry, atmosphereOuterMaterial)
+  atmosphereOuter.position.copy(globe.position)
+  scene.add(atmosphereOuter)
 
   // --- Ground shadow ---
   // Subtle dark radial gradient on a horizontal plane below the
@@ -533,6 +683,16 @@ export function createVrScene(
       shadow.scale.x = globe.scale.x
       shadow.scale.y = globe.scale.x
 
+      // Atmosphere shells follow the globe's position + uniform
+      // scale but deliberately NOT its rotation — the atmosphere
+      // doesn't spin with the planet's surface (the user's grab
+      // rotation is an abstraction of Earth rotating under a
+      // fixed sun, not of the sky rotating with the ground).
+      atmosphereInner.position.copy(globe.position)
+      atmosphereOuter.position.copy(globe.position)
+      atmosphereInner.scale.copy(globe.scale)
+      atmosphereOuter.scale.copy(globe.scale)
+
       // Refresh sun direction from real UTC time. The subsolar
       // point moves ~0.25° per minute, so updating every frame is
       // overkill but cheap; keeping it per-frame avoids a separate
@@ -560,6 +720,12 @@ export function createVrScene(
       material.dispose()
       geometry.dispose()
       scene.remove(globe)
+      scene.remove(atmosphereInner)
+      scene.remove(atmosphereOuter)
+      atmosphereInnerGeometry.dispose()
+      atmosphereInnerMaterial.dispose()
+      atmosphereOuterGeometry.dispose()
+      atmosphereOuterMaterial.dispose()
       scene.remove(shadow)
       shadowGeometry.dispose()
       shadowMaterial.dispose()
