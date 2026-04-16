@@ -490,22 +490,24 @@ export function createVrScene(
   atmosphereOuter.position.copy(globe.position)
   scene.add(atmosphereOuter)
 
-  // --- Sun sprite (VR only) ---
+  // --- Sun sprite ---
   // Two billboard sprites: a small bright core and a larger soft
   // glow halo. Both use procedural CanvasTextures (radial gradients)
   // so we don't need a new asset hosted anywhere. Positioned each
   // frame in update() at `globe.position + sunDir * SUN_DISTANCE`
   // so they track the real subsolar direction as UTC advances.
   //
-  // Skipped in AR mode — a glowing disc floating in the user's real
-  // room would read as weird rather than celestial. The atmosphere
-  // rim is subtle enough to work in AR; the sun isn't.
+  // Visible in both VR and AR modes. An earlier version gated this
+  // VR-only on the theory that a glowing disc in the user's real
+  // room would read as weird — but the atmosphere rim shader
+  // already renders additively in AR and looks fine, so the sun
+  // (same additive approach) is consistent rather than jarring.
   //
   // Direct port from the pre-MapLibre `earthMaterials.ts` sun
   // visual (commit 3911300^), scaled for our 0.5 m globe.
   let sunCoreSprite: THREE.Sprite | null = null
   let sunGlowSprite: THREE.Sprite | null = null
-  if (!transparentBackground) {
+  {
     /**
      * Build a canvas with a radial gradient from opaque centre to
      * transparent edge. Used for both sun core (bright white) and
