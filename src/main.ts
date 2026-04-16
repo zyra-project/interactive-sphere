@@ -425,6 +425,11 @@ class InteractiveSphere {
       if (gen !== this.loadGeneration) return
       if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = img
     } else if (dataService.isVideoDataset(dataset)) {
+      // Clear any previously-cached image element for this slot —
+      // if the user just switched from an image dataset to a video
+      // dataset, the old decoded image is no longer referenced and
+      // should be released so its backing bytes can be GC'd.
+      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = null
       const result = await loadVideoDataset(
         dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
       )
@@ -558,6 +563,11 @@ class InteractiveSphere {
       )
       if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
     } else if (dataService.isVideoDataset(dataset)) {
+      // Clear any previously-cached image element for this slot —
+      // if the user just switched from an image dataset to a video
+      // dataset, the old decoded image is no longer referenced and
+      // should be released so its backing bytes can be GC'd.
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
       const result = await loadVideoDataset(
         dataset, targetRenderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks,
         { isPrimary: isPrimarySlot },

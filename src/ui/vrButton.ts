@@ -40,6 +40,14 @@ export async function initVrButton(ctx: VrSessionContext): Promise<void> {
     return
   }
 
+  // Idempotent guard — if init has already run for this element,
+  // skip. Without this, repeat calls (hot-reload, re-init after DOM
+  // swap) stack click listeners and warm-load Three.js multiple
+  // times. The dataset flag survives across calls as long as the
+  // same DOM element sticks around.
+  if (button.dataset.vrInitialized === 'true') return
+  button.dataset.vrInitialized = 'true'
+
   // Detect both modes in parallel — no reason to serialize independent calls.
   const [vrSupported, arSupported] = await Promise.all([
     isImmersiveVrSupported(),

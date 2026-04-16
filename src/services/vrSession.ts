@@ -81,6 +81,12 @@ interface ActiveSession {
   placement: VrPlacementHandle | null
   /** Reference space passed to per-frame hit-test resolution. */
   refSpace: XRReferenceSpace | null
+  /**
+   * The viewer-space hit-test source used by placement. Stored
+   * here so the session-end teardown can explicitly cancel it and
+   * release platform-side tracking resources.
+   */
+  hitTestSource: XRHitTestSource | null
 }
 
 let active: ActiveSession | null = null
@@ -313,6 +319,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
    * during fade-out).
    */
   let loadingDisposed = false
+  /**
+   * Handle for the fade-out setTimeout, captured so the session-end
+   * teardown can cancel it if the user exits during the 250 ms
+   * pre-fade pause. Without this the setTimeout would still fire
+   * and call loading.fadeOut() on an already-disposed handle.
+   */
+  let fadeTimeoutId: ReturnType<typeof setTimeout> | null = null
   scene.setTexture(ctx.getDatasetTexture(), () => {
     // Idempotent — a follow-up texture swap could re-fire this;
     // we only want to drive the fade once per session.
@@ -327,11 +340,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // the synchronous onReady path fires. Previous version tested
     // `if (!active) return` here and got stuck on first AR entry
     // when the controller-factory import exceeded the 250 ms delay.
-    setTimeout(() => {
+    fadeTimeoutId = setTimeout(() => {
+      fadeTimeoutId = null
+      // If the session ended while we were waiting, the end handler
+      // already disposed loading — skip the fade work entirely.
+      if (loadingDisposed) return
       void loading.fadeOut().then(() => {
-        // If the session ended mid-fade the end handler already
-        // disposed loading; avoid double-disposing by checking the
-        // flag we set on that path.
+        // Session-end during fade: same guard, same reason.
         if (loadingDisposed) return
         loadingDisposed = true
         scene.scene.remove(loading.group)
@@ -435,6 +450,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     loading,
     placement,
     refSpace: placementRefSpace,
+    hitTestSource,
   }
 
   // --- Render loop ---
@@ -533,6 +549,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     a.renderer.setAnimationLoop(null)
     a.interaction.dispose()
     a.hud.dispose()
+    // If the fade-out setTimeout is still pending, cancel it —
+    // otherwise it would fire after the loading handle is disposed
+    // and try to run fade-out on stale state.
+    if (fadeTimeoutId !== null) {
+      clearTimeout(fadeTimeoutId)
+      fadeTimeoutId = null
+    }
     // Loading scene may still be present if the user exited before
     // dataset finished loading. Dispose it explicitly so we don't
     // leak the canvases + textures. Flag handshake with the fade-out
@@ -554,6 +577,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     if (currentAnchor) {
       try { currentAnchor.delete() } catch { /* already gone */ }
       currentAnchor = null
+    }
+    // Cancel the hit-test source so the platform releases the
+    // viewer-space tracking subscription. The subscription
+    // otherwise lives until session-end garbage-collects it
+    // implicitly, which wastes work during the teardown window.
+    if (a.hitTestSource) {
+      try { a.hitTestSource.cancel() } catch { /* already cancelled */ }
     }
     a.scene.dispose()
     a.renderer.dispose()

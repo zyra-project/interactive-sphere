@@ -786,16 +786,26 @@ export function createVrInteraction(
    * "lands" on the surface instead of poking through. Hides the dot
    * + restores full-length ray when the ray misses everything.
    *
-   * Raycasts against the globe AND the HUD because the dot should
-   * land on whichever the user is pointing at. Run after rotation
-   * updates so the dot reflects the current globe orientation.
+   * Raycasts against the globe, HUD, AND the AR Place button
+   * (when it's visible). Keeping this target list in sync with
+   * `pickHit`'s list is important — if the ray visuals don't land
+   * on the same surfaces `pickHit` considers interactive, aiming
+   * at buttons feels broken. Run after rotation updates so the dot
+   * reflects the current globe orientation.
    */
   function updateRayVisuals(): void {
+    // Build the target list once per frame — includes the Place
+    // button only when it's visible (avoids spurious hits on an
+    // offscreen / unavailable button).
+    const targets: THREE.Object3D[] = [ctx.globe, ctx.hud.mesh]
+    if (ctx.placement && ctx.placement.placeButtonMesh.visible) {
+      targets.push(ctx.placement.placeButtonMesh)
+    }
     for (let i = 0; i < 2; i++) {
       const controller = controllers[i]
       setRaycasterFromController(controller)
-      // Closest hit across both interactive surfaces wins.
-      const hits = raycaster.intersectObjects([ctx.globe, ctx.hud.mesh], false)
+      // Closest hit across all interactive surfaces wins.
+      const hits = raycaster.intersectObjects(targets, false)
       if (hits.length > 0 && hits[0].point) {
         const distance = hits[0].distance
         // Scale Z so the line ends exactly at the hit. Min clamp
