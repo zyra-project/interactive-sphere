@@ -73,6 +73,15 @@ export interface VrPlacementHandle {
    */
   getReticlePosition(): THREE.Vector3 | null
   /**
+   * Latest XR hit-test result from the most recent successful
+   * reticle frame, or null. Used by vrSession to create a
+   * system-tracked anchor on placement — the anchor stays bolted
+   * to the real surface across local-floor coord-system re-bases
+   * (which happen every session on Quest), making the globe
+   * actually stay put when the user exits and re-enters VR.
+   */
+  getLastHitTestResult(): XRHitTestResult | null
+  /**
    * UV-space hit test on the Place button — analogous to vrHud's
    * hitTest. Returns 'place' if the UV falls inside the button,
    * null otherwise.
@@ -208,6 +217,12 @@ export function createVrPlacement(
   let placing = false
   /** Latest hit position from per-frame hit-test, or null. */
   let lastHitPosition: THREE.Vector3 | null = null
+  /**
+   * The raw XR hit-test result from the most recent frame. Kept so
+   * vrSession can call `createAnchor()` on it at placement-confirm
+   * time. Cleared when the reticle loses its surface.
+   */
+  let lastHitResult: XRHitTestResult | null = null
   /** Scratch vector for hit-test result extraction. */
   const scratch = new THREE_.Vector3()
 
@@ -231,6 +246,7 @@ export function createVrPlacement(
       if (!active) {
         reticleGroup.visible = false
         lastHitPosition = null
+        lastHitResult = null
       }
     },
 
@@ -247,14 +263,19 @@ export function createVrPlacement(
         // stays null so a confirm tap won't place spuriously.
         reticleGroup.visible = false
         lastHitPosition = null
+        lastHitResult = null
         return
       }
       const pose = hits[0].getPose(refSpace)
       if (!pose) {
         reticleGroup.visible = false
         lastHitPosition = null
+        lastHitResult = null
         return
       }
+      // Keep the raw hit-test result around — vrSession will call
+      // `createAnchor()` on it at placement-confirm time.
+      lastHitResult = hits[0]
       scratch.set(
         pose.transform.position.x,
         pose.transform.position.y,
@@ -267,6 +288,10 @@ export function createVrPlacement(
 
     getReticlePosition() {
       return lastHitPosition ? lastHitPosition.clone() : null
+    },
+
+    getLastHitTestResult() {
+      return lastHitResult
     },
 
     hitTestButton(uv) {

@@ -21,7 +21,11 @@ import { createVrHud, type VrHudHandle } from './vrHud'
 import { createVrInteraction, type VrInteractionHandle } from './vrInteraction'
 import { createVrLoading, type VrLoadingHandle } from './vrLoading'
 import { createVrPlacement, liftedPlacementPosition, type VrPlacementHandle } from './vrPlacement'
-import { loadPersistedPlacement, savePersistedPlacement } from '../utils/vrPersistence'
+import {
+  clearPersistedAnchorHandle,
+  loadPersistedAnchorHandle,
+  savePersistedAnchorHandle,
+} from '../utils/vrPersistence'
 import { logger } from '../utils/logger'
 
 /**
@@ -156,7 +160,15 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // — placement just won't be available in that case. Skipped
   // entirely for VR (no real-world geometry to hit-test against).
   const optionalFeatures: string[] = []
-  if (isAr) optionalFeatures.push('hit-test')
+  if (isAr) {
+    optionalFeatures.push('hit-test')
+    // Anchors let us bolt the globe to a real-world surface and
+    // have it stay there across tracking adjustments (within a
+    // session) and across sessions (via Meta's persistent-handle
+    // extension). Core to the "globe actually stays on my table"
+    // UX. Optional because not all UAs implement anchors yet.
+    optionalFeatures.push('anchors')
+  }
   let session: XRSession
   try {
     session = await navigator.xr.requestSession(sessionMode, {
@@ -241,17 +253,32 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     }
   }
 
-  // --- Restore persisted placement (AR only) ---
-  // If the user placed the globe on a real surface in a previous
-  // session, put it back there before the globe is first made
-  // visible — so the reveal happens at the remembered location
-  // rather than the default floating position. Position is in
-  // local-floor coordinates; stable across sessions in the same
-  // Quest room-setup.
+  // --- Restore persisted placement via WebXR Anchor (AR only) ---
+  // See src/utils/vrPersistence.ts for why we use anchors instead of
+  // saved coordinates: Quest's local-floor space is re-based every
+  // session, so a saved (x, y, z) corresponds to a different
+  // physical location each time. Anchors are system-tracked and
+  // stable across sessions.
+  //
+  // Kept as a mutable session-level handle because the anchor is
+  // created/restored asynchronously (may land after the first
+  // render frame) and then drives the globe position per-frame.
+  let currentAnchor: XRAnchor | null = null
   if (isAr) {
-    const saved = loadPersistedPlacement()
-    if (saved) {
-      scene.globe.position.set(saved.x, saved.y, saved.z)
+    const savedHandle = loadPersistedAnchorHandle()
+    if (savedHandle) {
+      const restoreFn = (session as unknown as {
+        restorePersistentAnchor?: (uuid: string) => Promise<XRAnchor>
+      }).restorePersistentAnchor
+      if (restoreFn) {
+        try {
+          currentAnchor = await restoreFn.call(session, savedHandle)
+          logger.info('[VR] Restored persistent placement anchor')
+        } catch (err) {
+          logger.warn('[VR] Failed to restore persistent anchor; clearing handle:', err)
+          clearPersistedAnchorHandle()
+        }
+      }
     }
   }
 
@@ -349,13 +376,47 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     onPlaceConfirm: () => {
       const hit = placement?.getReticlePosition()
       if (!hit) return
-      // Move the globe (and its children — clouds, atmosphere
-      // follows separately via update sync) to the lifted hit point.
+      // Move the globe right away so the visual response is
+      // immediate. The anchor creation (below) is async; if it
+      // succeeds, per-frame anchor-pose tracking will take over
+      // the globe's position next frame with no visible jump
+      // since the anchor's pose matches the hit point we just set.
       const target = liftedPlacementPosition(THREE_, hit)
       scene.globe.position.copy(target)
       placement?.setPlacing(false)
-      // Persist so the globe stays in the same spot next session.
-      savePersistedPlacement({ x: target.x, y: target.y, z: target.z })
+
+      // Create a system-tracked anchor from the raw hit-test
+      // result. The anchor stays bolted to the real surface even
+      // when the local-floor coord frame shifts (which happens
+      // every new session). Replaces any previous anchor.
+      const hitResult = placement?.getLastHitTestResult()
+      const createFn = hitResult?.createAnchor
+      if (!hitResult || !createFn) return
+
+      void createFn.call(hitResult).then(async anchor => {
+        // Swap out any prior anchor. Only one active at a time —
+        // the previous placement's anchor is no longer needed.
+        if (currentAnchor) {
+          try { currentAnchor.delete() } catch { /* already gone */ }
+        }
+        currentAnchor = anchor
+
+        // Persistent handle for cross-session restore. Meta Quest
+        // exposes this via the Anchors module extension; other
+        // browsers may not. Non-fatal if it throws — the anchor
+        // still tracks within this session.
+        const requestFn = anchor.requestPersistentHandle
+        if (!requestFn) return
+        try {
+          const handle = await requestFn.call(anchor)
+          savePersistedAnchorHandle(handle)
+          logger.info('[VR] Saved persistent placement anchor')
+        } catch (err) {
+          logger.debug('[VR] Anchor persistent handle not available:', err)
+        }
+      }).catch(err => {
+        logger.warn('[VR] Failed to create placement anchor:', err)
+      })
     },
     onExit: () => {
       void session.end().catch(err =>
@@ -402,6 +463,23 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // does work while in Place mode; cheap when idle.
     if (active.placement && frame && active.refSpace) {
       active.placement.update(frame, active.refSpace)
+    }
+
+    // Sync globe position from the system-tracked anchor, if any.
+    // The anchor's anchorSpace is resolved in local-floor coords
+    // each frame — but critically, the system adjusts what
+    // "(anchor.x, anchor.y, anchor.z)" means as local-floor gets
+    // re-based, so the globe stays bolted to the real surface. Lift
+    // offset keeps the visible bottom resting on the surface.
+    if (currentAnchor && frame && active.refSpace) {
+      const anchorPose = frame.getPose(currentAnchor.anchorSpace, active.refSpace)
+      if (anchorPose) {
+        active.scene.globe.position.set(
+          anchorPose.transform.position.x,
+          anchorPose.transform.position.y + 0.5, // PLACE_LIFT_Y from vrPlacement
+          anchorPose.transform.position.z,
+        )
+      }
     }
 
     // Swap the dataset texture if the app loaded/changed something
@@ -468,6 +546,14 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       a.scene.scene.remove(a.placement.reticleGroup)
       a.scene.scene.remove(a.placement.placeButtonMesh)
       a.placement.dispose()
+    }
+    // Anchors are bound to the XR session; deleting is optional
+    // (they're implicitly cleaned up when the session ends) but
+    // explicit disposal avoids a brief "still tracked" state if
+    // anything else held a reference.
+    if (currentAnchor) {
+      try { currentAnchor.delete() } catch { /* already gone */ }
+      currentAnchor = null
     }
     a.scene.dispose()
     a.renderer.dispose()
