@@ -80,7 +80,7 @@ export interface VrHudHandle {
 
 /**
  * Draw the HUD contents into a 2D canvas. Called every time state
- * changes — cheap enough at this resolution (1024 × 205) that we
+ * changes — cheap enough at this resolution (1024 × 256) that we
  * don't bother with partial redraws.
  */
 function drawCanvas(

@@ -120,11 +120,15 @@ const ATMOSPHERE_OUTER_RADIUS = GLOBE_RADIUS * 1.012
 const ATMOSPHERE_SEGMENTS = 64
 
 /**
- * Sun sprite placement (VR mode only — AR mode has the user's real
- * room as backdrop, a glowing disc floating in it would be odd).
- * Positioned at `globe.position + sunDir * SUN_DISTANCE` each frame
- * so it tracks the real subsolar direction and moves with the globe
- * when the globe is placed/translated.
+ * Sun sprite placement (visible in both VR and AR). Positioned at
+ * `globe.position + sunDir * SUN_DISTANCE` each frame so it tracks
+ * the real subsolar direction and moves with the globe when the
+ * globe is placed/translated. An earlier version gated this to
+ * VR-only out of concern that a glowing disc in a real room would
+ * look weird; in practice the atmosphere rim uses the same additive
+ * approach in AR and works fine, and users expect to SEE where the
+ * light is coming from as a spatial cue. Showing the sun in both
+ * modes is consistent with that.
  *
  * Angular size at arm's-length viewing: core ≈ 1.7° (readable as
  * "a sun" without dominating the view), glow halo ≈ 8.5° (a soft

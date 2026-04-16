@@ -1136,10 +1136,10 @@ class InteractiveSphere {
    * other panels keep rendering in 2D behind the scenes.
    *
    * Both image and video datasets are supported: image datasets
-   * resolve to a static URL that vrScene loads via Three.js'
-   * TextureLoader (browser HTTP cache hits when the 2D loader has
-   * already fetched the same URL); video datasets reuse the
-   * existing HLS `<video>` element directly.
+   * reuse the primary panel's already-decoded `HTMLImageElement`
+   * (stored in `panelStates[slot].image` after `loadImageDataset`
+   * returns), so VR doesn't re-fetch or re-decode the bytes;
+   * video datasets reuse the existing HLS `<video>` element.
    */
   private async initVrButton(): Promise<void> {
     await initVrButton({
