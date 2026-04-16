@@ -271,19 +271,105 @@ room instead of a dark void.
 - Quest Pro: color passthrough
 - All use the same `immersive-ar` WebXR API
 
-**Polish items (follow-up commits after basic passthrough):**
+**Spatial placement — putting the globe on your table.**
+
+This is the polish item that turns AR mode from "globe floats in
+front of me" into "SOS sphere sitting on my kitchen table." The
+WebXR `hit-test` feature ray-casts from the controller into the
+real-world geometry the headset has detected and returns a 3D pose
+where the ray meets a surface. We use that to place the globe.
+
+| WebXR feature | Quest 2 | Quest 3 / Pro | What it gives us |
+|---|---|---|---|
+| `hit-test` | ✅ | ✅ | Ray hits the room — get position + orientation on a real surface |
+| `anchors` | ✅ | ✅ | Persistent reference points that survive across sessions |
+| `plane-detection` | partial | ✅ | Auto-detected horizontal/vertical surfaces (tables, walls) |
+| `mesh-detection` | ❌ | ✅ | Full room mesh from depth sensors |
+
+For "globe on a table," **`hit-test` alone is enough**. The other
+three are progressive enhancements.
+
+**UX options — a real design call:**
+
+1. **Explicit "Place" mode** (most predictable). Tap a Place
+   button on the HUD → reticle appears and follows the controller
+   ray onto room surfaces → trigger places the globe there → HUD
+   reverts to normal with a "Re-place" button available. Best for
+   museum-style use where a visitor places once and then explores.
+2. **Drag-to-translate** (uses existing input). Hold trigger on
+   the globe → translate with controller motion. Combined with
+   the existing two-hand pinch+rotate, gives full 6-DoF
+   manipulation. Fluid for individual users but easier to bump
+   out of place by accident.
+3. **Hybrid.** Drag-to-translate for fine adjustments, Place mode
+   for bulk repositioning across the room.
+
+Recommend **Option 1** for the first cut — predictable, no input-
+mode confusion, and matches how visitors naturally approach a
+new physical exhibit (place it, then explore).
+
+**Implementation sketch:**
+
+```ts
+// Request hit-test alongside local-floor on AR session entry
+const session = await navigator.xr.requestSession('immersive-ar', {
+  requiredFeatures: ['local-floor', 'hit-test'],
+  optionalFeatures: ['anchors'],
+})
+const viewerSpace = await session.requestReferenceSpace('viewer')
+const hitTestSource = await session.requestHitTestSource({ space: viewerSpace })
+
+// Per frame in placement mode:
+const hits = frame.getHitTestResults(hitTestSource)
+if (hits.length > 0) {
+  reticle.position.copy(hits[0].getPose(refSpace).transform.position)
+  reticle.visible = true
+}
+// On user trigger in placement mode:
+globe.position.copy(reticle.position)
+globe.position.y += 0.05  // lift slightly so globe rests on top
+```
+
+**Globe placement details:**
+- Lift the globe by ~5 cm above the hit point so it visually rests
+  on top of the surface instead of intersecting it.
+- HUD stays user-anchored (gaze-relative) so controls are always
+  accessible regardless of where the globe sits in the room.
+- Default position when not placed = current `(0, 1.3, -1.5)` — fine
+  for VR mode and for AR before first placement.
+
+**Persistent anchors:**
+After placement, `await hit.createAnchor()` creates a persistent
+anchor the system tracks across frames and (with the right scope)
+across sessions. The globe stays on your table when you exit and
+re-enter VR — exit at lunch, come back after dinner, globe is
+still there. Quest's tracking is good enough that this works
+reliably in well-lit rooms. First version: in-session memory
+only. Persistence is a clean follow-up commit.
+
+**Effort:**
+
+| Piece | LOC est. |
+|---|---|
+| Hit-test request + per-frame reticle | ~80 |
+| "Place" mode via HUD button + state machine | ~50 |
+| Lift offset + landing animation | ~30 |
+| Persistent anchors (cross-session) | ~80 |
+| Plane detection (Quest 3 — snap to detected table surfaces) | ~100 |
+
+Basic placement (place mode + reticle, no persistence) is one
+focused ~160-LOC commit.
+
+**Other polish items:**
 
 - **Ground shadow.** A subtle transparent plane with a radial
-  gradient beneath the globe. Helps the globe feel spatially anchored
-  in the room rather than pasted on.
-- **Placement via hit-test.** Instead of a fixed position at
-  `(0, 1.3, -1.5)`, let the user point at a spot in their room and
-  "place" the globe there using the WebXR `hit-test` feature. Very
-  SOS-like — pick where your virtual sphere goes.
-- **Lighting estimation.** WebXR's `lighting-estimation` feature can
-  match virtual lighting to room lighting so the globe's shading
-  responds to the real environment. Optional feature, not widely
-  supported yet — treat as aspirational.
+  gradient beneath the globe — helps it feel spatially anchored
+  in the room rather than pasted on. Especially useful before
+  placement is done. ~30 LOC.
+- **Lighting estimation.** WebXR's `lighting-estimation` feature
+  can match virtual lighting to room lighting so the globe's
+  shading responds to the real environment. Optional feature,
+  not widely supported yet — treat as aspirational.
 
 ### Phase 2.2 — controller tooltips (button affordance hints)
 
