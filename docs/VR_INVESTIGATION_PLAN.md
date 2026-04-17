@@ -3,7 +3,7 @@
 Feasibility investigation for running Interactive Sphere as an immersive
 web experience on Meta Quest (and other WebXR-capable) headsets.
 
-Status: **MVP + Phase 2 + Phase 2.1/2.2 shipped.** Feature-gated
+Status: **MVP + Phase 2 + Phase 2.1/2.2 + Phase 2.5 shipped.** Feature-gated
 "Enter AR" / "Enter VR" button opens an immersive WebXR session
 that renders the currently-loaded dataset (or a photoreal
 day/night Earth with atmosphere, clouds, night lights, specular,
@@ -491,7 +491,7 @@ Index controllers without per-device code.
 Basic version (always-on labels + Quest Touch) is one small commit.
 Polish (fade + toggle + cross-device) follows as separate commits.
 
-### Phase 2.5 — multi-globe layout (parity with 2D viewport manager)
+### Phase 2.5 — multi-globe layout (parity with 2D viewport manager) ✅ *(2-globe arc shipped: per-frame layout sync, promote-to-primary on non-primary tap, HUD panel-indicator strip; 4-globe is a stretch post on-device validation)*
 
 The 2D app already supports 1/2/4 synchronised globes via
 `src/services/viewportManager.ts` — camera lockstep, a "primary"
