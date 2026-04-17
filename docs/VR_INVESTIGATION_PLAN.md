@@ -3,7 +3,7 @@
 Feasibility investigation for running Interactive Sphere as an immersive
 web experience on Meta Quest (and other WebXR-capable) headsets.
 
-Status: **MVP + Phase 2 + Phase 2.1/2.2 shipped.** Feature-gated
+Status: **MVP + Phase 2 + Phase 2.1/2.2 + Phase 2.5 shipped.** Feature-gated
 "Enter AR" / "Enter VR" button opens an immersive WebXR session
 that renders the currently-loaded dataset (or a photoreal
 day/night Earth with atmosphere, clouds, night lights, specular,
@@ -491,7 +491,7 @@ Index controllers without per-device code.
 Basic version (always-on labels + Quest Touch) is one small commit.
 Polish (fade + toggle + cross-device) follows as separate commits.
 
-### Phase 2.5 — multi-globe layout (parity with 2D viewport manager)
+### Phase 2.5 — multi-globe layout (parity with 2D viewport manager) ✅ *(2-globe arc shipped: per-frame layout sync, promote-to-primary on non-primary tap, HUD panel-indicator strip; 4-globe is a stretch post on-device validation)*
 
 The 2D app already supports 1/2/4 synchronised globes via
 `src/services/viewportManager.ts` — camera lockstep, a "primary"
@@ -548,6 +548,37 @@ rendering leaves less headroom. **Ship 2-globe support first; treat
 - `attachPrimaryVideoSync` — already does all the hard work of
   keeping sibling videos in time. The VR scene binds VideoTextures
   to already-synced videos, so VR doesn't need its own sync logic.
+
+**Commit sequence (branch: `claude/vr-multi-globe-phase-2.5`):**
+
+Decisions baked in before the first code change:
+
+- **Layout: arc** — matches the 2D side-by-side grid's spiritual
+  model and is the path of least surprise for users who already
+  use the 2-globe view in 2D. Diorama / primary+companions
+  remain as future-polish alternatives.
+- **Sync model: independent rotate + shared time** — each globe
+  can be grabbed and rotated independently, but playback state
+  (play/pause/scrub) affects all. Feels more natural in VR where
+  you can physically look at one globe without the other spinning.
+- **Ship 2-globe first.** 4-globe is documented above as
+  aspirational pending Quest decoder-budget testing; first
+  release validates the architecture at 2 before attempting 4.
+
+Commit breakdown:
+
+| # | Commit | Scope |
+|---|---|---|
+| 1 | Plan doc: Phase 2.5 commit breakdown | This table |
+| 2 | `vrScene: support N globes internally` | Internal refactor — single globe → array of globes. All existing code paths use index 0 as primary. No user-visible change when panelCount is 1. |
+| 3 | `VrSessionContext: multi-panel getters` | `getPanelCount()`, `getPrimaryIndex()`, `getPanelTexture(slot)`, `getPanelTitle(slot)` — main.ts wires to existing `viewports` + `panelStates` |
+| 4 | `vrSession: arc layout + per-slot texture sync` | Per-frame poll of panel count + textures. 2-globe arc: globes at `(±0.9, 1.3, -1.5)`, slight inward rotation |
+| 5 | `vrInteraction: promote-to-primary` | Trigger on non-primary globe fires `onPromotePanel(slot)` callback; main.ts forwards to `viewports.setPrimaryIndex()` |
+| 6 | `vrHud: primary-aware panel indicator strip` | Small dot strip showing panel count with primary highlighted; dataset title reflects primary |
+
+Commits 2-4 are the "visible 2-globe arc" milestone. 5-6 add
+interaction + UI polish. 4-globe is a stretch commit 7 after
+on-device validation.
 
 ### Phase 3 — in-VR dataset switching
 - Floating browse panel rendered as a CanvasTexture with dataset

@@ -36,19 +36,46 @@ import { logger } from '../utils/logger'
  */
 export interface VrSessionContext {
   /**
-   * The currently-loaded dataset's surface texture, in whichever
-   * form the 2D app has it: video element for HLS streams, URL for
-   * static image datasets, or null when nothing is loaded.
+   * The currently-loaded dataset's surface texture for the PRIMARY
+   * panel. Backward-compatible convenience that equals
+   * `getPanelTexture(getPrimaryIndex())`. Kept for single-globe
+   * callers that don't care about the multi-panel model.
    */
   getDatasetTexture(): VrDatasetTexture | null
-  /** Dataset title for the HUD; null/empty → "No dataset loaded". */
+  /** Dataset title for the HUD (primary panel). null/empty → "No dataset loaded". */
   getDatasetTitle(): string | null
-  /** True iff a video dataset is loaded — drives the HUD play/pause button visibility. */
+  /** True iff a video dataset is loaded on the primary — drives the HUD play/pause button visibility. */
   hasVideoDataset(): boolean
-  /** Drives the HUD play/pause icon. No-op for image datasets. */
+  /** Drives the HUD play/pause icon. Reflects the primary panel's state. */
   isPlaying(): boolean
-  /** Called when the user taps play/pause in VR. No-op for image datasets. */
+  /** Called when the user taps play/pause in VR. Toggles the primary's video. */
   togglePlayPause(): void
+
+  // --- Phase 2.5 multi-panel getters ---
+  //
+  // These let vrSession mirror the 2D app's viewport manager
+  // inside VR. When the 2D app is in 2-globe layout, `getPanelCount`
+  // returns 2, each panel has its own texture / title, and one
+  // slot is designated primary (drives the HUD + playback
+  // transport). Hitting a non-primary globe in VR promotes its
+  // slot via `promotePanel` (Phase 2.5 commit 5).
+
+  /** Current number of globe panels (1/2/4). Sourced from the 2D viewport manager. */
+  getPanelCount(): number
+  /** Which slot is currently primary — drives the HUD + singular playback transport. */
+  getPrimaryIndex(): number
+  /** Dataset texture for a specific slot, or null if no dataset loaded in that slot. */
+  getPanelTexture(slot: number): VrDatasetTexture | null
+  /** Dataset title for a specific slot, for per-panel labels; null if no dataset. */
+  getPanelTitle(slot: number): string | null
+  /**
+   * Promote a slot to primary. Called by vrInteraction when the
+   * user taps a non-primary globe. The 2D app's viewportManager
+   * owns the primary-index state; this callback forwards the
+   * change so both sides stay in sync.
+   */
+  promotePanel(slot: number): void
+
   /** Optional — fired after the session ends + resources are torn down. */
   onSessionEnd?: () => void
 }
@@ -94,6 +121,30 @@ let active: ActiveSession | null = null
 /** True while a VR session is live. */
 export function isVrActive(): boolean {
   return active !== null
+}
+
+/**
+ * Push the non-primary panels' textures into scene slots 1..N-1.
+ * Scene slot 0 holds the 2D app's primary panel (set via
+ * `scene.setTexture`); the remaining scene slots are filled from the
+ * 2D panel list in order, skipping the primary index. Separated so
+ * the initial-setup path and the per-frame poll path stay in sync.
+ */
+function syncSecondaryTextures(
+  scene: VrSceneHandle,
+  ctx: VrSessionContext,
+  panelCount: number,
+): void {
+  if (panelCount <= 1) return
+  const primary = ctx.getPrimaryIndex()
+  let sceneSlot = 1
+  for (let panelSlot = 0; panelSlot < panelCount; panelSlot++) {
+    if (panelSlot === primary) continue
+    const tex = ctx.getPanelTexture(panelSlot)
+    logger.debug(`[VR] syncSecondary: panel ${panelSlot} → scene slot ${sceneSlot}, tex=${tex?.kind ?? 'null'}`)
+    scene.setSlotTexture(sceneSlot, tex)
+    sceneSlot++
+  }
 }
 
 /** Which immersive mode to enter. `vr` = full immersive, `ar` = passthrough. */
@@ -343,7 +394,22 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
    * and call loading.fadeOut() on an already-disposed handle.
    */
   let fadeTimeoutId: ReturnType<typeof setTimeout> | null = null
-  scene.setTexture(ctx.getDatasetTexture(), () => {
+  // Mirror the 2D app's viewport layout inside VR. Count=1 is the
+  // backward-compatible single-globe path; count=2/4 builds the arc
+  // with secondary globes. Scene slot 0 always holds the 2D app's
+  // *primary* panel (drives the photoreal stack + HUD + loading
+  // fade-out); scene slots 1..N hold the non-primary panels in 2D
+  // order. When the user taps a non-primary globe in VR, Phase 2.5
+  // commit 5 promotes it — the 2D app's primary-index shifts, and
+  // next frame the scene's slot 0 reflects the new primary.
+  const initialPanelCount = ctx.getPanelCount()
+  logger.info(`[VR] Panel count from 2D app: ${initialPanelCount}, primary: ${ctx.getPrimaryIndex()}`)
+  scene.setPanelCount(initialPanelCount)
+  logger.info(`[VR] allGlobes after setPanelCount: ${scene.allGlobes.length}`)
+  syncSecondaryTextures(scene, ctx, initialPanelCount)
+  const primaryTex = ctx.getDatasetTexture()
+  logger.info(`[VR] Primary texture kind: ${primaryTex?.kind ?? 'null'}`)
+  scene.setTexture(primaryTex, () => {
     // Idempotent — a follow-up texture swap could re-fire this;
     // we only want to drive the fade once per session.
     if (loadingFinalized) return
@@ -379,6 +445,8 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     datasetTitle: ctx.getDatasetTitle(),
     isPlaying: ctx.isPlaying(),
     hasVideo: ctx.hasVideoDataset(),
+    panelCount: ctx.getPanelCount(),
+    primaryIndex: ctx.getPrimaryIndex(),
   })
 
   // XRControllerModelFactory was imported earlier (before scene
@@ -387,6 +455,29 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   const interaction = createVrInteraction(THREE_, XRControllerModelFactory, {
     scene: scene.scene,
     globe: scene.globe,
+    // Scene slot 0 holds the 2D primary; slots 1..N hold non-primaries
+    // in 2D order, skipping the primary index. Mirror that mapping
+    // when reporting slot indices back to vrInteraction so the
+    // promote callback carries a 2D-space slot number.
+    getAllGlobes: () => scene.allGlobes,
+    getGlobeSlot: (mesh) => {
+      const globes = scene.allGlobes
+      const sceneSlot = globes.indexOf(mesh)
+      if (sceneSlot < 0) return -1
+      const primary = ctx.getPrimaryIndex()
+      if (sceneSlot === 0) return primary
+      // Secondary scene slots 1..N → non-primary panels in 2D order,
+      // skipping the primary. Same mapping as syncSecondaryTextures.
+      const panelCount = ctx.getPanelCount()
+      let walk = 0
+      for (let panelSlot = 0; panelSlot < panelCount; panelSlot++) {
+        if (panelSlot === primary) continue
+        walk++
+        if (walk === sceneSlot) return panelSlot
+      }
+      return -1
+    },
+    getPrimaryIndex: () => ctx.getPrimaryIndex(),
     hud,
     placement,
     renderer,
@@ -454,6 +545,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       void session.end().catch(err =>
         logger.warn('[VR] session.end() from grip failed:', err),
       )
+    },
+    onPromotePanel: (slot) => {
+      logger.info(`[VR] Promoting panel slot ${slot} to primary`)
+      ctx.promotePanel(slot)
     },
   })
 
@@ -534,8 +629,14 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // Swap the dataset texture if the app loaded/changed something
     // while we're in VR. The scene's setTexture is internally
     // debounced (compares against its own active key) so polling
-    // every frame is cheap in the steady state.
+    // every frame is cheap in the steady state. Also mirror the
+    // 2D viewport's panel count + per-slot textures — setPanelCount
+    // is idempotent when the count hasn't changed, and per-slot
+    // setSlotTexture shares the same debounce path as the primary.
+    const panelCount = ctx.getPanelCount()
+    active.scene.setPanelCount(panelCount)
     active.scene.setTexture(ctx.getDatasetTexture())
+    syncSecondaryTextures(active.scene, ctx, panelCount)
 
     // HUD reflects the latest app state every frame. setState is
     // internally debounced — it only redraws when a field changes.
@@ -543,6 +644,8 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       datasetTitle: ctx.getDatasetTitle(),
       isPlaying: ctx.isPlaying(),
       hasVideo: ctx.hasVideoDataset(),
+      panelCount,
+      primaryIndex: ctx.getPrimaryIndex(),
     })
 
     active.interaction.update(delta)
