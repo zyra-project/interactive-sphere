@@ -439,6 +439,8 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     datasetTitle: ctx.getDatasetTitle(),
     isPlaying: ctx.isPlaying(),
     hasVideo: ctx.hasVideoDataset(),
+    panelCount: ctx.getPanelCount(),
+    primaryIndex: ctx.getPrimaryIndex(),
   })
 
   // XRControllerModelFactory was imported earlier (before scene
@@ -640,6 +642,8 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       datasetTitle: ctx.getDatasetTitle(),
       isPlaying: ctx.isPlaying(),
       hasVideo: ctx.hasVideoDataset(),
+      panelCount,
+      primaryIndex: ctx.getPrimaryIndex(),
     })
 
     active.interaction.update(delta)
