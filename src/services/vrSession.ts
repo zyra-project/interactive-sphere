@@ -123,6 +123,28 @@ export function isVrActive(): boolean {
   return active !== null
 }
 
+/**
+ * Push the non-primary panels' textures into scene slots 1..N-1.
+ * Scene slot 0 holds the 2D app's primary panel (set via
+ * `scene.setTexture`); the remaining scene slots are filled from the
+ * 2D panel list in order, skipping the primary index. Separated so
+ * the initial-setup path and the per-frame poll path stay in sync.
+ */
+function syncSecondaryTextures(
+  scene: VrSceneHandle,
+  ctx: VrSessionContext,
+  panelCount: number,
+): void {
+  if (panelCount <= 1) return
+  const primary = ctx.getPrimaryIndex()
+  let sceneSlot = 1
+  for (let panelSlot = 0; panelSlot < panelCount; panelSlot++) {
+    if (panelSlot === primary) continue
+    scene.setSlotTexture(sceneSlot, ctx.getPanelTexture(panelSlot))
+    sceneSlot++
+  }
+}
+
 /** Which immersive mode to enter. `vr` = full immersive, `ar` = passthrough. */
 export type VrMode = 'vr' | 'ar'
 
@@ -370,6 +392,17 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
    * and call loading.fadeOut() on an already-disposed handle.
    */
   let fadeTimeoutId: ReturnType<typeof setTimeout> | null = null
+  // Mirror the 2D app's viewport layout inside VR. Count=1 is the
+  // backward-compatible single-globe path; count=2/4 builds the arc
+  // with secondary globes. Scene slot 0 always holds the 2D app's
+  // *primary* panel (drives the photoreal stack + HUD + loading
+  // fade-out); scene slots 1..N hold the non-primary panels in 2D
+  // order. When the user taps a non-primary globe in VR, Phase 2.5
+  // commit 5 promotes it — the 2D app's primary-index shifts, and
+  // next frame the scene's slot 0 reflects the new primary.
+  const initialPanelCount = ctx.getPanelCount()
+  scene.setPanelCount(initialPanelCount)
+  syncSecondaryTextures(scene, ctx, initialPanelCount)
   scene.setTexture(ctx.getDatasetTexture(), () => {
     // Idempotent — a follow-up texture swap could re-fire this;
     // we only want to drive the fade once per session.
@@ -561,8 +594,14 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // Swap the dataset texture if the app loaded/changed something
     // while we're in VR. The scene's setTexture is internally
     // debounced (compares against its own active key) so polling
-    // every frame is cheap in the steady state.
+    // every frame is cheap in the steady state. Also mirror the
+    // 2D viewport's panel count + per-slot textures — setPanelCount
+    // is idempotent when the count hasn't changed, and per-slot
+    // setSlotTexture shares the same debounce path as the primary.
+    const panelCount = ctx.getPanelCount()
+    active.scene.setPanelCount(panelCount)
     active.scene.setTexture(ctx.getDatasetTexture())
+    syncSecondaryTextures(active.scene, ctx, panelCount)
 
     // HUD reflects the latest app state every frame. setState is
     // internally debounced — it only redraws when a field changes.
