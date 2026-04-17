@@ -976,8 +976,10 @@ export function createVrScene(
 
   /**
    * Reposition all globes (primary + secondaries) according to the
-   * arc layout. Called when panel count changes or when we need
-   * the positions refreshed.
+   * arc layout. Called when panel count changes or when we need the
+   * positions refreshed. After the initial placement, secondaries
+   * track the primary via `syncSecondaryPositions()` each frame —
+   * this function only runs on panel-count changes.
    */
   function layoutArc(): void {
     const total = 1 + secondaries.length
@@ -986,6 +988,36 @@ export function createVrScene(
     for (let i = 0; i < secondaries.length; i++) {
       const pos = arcPosition(i + 1, total)
       secondaries[i].mesh.position.set(pos.x, pos.y, pos.z)
+    }
+  }
+
+  /**
+   * Reposition secondaries relative to the primary's current
+   * position. When the primary moves (user placed the globe on an
+   * AR surface, or an anchor-pose sync wrote into globe.position),
+   * the arc must translate with it so the whole layout stays in
+   * view together. Called every frame from update().
+   *
+   * Offset = arc-slot-(i+1) − arc-slot-0 in the nominal layout
+   * (both read from GLOBE_POSITION-relative coords). Scaled by the
+   * primary's uniform scale so pinch-zoomed globes widen/narrow
+   * their inter-globe gap to match.
+   */
+  const syncSecondaryPositionsScratch = new THREE_.Vector3()
+  function syncSecondaryPositions(): void {
+    if (secondaries.length === 0) return
+    const total = 1 + secondaries.length
+    const pos0 = arcPosition(0, total)
+    const s = globe.scale.x
+    for (let i = 0; i < secondaries.length; i++) {
+      const pos = arcPosition(i + 1, total)
+      syncSecondaryPositionsScratch.set(
+        (pos.x - pos0.x) * s,
+        (pos.y - pos0.y) * s,
+        (pos.z - pos0.z) * s,
+      )
+      syncSecondaryPositionsScratch.add(globe.position)
+      secondaries[i].mesh.position.copy(syncSecondaryPositionsScratch)
     }
   }
 
@@ -1312,11 +1344,14 @@ export function createVrScene(
         sunGlowSprite.position.copy(sunWorldPosScratch)
       }
 
-      // Secondary globes: sync rotation + shadow position/scale.
-      // Rotation copies the primary so all globes spin in tandem
-      // when the user grab-rotates — SOS datasets share the same
-      // geographic projection, so keeping quaternions locked means
-      // corresponding lat/lng lines stay aligned across the arc.
+      // Secondary globes: position tracks the primary (critical in
+      // AR — when the user anchors the primary to a real surface,
+      // the secondaries must translate with it), rotation + scale
+      // mirror the primary so all globes spin in tandem and
+      // pinch-zoom together. SOS datasets share the same geographic
+      // projection, so locked quaternions keep corresponding lat/lng
+      // lines aligned across the arc.
+      syncSecondaryPositions()
       for (const sg of secondaries) {
         sg.mesh.quaternion.copy(globe.quaternion)
         sg.mesh.scale.copy(globe.scale)
