@@ -541,11 +541,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       )
     },
     onPromotePanel: (slot) => {
-      // Forward to the hosting app's viewport manager — that's the
-      // source of truth for primary-slot state. Next frame, the
-      // render loop's setPanelCount + syncSecondaryTextures poll
-      // picks up the new primary-index and remaps scene slot 0 to
-      // the newly-promoted panel.
+      logger.info(`[VR] Promoting panel slot ${slot} to primary`)
       ctx.promotePanel(slot)
     },
   })

@@ -851,6 +851,15 @@ export function createVrScene(
       baseDiffuseTexture = tex
       material.map = tex
       material.needsUpdate = true
+      // Upgrade any secondary globes that are still showing the base
+      // Earth (no dataset loaded on their slot) — they were created
+      // with whatever diffuse tier was available at the time.
+      for (const sg of secondaries) {
+        if (sg.activeKey === null) {
+          sg.material.map = tex
+          sg.material.needsUpdate = true
+        }
+      }
     },
     'earth diffuse',
   )
@@ -919,7 +928,7 @@ export function createVrScene(
   /** Build a simple secondary globe — basic Phong, no shader patches. */
   function createSecondaryGlobe(): SecondaryGlobe {
     const mat = new THREE_.MeshPhongMaterial({
-      map: baseEarthTexture,
+      map: baseDiffuseTexture ?? baseEarthTexture,
       specular: new THREE_.Color(0x444444),
       shininess: 30,
     })
@@ -1033,7 +1042,7 @@ export function createVrScene(
       }
 
       if (!spec) {
-        sg.material.map = baseEarthTexture
+        sg.material.map = baseDiffuseTexture ?? baseEarthTexture
         sg.activeKey = null
         sg.material.needsUpdate = true
         onReady?.()
@@ -1050,7 +1059,7 @@ export function createVrScene(
           sg.material.needsUpdate = true
           onReady?.()
         } else {
-          sg.material.map = baseEarthTexture
+          sg.material.map = baseDiffuseTexture ?? baseEarthTexture
           const onFrame = () => {
             sg.cancelPendingVideoListeners = null
             if (sg.activeKey !== spec.element) return
@@ -1303,9 +1312,14 @@ export function createVrScene(
         sunGlowSprite.position.copy(sunWorldPosScratch)
       }
 
-      // Secondary globes: sync shadow position + scale to each
-      // secondary's mesh (same pattern as the primary shadow above).
+      // Secondary globes: sync rotation + shadow position/scale.
+      // Rotation copies the primary so all globes spin in tandem
+      // when the user grab-rotates — SOS datasets share the same
+      // geographic projection, so keeping quaternions locked means
+      // corresponding lat/lng lines stay aligned across the arc.
       for (const sg of secondaries) {
+        sg.mesh.quaternion.copy(globe.quaternion)
+        sg.mesh.scale.copy(globe.scale)
         const s = sg.mesh.scale.x
         sg.shadow.scale.set(s, s, 1)
         sg.shadow.position.set(
