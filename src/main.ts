@@ -382,18 +382,28 @@ class InteractiveSphere {
     const dataset = dataService.getDatasetById(datasetId)
     if (!dataset) throw new Error(`Dataset not found: ${datasetId}`)
 
+    // Pin the target slot + its renderer once, at the very start. Both
+    // must stay fixed for the lifetime of this call — the awaits below
+    // span image decode / HLS manifest fetches, during which the user
+    // can promote a different panel to primary. Reading `this.renderer`
+    // (a live getter over the primary) after an await would then apply
+    // the new dataset's texture to a different panel than the one we
+    // recorded in `panelStates`, leaving the two in disagreement and
+    // letting a single load bleed across globes.
+    const targetSlot = this.viewports.getPrimaryIndex()
+    const targetRenderer = this.viewports.getRendererAt(targetSlot)
+    if (!targetRenderer) throw new Error('Renderer not initialized')
+
     this.appState.currentDataset = dataset
-    // Record on the primary panel's state so onPrimaryChange later
-    // knows what's loaded where.
-    const primaryIdx = this.viewports.getPrimaryIndex()
-    if (this.panelStates[primaryIdx]) {
-      this.panelStates[primaryIdx].dataset = dataset
+    if (this.panelStates[targetSlot]) {
+      this.panelStates[targetSlot].dataset = dataset
     }
 
     logger.info('[App] Loading dataset:', {
       id: dataset.id,
       title: dataset.title,
       format: dataset.format,
+      slot: targetSlot,
       hasTimeData: !!(dataset.startTime && dataset.endTime)
     })
 
@@ -403,8 +413,6 @@ class InteractiveSphere {
     this.renderInfoPanel()
     this.refreshPanelLegends()
 
-    if (!this.renderer) throw new Error('Renderer not initialized')
-
     const loaderCallbacks = {
       showPlaybackControls: (show: boolean) => this.showPlaybackControls(show),
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
@@ -412,28 +420,28 @@ class InteractiveSphere {
 
     // Show a per-panel loading overlay so the user sees "Loading…"
     // instead of the confusing Blue Marble intermediate state.
-    this.viewports.setPanelLoading(primaryIdx, true, `Loading ${dataset.title}\u2026`)
+    this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
     if (dataset.format === 'tour/json') {
-      this.viewports.setPanelLoading(primaryIdx, false)
+      this.viewports.setPanelLoading(targetSlot, false)
       this.tourIsStandalone = true
       await this.startTour(dataset.dataLink, gen)
       return
     } else if (dataService.isImageDataset(dataset)) {
-      const img = await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
-      this.viewports.setPanelLoading(primaryIdx, false)
+      const img = await loadImageDataset(dataset, targetRenderer, this.appState, this.isMobile, loaderCallbacks)
+      this.viewports.setPanelLoading(targetSlot, false)
       if (gen !== this.loadGeneration) return
-      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = img
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
     } else if (dataService.isVideoDataset(dataset)) {
       // Clear any previously-cached image element for this slot —
       // if the user just switched from an image dataset to a video
       // dataset, the old decoded image is no longer referenced and
       // should be released so its backing bytes can be GC'd.
-      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = null
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
       const result = await loadVideoDataset(
-        dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
+        dataset, targetRenderer, this.appState, this.isMobile, this.playback, loaderCallbacks
       )
-      this.viewports.setPanelLoading(primaryIdx, false)
+      this.viewports.setPanelLoading(targetSlot, false)
       // If a newer load started while we were awaiting, discard these results.
       // Don't dispose videoTexture here — setVideoTexture already placed it on
       // the sphere material, so the next load's setVideoTexture will replace it.
@@ -441,7 +449,7 @@ class InteractiveSphere {
         result.hlsService.destroy()
         return
       }
-      this.storePanelVideoResult(this.viewports.getPrimaryIndex(), result)
+      this.storePanelVideoResult(targetSlot, result)
       this.attachPrimaryVideoSync()
       this.doStartPlaybackLoop()
     } else {
