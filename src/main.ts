@@ -362,9 +362,10 @@ class InteractiveSphere {
       this.showHomeButton()
       logger.debug('[App] loadDataset complete:', datasetId)
     } catch (error) {
-      // Clear the loading overlay on the primary panel regardless of
-      // whether the load was superseded or genuinely failed.
-      this.viewports.setPanelLoading(this.viewports.getPrimaryIndex(), false)
+      // displayDataset clears its own loading overlay via a
+      // try/finally scoped to the slot it pinned at entry, so we
+      // don't need to touch it here — doing so risks clearing the
+      // wrong panel if the user promoted a different slot mid-load.
       if (gen !== this.loadGeneration) {
         logger.debug('[App] loadDataset superseded (error ignored):', datasetId)
         this.cleanupVideo()
@@ -419,41 +420,49 @@ class InteractiveSphere {
     }
 
     // Show a per-panel loading overlay so the user sees "Loading…"
-    // instead of the confusing Blue Marble intermediate state.
+    // instead of the confusing Blue Marble intermediate state. Wrap
+    // the whole async body in try/finally so the overlay always
+    // clears on the slot we pinned — even if the load throws and
+    // even if the user promotes a different panel mid-flight.
     this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
-    if (dataset.format === 'tour/json') {
-      this.viewports.setPanelLoading(targetSlot, false)
-      this.tourIsStandalone = true
-      await this.startTour(dataset.dataLink, gen)
-      return
-    } else if (dataService.isImageDataset(dataset)) {
-      const img = await loadImageDataset(dataset, targetRenderer, this.appState, this.isMobile, loaderCallbacks)
-      this.viewports.setPanelLoading(targetSlot, false)
-      if (gen !== this.loadGeneration) return
-      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
-    } else if (dataService.isVideoDataset(dataset)) {
-      // Clear any previously-cached image element for this slot —
-      // if the user just switched from an image dataset to a video
-      // dataset, the old decoded image is no longer referenced and
-      // should be released so its backing bytes can be GC'd.
-      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
-      const result = await loadVideoDataset(
-        dataset, targetRenderer, this.appState, this.isMobile, this.playback, loaderCallbacks
-      )
-      this.viewports.setPanelLoading(targetSlot, false)
-      // If a newer load started while we were awaiting, discard these results.
-      // Don't dispose videoTexture here — setVideoTexture already placed it on
-      // the sphere material, so the next load's setVideoTexture will replace it.
-      if (gen !== this.loadGeneration) {
-        result.hlsService.destroy()
+    try {
+      if (dataset.format === 'tour/json') {
+        this.tourIsStandalone = true
+        await this.startTour(dataset.dataLink, gen)
         return
+      } else if (dataService.isImageDataset(dataset)) {
+        const img = await loadImageDataset(dataset, targetRenderer, this.appState, this.isMobile, loaderCallbacks)
+        if (gen !== this.loadGeneration) return
+        if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
+      } else if (dataService.isVideoDataset(dataset)) {
+        // Clear any previously-cached image element for this slot —
+        // if the user just switched from an image dataset to a video
+        // dataset, the old decoded image is no longer referenced and
+        // should be released so its backing bytes can be GC'd.
+        if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
+        const result = await loadVideoDataset(
+          dataset, targetRenderer, this.appState, this.isMobile, this.playback, loaderCallbacks
+        )
+        // If a newer load started while we were awaiting, discard these results.
+        // Don't dispose videoTexture here — setVideoTexture already placed it on
+        // the sphere material, so the next load's setVideoTexture will replace it.
+        if (gen !== this.loadGeneration) {
+          result.hlsService.destroy()
+          return
+        }
+        this.storePanelVideoResult(targetSlot, result)
+        this.attachPrimaryVideoSync()
+        this.doStartPlaybackLoop()
+      } else {
+        throw new Error(`Unsupported format: ${dataset.format}`)
       }
-      this.storePanelVideoResult(targetSlot, result)
-      this.attachPrimaryVideoSync()
-      this.doStartPlaybackLoop()
-    } else {
-      throw new Error(`Unsupported format: ${dataset.format}`)
+    } finally {
+      // Guard against a superseded load hiding the newer load's
+      // overlay: only clear if we're still the most recent load.
+      if (gen === this.loadGeneration) {
+        this.viewports.setPanelLoading(targetSlot, false)
+      }
     }
 
     // Fetch and cache the legend image; generate a text description for non-vision mode.
