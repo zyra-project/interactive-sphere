@@ -362,9 +362,10 @@ class InteractiveSphere {
       this.showHomeButton()
       logger.debug('[App] loadDataset complete:', datasetId)
     } catch (error) {
-      // Clear the loading overlay on the primary panel regardless of
-      // whether the load was superseded or genuinely failed.
-      this.viewports.setPanelLoading(this.viewports.getPrimaryIndex(), false)
+      // displayDataset clears its own loading overlay via a
+      // try/finally scoped to the slot it pinned at entry, so we
+      // don't need to touch it here — doing so risks clearing the
+      // wrong panel if the user promoted a different slot mid-load.
       if (gen !== this.loadGeneration) {
         logger.debug('[App] loadDataset superseded (error ignored):', datasetId)
         this.cleanupVideo()
@@ -382,18 +383,28 @@ class InteractiveSphere {
     const dataset = dataService.getDatasetById(datasetId)
     if (!dataset) throw new Error(`Dataset not found: ${datasetId}`)
 
+    // Pin the target slot + its renderer once, at the very start. Both
+    // must stay fixed for the lifetime of this call — the awaits below
+    // span image decode / HLS manifest fetches, during which the user
+    // can promote a different panel to primary. Reading `this.renderer`
+    // (a live getter over the primary) after an await would then apply
+    // the new dataset's texture to a different panel than the one we
+    // recorded in `panelStates`, leaving the two in disagreement and
+    // letting a single load bleed across globes.
+    const targetSlot = this.viewports.getPrimaryIndex()
+    const targetRenderer = this.viewports.getRendererAt(targetSlot)
+    if (!targetRenderer) throw new Error('Renderer not initialized')
+
     this.appState.currentDataset = dataset
-    // Record on the primary panel's state so onPrimaryChange later
-    // knows what's loaded where.
-    const primaryIdx = this.viewports.getPrimaryIndex()
-    if (this.panelStates[primaryIdx]) {
-      this.panelStates[primaryIdx].dataset = dataset
+    if (this.panelStates[targetSlot]) {
+      this.panelStates[targetSlot].dataset = dataset
     }
 
     logger.info('[App] Loading dataset:', {
       id: dataset.id,
       title: dataset.title,
       format: dataset.format,
+      slot: targetSlot,
       hasTimeData: !!(dataset.startTime && dataset.endTime)
     })
 
@@ -403,49 +414,55 @@ class InteractiveSphere {
     this.renderInfoPanel()
     this.refreshPanelLegends()
 
-    if (!this.renderer) throw new Error('Renderer not initialized')
-
     const loaderCallbacks = {
       showPlaybackControls: (show: boolean) => this.showPlaybackControls(show),
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
     // Show a per-panel loading overlay so the user sees "Loading…"
-    // instead of the confusing Blue Marble intermediate state.
-    this.viewports.setPanelLoading(primaryIdx, true, `Loading ${dataset.title}\u2026`)
+    // instead of the confusing Blue Marble intermediate state. Wrap
+    // the whole async body in try/finally so the overlay always
+    // clears on the slot we pinned — even if the load throws and
+    // even if the user promotes a different panel mid-flight.
+    this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
-    if (dataset.format === 'tour/json') {
-      this.viewports.setPanelLoading(primaryIdx, false)
-      this.tourIsStandalone = true
-      await this.startTour(dataset.dataLink, gen)
-      return
-    } else if (dataService.isImageDataset(dataset)) {
-      const img = await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
-      this.viewports.setPanelLoading(primaryIdx, false)
-      if (gen !== this.loadGeneration) return
-      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = img
-    } else if (dataService.isVideoDataset(dataset)) {
-      // Clear any previously-cached image element for this slot —
-      // if the user just switched from an image dataset to a video
-      // dataset, the old decoded image is no longer referenced and
-      // should be released so its backing bytes can be GC'd.
-      if (this.panelStates[primaryIdx]) this.panelStates[primaryIdx].image = null
-      const result = await loadVideoDataset(
-        dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
-      )
-      this.viewports.setPanelLoading(primaryIdx, false)
-      // If a newer load started while we were awaiting, discard these results.
-      // Don't dispose videoTexture here — setVideoTexture already placed it on
-      // the sphere material, so the next load's setVideoTexture will replace it.
-      if (gen !== this.loadGeneration) {
-        result.hlsService.destroy()
+    try {
+      if (dataset.format === 'tour/json') {
+        this.tourIsStandalone = true
+        await this.startTour(dataset.dataLink, gen)
         return
+      } else if (dataService.isImageDataset(dataset)) {
+        const img = await loadImageDataset(dataset, targetRenderer, this.appState, this.isMobile, loaderCallbacks)
+        if (gen !== this.loadGeneration) return
+        if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
+      } else if (dataService.isVideoDataset(dataset)) {
+        // Clear any previously-cached image element for this slot —
+        // if the user just switched from an image dataset to a video
+        // dataset, the old decoded image is no longer referenced and
+        // should be released so its backing bytes can be GC'd.
+        if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
+        const result = await loadVideoDataset(
+          dataset, targetRenderer, this.appState, this.isMobile, this.playback, loaderCallbacks
+        )
+        // If a newer load started while we were awaiting, discard these results.
+        // Don't dispose videoTexture here — setVideoTexture already placed it on
+        // the sphere material, so the next load's setVideoTexture will replace it.
+        if (gen !== this.loadGeneration) {
+          result.hlsService.destroy()
+          return
+        }
+        this.storePanelVideoResult(targetSlot, result)
+        this.attachPrimaryVideoSync()
+        this.doStartPlaybackLoop()
+      } else {
+        throw new Error(`Unsupported format: ${dataset.format}`)
       }
-      this.storePanelVideoResult(this.viewports.getPrimaryIndex(), result)
-      this.attachPrimaryVideoSync()
-      this.doStartPlaybackLoop()
-    } else {
-      throw new Error(`Unsupported format: ${dataset.format}`)
+    } finally {
+      // Guard against a superseded load hiding the newer load's
+      // overlay: only clear if we're still the most recent load.
+      if (gen === this.loadGeneration) {
+        this.viewports.setPanelLoading(targetSlot, false)
+      }
     }
 
     // Fetch and cache the legend image; generate a text description for non-vision mode.
@@ -454,17 +471,22 @@ class InteractiveSphere {
     // Auto-start a tour if the dataset has one associated via runTourOnLoad.
     // Skip if a tour is already running (the tour engine triggered this load).
     // Failures are silently logged — the tour is optional, the dataset already loaded.
+    //
+    // Pin the tour to the slot we just loaded into. Legacy SOS tour
+    // JSON uses `worldIndex: 1` to mean "the current globe", which
+    // the tour engine would otherwise route to panel 1 and clobber
+    // whatever the user had there in a multi-globe layout.
     if (dataset.runTourOnLoad && gen === this.loadGeneration && !this.tourEngine) {
       const ref = dataset.runTourOnLoad
       try {
         if (ref.startsWith('http://') || ref.startsWith('https://') || ref.endsWith('.json')) {
           logger.info('[App] Auto-starting tour from runTourOnLoad URL:', ref)
-          await this.startTour(ref, gen)
+          await this.startTour(ref, gen, targetSlot)
         } else {
           const tourDataset = dataService.getDatasetById(ref)
           if (tourDataset && tourDataset.format === 'tour/json') {
             logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
-            await this.startTour(tourDataset.dataLink, gen)
+            await this.startTour(tourDataset.dataLink, gen, targetSlot)
           } else {
             logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
           }
@@ -604,8 +626,20 @@ class InteractiveSphere {
     }
   }
 
-  /** Fetch a tour JSON file and start the tour engine. */
-  private async startTour(dataLink: string, gen: number): Promise<void> {
+  /**
+   * Fetch a tour JSON file and start the tour engine.
+   *
+   * @param anchorSlot  When set, the tour is scoped to a specific
+   *   panel — `loadDataset` tasks route there and the legacy SOS
+   *   `worldIndex: 1` convention ("the current globe") is treated
+   *   as "the anchored globe." Passed by the `runTourOnLoad` flow
+   *   so a chained tour can't clobber another panel's dataset.
+   */
+  private async startTour(
+    dataLink: string,
+    gen: number,
+    anchorSlot: number | null = null,
+  ): Promise<void> {
     // Stop any previous tour
     this.stopTour()
 
@@ -635,6 +669,7 @@ class InteractiveSphere {
       },
       getRenderer: () => this.renderer!,
       getAllRenderers: () => this.viewports.getAll(),
+      getPrimarySlot: () => this.viewports.getPrimaryIndex(),
       togglePlayPause: () => {
         togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m))
       },
@@ -652,7 +687,7 @@ class InteractiveSphere {
           return filename
         }
       },
-    })
+    }, { anchorSlot })
 
     showTourControls(this.tourEngine, () => this.stopTour())
     this.showPlaybackControls(false)

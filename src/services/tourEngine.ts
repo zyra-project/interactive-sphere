@@ -137,9 +137,24 @@ export class TourEngine {
    */
   private flatDeprecationLogged = false
 
-  constructor(tourFile: TourFile, callbacks: TourCallbacks) {
+  /**
+   * Slot this tour is anchored to, if any. Set by `runTourOnLoad`
+   * flows: the tour is scoped to the panel whose dataset triggered
+   * it, and the legacy SOS `worldIndex: 1` convention (meaning "the
+   * current globe") should route to that anchor panel — not slot 0.
+   * `null` for standalone tours, where `worldIndex` is interpreted
+   * as an absolute 1-indexed panel selector.
+   */
+  private anchorSlot: number | null
+
+  constructor(
+    tourFile: TourFile,
+    callbacks: TourCallbacks,
+    options?: { anchorSlot?: number | null },
+  ) {
     this.tasks = tourFile.tourTasks
     this.callbacks = callbacks
+    this.anchorSlot = options?.anchorSlot ?? null
   }
 
   get state(): TourState { return this._state }
@@ -575,16 +590,34 @@ export class TourEngine {
   // ── Dataset executors ──────────────────────────────────────────────
 
   private async execLoadDataset(params: LoadDatasetTaskParams): Promise<void> {
-    // Resolve worldIndex (1-indexed from the tour JSON) to a 0-indexed
-    // slot. Omitted/zero/negative values default to slot 0. Out-of-
-    // range values are clamped to the last active panel so the load
-    // doesn't silently no-op when a tour specifies worldIndex before
-    // the matching setEnvView expands the layout.
-    const raw = typeof params.worldIndex === 'number' ? params.worldIndex : 1
+    // Route the load. Three cases:
+    //
+    // 1. `anchorSlot` is set — this tour was triggered by
+    //    `runTourOnLoad` on that panel. Legacy SOS tour JSON uses
+    //    `"worldIndex": 1` to mean "the current globe"; in a
+    //    multi-globe comparison that convention would clobber slot 0
+    //    instead of staying on the panel the user loaded into. So
+    //    anchor wins and worldIndex is ignored for runTourOnLoad.
+    //
+    // 2. Explicit `worldIndex` in a standalone tour — 1-indexed,
+    //    translated to a 0-indexed slot. Out-of-range values are
+    //    clamped to the last active panel so the load doesn't silently
+    //    no-op when a tour specifies worldIndex before the matching
+    //    setEnvView expands the layout.
+    //
+    // 3. No `worldIndex` — default to the current primary panel.
+    //    Matches the TourCallbacks contract.
     const panelCount = this.callbacks.getAllRenderers().length || 1
-    const slot = Math.max(0, Math.min(panelCount - 1, Math.round(raw) - 1))
-    if (Math.round(raw) - 1 >= panelCount) {
-      logger.warn(`[Tour] loadDataset: worldIndex ${raw} exceeds panel count ${panelCount}, clamped to slot ${slot}`)
+    let slot: number
+    if (this.anchorSlot !== null) {
+      slot = Math.max(0, Math.min(panelCount - 1, this.anchorSlot))
+    } else if (typeof params.worldIndex === 'number') {
+      slot = Math.max(0, Math.min(panelCount - 1, Math.round(params.worldIndex) - 1))
+      if (Math.round(params.worldIndex) - 1 >= panelCount) {
+        logger.warn(`[Tour] loadDataset: worldIndex ${params.worldIndex} exceeds panel count ${panelCount}, clamped to slot ${slot}`)
+      }
+    } else {
+      slot = Math.max(0, Math.min(panelCount - 1, this.callbacks.getPrimarySlot()))
     }
 
     await this.callbacks.loadDataset(params.id, { slot })
