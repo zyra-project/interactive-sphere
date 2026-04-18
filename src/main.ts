@@ -462,17 +462,22 @@ class InteractiveSphere {
     // Auto-start a tour if the dataset has one associated via runTourOnLoad.
     // Skip if a tour is already running (the tour engine triggered this load).
     // Failures are silently logged — the tour is optional, the dataset already loaded.
+    //
+    // Pin the tour to the slot we just loaded into. Legacy SOS tour
+    // JSON uses `worldIndex: 1` to mean "the current globe", which
+    // the tour engine would otherwise route to panel 1 and clobber
+    // whatever the user had there in a multi-globe layout.
     if (dataset.runTourOnLoad && gen === this.loadGeneration && !this.tourEngine) {
       const ref = dataset.runTourOnLoad
       try {
         if (ref.startsWith('http://') || ref.startsWith('https://') || ref.endsWith('.json')) {
           logger.info('[App] Auto-starting tour from runTourOnLoad URL:', ref)
-          await this.startTour(ref, gen)
+          await this.startTour(ref, gen, targetSlot)
         } else {
           const tourDataset = dataService.getDatasetById(ref)
           if (tourDataset && tourDataset.format === 'tour/json') {
             logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
-            await this.startTour(tourDataset.dataLink, gen)
+            await this.startTour(tourDataset.dataLink, gen, targetSlot)
           } else {
             logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
           }
@@ -612,8 +617,20 @@ class InteractiveSphere {
     }
   }
 
-  /** Fetch a tour JSON file and start the tour engine. */
-  private async startTour(dataLink: string, gen: number): Promise<void> {
+  /**
+   * Fetch a tour JSON file and start the tour engine.
+   *
+   * @param anchorSlot  When set, the tour is scoped to a specific
+   *   panel — `loadDataset` tasks route there and the legacy SOS
+   *   `worldIndex: 1` convention ("the current globe") is treated
+   *   as "the anchored globe." Passed by the `runTourOnLoad` flow
+   *   so a chained tour can't clobber another panel's dataset.
+   */
+  private async startTour(
+    dataLink: string,
+    gen: number,
+    anchorSlot: number | null = null,
+  ): Promise<void> {
     // Stop any previous tour
     this.stopTour()
 
@@ -661,7 +678,7 @@ class InteractiveSphere {
           return filename
         }
       },
-    })
+    }, { anchorSlot })
 
     showTourControls(this.tourEngine, () => this.stopTour())
     this.showPlaybackControls(false)

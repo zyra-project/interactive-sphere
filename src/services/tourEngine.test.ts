@@ -658,6 +658,30 @@ describe('TourEngine', () => {
       expect(cb.loadDataset).toHaveBeenNthCalledWith(1, 'ID_D', { slot: 0 })
       expect(cb.loadDataset).toHaveBeenNthCalledWith(2, 'ID_E', { slot: 0 })
     })
+
+    it('routes to the anchor slot for runTourOnLoad, ignoring explicit worldIndex', async () => {
+      // Legacy SOS tour JSON uses `worldIndex: 1` as "the current
+      // globe". In a two-globe layout with the user on panel 2,
+      // that convention would otherwise clobber panel 1.
+      const cb = makeCallbacks()
+      const engine = new TourEngine(makeTour([
+        { loadDataset: { id: 'ID_ANCHORED', worldIndex: 1 } },
+      ]), cb, { anchorSlot: 1 })
+      await engine.play()
+
+      expect(cb.loadDataset).toHaveBeenCalledWith('ID_ANCHORED', { slot: 1 })
+    })
+
+    it('clamps the anchor slot to the active panel range', async () => {
+      // makeCallbacks returns 4 renderers, so anchorSlot=10 should clamp to 3.
+      const cb = makeCallbacks()
+      const engine = new TourEngine(makeTour([
+        { loadDataset: { id: 'ID_CLAMP', worldIndex: 1 } },
+      ]), cb, { anchorSlot: 10 })
+      await engine.play()
+
+      expect(cb.loadDataset).toHaveBeenCalledWith('ID_CLAMP', { slot: 3 })
+    })
   })
 
   describe('unloadDataset by handle', () => {
