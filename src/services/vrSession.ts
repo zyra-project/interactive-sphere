@@ -416,8 +416,17 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     scene: scene.scene,
     globe: scene.globe,
     hud,
+    browse,
     placement,
     renderer,
+    onBrowseAction: (action) => {
+      if (action.kind === 'close') {
+        browse.setVisible(false)
+      } else if (action.kind === 'select') {
+        ctx.loadDataset(action.datasetId)
+        browse.setVisible(false)
+      }
+    },
     onHudAction: (action) => {
       if (action === 'play-pause') {
         ctx.togglePlayPause()
