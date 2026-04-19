@@ -231,10 +231,41 @@ in the top-right; tap to open a full-width drawer. Same pattern as
 ## 5. Porting the prototype → first-class modules
 
 The prototype JSX is ~1400 lines; the standalone HTML demo is ~400
-lines. The JSX copy in `docs/prototypes/` has Unicode fancy quotes
-(`‘ ’`) rather than plain ASCII quotes because it was pasted from a
-design tool — it will not compile as-is. Porting does a full rewrite
-rather than a mechanical conversion:
+lines. Most of the JSX lifts straight into TypeScript with one
+mechanical pass plus a React-plumbing strip:
+
+**Smart-quote normalization.** `docs/prototypes/orbit-prototype.jsx`
+was pasted from a design tool, so its ASCII single quotes are
+actually U+2018 / U+2019 (357 of them, all used as code quotes).
+A one-time `scripts/normalize-orbit-prototype.ts` run replaces them
+with `'`. After that single pass, all 374 `{}`, 811 `()`, and 92
+`[]` balance — the source is structurally valid JS. The remaining
+non-ASCII (`— – “ ” … ° ✦ é ≤ ← →`) lives only inside comments and
+displayed strings and stays as-is.
+
+**What lifts verbatim (~850 LOC, ~60%):** the `STATES` table, the
+`GESTURES` compute functions with their tuned math, the ~141 lines
+of GLSL shader source (iridescent body, pupil glow, eye-lid
+control, point-sprite trail), the palette table, and the math
+helpers (smoothstep, Bézier, blink scheduling, pupil-tint blend).
+These are the parts the nine iterations actually tuned; we copy
+them byte-for-byte rather than risk retuning.
+
+**What gets a structural rewrite (~550 LOC, ~40%):** 58 React hook
+calls and 50 JSX elements. The translation is mechanical and the
+pattern is uniform:
+
+- `useEffect(setup, [])` → class constructor
+- `useRef<THREE.Mesh>()` → instance field
+- `useState('close')` for palette/scalePreset → controller
+  properties + `setPalette()` / `setScalePreset()` setters
+- `useEffect(animate)` with `requestAnimationFrame` → private
+  `animate()` method, started from the constructor
+- JSX debug panel → plain HTML in `src/orbit.html` wired up by
+  `src/ui/orbitDebugPanel.ts` using the same glass-surface classes
+  as the rest of the app
+
+Phases:
 
 **Phase 0 — wiring (no visual change).** Set up the Vite entry,
 `orbit.html`, an empty `OrbitController` that spins a placeholder
@@ -343,10 +374,16 @@ of specific states.
   character visible but lock into Idle-at-half-speed and suppress
   gesture + flight. Document this as an explicit trade-off.
 - **Prototype code quality.** The JSX has fancy quotes, nested
-  ternaries, and single-file everything. Direct translation would
-  make reviewers miserable. We port by rewriting into the module
-  layout in §3.1 — the design doc and the prototype are the specs;
-  the prototype source is reference-only.
+  ternaries, and single-file everything. After the quote-normalizer
+  pass (§5) it parses, so we can lift the tuned parts (STATES,
+  GESTURES, shaders) byte-for-byte and only rewrite the React
+  plumbing. The design doc stays the spec of record; the prototype
+  is the reference implementation, not "inspiration."
+- **Retuning risk.** Retyping the STATES or GESTURES tables from
+  scratch would almost certainly drift from the tuned values behind
+  the nine prototype iterations. Preserving them verbatim is the
+  point of the normalizer script — reviewers can diff the ported
+  constants against the prototype to confirm no drift.
 
 ---
 
@@ -355,8 +392,7 @@ of specific states.
 | #  | Commit                                                                  | Surfaces                                            |
 |----|-------------------------------------------------------------------------|-----------------------------------------------------|
 | 0  | `docs: orbit character integration plan (this file)`                   | Plan — no code                                      |
-| 1  | `orbit: vite entry + empty OrbitController at /orbit`                   | Vite config, `orbit.html`, shell page + CSS         |
-| 2  | `orbit: body + eye + pupil + sub-spheres (Idle)`                       | `orbitScene`, `orbitMaterials`, basic render loop   |
+| 1  | `orbit: vite entry + scaffold + body/eye/subs (Idle) at /orbit`        | Vite config, entry + CSS, `orbitScene`, materials   |
 | 3  | `orbit: state vocabulary + sub-modes + blink scheduling`                | `orbitStates`, state dispatch, debug State select   |
 | 4  | `orbit: gesture overlay system + Shrug/Wave/Beckon/Affirm`             | `orbitGestures`, `playGesture`, gesture buttons     |
 | 5  | `orbit: flight + scale presets + wireframe Earth context`              | `orbitFlight`, Fly button, scale control            |
