@@ -119,8 +119,11 @@ reference them.
 ### 3.3 Deployment
 
 - **Cloudflare Pages (web):** `dist/orbit.html` ships with the rest.
-  Add a line to `public/_redirects` so `/orbit` → `/orbit.html` (pretty
-  URL). No Functions changes.
+  Pages serves it at `/orbit` natively (static-file resolution drops
+  the `.html`), so **no `_redirects` entry is needed**. In fact adding
+  a `/orbit → /orbit.html 200` rewrite creates a redirect loop because
+  Pages auto-redirects `*.html` → pretty URL with 301. No Functions
+  changes.
 - **Tauri (desktop):** Tauri serves `dist/` over the app protocol.
   `orbit.html` is reachable at the same relative path. Add a small
   entry in the Tools menu — "Meet Orbit" — that opens the page in a
@@ -399,7 +402,7 @@ of specific states.
 | 6  | `orbit: palettes + pupil tint blend`                                    | Palette radio group, tint easing                    |
 | 7  | `orbit: a11y polish — reduced motion, aria-label, announcer`            | `prefers-reduced-motion`, live region wiring        |
 | 8  | `orbit: postMessage bridge + URL-param driver`                          | `window` bridge, URL parser for smoke tests         |
-| 9  | `orbit: Tools-menu entry + _redirects for /orbit pretty URL`            | Link into the main app, CF redirect                 |
+| 9  | `orbit: Tools-menu entry linking to /orbit`                             | Link into the main app (pretty URL is automatic)    |
 
 Roughly 600–800 LOC across phases 1–8, heavily dominated by the
 state + gesture tables ported from the design doc. Phase 9 is

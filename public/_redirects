@@ -1,3 +1,2 @@
 /docs/* /docs/:splat 200
-/orbit /orbit.html 200
 /* /index.html 200
