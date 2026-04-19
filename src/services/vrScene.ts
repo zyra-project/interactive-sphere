@@ -588,7 +588,6 @@ export function createVrScene(
       blending: THREE_.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
     })
     sunCoreSprite = new THREE_.Sprite(coreMaterial)
     sunCoreSprite.scale.set(SUN_CORE_SCALE, SUN_CORE_SCALE, 1)
@@ -603,7 +602,6 @@ export function createVrScene(
       blending: THREE_.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
     })
     sunGlowSprite = new THREE_.Sprite(glowMaterial)
     sunGlowSprite.scale.set(SUN_GLOW_SCALE, SUN_GLOW_SCALE, 1)
