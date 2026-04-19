@@ -50,8 +50,29 @@ export interface VrSessionContext {
   isPlaying(): boolean
   /** Called when the user taps play/pause in VR. No-op for image datasets. */
   togglePlayPause(): void
+
+  // --- Phase 3: in-VR browse ---
+  /** Full dataset catalog for the browse panel. */
+  getDatasets(): VrDatasetEntry[]
+  /** Load a dataset by ID without leaving VR. */
+  loadDataset(id: string): void
+
   /** Optional — fired after the session ends + resources are torn down. */
   onSessionEnd?: () => void
+}
+
+/**
+ * Lightweight dataset descriptor for the VR browse panel. Avoids
+ * importing the full `Dataset` type into the VR modules — they only
+ * need what they render.
+ */
+export interface VrDatasetEntry {
+  id: string
+  title: string
+  /** First category key, if enriched metadata exists. */
+  category: string | null
+  /** Thumbnail URL from the SOS catalog, if available. */
+  thumbnailUrl: string | null
 }
 
 /**
@@ -225,6 +246,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   scene.scene.add(hud.mesh)
 
   const browse = createVrBrowse(THREE_)
+  browse.setDatasets(ctx.getDatasets())
   scene.scene.add(browse.mesh)
 
   // --- Spatial placement (AR-only) + local-floor ref space ---

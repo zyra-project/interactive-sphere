@@ -1200,6 +1200,21 @@ class InteractiveSphere {
       togglePlayPause: () => togglePlayPause(
         this.hlsService, this.appState, (m) => this.announce(m),
       ),
+      getDatasets: () => {
+        return this.appState.datasets
+          .filter(d => dataService.isSupportedDataset(d) && !d.isHidden)
+          .map(d => ({
+            id: d.id,
+            title: d.title,
+            category: d.enriched?.categories
+              ? Object.keys(d.enriched.categories)[0] ?? null
+              : null,
+            thumbnailUrl: d.thumbnailLink ?? null,
+          }))
+      },
+      loadDataset: (id: string) => {
+        void this.loadDataset(id)
+      },
       onSessionEnd: () => {
         this.announce('Exited VR')
       },
