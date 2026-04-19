@@ -18,6 +18,7 @@
 import type * as THREE from 'three'
 import { createVrScene, type VrSceneHandle, type VrDatasetTexture } from './vrScene'
 import { createVrHud, type VrHudHandle } from './vrHud'
+import { createVrBrowse, type VrBrowseHandle } from './vrBrowse'
 import { createVrInteraction, type VrInteractionHandle } from './vrInteraction'
 import { createVrLoading, type VrLoadingHandle } from './vrLoading'
 import { createVrPlacement, liftedPlacementPosition, type VrPlacementHandle } from './vrPlacement'
@@ -75,6 +76,8 @@ interface ActiveSession {
   scene: VrSceneHandle
   hud: VrHudHandle
   interaction: VrInteractionHandle
+  /** In-VR dataset browse panel. */
+  browse: VrBrowseHandle
   /** Loading scene shown during entry; null after fade-out + dispose. */
   loading: VrLoadingHandle | null
   /** AR-only spatial placement (hit-test reticle + Place button). Null when hit-test unavailable. */
@@ -220,6 +223,9 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   const scene = createVrScene(THREE_, isAr)
   const hud = createVrHud(THREE_)
   scene.scene.add(hud.mesh)
+
+  const browse = createVrBrowse(THREE_)
+  scene.scene.add(browse.mesh)
 
   // --- Spatial placement (AR-only) + local-floor ref space ---
   // Two separable capabilities:
@@ -463,6 +469,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     camera,
     scene,
     hud,
+    browse,
     interaction,
     loading,
     placement,
@@ -482,6 +489,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // for comfortable reading.
   const hudOffset = new THREE_.Vector3(0, -0.65, 0.15)
   const placeOffset = new THREE_.Vector3(0, -0.5, 0.15)
+  const browseOffset = new THREE_.Vector3(0.7, 0, 0.3)
   /** Scratch reused per-frame for position math; avoids GC churn. */
   const scratchPos = new THREE_.Vector3()
   // `lastTime` starts null so the very first frame uses its own
@@ -561,6 +569,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // globe-independent.
     scratchPos.copy(active.scene.globe.position).add(hudOffset)
     active.hud.mesh.position.copy(scratchPos)
+    if (active.browse.isVisible()) {
+      scratchPos.copy(active.scene.globe.position).add(browseOffset)
+      active.browse.mesh.position.copy(scratchPos)
+    }
     if (active.placement) {
       scratchPos.copy(active.scene.globe.position).add(placeOffset)
       active.placement.placeButtonMesh.position.copy(scratchPos)
@@ -582,6 +594,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     a.renderer.setAnimationLoop(null)
     a.interaction.dispose()
     a.hud.dispose()
+    a.browse.dispose()
     // If the fade-out setTimeout is still pending, cancel it —
     // otherwise it would fire after the loading handle is disposed
     // and try to run fade-out on stale state.
