@@ -13,6 +13,7 @@ import {
   type StateKey, type PaletteKey, type GestureKind, type ScaleKey, type EyeMode,
 } from './services/orbitCharacter'
 import { initOrbitDebugPanel } from './ui/orbitDebugPanel'
+import { initOrbitPerfHud } from './ui/orbitPerfHud'
 
 const ALLOWED_STATES = new Set<StateKey>(ALL_STATES)
 const ALLOWED_PALETTES = new Set<PaletteKey>(['cyan', 'green', 'amber', 'violet'])
@@ -93,6 +94,9 @@ function bootstrap(): void {
   updateCanvasAriaLabel(controller.getState())
 
   initOrbitDebugPanel(controller)
+
+  const hudEl = document.getElementById('orbit-perf-hud')
+  if (hudEl) initOrbitPerfHud(hudEl)
 
   // URL-param gestures fire once on load. Delay until the scene has a
   // frame or two so Beckon's direction vector is computed from a

@@ -44,6 +44,16 @@ export { SCALE_PRESETS, PRESET_KEYS } from './orbitFlight'
 
 export const PALETTE_KEYS: PaletteKey[] = ['cyan', 'green', 'amber', 'violet']
 
+/**
+ * How often the animate loop rebases `this.time` (and every absolute
+ * schedule that tracks it) back toward zero. Anything that compares
+ * times relatively stays unaffected; the goal is to prevent the raw
+ * counter from climbing into the tens of thousands during
+ * long-session runs. 3600 s = 1 hour is well within a safe
+ * floating-point range for every downstream multiplier.
+ */
+const TIME_REBASE_THRESHOLD_SECONDS = 3600
+
 export interface OrbitControllerOptions {
   container: HTMLElement
   palette?: PaletteKey
@@ -281,6 +291,22 @@ export class OrbitController {
     this.rafId = requestAnimationFrame(this.animate)
     const dt = Math.min(this.clock.getDelta(), 0.05)
     this.time += dt
+    // Long-session hygiene — keep `time` bounded so trig multipliers
+    // (up to 9× for the pupil pulse) don't accumulate huge arguments
+    // over hours/days. Rebase once per hour: shift `time` and every
+    // absolute-time schedule (blinks, jitter, active gesture, flight)
+    // by the same amount so relative comparisons stay unchanged.
+    // Anything that counts *durations* (wanderTimer, orbitPhaseAccum)
+    // is unaffected — it accumulates via `dt`, not absolute time.
+    if (this.time > TIME_REBASE_THRESHOLD_SECONDS) {
+      const shift = TIME_REBASE_THRESHOLD_SECONDS
+      this.time -= shift
+      if (this.anim.blinkStartTime >= 0) this.anim.blinkStartTime -= shift
+      this.anim.nextBlinkTime -= shift
+      this.anim.jitterNextTime -= shift
+      if (this.anim.activeGesture) this.anim.activeGesture.startTime -= shift
+      this.flight.startTime -= shift
+    }
     updateCharacter(this.handles, this.anim, {
       state: this.state,
       palette: this.palette,

@@ -89,6 +89,38 @@ body.orbit-body {
     color: var(--color-text);
 }
 
+/* ── Perf HUD ────────────────────────────────────────────────────── */
+
+/* FPS / heap / uptime counter. Diagnostic aid for long-session drift
+ * — the 2026-04-20 overnight slowdown report motivated building this.
+ * Compact, unobtrusive, pointer-transparent so it never blocks input. */
+.orbit-perf-hud {
+    position: absolute;
+    top: 3.5rem;
+    right: 0.75rem;
+    z-index: 10;
+    padding: 0.25rem 0.55rem;
+    background: var(--glass-bg-light);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--white-o08);
+    border-radius: var(--radius-sm);
+    font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+    .orbit-perf-hud {
+        top: 3rem;
+        right: 0.5rem;
+        font-size: 10px;
+    }
+}
+
 /* ── Debug panel ─────────────────────────────────────────────────── */
 
 .orbit-debug-panel {
