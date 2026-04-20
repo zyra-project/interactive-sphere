@@ -98,6 +98,26 @@ const CLOSE_BUTTON = {
 }
 
 /**
+ * Draw a filled rounded rectangle, falling back to a plain rect on
+ * browsers / WebViews whose Canvas 2D context doesn't expose
+ * `roundRect` (pre-Chromium-99, older Quest Browser builds, some
+ * embedded WebViews). Matches the pattern used in vrInteraction.ts
+ * for the controller tooltip. Caller sets `fillStyle` beforehand.
+ */
+function fillRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number,
+): void {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath()
+    ctx.roundRect(x, y, w, h, r)
+    ctx.fill()
+  } else {
+    ctx.fillRect(x, y, w, h)
+  }
+}
+
+/**
  * One rendered chip's pixel rect. Precomputed each layout pass so
  * the draw loop and the hit-test loop agree byte-for-byte on where
  * each chip lives.
@@ -212,9 +232,7 @@ function drawCanvas(
   for (const chip of chips) {
     const isActive = chip.label === selectedCategory
     ctx.fillStyle = isActive ? ACCENT_COLOR : CARD_BG
-    ctx.beginPath()
-    ctx.roundRect(chip.x, chip.y, chip.width, chip.height, chip.height / 2)
-    ctx.fill()
+    fillRoundRect(ctx, chip.x, chip.y, chip.width, chip.height, chip.height / 2)
     ctx.fillStyle = isActive ? '#ffffff' : TITLE_COLOR
     ctx.fillText(chip.label, chip.x + chip.width / 2, chip.y + chip.height / 2 + 1)
   }
@@ -256,9 +274,7 @@ function drawCanvas(
 
     // Card background
     ctx.fillStyle = i === highlightIndex ? CARD_BG_HOVER : CARD_BG
-    ctx.beginPath()
-    ctx.roundRect(x, cardY, cardW, CARD_HEIGHT, 6)
-    ctx.fill()
+    fillRoundRect(ctx, x, cardY, cardW, CARD_HEIGHT, 6)
 
     // Title
     ctx.fillStyle = TITLE_COLOR
@@ -288,9 +304,7 @@ function drawCanvas(
     const scrollbarHeight = Math.max(20, (LIST_HEIGHT / totalContent) * LIST_HEIGHT)
     const scrollbarY = LIST_TOP + (scrollY / (totalContent - LIST_HEIGHT)) * (LIST_HEIGHT - scrollbarHeight)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
-    ctx.beginPath()
-    ctx.roundRect(w - LIST_PADDING - SCROLLBAR_WIDTH, scrollbarY, SCROLLBAR_WIDTH, scrollbarHeight, 4)
-    ctx.fill()
+    fillRoundRect(ctx, w - LIST_PADDING - SCROLLBAR_WIDTH, scrollbarY, SCROLLBAR_WIDTH, scrollbarHeight, 4)
   }
 }
 
