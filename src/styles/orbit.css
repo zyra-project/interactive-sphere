@@ -199,6 +199,43 @@ body.orbit-body {
     color: var(--color-text);
 }
 
+.orbit-debug-gestures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    justify-content: flex-end;
+    flex: 1 1 auto;
+}
+
+.orbit-debug-gesture {
+    padding: 0.25rem 0.5rem;
+    font: inherit;
+    font-size: 0.65rem;
+    letter-spacing: 0.03em;
+    color: var(--color-text-secondary);
+    background: var(--color-surface);
+    border: 1px solid var(--white-o10);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.orbit-debug-gesture:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+    border-color: var(--accent-o40);
+}
+
+.orbit-debug-gesture:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.orbit-debug-gesture:focus-visible {
+    outline: 2px solid var(--accent-o70);
+    outline-offset: 2px;
+}
+
 .orbit-debug-hint {
     margin-top: 0.3rem;
     font-size: 0.65rem;

@@ -31,6 +31,7 @@ import {
 import { PALETTES, type PaletteKey, type StateKey } from './orbitTypes'
 import { STATES } from './orbitStates'
 import { buildTrails, updateTrails, type TrailHandle } from './orbitTrails'
+import { GESTURES, type GestureKind, type GestureFrame } from './orbitGestures'
 
 const BODY_RADIUS = 0.075
 const SUB_RADIUS = 0.009
@@ -169,6 +170,10 @@ export interface AnimationState {
   wanderTimer: number
 
   currentPupilColor: THREE.Color
+
+  // Active gesture overlay (null when none playing). startTime is in
+  // the controller's `time` clock, not wall-clock.
+  activeGesture: { kind: GestureKind; startTime: number } | null
 }
 
 export function createAnimationState(palette: PaletteKey = 'cyan'): AnimationState {
@@ -192,7 +197,27 @@ export function createAnimationState(palette: PaletteKey = 'cyan'): AnimationSta
     wanderTargetY: 0,
     wanderTimer: 0,
     currentPupilColor: new THREE.Color(PALETTES[palette].accent),
+    activeGesture: null,
   }
+}
+
+/**
+ * Begin a gesture. Returns `false` if one is already playing (no
+ * interruption in Phase 3 — design doc §Open questions defers
+ * gesture chaining pending real use cases from the docent layer).
+ */
+export function startGesture(
+  anim: AnimationState,
+  kind: GestureKind,
+  time: number,
+): boolean {
+  if (anim.activeGesture) return false
+  anim.activeGesture = { kind, startTime: time }
+  return true
+}
+
+export function isGesturePlaying(anim: AnimationState): boolean {
+  return anim.activeGesture !== null
 }
 
 export interface UpdateInput {
@@ -209,7 +234,10 @@ const sat = (x: number): number => Math.max(0, Math.min(1, x))
 
 const _tmpTargetColor = new THREE.Color()
 const _tmpStateColor = new THREE.Color()
+const _tmpGestureColor = new THREE.Color()
 const _tmpGazeDir = new THREE.Vector3()
+const _tmpGestureDir = new THREE.Vector3()
+const _chatFeature = new THREE.Vector3(0.32, -0.03, 0.02)
 
 /**
  * Per-frame update.
@@ -228,6 +256,27 @@ export function updateCharacter(
   const { state, palette, time, dt, mouseX, mouseY } = input
   const s = STATES[state]
   const p = PALETTES[palette]
+
+  // ── Gesture: advance time + compute frame (or end gesture) ────────
+  // Done first so later sections (head, pupil, sub-spheres) can read
+  // the gesture frame instead of the state-driven values.
+  let gestureFrame: GestureFrame | null = null
+  if (anim.activeGesture) {
+    const g = GESTURES[anim.activeGesture.kind]
+    const gT = (time - anim.activeGesture.startTime) / g.duration
+    if (gT >= 1) {
+      anim.activeGesture = null
+    } else {
+      // Beckon reads the direction to the active target. Phase 3 uses
+      // the chat-distance feature as a placeholder; Phase 4 swaps in
+      // the Earth-surface target when flight lands.
+      _tmpGestureDir.subVectors(_chatFeature, handles.head.position).normalize()
+      gestureFrame = g.compute(gT, {
+        direction: _tmpGestureDir,
+        featureIsAtEarth: false,
+      })
+    }
+  }
 
   // ── Palette propagation (body + eye-field + sub-spheres) ──────────
   handles.bodyBundle.uniforms.uBaseColor.value.set(p.base)
@@ -283,12 +332,18 @@ export function updateCharacter(
   const pupilVis = 1 - Math.max(coverByUpper, coverByLower)
 
   // ── Pupil color blend ─────────────────────────────────────────────
-  // Start from palette accent; blend 65% toward any state pupilColor
-  // (SOLEMN, CONFUSED). Frame-to-frame easing keeps transitions soft.
+  // Three tiers (design doc §Color semantics): palette accent is
+  // baseline; state pupilColor blends in at 65% (SOLEMN, CONFUSED);
+  // gesture pupilFlash blends in by its envelope (Affirm's gold
+  // "mm-hm"). Frame-to-frame easing keeps transitions soft.
   _tmpTargetColor.set(p.accent)
   if (s.pupilColor) {
     _tmpStateColor.set(s.pupilColor)
     _tmpTargetColor.lerp(_tmpStateColor, 0.65)
+  }
+  if (gestureFrame && gestureFrame.pupilColor && gestureFrame.pupilFlash) {
+    _tmpGestureColor.set(gestureFrame.pupilColor)
+    _tmpTargetColor.lerp(_tmpGestureColor, gestureFrame.pupilFlash)
   }
   anim.currentPupilColor.lerp(_tmpTargetColor, 0.12)
   handles.pupilMaterials.pupilMat.color.copy(anim.currentPupilColor)
@@ -361,16 +416,31 @@ export function updateCharacter(
   anim.eyeYaw = lerp(anim.eyeYaw, tYaw, 0.08)
   anim.eyePitch = lerp(anim.eyePitch, tPitch, 0.08)
 
-  // ── Head motion (nod / shake / tilt per state) ────────────────────
-  const headPitchTarget = s.head === 'nod' ? Math.sin(time * 5.5) * 0.22 : 0
-  const headYawTarget = s.head === 'shake' ? Math.sin(time * 6.0) * 0.28 : 0
-  const headRollTarget = s.head === 'tilt' ? Math.sin(time * 1.6) * 0.17 : 0
-  anim.headPitch = lerp(anim.headPitch, headPitchTarget, 0.18)
-  anim.headYaw = lerp(anim.headYaw, headYawTarget, 0.18)
-  anim.headRoll = lerp(anim.headRoll, headRollTarget, 0.10)
-  handles.head.rotation.x = anim.headPitch
-  handles.head.rotation.y = anim.headYaw
-  handles.head.rotation.z = anim.headRoll
+  // ── Head motion (nod / shake / tilt per state, or gesture override) ──
+  // Head-ownership rule (design doc §Gesture overlay system): when a
+  // gesture specifies `head`, it owns head rotation exclusively for
+  // its duration. State head eases toward 0 so when the gesture ends,
+  // state head resumes from rest instead of snapping mid-motion.
+  // Gestures without a `head` (Wave) leave state head alone — a Wave
+  // during YES continues nodding while the sub waves.
+  if (gestureFrame && gestureFrame.head) {
+    anim.headPitch = lerp(anim.headPitch, 0, 0.22)
+    anim.headYaw = lerp(anim.headYaw, 0, 0.22)
+    anim.headRoll = lerp(anim.headRoll, 0, 0.22)
+    handles.head.rotation.x = gestureFrame.head.pitch ?? 0
+    handles.head.rotation.y = gestureFrame.head.yaw ?? 0
+    handles.head.rotation.z = gestureFrame.head.roll ?? 0
+  } else {
+    const headPitchTarget = s.head === 'nod' ? Math.sin(time * 5.5) * 0.22 : 0
+    const headYawTarget = s.head === 'shake' ? Math.sin(time * 6.0) * 0.28 : 0
+    const headRollTarget = s.head === 'tilt' ? Math.sin(time * 1.6) * 0.17 : 0
+    anim.headPitch = lerp(anim.headPitch, headPitchTarget, 0.18)
+    anim.headYaw = lerp(anim.headYaw, headYawTarget, 0.18)
+    anim.headRoll = lerp(anim.headRoll, headRollTarget, 0.10)
+    handles.head.rotation.x = anim.headPitch
+    handles.head.rotation.y = anim.headYaw
+    handles.head.rotation.z = anim.headRoll
+  }
 
   // ── Pupil jitter ──────────────────────────────────────────────────
   const jitterAmt = s.pupilJitter
@@ -399,13 +469,22 @@ export function updateCharacter(
   handles.pupilGlow.position.x = handles.pupil.position.x
   handles.pupilGlow.position.y = handles.pupil.position.y
 
-  // ── Sub-sphere positions (sub-mode dispatch) ──────────────────────
+  // ── Sub-sphere positions (gesture overlay or sub-mode dispatch) ──
   anim.orbitPhaseAccum += anim.orbitSpeed * dt
   const effSubMode = s.subMode
   handles.subSpheres.forEach((sub, i) => {
     const r = anim.subRadius
     const pOff = sub.userData.phaseOffset as number
     const op = handles.head.position
+
+    // Gesture overlay owns sub-sphere positions entirely when active.
+    // Gesture positions are head-relative; they translate by Orbit's
+    // world position so they follow the head through any motion.
+    if (gestureFrame) {
+      const gp = gestureFrame.subSpheres[i]
+      sub.position.set(op.x + gp.x, op.y + gp.y, op.z + gp.z)
+      return
+    }
 
     let relX = 0, relY = 0, relZ = 0
 

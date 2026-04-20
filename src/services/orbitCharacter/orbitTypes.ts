@@ -24,7 +24,7 @@ export type HeadGestureState = 'YES' | 'NO'
 
 export type StateKey = BehaviorState | EmotionState | HeadGestureState
 
-export type GestureKind = never // populated in Phase 3
+export type { GestureKind } from './orbitGestures'
 
 export type SubMode =
   | 'orbit' | 'figure8' | 'point' | 'trace'

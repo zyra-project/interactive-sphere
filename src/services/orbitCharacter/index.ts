@@ -21,14 +21,18 @@ import {
   buildScene,
   createAnimationState,
   updateCharacter,
+  startGesture,
+  isGesturePlaying,
   type OrbitSceneHandles,
   type AnimationState,
 } from './orbitScene'
 import type { PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
 import { STATES } from './orbitStates'
+import { GESTURES, GESTURE_KEYS } from './orbitGestures'
 
 export type { PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
 export { STATES, ALL_STATES, BEHAVIOR_STATES, EMOTION_STATES, GESTURE_STATES } from './orbitStates'
+export { GESTURES, GESTURE_KEYS } from './orbitGestures'
 
 export interface OrbitControllerOptions {
   container: HTMLElement
@@ -94,13 +98,19 @@ export class OrbitController {
     return this.state
   }
 
-  playGesture(_kind: GestureKind): void {
-    // Gestures arrive in Phase 3. The signature is stable so callers
-    // written today compile against the final API.
+  playGesture(kind: GestureKind): void {
+    if (!(kind in GESTURES)) {
+      console.warn(`[Orbit] Unknown gesture: ${kind}`)
+      return
+    }
+    // startGesture is a no-op if one is already playing; design doc
+    // §Open questions defers gesture chaining/interrupts pending real
+    // use cases from the docent dialogue layer.
+    startGesture(this.anim, kind, this.time)
   }
 
   isGesturePlaying(): boolean {
-    return false
+    return isGesturePlaying(this.anim)
   }
 
   setPalette(palette: PaletteKey): void {

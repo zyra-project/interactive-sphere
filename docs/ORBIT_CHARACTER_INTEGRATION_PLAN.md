@@ -11,8 +11,9 @@ eventually drive animation states.
 
 **Branch:** `claude/orbit-character-integration-plan-p83Jc`
 
-**Status:** Phase 2 shipped (state vocabulary + sub-modes + blinks +
-trails). Phase 3 (gesture overlays) is next. See the phase table in
+**Status:** Phase 3 shipped (gesture overlay system: Shrug / Wave /
+Beckon / Affirm, with head-ownership rule and pupil-flash blend).
+Phase 4 (flight + scale presets) is next. See the phase table in
 §8 for the full roadmap and where each commit landed.
 
 ---

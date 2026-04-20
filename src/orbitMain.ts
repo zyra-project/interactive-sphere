@@ -8,20 +8,26 @@
 
 import './styles/tokens.css'
 import './styles/orbit.css'
-import { OrbitController, ALL_STATES, STATES, type StateKey, type PaletteKey } from './services/orbitCharacter'
+import {
+  OrbitController, ALL_STATES, STATES, GESTURE_KEYS,
+  type StateKey, type PaletteKey, type GestureKind,
+} from './services/orbitCharacter'
 import { initOrbitDebugPanel } from './ui/orbitDebugPanel'
 
 const ALLOWED_STATES = new Set<StateKey>(ALL_STATES)
 const ALLOWED_PALETTES = new Set<PaletteKey>(['cyan', 'green', 'amber', 'violet'])
+const ALLOWED_GESTURES = new Set<GestureKind>(GESTURE_KEYS)
 
-function readUrlOverrides(): { state?: StateKey; palette?: PaletteKey } {
+function readUrlOverrides(): { state?: StateKey; palette?: PaletteKey; gesture?: GestureKind } {
   if (typeof window === 'undefined') return {}
   const params = new URLSearchParams(window.location.search)
-  const out: { state?: StateKey; palette?: PaletteKey } = {}
+  const out: { state?: StateKey; palette?: PaletteKey; gesture?: GestureKind } = {}
   const s = params.get('state')?.toUpperCase()
   if (s && ALLOWED_STATES.has(s as StateKey)) out.state = s as StateKey
   const p = params.get('palette')?.toLowerCase()
   if (p && ALLOWED_PALETTES.has(p as PaletteKey)) out.palette = p as PaletteKey
+  const g = params.get('gesture')?.toLowerCase()
+  if (g && ALLOWED_GESTURES.has(g as GestureKind)) out.gesture = g as GestureKind
   return out
 }
 
@@ -61,6 +67,13 @@ function bootstrap(): void {
   updateCanvasAriaLabel(controller.getState())
 
   initOrbitDebugPanel(controller)
+
+  // URL-param gestures fire once on load. Delay until the scene has a
+  // frame or two so Beckon's direction vector is computed from a
+  // settled head position.
+  if (overrides.gesture) {
+    setTimeout(() => controller.playGesture(overrides.gesture!), 250)
+  }
 
   // Expose for console debugging and the eventual postMessage bridge.
   // Kept as a property on a namespaced object so it doesn't collide
