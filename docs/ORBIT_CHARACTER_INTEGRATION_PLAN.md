@@ -11,7 +11,9 @@ eventually drive animation states.
 
 **Branch:** `claude/orbit-character-integration-plan-p83Jc`
 
-**Status:** plan only — no code changes yet.
+**Status:** Phase 2 shipped (state vocabulary + sub-modes + blinks +
+trails). Phase 3 (gesture overlays) is next. See the phase table in
+§8 for the full roadmap and where each commit landed.
 
 ---
 
@@ -77,10 +79,11 @@ src/
   services/
     orbitCharacter/
       index.ts                         ← public OrbitController API
-      orbitScene.ts                    ← Three.js scene graph
+      orbitScene.ts                    ← Three.js scene graph + per-frame update
       orbitStates.ts                   ← STATES table (port from .jsx)
       orbitGestures.ts                 ← GESTURES table (port from .jsx)
-      orbitMaterials.ts                ← iridescent + pupil + trail shaders
+      orbitMaterials.ts                ← iridescent + eye-field + pupil shaders
+      orbitTrails.ts                   ← sub-sphere point-sprite trails
       orbitFlight.ts                   ← Bézier flight + scale presets
       orbitTypes.ts                    ← StateKey, GestureKind, PaletteKey…
   ui/
@@ -395,7 +398,7 @@ of specific states.
 |----|-------------------------------------------------------------------------|-----------------------------------------------------|
 | 0  | `docs: orbit character integration plan (this file)`                   | Plan — no code                                      |
 | 1  | `orbit: vite entry + scaffold + body/eye/subs (Idle) at /orbit`        | Vite config, entry + CSS, `orbitScene`, materials   |
-| 2  | `orbit: state vocabulary + sub-modes + blink scheduling`                | `orbitStates`, state dispatch, debug State select   |
+| 2  | `orbit: state vocabulary + sub-modes + blinks + trails`                 | `orbitStates`, state dispatch, `orbitTrails`, State select |
 | 3  | `orbit: gesture overlay system + Shrug/Wave/Beckon/Affirm`             | `orbitGestures`, `playGesture`, gesture buttons     |
 | 4  | `orbit: flight + scale presets + wireframe Earth context`              | `orbitFlight`, Fly button, scale control            |
 | 5  | `orbit: palettes + pupil tint blend`                                    | Palette radio group, tint easing                    |
