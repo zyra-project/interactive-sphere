@@ -11,7 +11,7 @@ eventually drive animation states.
 
 **Branch:** `claude/orbit-character-integration-plan-p83Jc`
 
-**Status:** Phases 1–7 shipped. Phase 4.5 extracted the photoreal
+**Status:** All phases shipped. Phase 4.5 extracted the photoreal
 Earth stack into a reusable `createPhotorealEarth()` factory
 (`src/services/photorealEarth.ts`) shared with the VR view. Phase
 5.5 ports the prototype's eye-mode A/B (single inset lens vs.
@@ -19,11 +19,11 @@ mammalian paired eyes); paired is the default. Phase 6 honors OS
 `prefers-reduced-motion`: sub-sphere orbit speed clamps to the
 IDLE rate, pupil pulse / jitter / gesture pupil-flash drop, and
 flight teleports instead of arcing. Phase 7 ships both halves of
-the external-driver story: URL params (landed earlier) plus a
-`postMessage` bridge (`orbit:setState`, `orbit:playGesture`, …)
-with an `orbit:ready` announce-to-parent on init. Only Phase 8
-(Tools-menu link from the main app) remains. See §8 for the full
-table.
+the external-driver story: URL params plus a `postMessage` bridge
+(`orbit:setState`, `orbit:playGesture`, …) with an `orbit:ready`
+announce-to-parent on init. Phase 8 adds a **Meet Orbit** entry in
+the main app's Tools menu (web only — the desktop story is
+eventual VR-embedded Orbit). See §8 for the full table.
 
 ---
 
@@ -416,7 +416,7 @@ of specific states.
 | 5.5| `orbit: eye-mode A/B — single inset lens vs. paired eyes`              | `EyeMode` type, `eyeRigs[]`, debug-panel Eyes row, `?eyes=` URL param |
 | 6  | `orbit: a11y polish — prefers-reduced-motion`                           | `matchMedia` listener, sub-sphere speed cap, flight skip, pupil flash/jitter/pulse drop, `?reduced=1` URL param |
 | 7  | `orbit: postMessage bridge (URL-param driver landed earlier)`          | `orbitPostMessageBridge.ts`, `orbit:*` dispatch table, `orbit:ready` announce to parent |
-| 8  | `orbit: Tools-menu entry linking to /orbit`                             | Link into the main app (pretty URL is automatic)    |
+| 8  | `orbit: Tools-menu entry linking to /orbit`                             | `toolsMenuUI.ts` Meet Orbit anchor, web-only via `IS_TAURI` gate |
 
 Roughly 600–800 LOC across phases 1–8, heavily dominated by the
 state + gesture tables ported from the design doc. Phase 9 is

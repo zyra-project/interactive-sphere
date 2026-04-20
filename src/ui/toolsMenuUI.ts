@@ -39,6 +39,16 @@
 import type { ViewportManager, ViewLayout } from '../services/viewportManager'
 import { updateMapControlsPosition } from './mapControlsUI'
 
+/**
+ * Gate the "Meet Orbit" link to web builds. Per the integration
+ * plan's open question #1, the desktop story for Orbit is the
+ * eventual VR-embedded character, not a separate viewer page — so
+ * the link adds clutter without a payoff inside the Tauri shell.
+ * Use the same runtime `__TAURI__` sentinel the rest of the code
+ * keys off of.
+ */
+const IS_TAURI = typeof window !== 'undefined' && !!(window as unknown as { __TAURI__?: unknown }).__TAURI__
+
 /** Callbacks the tools menu fires out into the rest of the app. */
 export interface ToolsMenuCallbacks {
   /** Multi-viewport: user picked a layout from the picker. */
@@ -149,6 +159,11 @@ export function initToolsMenu(
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Orbit settings&hellip;</span>
         </button>
+        ${IS_TAURI ? '' : `
+        <a class="tools-menu-item tools-menu-item-link" id="tools-menu-meet-orbit" href="/orbit" target="_blank" rel="noopener">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Meet Orbit&nbsp;&rarr;</span>
+        </a>`}
       </section>
     </div>
   `
@@ -218,6 +233,17 @@ export function initToolsMenu(
   const clearBtn = document.getElementById('tools-menu-clear') as HTMLButtonElement
   const shareBtn = document.getElementById('tools-menu-share') as HTMLButtonElement
   const orbitSettingsBtn = document.getElementById('tools-menu-orbit-settings') as HTMLButtonElement
+  const meetOrbitLink = document.getElementById('tools-menu-meet-orbit') as HTMLAnchorElement | null
+
+  // Meet Orbit is a plain anchor with target="_blank" — native
+  // navigation handles opening the character page. We just close
+  // the popover so the main app goes back to its normal state and
+  // announce for screen readers. No-op when Meet Orbit is gated off
+  // (desktop build).
+  meetOrbitLink?.addEventListener('click', () => {
+    closePopover()
+    announce?.('Opening Orbit character page in new tab')
+  })
 
   labelsBtn.addEventListener('click', () => {
     // Target state is derived from the button class, not from any
