@@ -24,15 +24,22 @@ import {
   createEyeFieldMaterial,
   createPupilMaterials,
   createCatchlightMaterial,
+  createStarGeometry,
   createSubSphereMaterial,
+  createBacklightMaterial,
   type BodyMaterialBundle,
   type EyeFieldMaterialBundle,
   type PupilMaterials,
+  type BacklightMaterialBundle,
 } from './orbitMaterials'
 import { createPhotorealEarth, type PhotorealEarthHandle } from '../photorealEarth'
 import { PALETTES, type EyeMode, type PaletteKey, type ScaleKey, type StateKey } from './orbitTypes'
 import { STATES, expressionFor } from './orbitStates'
-import { buildTrails, updateTrails, type TrailHandle } from './orbitTrails'
+import {
+  buildTrails, updateTrails,
+  buildOrbitRings, updateOrbitRings,
+  type TrailHandle, type OrbitRingHandle,
+} from './orbitTrails'
 import { GESTURES, type GestureKind, type GestureFrame } from './orbitGestures'
 import {
   SCALE_PRESETS, CHAT_FEATURE, featureOf, parkingOf, updateFlight,
@@ -99,8 +106,10 @@ export function computeEffectiveFov(baseVerticalFovDegrees: number, aspect: numb
 const EYE_PAIR_OFFSET_X = 0.028
 const EYE_PAIR_OFFSET_Y = -0.012
 const EYE_PAIR_DISC_RADIUS = 0.018
-const EYE_PAIR_GLOW_RADIUS = 0.0090
-const EYE_PAIR_PUPIL_RADIUS = 0.0055
+const EYE_PAIR_IRIS_RADIUS = 0.0108
+const EYE_PAIR_IRIS_GLOW_RADIUS = 0.0130
+const EYE_PAIR_PUPIL_FIELD_RADIUS = 0.0080
+const EYE_PAIR_PUPIL_DOT_RADIUS = 0.0025
 const EYE_PAIR_JITTER_SCALE = 0.60
 
 /**
@@ -109,15 +118,29 @@ const EYE_PAIR_JITTER_SCALE = 0.60
  * in the lower-left. The two-highlight convention is what sells
  * "wet, alive" eyes in animation rigs; it also gives the subtle
  * cross-pupil gleam visible in the concept art.
+ *
+ * Catchlights are parented to the same gaze-tracking pupil group as
+ * the iris/pupil, so they track the eye (big anime-style rigs do
+ * that; a floating static highlight on a flat disc reads wrong).
  */
-const CATCHLIGHT_PRIMARY_OFFSET_X = 0.0020
-const CATCHLIGHT_PRIMARY_OFFSET_Y = 0.0018
-const CATCHLIGHT_PRIMARY_RADIUS = 0.0010
-const CATCHLIGHT_PRIMARY_OPACITY = 0.95
-const CATCHLIGHT_SECONDARY_OFFSET_X = -0.0010
-const CATCHLIGHT_SECONDARY_OFFSET_Y = -0.0008
-const CATCHLIGHT_SECONDARY_RADIUS = 0.0005
-const CATCHLIGHT_SECONDARY_OPACITY = 0.55
+const CATCHLIGHT_PRIMARY_OFFSET_X = 0.0035
+const CATCHLIGHT_PRIMARY_OFFSET_Y = 0.0035
+const CATCHLIGHT_PRIMARY_RADIUS = 0.0020
+const CATCHLIGHT_PRIMARY_OPACITY = 1.0
+const CATCHLIGHT_SECONDARY_OFFSET_X = -0.0024
+const CATCHLIGHT_SECONDARY_OFFSET_Y = -0.0020
+const CATCHLIGHT_SECONDARY_RADIUS = 0.0010
+const CATCHLIGHT_SECONDARY_OPACITY = 0.70
+
+/**
+ * Number of tiny white five-point stars scattered inside each eye's
+ * pupil field. Position is sampled once at build time (stable per
+ * lifetime of the rig) so they stay in the same relative spot —
+ * otherwise they'd shimmer around and break the "star chart in the
+ * eye" read.
+ */
+const EYE_STARS_PER_EYE = 3
+const EYE_STAR_RADIUS = 0.00085
 
 /**
  * One eye in the paired rig. The single-lens configuration is
@@ -125,11 +148,24 @@ const CATCHLIGHT_SECONDARY_OPACITY = 0.55
  * `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Face). Per-frame pupil
  * writes iterate every rig so adding rigs later (e.g. a third
  * expressive cue) stays one-liner-simple.
+ *
+ * The stacked layers (outer to inner):
+ *   group (at face offset, static)
+ *   └── pupilGroup (moves for gaze tracking)
+ *       ├── iris       — accent color ring (takes state tint)
+ *       ├── pupilField — dark navy, covers iris center
+ *       ├── stars[]    — tiny white sparkles inside pupil field
+ *       ├── pupilDot   — near-black center, scales with pupilSize
+ *       └── catchlights (primary + secondary)
  */
 export interface EyeRig {
   group: THREE.Group
-  pupil: THREE.Mesh
-  glow: THREE.Mesh
+  pupilGroup: THREE.Group
+  iris: THREE.Mesh
+  irisGlow: THREE.Mesh
+  pupilField: THREE.Mesh
+  pupilDot: THREE.Mesh
+  stars: THREE.Mesh[]
   jitterScale: number
 }
 
@@ -139,6 +175,14 @@ export interface OrbitSceneHandles {
   head: THREE.Group
   body: THREE.Mesh
   bodyBundle: BodyMaterialBundle
+  /**
+   * Soft warm radial halo behind the body. Parented to the head so
+   * it follows Orbit through flight and sway; renders additively
+   * against the space background so the character reads as "lit
+   * from within" without needing emissive on the matte body.
+   */
+  backlight: THREE.Mesh
+  backlightBundle: BacklightMaterialBundle
   eyeBundle: EyeFieldMaterialBundle
   pupilMaterials: PupilMaterials
   /**
@@ -163,6 +207,12 @@ export interface OrbitSceneHandles {
    */
   keyLight: THREE.DirectionalLight
   trails: TrailHandle[]
+  /**
+   * Persistent sparkle orbit rings — one per sub, parented to the
+   * head group. Intensity is state-driven; see
+   * `ExpressionConfig.ringIntensity`.
+   */
+  orbitRings: OrbitRingHandle[]
   /**
    * Photoreal Earth stack — diffuse + night lights + atmosphere +
    * clouds + sun, shared with the VR view. Rebuilt on scale-preset
@@ -221,6 +271,18 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   const head = new THREE.Group()
   scene.add(head)
 
+  // Backlight halo — parented to head, behind the body, facing +Z.
+  // The camera sits at +Z looking toward origin for every preset, so
+  // a disc with no billboard logic reads correctly. Size is 3x the
+  // body radius; fade is radial in the shader.
+  const backlightBundle = createBacklightMaterial()
+  const backlight = new THREE.Mesh(
+    new THREE.CircleGeometry(BODY_RADIUS * 3.2, 48),
+    backlightBundle.material,
+  )
+  backlight.position.z = -BODY_RADIUS * 0.8
+  head.add(backlight)
+
   const bodyBundle = createBodyMaterial(palette)
   const body = new THREE.Mesh(
     new THREE.IcosahedronGeometry(BODY_RADIUS, 4),
@@ -237,8 +299,14 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   // Placed lower (Y offset) and wider (X offset) than the original
   // rig so the character reads as neotenous and approachable. See
   // `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Face.
-  const eyeLeft = buildPairedEye(head, eyeBundle, pupilMaterials, -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y)
-  const eyeRight = buildPairedEye(head, eyeBundle, pupilMaterials, +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y)
+  const eyeLeft = buildPairedEye(
+    head, eyeBundle, pupilMaterials,
+    -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_LEFT,
+  )
+  const eyeRight = buildPairedEye(
+    head, eyeBundle, pupilMaterials,
+    +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_RIGHT,
+  )
 
   const eyeRigs: EyeRig[] = [eyeLeft, eyeRight]
 
@@ -267,6 +335,13 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
 
   const trails = buildTrails(scene, subSpheres, palette, pixelRatio)
 
+  // Persistent sparkle rings — parented to `head` so they follow the
+  // character through flight, sway, and squash/stretch without any
+  // per-frame position writes. The rings are geometrically fixed in
+  // head-local space (sampled from each sub's orbitBasis), so there's
+  // no per-frame geometry work either — just uniform writes.
+  const orbitRings = buildOrbitRings(head, subSpheres, SUB_ORBIT_RADIUS, palette, pixelRatio)
+
   // Earth — photoreal stack (diffuse + night lights + atmosphere +
   // clouds + sun), shared with the VR view. Radius + position come
   // from the preset; ground shadow omitted (multiple presets at
@@ -291,9 +366,10 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
 
   return {
     scene, camera, head, body, bodyBundle,
+    backlight, backlightBundle,
     eyeBundle, pupilMaterials,
     eyeRigs,
-    subSpheres, subBundles, keyLight, trails,
+    subSpheres, subBundles, keyLight, trails, orbitRings,
     earth,
     targetMarker, targetHalo, targetMat, targetHaloMat,
     appliedPreset: initialPreset,
@@ -317,12 +393,40 @@ function makeOrbitBasis(tilt: number, twist: number): { u: THREE.Vector3; v: THR
 }
 
 /**
- * Build one half of the paired-eye configuration. Each side gets its
- * own group with disc, glow, pupil, and two catchlights, parented to
- * the head at an (x, y) offset so gaze rotation happens around each
- * eye's own pivot. The catchlights sit at fixed positions relative
- * to the group (NOT the pupil), so they stay put as the pupil
- * sweeps — which is what sells the "wet, alive" read.
+ * Shared star geometry — a single five-point-star BufferGeometry used
+ * for every sparkle sprite on both eyes. Cloning the mesh shares the
+ * geometry, so adding/removing stars is cheap and memory stays flat.
+ * Disposed with the scene traversal in `OrbitController.dispose`.
+ */
+const _starGeometry = createStarGeometry(EYE_STAR_RADIUS)
+
+/**
+ * Deterministic per-star placement so the stars don't shift between
+ * left and right eye (would look like misaligned parallax) but each
+ * eye has a distinct chart (so they don't read as "the same scene
+ * twice"). Positions are in iris-local space, clamped inside the
+ * pupil field minus a safety margin.
+ */
+const EYE_STAR_POSITIONS_LEFT: Array<[number, number]> = [
+  [-0.0028, 0.0012],
+  [ 0.0016, -0.0022],
+  [ 0.0020, 0.0028],
+]
+const EYE_STAR_POSITIONS_RIGHT: Array<[number, number]> = [
+  [ 0.0028, 0.0014],
+  [-0.0018, -0.0020],
+  [-0.0024, 0.0030],
+]
+
+/**
+ * Build one half of the paired-eye configuration.
+ *
+ * The eye is a stacked rig: the socket disc (eye-field shader with
+ * lids, static in the face) holds a gaze-tracking **pupilGroup** that
+ * carries the iris, pupil field, sparkle stars, pupil dot, and the
+ * two catchlights. Moving the whole pupil group for gaze keeps
+ * everything anatomically aligned — iris + pupil + catchlight slide
+ * together as the eye looks around.
  */
 function buildPairedEye(
   head: THREE.Group,
@@ -330,30 +434,74 @@ function buildPairedEye(
   pupilMaterials: PupilMaterials,
   offsetX: number,
   offsetY: number,
+  starPositions: Array<[number, number]>,
 ): EyeRig {
   const group = new THREE.Group()
   group.position.set(offsetX, offsetY, 0)
   head.add(group)
+
+  // Socket disc — static. Holds the lid shader that closes lids in
+  // body color and the widened dark rim that reads as a 3-D bezel.
   const disc = new THREE.Mesh(
     new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS, 48),
     eyeBundle.material,
   )
   disc.position.z = BODY_RADIUS + 0.0003
   group.add(disc)
-  const glow = new THREE.Mesh(
-    new THREE.CircleGeometry(EYE_PAIR_GLOW_RADIUS, 32),
-    pupilMaterials.glowMat,
-  )
-  glow.position.z = BODY_RADIUS + 0.0005
-  group.add(glow)
-  const pupil = new THREE.Mesh(
-    new THREE.CircleGeometry(EYE_PAIR_PUPIL_RADIUS, 32),
-    pupilMaterials.pupilMat,
-  )
-  pupil.position.z = BODY_RADIUS + 0.0006
-  group.add(pupil)
 
-  // Primary catchlight — larger, upper-right quadrant of the eye.
+  // Gaze-tracking pupil group — everything below moves together.
+  const pupilGroup = new THREE.Group()
+  group.add(pupilGroup)
+
+  // Iris glow — large soft additive wash behind the iris, tinted by
+  // state. Subtle; reads as the halo around the iris in emotive states.
+  const irisGlow = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_IRIS_GLOW_RADIUS, 32),
+    pupilMaterials.irisGlowMat,
+  )
+  irisGlow.position.z = BODY_RADIUS + 0.00045
+  pupilGroup.add(irisGlow)
+
+  // Iris disc — accent-colored. The pupil-field disc on top covers
+  // the center, leaving the teal visible as a ring.
+  const iris = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_IRIS_RADIUS, 48),
+    pupilMaterials.irisMat,
+  )
+  iris.position.z = BODY_RADIUS + 0.00050
+  pupilGroup.add(iris)
+
+  // Pupil field — dark navy, covers the iris center. Holds the stars.
+  const pupilField = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_PUPIL_FIELD_RADIUS, 40),
+    pupilMaterials.pupilFieldMat,
+  )
+  pupilField.position.z = BODY_RADIUS + 0.00055
+  pupilGroup.add(pupilField)
+
+  // Sparkle stars — tiny white five-point lights inside the pupil
+  // field. Position is per-eye so the two eyes aren't identical.
+  const stars: THREE.Mesh[] = []
+  for (let i = 0; i < Math.min(EYE_STARS_PER_EYE, starPositions.length); i++) {
+    const [sx, sy] = starPositions[i]
+    const star = new THREE.Mesh(_starGeometry, pupilMaterials.starMat)
+    star.position.set(sx, sy, BODY_RADIUS + 0.00060)
+    // Tiny per-star rotation variance so they read as "different stars"
+    // rather than a rubber-stamped pattern.
+    star.rotation.z = (i * 0.37) % (Math.PI * 2)
+    pupilGroup.add(star)
+    stars.push(star)
+  }
+
+  // Pupil dot — tiny near-black center. The anatomical pupil.
+  const pupilDot = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_PUPIL_DOT_RADIUS, 24),
+    pupilMaterials.pupilDotMat,
+  )
+  pupilDot.position.z = BODY_RADIUS + 0.00065
+  pupilGroup.add(pupilDot)
+
+  // Primary catchlight — dominant upper-right gleam.
   const catchPrimary = new THREE.Mesh(
     new THREE.CircleGeometry(CATCHLIGHT_PRIMARY_RADIUS, 16),
     createCatchlightMaterial(CATCHLIGHT_PRIMARY_OPACITY),
@@ -361,12 +509,11 @@ function buildPairedEye(
   catchPrimary.position.set(
     CATCHLIGHT_PRIMARY_OFFSET_X,
     CATCHLIGHT_PRIMARY_OFFSET_Y,
-    BODY_RADIUS + 0.0008,
+    BODY_RADIUS + 0.00080,
   )
-  group.add(catchPrimary)
+  pupilGroup.add(catchPrimary)
   // Secondary catchlight — smaller, lower-left. Animator convention:
-  // two highlights (primary + smaller secondary) reads as "wet" and
-  // adds the approachable gleam called out in the design doc.
+  // a second highlight reads as "wet" and adds the approachable gleam.
   const catchSecondary = new THREE.Mesh(
     new THREE.CircleGeometry(CATCHLIGHT_SECONDARY_RADIUS, 12),
     createCatchlightMaterial(CATCHLIGHT_SECONDARY_OPACITY),
@@ -374,11 +521,15 @@ function buildPairedEye(
   catchSecondary.position.set(
     CATCHLIGHT_SECONDARY_OFFSET_X,
     CATCHLIGHT_SECONDARY_OFFSET_Y,
-    BODY_RADIUS + 0.0008,
+    BODY_RADIUS + 0.00085,
   )
-  group.add(catchSecondary)
+  pupilGroup.add(catchSecondary)
 
-  return { group, pupil, glow, jitterScale: EYE_PAIR_JITTER_SCALE }
+  return {
+    group, pupilGroup,
+    iris, irisGlow, pupilField, pupilDot, stars,
+    jitterScale: EYE_PAIR_JITTER_SCALE,
+  }
 }
 
 /**
@@ -701,18 +852,18 @@ export function updateCharacter(
   handles.body.rotation.x = Math.sin(time * 0.5) * 0.05
   handles.body.rotation.z = Math.sin(time * 0.7) * 0.03
 
-  // ── Pupil pulse (TALKING) + size ──────────────────────────────────
-  // Scale writes hit every rig — same eased value across single and
-  // paired modes so a swap mid-pulse stays continuous. Glow tracks
-  // pupil at 1.12x as in the prototype. Reduced motion drops the
-  // pulse — the throbbing brightness is exactly the kind of "flashy"
-  // effect motion-sensitive viewers flag.
+  // ── Pupil pulse (TALKING) + iris/pupil size ──────────────────────
+  // The iris is the color carrier and stays at unit scale — big eyes
+  // are a cuteness signal. `pupilSize` now drives the black pupil
+  // DOT and the additive iris glow (both scale together), which is
+  // anatomically correct: pupil dilates/constricts, iris ring
+  // width stays roughly constant. Reduced motion drops the pulse.
   const pulseMul = (s.pupilPulse && !reducedMotion) ? (Math.sin(time * 9.0) * 0.25 + 1.0) : 1.0
   const finalPupilBright = s.pupilBrightness * pulseMul
-  const targetScale = s.pupilSize
+  const targetDotScale = s.pupilSize
   for (const rig of handles.eyeRigs) {
-    rig.pupil.scale.setScalar(lerp(rig.pupil.scale.x, targetScale, 0.15))
-    rig.glow.scale.setScalar(rig.pupil.scale.x * 1.12)
+    rig.pupilDot.scale.setScalar(lerp(rig.pupilDot.scale.x, targetDotScale, 0.15))
+    rig.irisGlow.scale.setScalar(rig.pupilDot.scale.x * 1.10)
   }
 
   // ── Blink scheduler ───────────────────────────────────────────────
@@ -755,10 +906,20 @@ export function updateCharacter(
     _tmpTargetColor.lerp(_tmpGestureColor, gestureFrame.pupilFlash)
   }
   anim.currentPupilColor.lerp(_tmpTargetColor, 0.12)
-  handles.pupilMaterials.pupilMat.color.copy(anim.currentPupilColor)
-  handles.pupilMaterials.glowMat.color.copy(anim.currentPupilColor)
-  handles.pupilMaterials.pupilMat.opacity = sat(finalPupilBright * pupilVis)
-  handles.pupilMaterials.glowMat.opacity = sat(0.4 * finalPupilBright * pupilVis)
+  // Iris ring carries the palette accent + state-tint color. The
+  // iris stays at constant brightness while open (eyes don't dim
+  // just because you're CHATTING vs POINTING), so opacity just
+  // tracks pupilVis — SOLEMN/CONFUSED/gesture tints still blend in
+  // via `currentPupilColor`.
+  handles.pupilMaterials.irisMat.color.copy(anim.currentPupilColor)
+  handles.pupilMaterials.irisGlowMat.color.copy(anim.currentPupilColor)
+  handles.pupilMaterials.irisMat.opacity = sat(pupilVis)
+  handles.pupilMaterials.irisGlowMat.opacity = sat(0.4 * finalPupilBright * pupilVis)
+  // Pupil field + dot + stars fade with the same lid coverage so a
+  // closing eye hides everything cleanly.
+  handles.pupilMaterials.pupilFieldMat.opacity = sat(pupilVis)
+  handles.pupilMaterials.pupilDotMat.opacity = sat(pupilVis)
+  handles.pupilMaterials.starMat.opacity = sat(0.85 * pupilVis)
 
   // ── Eye gaze (flight-aware, then state-specific) ─────────────────
   let tYaw = 0, tPitch = 0
@@ -880,22 +1041,21 @@ export function updateCharacter(
     anim.jitterX = lerp(anim.jitterX, 0, 0.2)
     anim.jitterY = lerp(anim.jitterY, 0, 0.2)
   }
-  // Pupil slides within its disc — we move the pupil itself, not the
-  // eye group. See prototype comment at lines 967-975. Each rig
-  // scales gaze + jitter by its `jitterScale` so the smaller paired
-  // discs see proportionally smaller pupil excursion (pupil stays
-  // inside the disc at any gaze angle).
-  const gazeRangeX = 0.014
-  const gazeRangeY = 0.010
+  // Gaze slides the whole pupil group (iris + pupil field + stars +
+  // pupil dot + catchlights) within the static socket disc. Big
+  // anime-style rigs track catchlights with the iris; small realistic
+  // eyes would keep the catchlight on the cornea. Ours are anime,
+  // so everything below the socket moves together. jitterScale
+  // keeps the excursion inside the socket at any gaze angle.
+  const gazeRangeX = 0.010
+  const gazeRangeY = 0.007
   const baseGazeX = Math.sin(anim.eyeYaw) * gazeRangeX
   const baseGazeY = -Math.sin(anim.eyePitch) * gazeRangeY
   for (const rig of handles.eyeRigs) {
     const gx = (baseGazeX + anim.jitterX) * rig.jitterScale
     const gy = (baseGazeY + anim.jitterY) * rig.jitterScale
-    rig.pupil.position.x = gx
-    rig.pupil.position.y = gy
-    rig.glow.position.x = gx
-    rig.glow.position.y = gy
+    rig.pupilGroup.position.x = gx
+    rig.pupilGroup.position.y = gy
   }
 
   // ── Sub-sphere positions (gesture overlay or sub-mode dispatch) ──
@@ -1031,6 +1191,14 @@ export function updateCharacter(
   // buffer writes the actual current position, not last frame's.
   // Flight adds a 0.6 boost so the journey leaves a visible arc.
   updateTrails(handles.trails, handles.subSpheres, state, palette, time, inFlight ? 0.6 : 0)
+
+  // ── Orbit rings ───────────────────────────────────────────────────
+  // Persistent sparkle rings tracing each sub's idle orbit. Intensity
+  // comes from the state's ExpressionConfig (new states inherit the
+  // default via expressionFor). No geometry writes — the rings are
+  // static in head-local space and ride the head group's world
+  // transform.
+  updateOrbitRings(handles.orbitRings, state, palette, time)
 
   // ── Target marker (POINTING / PRESENTING) ────────────────────────
   const wantMarker = (state === 'POINTING' || state === 'PRESENTING') && !inFlight ? 1 : 0

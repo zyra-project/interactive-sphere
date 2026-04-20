@@ -32,14 +32,16 @@ unchanged.
 
 | Aspect | Before | After |
 |---|---|---|
-| Body material | `ShaderMaterial`, fresnel + iridescent hue shift | `MeshStandardMaterial`, matte vinyl (rough 0.5, metal 0.0), horizontal two-color gradient via `onBeforeCompile` |
+| Body material | `ShaderMaterial`, fresnel + iridescent hue shift | `MeshStandardMaterial`, matte vinyl (rough 0.5, metal 0.0), warm-top → cool-bottom gradient (15° diagonal) via `onBeforeCompile` |
 | Face | Single inset lens-eye (EVE / BB-8 lineage) | Two paired eyes only — larger, lower, wider; mammalian neoteny proportions |
-| Eye socket | Near-black (`#060810`) | Warm dark charcoal (`#1f1a24`) |
-| Catchlights | None | Two per eye (primary upper-right, secondary lower-left) — static, additive white |
+| Eye structure | Flat accent-colored disc | Stacked iris rig: teal iris ring → navy pupil field → sparkle stars → black pupil dot → two catchlights, all gaze-tracked |
+| Eye socket | Near-black (`#060810`) | Warm charcoal (`#1f1a24`) + widened rim zone reads as 3-D bezel |
+| Catchlights | None | Two per eye (primary upper-right, secondary lower-left), parented to gaze-tracking pupil group |
 | Sub-sphere material | `MeshBasicMaterial` (flat accent color) | `MeshStandardMaterial` with the vinyl gradient |
 | Idle orbits | Single shared orbit phase | Two distinct crossing ellipses, tighter radius |
 | Shadows | None | Sub-spheres cast eclipse shadows onto body (educational cue: planetary eclipses) |
-| Trails | Palette-accent color, steady tapering | Warm off-white by default, per-vertex sparkle, palette-colored for expressive states only |
+| Trails | Palette-accent color, steady tapering | Warm-white sparkle comet tails + persistent closed sparkle orbit rings (§4.1) |
+| Backlight | None | Soft warm radial halo behind body — sells "luminous vinyl toy" without emissive on the matte material |
 | Body dynamics | Subtle wobble | Procedural squash/stretch — breathing, velocity smear, surprise gasp, satellite anthropomorphism |
 
 -----
@@ -77,19 +79,24 @@ knowing about the gradient.
 ### Gradient injection (matte vinyl material)
 
 `createBodyMaterial` returns a `MeshStandardMaterial` whose fragment
-pipeline is modified via `onBeforeCompile`. We add a single uniform
-for each anchor and mix by object-space X position:
+pipeline is modified via `onBeforeCompile`. The gradient axis is
+**not** horizontal — the concept art shows a soft "warm top / cool
+bottom" wash with a slight diagonal lean, mimicking natural lighting
+from above. We project the object-space position onto a tilted unit
+axis and mix:
 
 ```glsl
-// inserted before diffuseColor usage
-float g = clamp(vObjSpacePos.x / uSpan + 0.5, 0.0, 1.0);
-vec3 gradient = mix(uWarm, uCool, g);
+// uAxis ≈ (0.259, -0.966, 0.0) — 15° off vertical, warm side up
+float g = clamp(dot(vObjSpacePos, uAxis) / uSpan * 0.5 + 0.5, 0.0, 1.0);
+vec3 gradient = mix(uCool, uWarm, g);
 diffuseColor.rgb = gradient;
 ```
 
-`roughness: 0.5` and `metalness: 0.0` give the tactile silicone
-catch-the-light feel. No textures — everything derives from two
-uniforms.
+`uAxis` is exposed on the bundle so future state-driven tweaks
+(e.g. rotating the axis for a CONFUSED spiral) don't need a shader
+recompile. `roughness: 0.5` and `metalness: 0.0` give the tactile
+silicone catch-the-light feel. No textures — everything derives from
+the two anchor uniforms.
 
 -----
 
@@ -108,26 +115,79 @@ We match:
 |---|---|---|
 | `EYE_PAIR_OFFSET_X` | `0.022` | `0.028` (wider) |
 | `EYE_PAIR_DISC_RADIUS` | `0.014` | `0.018` (bigger) |
-| `EYE_PAIR_GLOW_RADIUS` | `0.0065` | `0.0090` |
-| `EYE_PAIR_PUPIL_RADIUS` | `0.0040` | `0.0055` |
 | Eye group `.position.y` | `0` | `-0.012` (lower) |
 
-### Warmer sockets
+### Stacked iris rig
 
-`uEyeColor: 0x060810 → 0x1f1a24` (warm dark charcoal) and
-`uRimColor: 0x1a1c25 → 0x2a2230`. Lid shader now mixes against the
-body's warm anchor instead of the legacy fresnel base so lids close
-to opaque vinyl skin rather than a metallic rim.
+The concept art's eye is anatomically structured — a teal iris ring
+around a dark-navy pupil field speckled with white stars, a tiny
+black pupil dot, and bright catchlights on top. Flat-disc
+"pupil + glow" was wrong; we rebuild the eye as a stack of
+concentric discs parented into a gaze-tracking pupil group:
 
-### Catchlights (both sizes)
+```
+eyeGroup (static, at face offset)
+├── disc        (eye-field shader: lids + widened dark bezel)
+└── pupilGroup  (moves for gaze)
+    ├── irisGlow    (additive accent halo)
+    ├── iris        (accent-colored disc, r=0.0108)    — "teal ring"
+    ├── pupilField  (dark navy, r=0.0080)              — covers iris center
+    ├── stars[3]    (tiny white 5-point sparkles)
+    ├── pupilDot    (near-black, r=0.0025)             — anatomical pupil
+    ├── catchPrimary  (additive white, r=0.0020, upper-right)
+    └── catchSecondary (additive white, r=0.0010, lower-left)
+```
 
-Each eye gets **two** additive white discs, parented to the eye
-group (not the pupil) so they stay fixed while the pupil moves.
-Primary at upper-right (`+0.0020, +0.0018`, radius `0.0010`, opacity
-`0.95`). Secondary at lower-left (`-0.0010, -0.0008`, radius
-`0.0005`, opacity `0.55`). The two-highlight convention is what
-Pixar / Dreamworks rigs use to sell "wet, alive" eyes — shipping
-both.
+Layer ordering uses Z offsets (`0.00045` → `0.00085` above the body
+radius) so the stack renders back-to-front without a depth test.
+
+**Why a group for gaze instead of moving individual meshes:**
+moving one `pupilGroup` per eye keeps iris, pupil dot, stars, and
+catchlights anatomically aligned under any gaze angle. The old code
+moved pupil + glow separately and left catchlights static; the
+catchlights drifted off the pupil on wide gaze.
+
+**Socket bezel.** The eye-field shader's `rimFactor` now ramps from
+`0.30` → `0.49` (was `0.36` → `0.48`), widening the dark ring around
+the iris. Combined with `uEyeColor` `0x1f1a24` (warm charcoal) and a
+darker `uRimColor` `0x0f0a12`, this reads as a 3-D socket bezel —
+the mechanical-toy look from the concept art — without any extra
+geometry.
+
+**Iris color carrier.** The iris — not the pupil dot — is what
+carries the palette accent and state-driven pupil color (SOLEMN
+blue, CONFUSED amber, gesture flashes). The pupil dot stays near-
+black and scales with `s.pupilSize` (so SURPRISED still constricts
+the pupil to 0.55× while the iris stays full).
+
+### Sparkle stars
+
+Three tiny white five-point stars per eye, built from a shared
+`BufferGeometry` (one triangle fan, 11 vertices). Positions are a
+fixed per-eye table so the two eyes read as distinct "star charts"
+but never shimmer between frames. Additive white, shared material
+across both eyes.
+
+Total new geometry cost: **2 × (1 iris + 1 iris-glow + 1 pupil-field
++ 3 stars + 1 pupil-dot + 2 catchlights) = 18 meshes,** all sharing
+materials. Well under the Quest budget.
+
+### Catchlights (both sizes, bigger)
+
+Two additive white discs per eye, now parented to the gaze-tracking
+`pupilGroup` (not the static eye group). Big anime-style rigs track
+catchlights with the iris; a floating static highlight reads as
+misaligned parallax under wide gaze. Sizes bumped from the first
+pass:
+
+| | Primary | Secondary |
+|---|---|---|
+| Offset (x, y) | `+0.0035, +0.0035` | `-0.0024, -0.0020` |
+| Radius | `0.0020` | `0.0010` |
+| Opacity | `1.0` | `0.70` |
+
+The primary catchlight covers ~18% of the iris radius — the
+dominant upper-right gleam from the concept art.
 
 -----
 
@@ -194,6 +254,67 @@ changed). Two tweaks:
 Trails still strictly follow sub-sphere positions via the existing
 rolling-buffer write.
 
+### 4.1 Orbit rings (persistent closed sparkle paths)
+
+The concept art shows **closed bright sparkle rings** wrapping Orbit
+continuously — not tapered comet tails. A 42-point rolling buffer
+fades to transparent behind the sub and can never close a ring at
+any length (the oldest vertex is the dimmest).
+
+Orbit rings are a **separate** visual system: one `THREE.Points`
+geometry per sub, 140 points sampled along the sub's precomputed
+`orbitBasis` ellipse, parented to the head group so they ride the
+character through flight and sway without per-frame position writes.
+Same sparkle shader as the trails (color + twinkle + distance-
+scaled size), but no alpha taper — every point renders at full
+intensity scaled only by its twinkle phase.
+
+```
+head
+├── body
+├── subSpheres[]
+└── orbitRings[]   ← NEW, one per sub, head-parented
+```
+
+**Intensity is state-driven** via `ExpressionConfig.ringIntensity`,
+sitting alongside the other procedural shape parameters in §5.1.
+A new state gets the default (`0.85`, visibly on) with zero edits;
+sleepy/thinking states dial down (`~0.30`); excited/talking dial up
+(`~1.15`). Per-state overrides are listed below:
+
+| State | ringIntensity | Notes |
+|---|---|---|
+| default | `0.85` | All unlisted states inherit this |
+| `SLEEPY` | `0.30` | Barely-there rings — character is low-energy |
+| `SOLEMN` | `0.40` | Dim reverent read |
+| `THINKING` | `0.35` | Low intensity matches cluster sub-mode's quietness |
+| `CURIOUS`, `HAPPY`, `TALKING` | `1.00-1.05` | Full brightness |
+| `EXCITED`, `SURPRISED` | `1.15-1.20` | Brighter than default |
+| `POINTING`, `PRESENTING` | `0.55` | Ambient — foreground sub action dominates |
+
+**Ring color** shares `trailColorFor(state, palette)` — warm
+off-white for quiet states, palette accent for expressive.
+
+Cost: 2 rings × 140 points = 280 extra points. No per-frame geometry
+mutations; only `uColor`, `uIntensity`, `uTime` uniform writes. Well
+inside Quest budget.
+
+### 4.2 Backlight halo
+
+A single additive disc parented to the head group, behind the body
+(`z = -BODY_RADIUS * 0.8`), 3.2× body radius. Radial-gradient
+shader fades from warm-white center to transparent rim. Sells
+"luminous vinyl toy" without pumping emissive on the matte body
+material (which would fight the vinyl look).
+
+The color is **constant warm** across palettes — a palette-tinted
+halo makes cool palettes read as sickly. Warm ambient light from
+behind flatters every palette equally.
+
+Cost: one `CircleGeometry(BODY_RADIUS * 3.2, 48)` + one
+`ShaderMaterial`. No per-frame work; the disc faces +Z and all scale
+presets put the camera at +Z, so no billboard math is needed.
+
 -----
 
 ## 5. Squash & stretch dynamics
@@ -214,25 +335,31 @@ touched:
 
 ```ts
 export interface ExpressionConfig {
-  breathRate:  number   // cycles per second
-  breathAmp:   number   // peak Y-scale offset (X/Z move inversely)
-  meltXZ:      number   // extra XZ widening (sleepy/solemn)
-  hopAmp:      number   // rhythmic Y hop (excited)
-  surpriseGasp: boolean // one-shot spring on state entry
-  talkPulse:   boolean  // subs pulse with pupil pulse
+  breathRate:    number   // cycles per second
+  breathAmp:     number   // peak Y-scale offset (X/Z move inversely)
+  meltXZ:        number   // extra XZ widening (sleepy/solemn)
+  hopAmp:        number   // rhythmic Y hop (excited)
+  surpriseGasp:  boolean  // one-shot spring on state entry
+  talkPulse:     boolean  // subs pulse with pupil pulse
+  ringIntensity: number   // persistent sparkle ring brightness (§4.1)
 }
 
 export const EXPRESSION_DEFAULT: ExpressionConfig = {
   breathRate: 0.8, breathAmp: 0.012, meltXZ: 0, hopAmp: 0,
-  surpriseGasp: false, talkPulse: false,
+  surpriseGasp: false, talkPulse: false, ringIntensity: 0.85,
 }
 
 export const EXPRESSIONS: Partial<Record<StateKey, Partial<ExpressionConfig>>> = {
-  SLEEPY:    { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025 },
-  SOLEMN:    { breathRate: 0.4,  breathAmp: 0.015, meltXZ: 0.018 },
-  EXCITED:   { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010 },
-  SURPRISED: { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true },
-  TALKING:   { talkPulse: true },
+  SLEEPY:    { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025, ringIntensity: 0.30 },
+  SOLEMN:    { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018, ringIntensity: 0.40 },
+  EXCITED:   { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010, ringIntensity: 1.15 },
+  SURPRISED: { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true, ringIntensity: 1.20 },
+  THINKING:  { breathRate: 0.55, breathAmp: 0.014, ringIntensity: 0.35 },
+  TALKING:   { talkPulse: true, ringIntensity: 1.00 },
+  HAPPY:     { ringIntensity: 1.05 },
+  CURIOUS:   { ringIntensity: 1.00 },
+  POINTING:  { ringIntensity: 0.55 },
+  PRESENTING:{ ringIntensity: 0.55 },
   // states omitted from this table get EXPRESSION_DEFAULT
 }
 

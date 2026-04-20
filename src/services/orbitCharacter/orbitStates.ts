@@ -107,6 +107,16 @@ export interface ExpressionConfig {
    * the satellites "breathing with the voice." Used by TALKING.
    */
   talkPulse: boolean
+  /**
+   * Persistent sparkle orbit rings drawn around Orbit's body, tracing
+   * each satellite's elliptical idle-orbit path (see `orbitBasis` on
+   * each sub-sphere). Intensity is 0..1; 0 hides the rings entirely.
+   * Ambient character feature — visible even when subs break away
+   * from their orbit path, since the rings read as "identity feature"
+   * rather than "literal current sub position." See the reference
+   * concept art in `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Trails.
+   */
+  ringIntensity: number
 }
 
 export const EXPRESSION_DEFAULT: ExpressionConfig = {
@@ -116,6 +126,7 @@ export const EXPRESSION_DEFAULT: ExpressionConfig = {
   hopAmp: 0,
   surpriseGasp: false,
   talkPulse: false,
+  ringIntensity: 0.85,
 }
 
 /**
@@ -124,12 +135,19 @@ export const EXPRESSION_DEFAULT: ExpressionConfig = {
  * default silently (extensibility requirement).
  */
 export const EXPRESSIONS: Partial<Record<StateKey, Partial<ExpressionConfig>>> = {
-  SLEEPY:    { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025 },
-  SOLEMN:    { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018 },
-  EXCITED:   { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010 },
-  SURPRISED: { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true },
-  THINKING:  { breathRate: 0.55, breathAmp: 0.014 },
-  TALKING:   { talkPulse: true },
+  SLEEPY:    { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025, ringIntensity: 0.30 },
+  SOLEMN:    { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018, ringIntensity: 0.40 },
+  EXCITED:   { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010, ringIntensity: 1.15 },
+  SURPRISED: { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true, ringIntensity: 1.20 },
+  THINKING:  { breathRate: 0.55, breathAmp: 0.014, ringIntensity: 0.35 },
+  TALKING:   { talkPulse: true, ringIntensity: 1.00 },
+  HAPPY:     { ringIntensity: 1.05 },
+  CURIOUS:   { ringIntensity: 1.00 },
+  // POINTING/PRESENTING: subs are doing work elsewhere; rings still
+  // exist as ambient identity cue, just at reduced intensity so the
+  // foreground action dominates the read.
+  POINTING:   { ringIntensity: 0.55 },
+  PRESENTING: { ringIntensity: 0.55 },
 }
 
 /** Merge the per-state override (if any) with EXPRESSION_DEFAULT. */
