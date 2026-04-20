@@ -212,6 +212,31 @@ export interface PhotorealEarthHandle {
    */
   readonly globe: THREE.Mesh
   /**
+   * Current base diffuse tier. Null until the first progressive CDN
+   * tier (2K) lands; upgrades to 4K and then 8K in the background.
+   * Exposed so multi-globe callers (the VR scene's secondary globes)
+   * can share the same Earth tile as the primary without
+   * re-fetching — `material.map = handle.baseDiffuseTexture ??
+   * handle.baseEarthTexture`, plus an `onBaseDiffuseChange`
+   * subscription to pick up tier upgrades.
+   */
+  readonly baseDiffuseTexture: THREE.Texture | null
+  /**
+   * Monochrome specular texture shipped with the repo. Stable
+   * reference — returned same object every access. Used as the
+   * fallback when `baseDiffuseTexture` is still null (first tier
+   * not yet loaded, or all tiers 404'd).
+   */
+  readonly baseEarthTexture: THREE.Texture
+  /**
+   * Subscribe to diffuse-tier upgrades. Fires when the progressive
+   * CDN loader lands a new tier (2K → 4K → 8K). Lets secondary
+   * globes track the primary's tier without running their own
+   * loader. Returns an unsubscribe function; the handle itself
+   * disposes all subscriptions on `dispose()`.
+   */
+  onBaseDiffuseChange(callback: (tex: THREE.Texture) => void): () => void
+  /**
    * Add every owned object — globe, atmospheres, sun, shadow, lights —
    * to the supplied scene. Cloud mesh attaches itself to `globe`
    * (which is in this list) once its async texture finishes loading.
@@ -800,6 +825,13 @@ export function createPhotorealEarth(
     }
   }
 
+  /**
+   * Subscribers to diffuse-tier upgrades (multi-globe callers that
+   * want secondary globes to share the primary's tier). Cleared
+   * on dispose.
+   */
+  const diffuseSubscribers = new Set<(tex: THREE.Texture) => void>()
+
   // Diffuse — 2K → 4K → 8K. Each tier replaces the previous;
   // previous texture disposed so GPU memory doesn't balloon.
   void loadProgressive(
@@ -809,12 +841,16 @@ export function createPhotorealEarth(
       if (activeKey !== null) {
         baseDiffuseTexture?.dispose()
         baseDiffuseTexture = tex
+        // Still notify subscribers so their dataset-free globes
+        // can take the upgrade when the user clears their dataset.
+        for (const cb of diffuseSubscribers) cb(tex)
         return
       }
       baseDiffuseTexture?.dispose()
       baseDiffuseTexture = tex
       material.map = tex
       material.needsUpdate = true
+      for (const cb of diffuseSubscribers) cb(tex)
     },
     'earth diffuse',
   )
@@ -841,6 +877,16 @@ export function createPhotorealEarth(
 
   return {
     globe,
+    get baseDiffuseTexture() {
+      return baseDiffuseTexture
+    },
+    get baseEarthTexture() {
+      return baseEarthTexture
+    },
+    onBaseDiffuseChange(callback) {
+      diffuseSubscribers.add(callback)
+      return () => { diffuseSubscribers.delete(callback) }
+    },
 
     addTo(scene) {
       for (const obj of objects) scene.add(obj)
@@ -1062,6 +1108,9 @@ export function createPhotorealEarth(
       // progressive diffuse/lights tiers) to drop their result on
       // the floor instead of attaching it to a torn-down scene.
       disposed = true
+      // Drop all diffuse subscribers — no point firing them after
+      // we're gone, and callers should re-subscribe on fresh handles.
+      diffuseSubscribers.clear()
       if (cancelPendingVideoListeners) {
         cancelPendingVideoListeners()
         cancelPendingVideoListeners = null
