@@ -242,8 +242,13 @@ export class OrbitController {
       this.container.removeChild(this.renderer.domElement)
     }
     // Photoreal Earth owns off-scene resources (CDN-loaded diffuse /
-    // lights textures, pending video listeners) that the scene
-    // traversal below won't reach — release those explicitly first.
+    // lights textures, async cloud loader, sun + ambient lights) that
+    // the scene traversal below won't reach. Pull its objects out of
+    // the scene first (matching the PhotorealEarthHandle contract),
+    // then dispose — that way the traversal only touches Orbit's own
+    // meshes (body, eye rigs, sub-spheres, trails, markers) and
+    // doesn't double-free Earth geometry/materials.
+    this.handles.earth.removeFrom(this.handles.scene)
     this.handles.earth.dispose()
     this.handles.scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {

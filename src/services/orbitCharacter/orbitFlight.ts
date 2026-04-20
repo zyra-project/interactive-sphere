@@ -77,13 +77,16 @@ const FEATURE_DIR = new THREE.Vector3(-0.12, 0.10, 0.99).normalize()
 export function parkingOf(p: ScalePreset, out = new THREE.Vector3()): THREE.Vector3 {
   const off = Math.max(0.09, 0.02 * p.earthRadius)
   out.set(p.earthCenter[0], p.earthCenter[1], p.earthCenter[2])
-  return out.add(PARKING_DIR.clone().multiplyScalar(p.earthRadius + off))
+  // addScaledVector avoids the per-call Vector3 allocation that
+  // `.clone().multiplyScalar()` would produce — this runs every
+  // frame through updateFlight / updateCharacter.
+  return out.addScaledVector(PARKING_DIR, p.earthRadius + off)
 }
 
 export function featureOf(p: ScalePreset, out = new THREE.Vector3()): THREE.Vector3 {
   const off = Math.max(0.005, 0.003 * p.earthRadius)
   out.set(p.earthCenter[0], p.earthCenter[1], p.earthCenter[2])
-  return out.add(FEATURE_DIR.clone().multiplyScalar(p.earthRadius + off))
+  return out.addScaledVector(FEATURE_DIR, p.earthRadius + off)
 }
 
 // ── Flight state + Bezier ────────────────────────────────────────────

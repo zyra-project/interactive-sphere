@@ -273,6 +273,15 @@ export function createPhotorealEarth(
   // load resolves, and inherits via Three.js's parent chain.
   const objects: THREE.Object3D[] = []
 
+  /**
+   * Flipped by `dispose()` so in-flight async loaders (cloud texture
+   * fetch, progressive diffuse/lights tiers) don't leak GPU
+   * resources or mutate a teardown scene if the handle is disposed
+   * before the network call lands. Every post-await code path
+   * checks this and disposes anything it just created when set.
+   */
+  let disposed = false
+
   // ── Lighting ──────────────────────────────────────────────────────
   let ambientLight: THREE.AmbientLight | null = null
   let sunLight: THREE.DirectionalLight | null = null
@@ -601,6 +610,7 @@ export function createPhotorealEarth(
     void (async () => {
       try {
         const img = await loadImage(getCloudTextureUrl())
+        if (disposed) return
 
         // Convert luminance channel to alpha on an offscreen canvas:
         // solid white RGB, varying alpha from source brightness with
@@ -622,6 +632,12 @@ export function createPhotorealEarth(
           data[i + 3] = Math.round(alpha * 255)
         }
         ctx.putImageData(imageData, 0, 0)
+
+        // Handle may have been disposed while the image was loading
+        // — the caller teardown path would otherwise miss these
+        // newly-allocated GPU resources. Nothing has been attached
+        // to the scene yet, so we just drop the work entirely.
+        if (disposed) return
 
         const cloudTexture = new THREE_.CanvasTexture(canvas)
         cloudTexture.colorSpace = THREE_.SRGBColorSpace
@@ -768,6 +784,11 @@ export function createPhotorealEarth(
     for (const url of urls) {
       try {
         const img = await loadImage(url)
+        // Bail (and don't build the Texture) if the handle was
+        // disposed during the fetch — otherwise the `apply` callback
+        // would stash a texture into the Earth material that nothing
+        // will ever free.
+        if (disposed) return
         const tex = new THREE_.Texture(img)
         tex.colorSpace = THREE_.SRGBColorSpace
         tex.needsUpdate = true
@@ -1037,6 +1058,10 @@ export function createPhotorealEarth(
     },
 
     dispose() {
+      // Tell every in-flight async loader (cloud texture fetch,
+      // progressive diffuse/lights tiers) to drop their result on
+      // the floor instead of attaching it to a torn-down scene.
+      disposed = true
       if (cancelPendingVideoListeners) {
         cancelPendingVideoListeners()
         cancelPendingVideoListeners = null
