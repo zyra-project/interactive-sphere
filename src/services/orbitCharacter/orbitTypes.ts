@@ -9,6 +9,16 @@ export type PaletteKey = 'cyan' | 'green' | 'amber' | 'violet'
 
 export type ScaleKey = 'close' | 'continental' | 'planetary'
 
+/**
+ * Eye configuration — design A/B between an iconic single inset
+ * lens-eye (EVE / BB-8 lineage) and a mammalian paired-eye rig that
+ * enables vergence cues. Both modes share the same eye-field /
+ * pupil shaders and gaze code; only geometry placement and pupil
+ * excursion scaling differ. Persisted across page loads via URL
+ * param so design reviews can deep-link directly into a config.
+ */
+export type EyeMode = 'one' | 'two'
+
 // Behavior register — who Orbit is being.
 export type BehaviorState =
   | 'IDLE' | 'CHATTING' | 'LISTENING' | 'TALKING'

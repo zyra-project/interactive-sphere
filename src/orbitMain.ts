@@ -10,7 +10,7 @@ import './styles/tokens.css'
 import './styles/orbit.css'
 import {
   OrbitController, ALL_STATES, STATES, GESTURE_KEYS, PRESET_KEYS,
-  type StateKey, type PaletteKey, type GestureKind, type ScaleKey,
+  type StateKey, type PaletteKey, type GestureKind, type ScaleKey, type EyeMode,
 } from './services/orbitCharacter'
 import { initOrbitDebugPanel } from './ui/orbitDebugPanel'
 
@@ -18,12 +18,14 @@ const ALLOWED_STATES = new Set<StateKey>(ALL_STATES)
 const ALLOWED_PALETTES = new Set<PaletteKey>(['cyan', 'green', 'amber', 'violet'])
 const ALLOWED_GESTURES = new Set<GestureKind>(GESTURE_KEYS)
 const ALLOWED_PRESETS = new Set<ScaleKey>(PRESET_KEYS)
+const ALLOWED_EYES = new Set<EyeMode>(['one', 'two'])
 
 interface UrlOverrides {
   state?: StateKey
   palette?: PaletteKey
   gesture?: GestureKind
   preset?: ScaleKey
+  eyes?: EyeMode
   fly?: boolean
 }
 
@@ -39,6 +41,8 @@ function readUrlOverrides(): UrlOverrides {
   if (g && ALLOWED_GESTURES.has(g as GestureKind)) out.gesture = g as GestureKind
   const pr = params.get('preset')?.toLowerCase()
   if (pr && ALLOWED_PRESETS.has(pr as ScaleKey)) out.preset = pr as ScaleKey
+  const e = params.get('eyes')?.toLowerCase()
+  if (e && ALLOWED_EYES.has(e as EyeMode)) out.eyes = e as EyeMode
   if (params.get('fly') === '1' || params.get('fly') === 'true') out.fly = true
   return out
 }
@@ -77,6 +81,7 @@ function bootstrap(): void {
 
   if (overrides.state) controller.setState(overrides.state)
   if (overrides.preset) controller.setScalePreset(overrides.preset)
+  if (overrides.eyes) controller.setEyeMode(overrides.eyes)
   updateCanvasAriaLabel(controller.getState())
 
   initOrbitDebugPanel(controller)

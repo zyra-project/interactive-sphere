@@ -29,7 +29,7 @@ import {
   type PupilMaterials,
 } from './orbitMaterials'
 import { createPhotorealEarth, type PhotorealEarthHandle } from '../photorealEarth'
-import { PALETTES, type PaletteKey, type ScaleKey, type StateKey } from './orbitTypes'
+import { PALETTES, type EyeMode, type PaletteKey, type ScaleKey, type StateKey } from './orbitTypes'
 import { STATES } from './orbitStates'
 import { buildTrails, updateTrails, type TrailHandle } from './orbitTrails'
 import { GESTURES, type GestureKind, type GestureFrame } from './orbitGestures'
@@ -42,6 +42,38 @@ const BODY_RADIUS = 0.075
 const SUB_RADIUS = 0.009
 const SUB_ORBIT_RADIUS = 0.14
 
+/**
+ * Two-eye rig geometry, lifted from the prototype's design A/B
+ * (commit `074ad86`). Each disc is ~half the single-eye disc; the
+ * pair sits ±22 mm from head center so the inner edges have a ~16 mm
+ * gap that reads as "two distinct eyes" rather than one wide one.
+ *
+ * `EYE_PAIR_JITTER_SCALE` is the ratio of paired-disc radius to
+ * single-disc radius (0.014 / 0.030 ≈ 0.47). Pupil excursion +
+ * jitter multiply by this so the pupil stays inside the smaller
+ * disc at any gaze angle while the un-scaled state-driven yaw /
+ * pitch values keep working unchanged.
+ */
+const EYE_PAIR_OFFSET_X = 0.022
+const EYE_PAIR_DISC_RADIUS = 0.014
+const EYE_PAIR_GLOW_RADIUS = 0.0065
+const EYE_PAIR_PUPIL_RADIUS = 0.0040
+const EYE_PAIR_JITTER_SCALE = 0.47
+
+/**
+ * One eye in either configuration — the single-mode rig (jitterScale
+ * 1.0) or one half of the two-mode pair (jitterScale 0.47). Per-frame
+ * pupil writes iterate every rig regardless of which is currently
+ * visible so toggling `eyeMode` doesn't snap pupil position; the
+ * non-visible rigs just don't render.
+ */
+export interface EyeRig {
+  group: THREE.Group
+  pupil: THREE.Mesh
+  glow: THREE.Mesh
+  jitterScale: number
+}
+
 export interface OrbitSceneHandles {
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
@@ -53,6 +85,15 @@ export interface OrbitSceneHandles {
   pupil: THREE.Mesh
   pupilGlow: THREE.Mesh
   pupilMaterials: PupilMaterials
+  /**
+   * Every eye rig built into the scene — single-mode at index 0,
+   * paired left/right at indices 1/2. Materials are shared across
+   * rigs (`eyeBundle` for the disc, `pupilMaterials` for pupil +
+   * glow), so palette / lid / opacity writes propagate everywhere
+   * automatically. Per-frame position+scale writes iterate this
+   * list; the visibility flag on `.group` controls rendering.
+   */
+  eyeRigs: EyeRig[]
   subSpheres: THREE.Mesh[]
   trails: TrailHandle[]
   /**
@@ -131,6 +172,25 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   pupil.position.z = BODY_RADIUS + 0.0006
   eyeGroup.add(pupil)
 
+  // Paired eye rig — built alongside the single eye so toggling is a
+  // visibility flip, not a rebuild. Materials share with the single
+  // rig (eyeBundle, pupilMaterials) so palette/lid/opacity writes
+  // propagate automatically.
+  const eyeLeft = buildPairedEye(head, eyeBundle, pupilMaterials, -EYE_PAIR_OFFSET_X)
+  const eyeRight = buildPairedEye(head, eyeBundle, pupilMaterials, +EYE_PAIR_OFFSET_X)
+  // Default to the paired-eye config — controller defaults to 'two'.
+  // updateCharacter writes visibility every frame from input.eyeMode,
+  // so this initial state only matters before the first update tick.
+  eyeGroup.visible = false
+  eyeLeft.group.visible = true
+  eyeRight.group.visible = true
+
+  const eyeRigs: EyeRig[] = [
+    { group: eyeGroup, pupil, glow: pupilGlow, jitterScale: 1.0 },
+    eyeLeft,
+    eyeRight,
+  ]
+
   const subSpheres: THREE.Mesh[] = []
   for (let i = 0; i < 2; i++) {
     const mat = new THREE.MeshBasicMaterial({
@@ -172,11 +232,49 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   return {
     scene, camera, head, body, bodyBundle,
     eyeGroup, eyeBundle, pupil, pupilGlow, pupilMaterials,
+    eyeRigs,
     subSpheres, trails,
     earth,
     targetMarker, targetHalo, targetMat, targetHaloMat,
     appliedPreset: initialPreset,
   }
+}
+
+/**
+ * Build one half of the paired-eye configuration. Each side gets its
+ * own group with its own disc, glow, and pupil, parented to the head
+ * at an X offset so gaze rotation happens around each eye's own
+ * pivot. Materials are shared with the single-eye setup so
+ * blink / opacity / palette updates are one-write.
+ */
+function buildPairedEye(
+  head: THREE.Group,
+  eyeBundle: EyeFieldMaterialBundle,
+  pupilMaterials: PupilMaterials,
+  offsetX: number,
+): EyeRig {
+  const group = new THREE.Group()
+  group.position.set(offsetX, 0, 0)
+  head.add(group)
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS, 48),
+    eyeBundle.material,
+  )
+  disc.position.z = BODY_RADIUS + 0.0003
+  group.add(disc)
+  const glow = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_GLOW_RADIUS, 32),
+    pupilMaterials.glowMat,
+  )
+  glow.position.z = BODY_RADIUS + 0.0005
+  group.add(glow)
+  const pupil = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_PUPIL_RADIUS, 32),
+    pupilMaterials.pupilMat,
+  )
+  pupil.position.z = BODY_RADIUS + 0.0006
+  group.add(pupil)
+  return { group, pupil, glow, jitterScale: EYE_PAIR_JITTER_SCALE }
 }
 
 /**
@@ -305,6 +403,7 @@ export interface UpdateInput {
   state: StateKey
   palette: PaletteKey
   scalePreset: ScaleKey
+  eyeMode: EyeMode
   flight: FlightState
   time: number
   dt: number
@@ -338,8 +437,15 @@ export function updateCharacter(
   anim: AnimationState,
   input: UpdateInput,
 ): void {
-  const { state, palette, scalePreset, flight, time, dt, mouseX, mouseY } = input
+  const { state, palette, scalePreset, eyeMode, flight, time, dt, mouseX, mouseY } = input
   const s = STATES[state]
+
+  // Eye-mode visibility: single-rig at index 0, pair at indices 1/2.
+  // Cheap to write every frame and keeps the toggle responsive.
+  const twoEyes = eyeMode === 'two'
+  handles.eyeRigs[0].group.visible = !twoEyes
+  handles.eyeRigs[1].group.visible = twoEyes
+  handles.eyeRigs[2].group.visible = twoEyes
   const p = PALETTES[palette]
   const preset = SCALE_PRESETS[scalePreset]
 
@@ -423,11 +529,16 @@ export function updateCharacter(
   handles.body.rotation.z = Math.sin(time * 0.7) * 0.03
 
   // ── Pupil pulse (TALKING) + size ──────────────────────────────────
+  // Scale writes hit every rig — same eased value across single and
+  // paired modes so a swap mid-pulse stays continuous. Glow tracks
+  // pupil at 1.12x as in the prototype.
   const pulseMul = s.pupilPulse ? (Math.sin(time * 9.0) * 0.25 + 1.0) : 1.0
   const finalPupilBright = s.pupilBrightness * pulseMul
   const targetScale = s.pupilSize
-  handles.pupil.scale.setScalar(lerp(handles.pupil.scale.x, targetScale, 0.15))
-  handles.pupilGlow.scale.setScalar(handles.pupil.scale.x * 1.12)
+  for (const rig of handles.eyeRigs) {
+    rig.pupil.scale.setScalar(lerp(rig.pupil.scale.x, targetScale, 0.15))
+    rig.glow.scale.setScalar(rig.pupil.scale.x * 1.12)
+  }
 
   // ── Blink scheduler ───────────────────────────────────────────────
   if (s.blinkInterval > 0 && anim.blinkStartTime < 0 && time >= anim.nextBlinkTime) {
@@ -588,15 +699,22 @@ export function updateCharacter(
     anim.jitterY = lerp(anim.jitterY, 0, 0.2)
   }
   // Pupil slides within its disc — we move the pupil itself, not the
-  // eye group. See prototype comment at lines 967-975.
+  // eye group. See prototype comment at lines 967-975. Each rig
+  // scales gaze + jitter by its `jitterScale` so the smaller paired
+  // discs see proportionally smaller pupil excursion (pupil stays
+  // inside the disc at any gaze angle).
   const gazeRangeX = 0.014
   const gazeRangeY = 0.010
   const baseGazeX = Math.sin(anim.eyeYaw) * gazeRangeX
   const baseGazeY = -Math.sin(anim.eyePitch) * gazeRangeY
-  handles.pupil.position.x = baseGazeX + anim.jitterX
-  handles.pupil.position.y = baseGazeY + anim.jitterY
-  handles.pupilGlow.position.x = handles.pupil.position.x
-  handles.pupilGlow.position.y = handles.pupil.position.y
+  for (const rig of handles.eyeRigs) {
+    const gx = (baseGazeX + anim.jitterX) * rig.jitterScale
+    const gy = (baseGazeY + anim.jitterY) * rig.jitterScale
+    rig.pupil.position.x = gx
+    rig.pupil.position.y = gy
+    rig.glow.position.x = gx
+    rig.glow.position.y = gy
+  }
 
   // ── Sub-sphere positions (gesture overlay or sub-mode dispatch) ──
   // During flight, force sub-mode to 'orbit' — point/trace/cluster

@@ -315,6 +315,45 @@ body.orbit-body {
     outline-offset: -2px;
 }
 
+/* Eyes A/B segmented control — mirrors .orbit-debug-scales styling. */
+.orbit-debug-eyes {
+    display: inline-flex;
+    flex: 0 1 auto;
+    border: 1px solid var(--white-o10);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.orbit-debug-eye {
+    padding: 0.28rem 0.55rem;
+    font: inherit;
+    font-size: 0.62rem;
+    letter-spacing: 0.03em;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--white-o08);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.orbit-debug-eye:first-child { border-left: none; }
+
+.orbit-debug-eye:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+}
+
+.orbit-debug-eye[aria-checked="true"] {
+    background: var(--accent-o15);
+    color: var(--color-accent);
+}
+
+.orbit-debug-eye:focus-visible {
+    outline: 2px solid var(--accent-o70);
+    outline-offset: -2px;
+}
+
 .orbit-debug-flight-row {
     justify-content: flex-end;
     gap: 0.4rem;

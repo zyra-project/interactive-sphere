@@ -11,14 +11,14 @@ eventually drive animation states.
 
 **Branch:** `claude/orbit-character-integration-plan-p83Jc`
 
-**Status:** Phase 4 shipped (flight + scale presets + Earth). Orbit
-can fly to Earth along a Bezier arc and back, with three presets
-(Close / Continental / Planetary) that sell the scale lesson: on
-`planetary`, Orbit shrinks to a speck beside a world. Procedural
-Earth shader ports from the prototype as a placeholder; a follow-up
-commit will swap it for the main app's VR Earth stack (photoreal
-diffuse + night lights + atmosphere + clouds + sun). Phase 6
-(a11y polish) is the natural next step. See §8 for the full table.
+**Status:** Phases 1–5 shipped. Phase 4.5 swapped the procedural
+Earth shader for the main app's photoreal stack via a reusable
+`createPhotorealEarth()` factory (`src/services/photorealEarth.ts`),
+shared with the VR view. Phase 5.5 ports the prototype's eye-mode
+A/B (single inset lens-eye vs. mammalian paired eyes) so design
+reviews can deep-link via `/orbit?eyes=two`. Phase 6 (a11y polish —
+`prefers-reduced-motion` for sub-sphere speed + flight skip) is
+next. See §8 for the full table.
 
 ---
 
@@ -406,7 +406,9 @@ of specific states.
 | 2  | `orbit: state vocabulary + sub-modes + blinks + trails`                 | `orbitStates`, state dispatch, `orbitTrails`, State select |
 | 3  | `orbit: gesture overlay system + Shrug/Wave/Beckon/Affirm`             | `orbitGestures`, `playGesture`, gesture buttons     |
 | 4  | `orbit: flight + scale presets + wireframe Earth context`              | `orbitFlight`, Fly button, scale control            |
+| 4.5| `orbit: extract photoreal Earth factory; Orbit adopts the VR stack`    | `photorealEarth.ts`, `vrScene.ts` thin wrapper, `orbitScene` swap |
 | 5  | `orbit: palette picker (machinery already shipped in Phase 2)`          | Palette swatch group in debug panel                 |
+| 5.5| `orbit: eye-mode A/B — single inset lens vs. paired eyes`              | `EyeMode` type, `eyeRigs[]`, debug-panel Eyes row, `?eyes=` URL param |
 | 6  | `orbit: a11y polish — reduced motion, aria-label, announcer`            | `prefers-reduced-motion`, live region wiring        |
 | 7  | `orbit: postMessage bridge + URL-param driver`                          | `window` bridge, URL parser for smoke tests         |
 | 8  | `orbit: Tools-menu entry linking to /orbit`                             | Link into the main app (pretty URL is automatic)    |

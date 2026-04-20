@@ -26,7 +26,7 @@ import {
   type OrbitSceneHandles,
   type AnimationState,
 } from './orbitScene'
-import type { PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
+import type { EyeMode, PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
 import { STATES } from './orbitStates'
 import { GESTURES, GESTURE_KEYS } from './orbitGestures'
 import {
@@ -35,7 +35,7 @@ import {
   type FlightState,
 } from './orbitFlight'
 
-export type { PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
+export type { EyeMode, PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
 export { PALETTES } from './orbitTypes'
 export { STATES, ALL_STATES, BEHAVIOR_STATES, EMOTION_STATES, GESTURE_STATES } from './orbitStates'
 export { GESTURES, GESTURE_KEYS } from './orbitGestures'
@@ -62,6 +62,10 @@ export class OrbitController {
   private state: StateKey = 'IDLE'
   private palette: PaletteKey
   private scalePreset: ScaleKey = 'close'
+  // Default to the paired-eye configuration — design-validated as the
+  // warmer, more mammalian read; the single inset lens stays available
+  // via `?eyes=one` or the debug-panel toggle.
+  private eyeMode: EyeMode = 'two'
   private readonly flight: FlightState = createFlightState()
   private time = 0
 
@@ -152,6 +156,21 @@ export class OrbitController {
     return this.scalePreset
   }
 
+  setEyeMode(mode: EyeMode): void {
+    if (mode !== 'one' && mode !== 'two') {
+      console.warn(`[Orbit] Unknown eye mode: ${mode}`)
+      return
+    }
+    // Visibility flip happens in the per-frame update — no rebuild,
+    // no eased transition (eyes pop). The pair was built upfront in
+    // buildScene so a swap is just toggling group.visible.
+    this.eyeMode = mode
+  }
+
+  getEyeMode(): EyeMode {
+    return this.eyeMode
+  }
+
   flyToEarth(): boolean {
     return startFlyToEarth(this.flight, SCALE_PRESETS[this.scalePreset], this.time)
   }
@@ -219,6 +238,7 @@ export class OrbitController {
       state: this.state,
       palette: this.palette,
       scalePreset: this.scalePreset,
+      eyeMode: this.eyeMode,
       flight: this.flight,
       time: this.time,
       dt,
