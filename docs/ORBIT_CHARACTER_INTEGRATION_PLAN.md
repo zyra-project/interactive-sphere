@@ -11,14 +11,17 @@ eventually drive animation states.
 
 **Branch:** `claude/orbit-character-integration-plan-p83Jc`
 
-**Status:** Phases 1–5 shipped. Phase 4.5 swapped the procedural
-Earth shader for the main app's photoreal stack via a reusable
-`createPhotorealEarth()` factory (`src/services/photorealEarth.ts`),
-shared with the VR view. Phase 5.5 ports the prototype's eye-mode
-A/B (single inset lens-eye vs. mammalian paired eyes) so design
-reviews can deep-link via `/orbit?eyes=two`. Phase 6 (a11y polish —
-`prefers-reduced-motion` for sub-sphere speed + flight skip) is
-next. See §8 for the full table.
+**Status:** Phases 1–6 shipped. Phase 4.5 extracted the photoreal
+Earth stack into a reusable `createPhotorealEarth()` factory
+(`src/services/photorealEarth.ts`) shared with the VR view. Phase
+5.5 ports the prototype's eye-mode A/B (single inset lens vs.
+mammalian paired eyes); paired is the default. Phase 6 honors OS
+`prefers-reduced-motion`: sub-sphere orbit speed clamps to the
+IDLE rate, pupil pulse / jitter / gesture pupil-flash drop, and
+flight teleports instead of arcing. The aria-label + announcer
+wiring already shipped in Phase 7's URL-param work, leaving Phase
+7's `postMessage` bridge and Phase 8's main-app link as the
+remaining items. See §8 for the full table.
 
 ---
 
@@ -409,7 +412,7 @@ of specific states.
 | 4.5| `orbit: extract photoreal Earth factory; Orbit adopts the VR stack`    | `photorealEarth.ts`, `vrScene.ts` thin wrapper, `orbitScene` swap |
 | 5  | `orbit: palette picker (machinery already shipped in Phase 2)`          | Palette swatch group in debug panel                 |
 | 5.5| `orbit: eye-mode A/B — single inset lens vs. paired eyes`              | `EyeMode` type, `eyeRigs[]`, debug-panel Eyes row, `?eyes=` URL param |
-| 6  | `orbit: a11y polish — reduced motion, aria-label, announcer`            | `prefers-reduced-motion`, live region wiring        |
+| 6  | `orbit: a11y polish — prefers-reduced-motion`                           | `matchMedia` listener, sub-sphere speed cap, flight skip, pupil flash/jitter/pulse drop, `?reduced=1` URL param |
 | 7  | `orbit: postMessage bridge + URL-param driver`                          | `window` bridge, URL parser for smoke tests         |
 | 8  | `orbit: Tools-menu entry linking to /orbit`                             | Link into the main app (pretty URL is automatic)    |
 

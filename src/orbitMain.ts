@@ -27,6 +27,7 @@ interface UrlOverrides {
   preset?: ScaleKey
   eyes?: EyeMode
   fly?: boolean
+  reduced?: boolean
 }
 
 function readUrlOverrides(): UrlOverrides {
@@ -44,6 +45,12 @@ function readUrlOverrides(): UrlOverrides {
   const e = params.get('eyes')?.toLowerCase()
   if (e && ALLOWED_EYES.has(e as EyeMode)) out.eyes = e as EyeMode
   if (params.get('fly') === '1' || params.get('fly') === 'true') out.fly = true
+  // ?reduced=1 forces reduced-motion mode regardless of OS setting —
+  // useful for design reviews and screenshots without flipping system
+  // accessibility settings. Omit (or `?reduced=0`) to honor the OS.
+  const r = params.get('reduced')
+  if (r === '1' || r === 'true') out.reduced = true
+  else if (r === '0' || r === 'false') out.reduced = false
   return out
 }
 
@@ -82,6 +89,7 @@ function bootstrap(): void {
   if (overrides.state) controller.setState(overrides.state)
   if (overrides.preset) controller.setScalePreset(overrides.preset)
   if (overrides.eyes) controller.setEyeMode(overrides.eyes)
+  if (overrides.reduced !== undefined) controller.setReducedMotion(overrides.reduced)
   updateCanvasAriaLabel(controller.getState())
 
   initOrbitDebugPanel(controller)

@@ -161,17 +161,33 @@ export function updateFlight(
   return flight.mode
 }
 
-/** Begin an outbound flight from Orbit's current rest position to the preset parking spot. */
+/**
+ * Tiny duration used when reduced-motion skips the flight animation.
+ * Not literally zero — `updateFlight` divides by `flight.duration`,
+ * and zero would NaN the lerp. A frame-sized number lets the existing
+ * Bezier path complete on the next tick without any visible motion.
+ */
+const REDUCED_MOTION_FLIGHT_DURATION = 0.001
+
+/**
+ * Begin an outbound flight from Orbit's current rest position to the
+ * preset parking spot. When `reducedMotion` is true, the duration
+ * collapses to ~0 and arc height to 0 so the next frame's
+ * updateFlight snaps straight to the destination — Orbit teleports
+ * rather than arcing across the view, which is what the OS
+ * `prefers-reduced-motion` setting asks of motion-heavy UI.
+ */
 export function startFlyToEarth(
   flight: FlightState,
   preset: ScalePreset,
   time: number,
+  reducedMotion = false,
 ): boolean {
   if (flight.mode === 'out' || flight.mode === 'back') return false
   flight.startPos.copy(CHAT_POS)
   parkingOf(preset, flight.endPos)
-  flight.duration = preset.flightOut
-  flight.arcHeight = preset.arcHeight
+  flight.duration = reducedMotion ? REDUCED_MOTION_FLIGHT_DURATION : preset.flightOut
+  flight.arcHeight = reducedMotion ? 0 : preset.arcHeight
   flight.startTime = time
   flight.mode = 'out'
   return true
@@ -181,12 +197,13 @@ export function startFlyHome(
   flight: FlightState,
   preset: ScalePreset,
   time: number,
+  reducedMotion = false,
 ): boolean {
   if (flight.mode === 'out' || flight.mode === 'back') return false
   parkingOf(preset, flight.startPos)
   flight.endPos.copy(CHAT_POS)
-  flight.duration = preset.flightBack
-  flight.arcHeight = preset.arcHeight
+  flight.duration = reducedMotion ? REDUCED_MOTION_FLIGHT_DURATION : preset.flightBack
+  flight.arcHeight = reducedMotion ? 0 : preset.arcHeight
   flight.startTime = time
   flight.mode = 'back'
   return true

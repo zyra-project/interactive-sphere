@@ -409,7 +409,26 @@ export interface UpdateInput {
   dt: number
   mouseX: number // [-1, 1] — normalized pointer x, used by CHATTING/TALKING gaze
   mouseY: number // [-1, 1]
+  /**
+   * When true, honor the user's OS `prefers-reduced-motion` setting:
+   * cap sub-sphere orbit speed, suppress pupil pulse / jitter, drop
+   * gesture pupil flashes. Flight is handled at the controller level
+   * (start* functions take the same flag and zero the duration).
+   * The character stays expressive — head nods, gaze tracking, blinks,
+   * and state transitions all continue — but the motion-heavy effects
+   * that motion-sensitive viewers actually flag as uncomfortable get
+   * dialed back. Driven by `OrbitController.setReducedMotion()`.
+   */
+  reducedMotion: boolean
 }
+
+/**
+ * Sub-sphere orbit-speed ceiling under reduced motion. 0.5 matches
+ * IDLE/CHATTING; states that normally run faster (TALKING 1.2,
+ * EXCITED 2.5) get clamped here so the orbit never races. Slower
+ * states (THINKING 0.2, SLEEPY 0.15) are left alone.
+ */
+const REDUCED_MOTION_ORBIT_SPEED_CAP = 0.5
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 const sat = (x: number): number => Math.max(0, Math.min(1, x))
@@ -437,7 +456,7 @@ export function updateCharacter(
   anim: AnimationState,
   input: UpdateInput,
 ): void {
-  const { state, palette, scalePreset, eyeMode, flight, time, dt, mouseX, mouseY } = input
+  const { state, palette, scalePreset, eyeMode, flight, time, dt, mouseX, mouseY, reducedMotion } = input
   const s = STATES[state]
 
   // Eye-mode visibility: single-rig at index 0, pair at indices 1/2.
@@ -520,7 +539,13 @@ export function updateCharacter(
   handles.earth.update()
 
   // ── Eased "current" values ────────────────────────────────────────
-  anim.orbitSpeed = lerp(anim.orbitSpeed, s.orbitSpeed, 0.04)
+  // Reduced motion clamps the orbit speed (only down — slow states
+  // already below the cap stay where they are). Easing keeps the
+  // toggle smooth instead of snapping mid-animation.
+  const targetOrbitSpeed = reducedMotion
+    ? Math.min(s.orbitSpeed, REDUCED_MOTION_ORBIT_SPEED_CAP)
+    : s.orbitSpeed
+  anim.orbitSpeed = lerp(anim.orbitSpeed, targetOrbitSpeed, 0.04)
   const targetRadius = SUB_ORBIT_RADIUS * s.orbitRadiusScale
   anim.subRadius = lerp(anim.subRadius, targetRadius, 0.05)
 
@@ -531,8 +556,10 @@ export function updateCharacter(
   // ── Pupil pulse (TALKING) + size ──────────────────────────────────
   // Scale writes hit every rig — same eased value across single and
   // paired modes so a swap mid-pulse stays continuous. Glow tracks
-  // pupil at 1.12x as in the prototype.
-  const pulseMul = s.pupilPulse ? (Math.sin(time * 9.0) * 0.25 + 1.0) : 1.0
+  // pupil at 1.12x as in the prototype. Reduced motion drops the
+  // pulse — the throbbing brightness is exactly the kind of "flashy"
+  // effect motion-sensitive viewers flag.
+  const pulseMul = (s.pupilPulse && !reducedMotion) ? (Math.sin(time * 9.0) * 0.25 + 1.0) : 1.0
   const finalPupilBright = s.pupilBrightness * pulseMul
   const targetScale = s.pupilSize
   for (const rig of handles.eyeRigs) {
@@ -573,7 +600,9 @@ export function updateCharacter(
     _tmpStateColor.set(s.pupilColor)
     _tmpTargetColor.lerp(_tmpStateColor, 0.65)
   }
-  if (gestureFrame && gestureFrame.pupilColor && gestureFrame.pupilFlash) {
+  // Gesture pupil flashes (e.g. Affirm's gold "mm-hm") are skipped
+  // under reduced motion — the rapid color spike reads as a flash.
+  if (gestureFrame && gestureFrame.pupilColor && gestureFrame.pupilFlash && !reducedMotion) {
     _tmpGestureColor.set(gestureFrame.pupilColor)
     _tmpTargetColor.lerp(_tmpGestureColor, gestureFrame.pupilFlash)
   }
@@ -683,7 +712,12 @@ export function updateCharacter(
   }
 
   // ── Pupil jitter ──────────────────────────────────────────────────
-  const jitterAmt = s.pupilJitter
+  // Reduced motion zeroes jitter even for high-jitter states
+  // (CONFUSED, EXCITED, SURPRISED) — the rapid micro-shake reads as
+  // an exact analogue to the kind of motion that triggers vestibular
+  // discomfort in static UI text. The state still reads via lid
+  // angle, sub-mode, head motion, and pupil color/size.
+  const jitterAmt = reducedMotion ? 0 : s.pupilJitter
   if (jitterAmt > 0.01) {
     if (time >= anim.jitterNextTime) {
       const interval = 0.18 - jitterAmt * 0.13

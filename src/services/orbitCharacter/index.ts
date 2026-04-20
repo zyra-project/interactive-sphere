@@ -66,6 +66,14 @@ export class OrbitController {
   // warmer, more mammalian read; the single inset lens stays available
   // via `?eyes=one` or the debug-panel toggle.
   private eyeMode: EyeMode = 'two'
+  /**
+   * Mirrors the OS `prefers-reduced-motion` query (initialized in the
+   * constructor and kept in sync via a media-query listener). Read by
+   * `updateCharacter` to cap orbit speed and skip flashes, and by
+   * `flyToEarth`/`flyHome` to teleport instead of arc.
+   */
+  private reducedMotion = false
+  private reducedMotionMql: MediaQueryList | null = null
   private readonly flight: FlightState = createFlightState()
   private time = 0
 
@@ -87,6 +95,15 @@ export class OrbitController {
 
     this.handles = buildScene({ palette: this.palette, pixelRatio, scalePreset: this.scalePreset })
     this.anim = createAnimationState(this.palette)
+
+    // Subscribe to OS prefers-reduced-motion. Keeping the MQL on the
+    // instance lets us tear the listener down in dispose() so we
+    // don't keep the controller alive after the page unmounts.
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      this.reducedMotionMql = window.matchMedia('(prefers-reduced-motion: reduce)')
+      this.reducedMotion = this.reducedMotionMql.matches
+      this.reducedMotionMql.addEventListener('change', this.handleReducedMotionChange)
+    }
 
     this.resize()
     this.container.appendChild(this.renderer.domElement)
@@ -172,11 +189,27 @@ export class OrbitController {
   }
 
   flyToEarth(): boolean {
-    return startFlyToEarth(this.flight, SCALE_PRESETS[this.scalePreset], this.time)
+    return startFlyToEarth(this.flight, SCALE_PRESETS[this.scalePreset], this.time, this.reducedMotion)
   }
 
   flyHome(): boolean {
-    return startFlyHome(this.flight, SCALE_PRESETS[this.scalePreset], this.time)
+    return startFlyHome(this.flight, SCALE_PRESETS[this.scalePreset], this.time, this.reducedMotion)
+  }
+
+  /**
+   * Override the prefers-reduced-motion default. The constructor seeds
+   * this from `window.matchMedia('(prefers-reduced-motion: reduce)')`
+   * and listens for OS-level changes; explicit calls here win until
+   * the OS query toggles next. Mostly useful for `?reduced=1` URL
+   * params and tests that need to assert behavior under reduced
+   * motion without actually changing OS settings.
+   */
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced
+  }
+
+  getReducedMotion(): boolean {
+    return this.reducedMotion
   }
 
   /** 'rest' | 'out' | 'atEarth' | 'back' — exposed so the UI can
@@ -191,6 +224,8 @@ export class OrbitController {
     cancelAnimationFrame(this.rafId)
     window.removeEventListener('resize', this.handleResize)
     this.renderer.domElement.removeEventListener('pointermove', this.handlePointerMove)
+    this.reducedMotionMql?.removeEventListener('change', this.handleReducedMotionChange)
+    this.reducedMotionMql = null
     this.renderer.dispose()
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement)
@@ -213,6 +248,10 @@ export class OrbitController {
 
   private handleResize = (): void => {
     this.resize()
+  }
+
+  private handleReducedMotionChange = (e: MediaQueryListEvent): void => {
+    this.reducedMotion = e.matches
   }
 
   private handlePointerMove = (e: PointerEvent): void => {
@@ -244,6 +283,7 @@ export class OrbitController {
       dt,
       mouseX: this.mouseX,
       mouseY: this.mouseY,
+      reducedMotion: this.reducedMotion,
     })
     this.renderer.render(this.handles.scene, this.handles.camera)
   }
