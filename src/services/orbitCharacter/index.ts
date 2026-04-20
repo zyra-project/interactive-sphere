@@ -2,26 +2,33 @@
  * OrbitController — public API for the Orbit character.
  *
  * This is the only surface external callers touch. Internally it owns
- * the Three.js scene, a requestAnimationFrame loop, and (in later
- * phases) the state machine, gesture queue, and flight system.
+ * the Three.js scene, a requestAnimationFrame loop, and the state
+ * machine. Gestures (Phase 3) and flight (Phase 4) come later.
  *
- * Phase 1 exposes state/palette setters as typed no-ops for the values
- * that aren't yet wired — `setState('IDLE')` is the only useful call.
- * The signatures match the design in the integration plan so callers
- * written today compile unchanged once later phases land.
+ * External drivers (the docent AI, the debug panel, URL params,
+ * postMessage bridges) only:
+ *   - setState(StateKey)
+ *   - playGesture(GestureKind)      // Phase 3
+ *   - setPalette(PaletteKey)
+ *   - setScalePreset(ScaleKey)      // Phase 4
+ *   - flyToEarth() / flyHome()      // Phase 4
+ *
+ * Everything else is derived from the STATES table per frame.
  */
 
 import * as THREE from 'three'
 import {
   buildScene,
-  createIdleAnimationState,
-  updateIdle,
+  createAnimationState,
+  updateCharacter,
   type OrbitSceneHandles,
-  type IdleAnimationState,
+  type AnimationState,
 } from './orbitScene'
 import type { PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
+import { STATES } from './orbitStates'
 
-export type { PaletteKey, ScaleKey, StateKey, GestureKind }
+export type { PaletteKey, ScaleKey, StateKey, GestureKind } from './orbitTypes'
+export { STATES, ALL_STATES, BEHAVIOR_STATES, EMOTION_STATES, GESTURE_STATES } from './orbitStates'
 
 export interface OrbitControllerOptions {
   container: HTMLElement
@@ -33,7 +40,7 @@ export class OrbitController {
   private readonly container: HTMLElement
   private readonly renderer: THREE.WebGLRenderer
   private readonly handles: OrbitSceneHandles
-  private readonly idleState: IdleAnimationState
+  private readonly anim: AnimationState
   private readonly clock = new THREE.Clock()
   private readonly onStateChange?: (state: StateKey) => void
 
@@ -42,7 +49,12 @@ export class OrbitController {
   private state: StateKey = 'IDLE'
   private palette: PaletteKey
   private scalePreset: ScaleKey = 'close'
-  private lastTime = 0
+  private time = 0
+
+  // Pointer position, normalized to [-1, 1]. CHATTING/TALKING/LISTENING
+  // gaze tracks this so Orbit's eye follows the user's cursor.
+  private mouseX = 0
+  private mouseY = 0
 
   constructor(options: OrbitControllerOptions) {
     this.container = options.container
@@ -50,25 +62,28 @@ export class OrbitController {
     this.onStateChange = options.onStateChange
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
-    // Cap pixel ratio at 2 on desktop, 1.5 on mobile; see §7 "Performance
-    // on low-end mobile" in the integration plan.
     const isMobile = typeof window !== 'undefined'
       && window.matchMedia?.('(max-width: 768px)').matches
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2))
 
     this.handles = buildScene(this.palette)
-    this.idleState = createIdleAnimationState()
+    this.anim = createAnimationState(this.palette)
 
     this.resize()
     this.container.appendChild(this.renderer.domElement)
 
     window.addEventListener('resize', this.handleResize)
+    this.renderer.domElement.addEventListener('pointermove', this.handlePointerMove)
     this.animate()
   }
 
   // ---- Public API -------------------------------------------------------
 
   setState(state: StateKey): void {
+    if (!(state in STATES)) {
+      console.warn(`[Orbit] Unknown state: ${state}`)
+      return
+    }
     if (state === this.state) return
     this.state = state
     this.onStateChange?.(state)
@@ -79,7 +94,7 @@ export class OrbitController {
   }
 
   playGesture(_kind: GestureKind): void {
-    // Gestures arrive in Phase 4. The signature is stable so callers
+    // Gestures arrive in Phase 3. The signature is stable so callers
     // written today compile against the final API.
   }
 
@@ -88,9 +103,10 @@ export class OrbitController {
   }
 
   setPalette(palette: PaletteKey): void {
-    // Palette swap arrives in Phase 6 (palettes + pupil tint). For now,
-    // store the value so `getPalette()` reflects what was asked for and
-    // future wiring has somewhere to read from.
+    // Palette swap lands fully in Phase 5 (palettes + pupil tint). The
+    // scene update already propagates palette changes per-frame, so
+    // storing it here and letting the next updateCharacter() pick it
+    // up is enough for visual correctness; Phase 5 adds the tint blend.
     this.palette = palette
   }
 
@@ -99,7 +115,6 @@ export class OrbitController {
   }
 
   setScalePreset(preset: ScaleKey): void {
-    // Flight + scale presets arrive in Phase 5.
     this.scalePreset = preset
   }
 
@@ -112,6 +127,7 @@ export class OrbitController {
     this.disposed = true
     cancelAnimationFrame(this.rafId)
     window.removeEventListener('resize', this.handleResize)
+    this.renderer.domElement.removeEventListener('pointermove', this.handlePointerMove)
     this.renderer.dispose()
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement)
@@ -132,6 +148,12 @@ export class OrbitController {
     this.resize()
   }
 
+  private handlePointerMove = (e: PointerEvent): void => {
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    this.mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    this.mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1
+  }
+
   private resize(): void {
     const { clientWidth, clientHeight } = this.container
     if (clientWidth === 0 || clientHeight === 0) return
@@ -143,14 +165,16 @@ export class OrbitController {
   private animate = (): void => {
     if (this.disposed) return
     this.rafId = requestAnimationFrame(this.animate)
-    const dt = Math.min(this.clock.getDelta(), 0.1) // clamp huge dt on tab resume
-    this.lastTime += dt
-
-    // Phase 1 only drives the Idle state. Phase 3 replaces this with
-    // a state dispatch that reads STATES[this.state] and computes
-    // per-state sub-sphere mode, lid values, pupil brightness, etc.
-    updateIdle(this.handles, this.idleState, this.lastTime, dt)
-
+    const dt = Math.min(this.clock.getDelta(), 0.05)
+    this.time += dt
+    updateCharacter(this.handles, this.anim, {
+      state: this.state,
+      palette: this.palette,
+      time: this.time,
+      dt,
+      mouseX: this.mouseX,
+      mouseY: this.mouseY,
+    })
     this.renderer.render(this.handles.scene, this.handles.camera)
   }
 }

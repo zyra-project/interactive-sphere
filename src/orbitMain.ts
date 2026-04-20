@@ -8,10 +8,10 @@
 
 import './styles/tokens.css'
 import './styles/orbit.css'
-import { OrbitController, type StateKey, type PaletteKey } from './services/orbitCharacter'
+import { OrbitController, ALL_STATES, STATES, type StateKey, type PaletteKey } from './services/orbitCharacter'
 import { initOrbitDebugPanel } from './ui/orbitDebugPanel'
 
-const ALLOWED_STATES = new Set<StateKey>(['IDLE'])
+const ALLOWED_STATES = new Set<StateKey>(ALL_STATES)
 const ALLOWED_PALETTES = new Set<PaletteKey>(['cyan', 'green', 'amber', 'violet'])
 
 function readUrlOverrides(): { state?: StateKey; palette?: PaletteKey } {
@@ -36,7 +36,7 @@ function updateCanvasAriaLabel(state: StateKey): void {
 }
 
 function labelFor(state: StateKey): string {
-  return state.charAt(0) + state.slice(1).toLowerCase()
+  return STATES[state].label
 }
 
 function bootstrap(): void {

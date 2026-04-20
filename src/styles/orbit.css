@@ -163,6 +163,42 @@ body.orbit-body {
     color: var(--color-text);
 }
 
+.orbit-debug-select {
+    flex: 0 1 auto;
+    min-width: 8rem;
+    max-width: 11rem;
+    padding: 0.3rem 0.45rem;
+    font: inherit;
+    font-size: 0.7rem;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--white-o10);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.orbit-debug-select:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--accent-o40);
+}
+
+.orbit-debug-select:focus-visible {
+    outline: 2px solid var(--accent-o70);
+    outline-offset: 2px;
+}
+
+.orbit-debug-select optgroup {
+    background: #0d0d12;
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+
+.orbit-debug-select option {
+    background: #0d0d12;
+    color: var(--color-text);
+}
+
 .orbit-debug-hint {
     margin-top: 0.3rem;
     font-size: 0.65rem;

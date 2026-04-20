@@ -1,19 +1,37 @@
 /**
  * Shared types for the Orbit character.
  *
- * These are the external-facing names. Future phases extend `StateKey`
- * and `GestureKind` as the STATES and GESTURES tables land.
+ * Enums mirror the design doc's state-and-gesture catalog. `GestureKind`
+ * populates in Phase 3 (gesture overlays); `ScaleKey` is wired in Phase 4.
  */
 
 export type PaletteKey = 'cyan' | 'green' | 'amber' | 'violet'
 
 export type ScaleKey = 'close' | 'continental' | 'planetary'
 
-// Phase 1 ships Idle only. Phase 3 extends to the full 14-state
-// vocabulary from ORBIT_CHARACTER_DESIGN.md §State and gesture catalog.
-export type StateKey = 'IDLE'
+// Behavior register — who Orbit is being.
+export type BehaviorState =
+  | 'IDLE' | 'CHATTING' | 'LISTENING' | 'TALKING'
+  | 'POINTING' | 'PRESENTING' | 'THINKING'
 
-export type GestureKind = never // populated in Phase 4
+// Emotion register — how Orbit feels about what it's doing.
+export type EmotionState =
+  | 'CURIOUS' | 'HAPPY' | 'EXCITED' | 'SURPRISED'
+  | 'SLEEPY' | 'SOLEMN' | 'CONFUSED'
+
+// Head-gesture register — dwell-able full-body responses.
+export type HeadGestureState = 'YES' | 'NO'
+
+export type StateKey = BehaviorState | EmotionState | HeadGestureState
+
+export type GestureKind = never // populated in Phase 3
+
+export type SubMode =
+  | 'orbit' | 'figure8' | 'point' | 'trace'
+  | 'cluster' | 'burst' | 'scatter' | 'listening'
+  | 'nod' | 'shake' | 'confused'
+
+export type HeadMotion = 'none' | 'nod' | 'shake' | 'tilt'
 
 export interface Palette {
   base: string

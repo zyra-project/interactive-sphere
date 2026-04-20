@@ -316,7 +316,7 @@ demo's shortcut.
 
 ---
 
-## 6. Eventual AI integration (Phase 6, out of scope here)
+## 6. Eventual AI integration (a follow-up phase, out of scope here)
 
 The current `docentService` already streams chunks with typed
 discriminators (`delta`, `action`, `auto-load`, `done`). The natural
@@ -340,9 +340,8 @@ handle `<<LOAD:...>>` markers. `docentContext.ts` prompt gains a
 short line explaining the vocabulary; `docentService.extractActions
 FromText()` parses the marker into a new `mood` stream chunk.
 
-That work is Phase 6 and gets its own plan doc when we pick it up.
-The point of this plan is to get the controller API right so Phase 6
-is small.
+That work lands in a follow-up plan. The point of this plan is to
+get the controller API right so the AI-driver phase is small.
 
 A second near-term integration path: the **controller exposes a
 `postMessage` bridge** on `window`. When Orbit is iframed into
@@ -396,19 +395,19 @@ of specific states.
 |----|-------------------------------------------------------------------------|-----------------------------------------------------|
 | 0  | `docs: orbit character integration plan (this file)`                   | Plan — no code                                      |
 | 1  | `orbit: vite entry + scaffold + body/eye/subs (Idle) at /orbit`        | Vite config, entry + CSS, `orbitScene`, materials   |
-| 3  | `orbit: state vocabulary + sub-modes + blink scheduling`                | `orbitStates`, state dispatch, debug State select   |
-| 4  | `orbit: gesture overlay system + Shrug/Wave/Beckon/Affirm`             | `orbitGestures`, `playGesture`, gesture buttons     |
-| 5  | `orbit: flight + scale presets + wireframe Earth context`              | `orbitFlight`, Fly button, scale control            |
-| 6  | `orbit: palettes + pupil tint blend`                                    | Palette radio group, tint easing                    |
-| 7  | `orbit: a11y polish — reduced motion, aria-label, announcer`            | `prefers-reduced-motion`, live region wiring        |
-| 8  | `orbit: postMessage bridge + URL-param driver`                          | `window` bridge, URL parser for smoke tests         |
-| 9  | `orbit: Tools-menu entry linking to /orbit`                             | Link into the main app (pretty URL is automatic)    |
+| 2  | `orbit: state vocabulary + sub-modes + blink scheduling`                | `orbitStates`, state dispatch, debug State select   |
+| 3  | `orbit: gesture overlay system + Shrug/Wave/Beckon/Affirm`             | `orbitGestures`, `playGesture`, gesture buttons     |
+| 4  | `orbit: flight + scale presets + wireframe Earth context`              | `orbitFlight`, Fly button, scale control            |
+| 5  | `orbit: palettes + pupil tint blend`                                    | Palette radio group, tint easing                    |
+| 6  | `orbit: a11y polish — reduced motion, aria-label, announcer`            | `prefers-reduced-motion`, live region wiring        |
+| 7  | `orbit: postMessage bridge + URL-param driver`                          | `window` bridge, URL parser for smoke tests         |
+| 8  | `orbit: Tools-menu entry linking to /orbit`                             | Link into the main app (pretty URL is automatic)    |
 
 Roughly 600–800 LOC across phases 1–8, heavily dominated by the
 state + gesture tables ported from the design doc. Phase 9 is
 trivial.
 
-Phase 6 (AI-driven state) lands separately with its own plan once
+AI-driven state lands separately with its own plan once
 this shell is in place.
 
 ---
