@@ -24,19 +24,18 @@ import {
   createBodyMaterial,
   createEyeFieldMaterial,
   createPupilMaterials,
-  createEarthMaterial,
   type BodyMaterialBundle,
   type EyeFieldMaterialBundle,
   type PupilMaterials,
-  type EarthMaterialBundle,
 } from './orbitMaterials'
+import { createPhotorealEarth, type PhotorealEarthHandle } from '../photorealEarth'
 import { PALETTES, type PaletteKey, type ScaleKey, type StateKey } from './orbitTypes'
 import { STATES } from './orbitStates'
 import { buildTrails, updateTrails, type TrailHandle } from './orbitTrails'
 import { GESTURES, type GestureKind, type GestureFrame } from './orbitGestures'
 import {
   SCALE_PRESETS, CHAT_FEATURE, featureOf, parkingOf, updateFlight,
-  type FlightState,
+  type FlightState, type ScalePreset,
 } from './orbitFlight'
 
 const BODY_RADIUS = 0.075
@@ -56,8 +55,12 @@ export interface OrbitSceneHandles {
   pupilMaterials: PupilMaterials
   subSpheres: THREE.Mesh[]
   trails: TrailHandle[]
-  earth: THREE.Mesh
-  earthBundle: EarthMaterialBundle
+  /**
+   * Photoreal Earth stack — diffuse + night lights + atmosphere +
+   * clouds + sun, shared with the VR view. Rebuilt on scale-preset
+   * change (new radius + position) via {@link applyPreset}.
+   */
+  earth: PhotorealEarthHandle
   targetMarker: THREE.Mesh
   targetHalo: THREE.Mesh
   targetMat: THREE.MeshBasicMaterial
@@ -86,13 +89,11 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   camera.position.fromArray(initial.cameraPos)
   camera.lookAt(new THREE.Vector3().fromArray(initial.cameraTarget))
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35))
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.75)
-  keyLight.position.set(0.6, 0.8, 0.5)
-  scene.add(keyLight)
-  const fillLight = new THREE.DirectionalLight(0x88aaff, 0.15)
-  fillLight.position.set(-0.6, 0.3, 0.4)
-  scene.add(fillLight)
+  // Lights come from the photoreal Earth stack (see below) — it
+  // ships its own ambient + sun directional so day/night terminator
+  // and shader lighting stay in sync. Orbit's body/eye/subs/trails
+  // use custom shaders or MeshBasicMaterial; they ignore scene
+  // lights entirely, so no Orbit-specific fill lights are needed.
 
   const head = new THREE.Group()
   scene.add(head)
@@ -146,15 +147,13 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
 
   const trails = buildTrails(scene, subSpheres, palette, pixelRatio)
 
-  // Earth — procedural continent shader, sized + placed per preset.
-  // Geometry is rebuilt on preset change (see applyPreset).
-  const earthBundle = createEarthMaterial()
-  const earth = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(initial.earthRadius, 5),
-    earthBundle.material,
-  )
-  earth.position.fromArray(initial.earthCenter)
-  scene.add(earth)
+  // Earth — photoreal stack (diffuse + night lights + atmosphere +
+  // clouds + sun), shared with the VR view. Radius + position come
+  // from the preset; ground shadow omitted (multiple presets at
+  // different positions, a single shadow plane doesn't help).
+  // Rebuilt on preset change (see applyPreset).
+  const earth = buildEarth(initial)
+  earth.addTo(scene)
 
   // Target marker + halo (visible during POINTING / PRESENTING).
   const targetMat = new THREE.MeshBasicMaterial({
@@ -174,22 +173,45 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
     scene, camera, head, body, bodyBundle,
     eyeGroup, eyeBundle, pupil, pupilGlow, pupilMaterials,
     subSpheres, trails,
-    earth, earthBundle,
+    earth,
     targetMarker, targetHalo, targetMat, targetHaloMat,
     appliedPreset: initialPreset,
   }
 }
 
 /**
- * Apply a scale-preset change to an already-built scene. Mutates
- * Earth geometry + position, camera pos/target/fov, and records the
- * applied preset on the handles so the controller can detect changes.
+ * Build a fresh photoreal Earth handle for the given preset. Used by
+ * both initial `buildScene` and by `applyPreset` on scale changes —
+ * photoreal Earth's atmosphere/cloud geometries are sized at
+ * construction so a preset swap tears down and rebuilds the whole
+ * stack rather than mutating geometries in place.
+ */
+function buildEarth(preset: ScalePreset): PhotorealEarthHandle {
+  return createPhotorealEarth(THREE, {
+    radius: preset.earthRadius,
+    position: {
+      x: preset.earthCenter[0],
+      y: preset.earthCenter[1],
+      z: preset.earthCenter[2],
+    },
+    includeShadow: false,
+  })
+}
+
+/**
+ * Apply a scale-preset change to an already-built scene. Tears down
+ * and rebuilds the photoreal Earth (its atmosphere / cloud / shadow
+ * geometries are sized at construction so in-place resize would
+ * require rebuilding each of them anyway), re-points the camera, and
+ * records the applied preset on the handles so the controller can
+ * detect changes.
  */
 export function applyPreset(handles: OrbitSceneHandles, preset: ScaleKey): void {
   const pp = SCALE_PRESETS[preset]
-  handles.earth.geometry.dispose()
-  handles.earth.geometry = new THREE.IcosahedronGeometry(pp.earthRadius, 5)
-  handles.earth.position.fromArray(pp.earthCenter)
+  handles.earth.removeFrom(handles.scene)
+  handles.earth.dispose()
+  handles.earth = buildEarth(pp)
+  handles.earth.addTo(handles.scene)
   handles.camera.position.fromArray(pp.cameraPos)
   handles.camera.lookAt(new THREE.Vector3().fromArray(pp.cameraTarget))
   handles.camera.fov = pp.fov
@@ -384,7 +406,12 @@ export function updateCharacter(
     mat.color.set(p.accent)
   })
   handles.bodyBundle.uniforms.uTime.value = time
-  handles.earthBundle.uniforms.uTime.value = time
+
+  // Photoreal Earth drives its own sun direction + atmosphere/
+  // shadow follow each frame. It's cheap (no per-frame allocations
+  // after the initial setup) and the day/night terminator needs
+  // frame-accurate world-space sun direction to stay aligned.
+  handles.earth.update()
 
   // ── Eased "current" values ────────────────────────────────────────
   anim.orbitSpeed = lerp(anim.orbitSpeed, s.orbitSpeed, 0.04)

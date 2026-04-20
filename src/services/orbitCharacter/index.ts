@@ -176,6 +176,10 @@ export class OrbitController {
     if (this.renderer.domElement.parentElement === this.container) {
       this.container.removeChild(this.renderer.domElement)
     }
+    // Photoreal Earth owns off-scene resources (CDN-loaded diffuse /
+    // lights textures, pending video listeners) that the scene
+    // traversal below won't reach — release those explicitly first.
+    this.handles.earth.dispose()
     this.handles.scene.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         obj.geometry?.dispose()
