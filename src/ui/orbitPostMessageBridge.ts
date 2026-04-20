@@ -23,13 +23,17 @@
  *     { type: 'orbit:ready' }
  *
  * All string values validate against the same allow-lists URL
- * overrides use. Unknown actions log a warn and drop — no action at
- * a distance via typos.
+ * overrides use, and invalid values warn-and-drop (no action at a
+ * distance via typos). Unknown `orbit:*` action types are SILENTLY
+ * dropped, not warned — the protocol is allowed to grow, and older
+ * bridge builds shouldn't spam the console when a newer caller
+ * sends an action they don't know about yet.
  *
- * No origin check — this page is an internal preview surface, not
- * authenticated. The controller exposes only safe setters (state /
- * palette / gesture / etc.); the worst a malicious sender can do is
- * change what Orbit looks like.
+ * Default: accept messages from any origin. This page is an
+ * internal preview surface and the controller only exposes safe
+ * setters, so the worst a malicious sender can do is change what
+ * Orbit looks like. Hosts that embed /orbit in an authenticated
+ * product can pass `allowedOrigins` to lock the bridge down.
  */
 
 import {
@@ -49,8 +53,25 @@ export interface OrbitBridgeHandle {
   dispose(): void
 }
 
-export function initOrbitPostMessageBridge(controller: OrbitController): OrbitBridgeHandle {
+export interface OrbitBridgeOptions {
+  /**
+   * If supplied, only messages whose `ev.origin` matches one of
+   * these exact strings are processed; everything else is dropped
+   * silently. Omit (or pass an empty array) to accept any origin —
+   * matches the preview-surface posture /orbit ships with by default.
+   */
+  readonly allowedOrigins?: readonly string[]
+}
+
+export function initOrbitPostMessageBridge(
+  controller: OrbitController,
+  options: OrbitBridgeOptions = {},
+): OrbitBridgeHandle {
+  const allowedOrigins = options.allowedOrigins && options.allowedOrigins.length > 0
+    ? new Set(options.allowedOrigins)
+    : null
   const handler = (ev: MessageEvent): void => {
+    if (allowedOrigins && !allowedOrigins.has(ev.origin)) return
     dispatch(controller, ev.data)
   }
   window.addEventListener('message', handler)
@@ -117,7 +138,7 @@ function dispatch(controller: OrbitController, data: unknown): void {
       // stringly-typed callers, so accept a narrow set of truthy /
       // falsy encodings and warn on anything else.
       const parsed = parseBoolish(msg.reduced)
-      if (parsed === null) warn('reduced must be boolean / 0 | 1 / "true" | "false"', msg.reduced)
+      if (parsed === null) warn('reduced must be boolean / 0 | 1 / "true" | "false" / "0" | "1"', msg.reduced)
       else controller.setReducedMotion(parsed)
       return
     }
@@ -144,17 +165,19 @@ function warn(label: string, value: unknown): void {
 /**
  * Lenient-but-not-sloppy boolean coercion for wire-format booleans.
  * Accepts native booleans, numeric `0` / `1`, and the strings
- * `'true'` / `'false'` (case-insensitive). Returns `null` for
- * anything else so the caller can warn and drop rather than
- * silently invert the user's intent.
+ * `'true'` / `'false'` / `'0'` / `'1'` (case-insensitive, whitespace-
+ * trimmed — postMessage callers often stringify everything, and
+ * tolerating both `1` and `'1'` removes a class of surprise drops).
+ * Returns `null` for anything else so the caller can warn and drop
+ * rather than silently invert the user's intent.
  */
 function parseBoolish(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value
   if (value === 1 || value === 0) return value === 1
   if (typeof value === 'string') {
-    const v = value.toLowerCase()
-    if (v === 'true') return true
-    if (v === 'false') return false
+    const v = value.trim().toLowerCase()
+    if (v === 'true' || v === '1') return true
+    if (v === 'false' || v === '0') return false
   }
   return null
 }

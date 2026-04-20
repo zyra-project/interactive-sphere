@@ -40,14 +40,14 @@ import type { ViewportManager, ViewLayout } from '../services/viewportManager'
 import { updateMapControlsPosition } from './mapControlsUI'
 
 /**
- * Gate the "Meet Orbit" link to web builds. Per the integration
- * plan's open question #1, the desktop story for Orbit is the
- * eventual VR-embedded character, not a separate viewer page — so
- * the link adds clutter without a payoff inside the Tauri shell.
- * Use the same runtime `__TAURI__` sentinel the rest of the code
- * keys off of.
+ * Runtime Tauri-shell detection — matches the same `__TAURI__`
+ * sentinel the rest of the code keys off of. Read fresh inside
+ * initToolsMenu rather than cached at module load so tests can
+ * toggle `window.__TAURI__` between cases.
  */
-const IS_TAURI = typeof window !== 'undefined' && !!(window as unknown as { __TAURI__?: unknown }).__TAURI__
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && !!(window as unknown as { __TAURI__?: unknown }).__TAURI__
+}
 
 /** Callbacks the tools menu fires out into the rest of the app. */
 export interface ToolsMenuCallbacks {
@@ -86,6 +86,8 @@ export function initToolsMenu(
   // that re-run on hot-reload. Without this the module-level flag
   // leaks between invocations.
   isOpen = false
+
+  const gateMeetOrbit = isTauri()
 
   const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, announce } = callbacks
   const currentLayout = viewports.getLayout()
@@ -159,7 +161,7 @@ export function initToolsMenu(
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Orbit settings&hellip;</span>
         </button>
-        ${IS_TAURI ? '' : `
+        ${gateMeetOrbit ? '' : `
         <a class="tools-menu-item tools-menu-item-link" id="tools-menu-meet-orbit" href="/orbit" target="_blank" rel="noopener">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Meet Orbit&nbsp;&rarr;</span>
