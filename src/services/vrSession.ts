@@ -470,6 +470,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     hasVideo: ctx.hasVideoDataset(),
     panelCount: ctx.getPanelCount(),
     primaryIndex: ctx.getPrimaryIndex(),
+    browseOpen: browse.isVisible(),
   })
 
   // XRControllerModelFactory was imported earlier (before scene
@@ -497,6 +498,11 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     onHudAction: (action) => {
       if (action === 'play-pause') {
         ctx.togglePlayPause()
+      } else if (action === 'browse') {
+        // Toggle the in-VR dataset browse panel. Its `isVisible`
+        // feeds `hud.setState({ browseOpen })` each frame, so the
+        // next render shows the button in its active-state color.
+        browse.setVisible(!browse.isVisible())
       } else if (action === 'exit-vr') {
         // Programmatic exit — fires the 'end' event, which routes
         // through the same teardown path as headset-initiated exits.
@@ -657,6 +663,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       hasVideo: ctx.hasVideoDataset(),
       panelCount,
       primaryIndex: ctx.getPrimaryIndex(),
+      browseOpen: active.browse.isVisible(),
     })
 
     active.interaction.update(delta)

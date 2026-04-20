@@ -43,16 +43,26 @@ const CANVAS_HEIGHT = 256
 /**
  * Hit-region layout in UV space. `u` runs 0 (left) → 1 (right), `v`
  * runs 0 (bottom) → 1 (top) — Three.js' default PlaneGeometry UVs.
- * All three regions are full-height bands; users don't need
- * fine-grained vertical targeting for buttons this small.
+ * All regions are full-height bands; users don't need fine-grained
+ * vertical targeting for buttons this small.
+ *
+ * Layout:
+ *   [play-pause] [ title ...        ] [browse] [exit]
+ *     0.00-0.18    0.18-0.64            0.64-   0.82-
+ *                                         0.82    1.00
+ *
+ * Title shrinks from 64 % of the bar to 46 % to make room for the
+ * Browse button; typical dataset names still fit at 46 % width with
+ * ellipsis falling back for long outliers.
  */
 const BUTTON_LAYOUT = {
   playPause: { uMin: 0.0, uMax: 0.18 },
+  browse: { uMin: 0.64, uMax: 0.82 },
   exit: { uMin: 0.82, uMax: 1.0 },
-  // Middle 64 % is the dataset title — non-interactive.
+  // 0.18-0.64 is the dataset title — non-interactive.
 } as const
 
-export type VrHudAction = 'play-pause' | 'exit-vr'
+export type VrHudAction = 'play-pause' | 'browse' | 'exit-vr'
 
 export interface VrHudState {
   /** Title shown in the middle of the panel. Null/empty renders "No dataset". */
@@ -69,6 +79,13 @@ export interface VrHudState {
   panelCount: number
   /** Which panel index is primary — drives the highlighted dot in the strip. */
   primaryIndex: number
+  /**
+   * Drives the Browse button's active-state highlight. True when the
+   * in-VR dataset browse panel is currently visible — gives the user
+   * visual feedback that tapping the button will close it rather than
+   * open a second one.
+   */
+  browseOpen: boolean
 }
 
 export interface VrHudHandle {
@@ -144,15 +161,40 @@ function drawCanvas(
   ctx.font = '500 54px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const titleMaxWidth = w * 0.6
+  // Title spans playPause.uMax → browse.uMin (0.18 → 0.64, 46 % of w).
   // Crude ellipsis — if the title doesn't fit at full size, truncate
   // character-by-character until it does. Fine for typical dataset
   // names (< 40 chars); a longer implementation would binary-search.
+  const titleUMin = BUTTON_LAYOUT.playPause.uMax
+  const titleUMax = BUTTON_LAYOUT.browse.uMin
+  const titleMaxWidth = (titleUMax - titleUMin) * w * 0.92
+  const titleCenterX = ((titleUMin + titleUMax) / 2) * w
   let title = titleText
   while (ctx.measureText(title).width > titleMaxWidth && title.length > 4) {
     title = title.slice(0, -2) + '…'
   }
-  ctx.fillText(title, w / 2, h / 2)
+  ctx.fillText(title, titleCenterX, h / 2)
+
+  // --- Browse button (three horizontal bars, "list" glyph) ---
+  // Highlights in accent when the panel is currently open so the
+  // user sees the toggle state; otherwise renders in the default
+  // text color to match the exit button's weight.
+  const brMinX = BUTTON_LAYOUT.browse.uMin * w
+  const brMaxX = BUTTON_LAYOUT.browse.uMax * w
+  const brCenterX = (brMinX + brMaxX) / 2
+  const brCenterY = h / 2
+  ctx.fillStyle = state.browseOpen
+    ? 'rgba(77, 166, 255, 0.95)' // --color-accent
+    : 'rgba(232, 234, 240, 0.85)'
+  const barW = 64
+  const barH = 8
+  const barGap = 16
+  const totalH = barH * 3 + barGap * 2
+  const topY = brCenterY - totalH / 2
+  for (let i = 0; i < 3; i++) {
+    const y = topY + i * (barH + barGap)
+    ctx.fillRect(brCenterX - barW / 2, y, barW, barH)
+  }
 
   // --- Right: exit VR button (×) ---
   const exMinX = BUTTON_LAYOUT.exit.uMin * w
@@ -235,6 +277,7 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
     hasVideo: false,
     panelCount: 1,
     primaryIndex: 0,
+    browseOpen: false,
   }
 
   function redraw() {
@@ -254,7 +297,8 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
         state.isPlaying !== currentState.isPlaying ||
         state.hasVideo !== currentState.hasVideo ||
         state.panelCount !== currentState.panelCount ||
-        state.primaryIndex !== currentState.primaryIndex
+        state.primaryIndex !== currentState.primaryIndex ||
+        state.browseOpen !== currentState.browseOpen
       if (!changed) return
       currentState = state
       redraw()
@@ -269,6 +313,9 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
         u <= BUTTON_LAYOUT.playPause.uMax
       ) {
         return 'play-pause'
+      }
+      if (u >= BUTTON_LAYOUT.browse.uMin && u <= BUTTON_LAYOUT.browse.uMax) {
+        return 'browse'
       }
       if (u >= BUTTON_LAYOUT.exit.uMin && u <= BUTTON_LAYOUT.exit.uMax) {
         return 'exit-vr'
