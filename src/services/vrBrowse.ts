@@ -264,9 +264,22 @@ function drawCanvas(
   const cardStride = CARD_HEIGHT + CARD_GAP
   const listContentWidth = w - LIST_PADDING * 2 - SCROLLBAR_WIDTH
 
-  for (let i = 0; i < datasets.length; i++) {
+  // Compute the visible-index window from scrollY so the draw loop
+  // only iterates cards that can actually land inside the clipped
+  // viewport. At XR frame rate (72-90 Hz) with large catalogs (100+
+  // datasets), the old O(n) "loop-and-continue" cost showed up in
+  // profiling; this collapses it to O(visible + 2 buffer). The
+  // one-card buffer on each side avoids popping at the edges when
+  // scrollY is mid-stride.
+  const visibleBuffer = 1
+  const startIndex = Math.max(0, Math.floor(scrollY / cardStride) - visibleBuffer)
+  const endIndex = Math.min(
+    datasets.length,
+    Math.ceil((scrollY + LIST_HEIGHT) / cardStride) + visibleBuffer,
+  )
+
+  for (let i = startIndex; i < endIndex; i++) {
     const cardY = LIST_TOP + i * cardStride - scrollY
-    if (cardY + CARD_HEIGHT < LIST_TOP || cardY > LIST_BOTTOM) continue
 
     const ds = datasets[i]
     const x = LIST_PADDING

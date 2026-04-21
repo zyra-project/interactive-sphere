@@ -1032,7 +1032,8 @@ export function createVrInteraction(
     for (let i = 0; i < 2; i++) {
       const controller = controllers[i]
       setRaycasterFromController(controller)
-      // Closest hit across all interactive surfaces wins.
+      // Closest hit across all interactive surfaces wins for the
+      // ray-dot position + line length.
       const hits = raycaster.intersectObjects(rayTargets, false)
       if (hits.length > 0 && hits[0].point) {
         const distance = hits[0].distance
@@ -1041,14 +1042,24 @@ export function createVrInteraction(
         rayLines[i].scale.z = Math.max(0.001, distance / RAY_LENGTH)
         dots[i].position.copy(hits[0].point)
         dots[i].visible = true
-        // Track whether each controller's ray is on the browse panel
-        // so thumbstick-Y scrolls the list instead of zooming the globe.
-        rayOnBrowse[i] = hits[0].object === ctx.browse.mesh
       } else {
         rayLines[i].scale.z = 1
         dots[i].visible = false
-        rayOnBrowse[i] = false
       }
+      // rayOnBrowse drives thumbstick-Y → scroll (vs. zoom). Match
+      // `pickHit`'s priority: the browse panel wins over the globe
+      // even if the globe is closer to the camera, so we check
+      // whether browse.mesh is anywhere in the hit list, not just
+      // at position 0. Without this, a ray that crosses both the
+      // panel and a globe behind it would scroll-route incorrectly
+      // (closest hit is globe → rayOnBrowse false → zoom instead of
+      // scroll, mismatching the click-route above).
+      const browseMesh = ctx.browse.mesh
+      let onBrowse = false
+      for (let h = 0; h < hits.length; h++) {
+        if (hits[h].object === browseMesh) { onBrowse = true; break }
+      }
+      rayOnBrowse[i] = onBrowse
     }
   }
 
