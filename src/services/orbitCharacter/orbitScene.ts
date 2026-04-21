@@ -711,10 +711,15 @@ function buildPairedEye(
   group.add(lowerLidPivot)
   const lowerLid = new THREE.Mesh(lidGeometry, lidMaterial)
   // Lower lid mirrors the upper: same geometry, rotated 180° around X
-  // so it opens upward, same -Y offset (which in its rotated frame
-  // places the dome center near its pivot axis).
+  // so it opens upward. Offset NEGATED vs. the upper lid —
+  // Three.js applies mesh.rotation first, then mesh.position, so
+  // using the same -Y offset as the upper lid would drive the lower
+  // dome's cap FURTHER from its pivot (position and rotated-cap
+  // direction both pointing -Y, so they add instead of cancel). The
+  // sign flip on the offset restores the mirror: upper cap at
+  // +0.65·r above pivot, lower cap at -0.65·r below pivot.
   lowerLid.rotation.x = Math.PI
-  lowerLid.position.set(0, LID_MESH_Y_OFFSET, 0)
+  lowerLid.position.set(0, -LID_MESH_Y_OFFSET, 0)
   lowerLid.castShadow = false
   lowerLid.receiveShadow = true
   lowerLid.renderOrder = 1
