@@ -244,6 +244,32 @@ export interface PupilMaterials {
   starMat: THREE.MeshBasicMaterial
 }
 
+/**
+ * Apply the shared "clip to socket silhouette" stencil test to a
+ * material. Unlike the lid material (which uses `EqualStencilFunc`
+ * with a per-eye ref so each lid only renders inside its own socket),
+ * pupil-group materials (iris, pupil field, stars, pupil dot,
+ * catchlights, iris glow) are **shared across both eyes**. We can't
+ * give them per-eye refs without duplicating every material — so
+ * they use `NotEqualStencilFunc` against `0`, which passes wherever
+ * ANY socket mask has written stencil (both left=1 and right=2
+ * pass "!= 0"). Each eye's contents are positioned in its own local
+ * space and can't cross the gap between sockets, so shared-material
+ * cross-contamination isn't possible in practice.
+ *
+ * Three.js `stencilWrite: true` is the master enable; all stencil
+ * ops are `KeepStencilOp` so the material reads the buffer without
+ * modifying it.
+ */
+function applyPupilStencilClip(mat: THREE.Material): void {
+  mat.stencilWrite = true
+  mat.stencilRef = 0
+  mat.stencilFunc = THREE.NotEqualStencilFunc
+  mat.stencilFail = THREE.KeepStencilOp
+  mat.stencilZFail = THREE.KeepStencilOp
+  mat.stencilZPass = THREE.KeepStencilOp
+}
+
 export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMaterials {
   const accent = new THREE.Color(PALETTES[palette].accent)
   const pupilFieldUniforms = {
@@ -271,30 +297,40 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
         gl_FragColor = vec4(uColor, a);
       }`,
   })
+  const irisMat = new THREE.MeshBasicMaterial({
+    color: accent.clone(),
+    transparent: true,
+  })
+  const irisGlowMat = new THREE.MeshBasicMaterial({
+    color: accent.clone(),
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending,
+  })
+  const pupilDotMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(PUPIL_DOT_COLOR),
+    transparent: true,
+  })
+  const starMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
+  // Every mesh inside the pupilGroup is clipped to the socket by the
+  // stencil mask — otherwise gaze excursion lets the iris / pupil
+  // field escape past the bezel rim when Orbit looks toward an eye's
+  // outer corner.
+  applyPupilStencilClip(irisMat)
+  applyPupilStencilClip(irisGlowMat)
+  applyPupilStencilClip(pupilFieldMat)
+  applyPupilStencilClip(pupilDotMat)
+  applyPupilStencilClip(starMat)
   return {
-    irisMat: new THREE.MeshBasicMaterial({
-      color: accent.clone(),
-      transparent: true,
-    }),
-    irisGlowMat: new THREE.MeshBasicMaterial({
-      color: accent.clone(),
-      transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
-    }),
-    pupilFieldMat,
-    pupilFieldUniforms,
-    pupilDotMat: new THREE.MeshBasicMaterial({
-      color: new THREE.Color(PUPIL_DOT_COLOR),
-      transparent: true,
-    }),
-    starMat: new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.85,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
+    irisMat, irisGlowMat,
+    pupilFieldMat, pupilFieldUniforms,
+    pupilDotMat, starMat,
   }
 }
 
@@ -464,7 +500,7 @@ export function createStarGeometry(radius: number): THREE.BufferGeometry {
  * but share the same shader.
  */
 export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
+  const mat = new THREE.ShaderMaterial({
     uniforms: {
       uOpacity: { value: opacity },
     },
@@ -492,6 +528,11 @@ export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial 
         gl_FragColor = vec4(1.0, 1.0, 1.0, uOpacity * fade);
       }`,
   })
+  // Catchlights ride the pupilGroup so they track gaze. Stencil
+  // clip keeps them inside the socket silhouette at extreme gaze
+  // angles, matching the rest of the pupil-group meshes.
+  applyPupilStencilClip(mat)
+  return mat
 }
 
 // -----------------------------------------------------------------------
