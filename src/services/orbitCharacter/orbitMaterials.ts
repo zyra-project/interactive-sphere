@@ -273,7 +273,9 @@ function applyPupilStencilClip(mat: THREE.Material): void {
 export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMaterials {
   const accent = new THREE.Color(PALETTES[palette].accent)
   const pupilFieldUniforms = {
-    uColor: { value: new THREE.Color(PUPIL_FIELD_COLOR) },
+    // DIAGNOSTIC — pupil field tinted bright yellow for inner-wedge
+    // identification pass.
+    uColor: { value: new THREE.Color(0xffff00) },
     uOpacity: { value: 1.0 },
   }
   const pupilFieldMat = new THREE.ShaderMaterial({
@@ -297,25 +299,31 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
         gl_FragColor = vec4(uColor, a);
       }`,
   })
+  // DIAGNOSTIC RAINBOW — every pupil-group element tinted a distinct
+  // bright color so the user can identify the inner-wedge artifact's
+  // source from a single screenshot. Revert on next commit.
+  //   iris       = bright GREEN
+  //   irisGlow   = bright ORANGE
+  //   pupilField = bright YELLOW
+  //   pupilDot   = bright CYAN
+  //   stars      = bright MAGENTA (kept from previous diagnostic)
+  //   catchlight (in createCatchlightMaterial) = bright PINK via overlay
   const irisMat = new THREE.MeshBasicMaterial({
-    color: accent.clone(),
+    color: 0x00ff00,  // green
     transparent: true,
   })
   const irisGlowMat = new THREE.MeshBasicMaterial({
-    color: accent.clone(),
+    color: 0xff8800,  // orange
     transparent: true,
-    opacity: 0.35,
+    opacity: 1.0,
     blending: THREE.AdditiveBlending,
   })
   const pupilDotMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(PUPIL_DOT_COLOR),
+    color: 0x00ffff,  // cyan
     transparent: true,
   })
   const starMat = new THREE.MeshBasicMaterial({
-    // DIAGNOSTIC — stars temporarily tinted bright magenta to test
-    // whether the "inner-wedge" artifact is the upper-inner star
-    // on each eye. Revert on next commit.
-    color: 0xff00ff,
+    color: 0xff00ff,  // magenta
     transparent: true,
     opacity: 1.0,
     blending: THREE.AdditiveBlending,
