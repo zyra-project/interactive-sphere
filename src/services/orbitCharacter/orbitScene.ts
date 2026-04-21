@@ -154,30 +154,28 @@ const BEZEL_TUBE_RADIUS  = 0.0018
 /**
  * Eyelid geometry + pivot placement.
  *
- * Lids are shallow spherical caps (see {@link createLidGeometry}),
- * each parented to an `Object3D` pivot. The pivot sits **in the
- * socket plane** (same Z as the recessed eye-field disc) so the lid
- * rotates *around the socket rim*, not around a point proud of the
- * body surface — that was the "creepy mouth shadow" bug from the
- * earlier tuning pass, where parked lids sat in front of the face
- * and dropped their own shadow onto the body.
+ * The dome's radius is kept smaller than the socket disc's radius so
+ * the lid silhouette fits INSIDE the socket rim when viewed head-on
+ * — at the earlier tuning of `DISC_RADIUS * 1.10` the dome was
+ * always visible as a white cap protruding above/below the eye,
+ * even when parked. Shrinking the dome + pushing the parked
+ * rotation further back tucks the lid fully inside the socket at
+ * rest and only sweeps it forward when closing.
  *
- * Rotation interval sweeps through +Z (forward toward camera). At
- * PARKED the dome leans back-and-up, out of view above the brow;
- * at CLOSED it leans forward-and-down to cover the eye. The full
- * sweep is ~155° (-0.3π → +0.6π), with the state's `upperLid` /
- * `lowerLid` amount interpolating between them — SLEEPY's `0.56`
- * closure lands with the lid ~half over the eye, as the reference
- * Cosmic Rest panel shows.
+ * The lid mesh is also offset inward along its own pivot-local -Y
+ * so the dome's center sits near the pivot's rotation axis; that
+ * keeps the cap's travel radius short during rotation and prevents
+ * it from swinging outside the socket at intermediate angles.
  */
-const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 1.10   // slightly bigger than socket
-const UPPER_LID_PIVOT_Y = +EYE_PAIR_DISC_RADIUS * 0.88
-const LOWER_LID_PIVOT_Y = -EYE_PAIR_DISC_RADIUS * 0.88
-const LID_PIVOT_Z = SOCKET_Z_DISC                 // sits in the socket plane
-const UPPER_LID_PARKED_ROT = -Math.PI * 0.30      // tilted up-and-back, out of view
-const LOWER_LID_PARKED_ROT = +Math.PI * 0.30      // tilted down-and-back, out of view
-const UPPER_LID_CLOSED_ROT = +Math.PI * 0.60      // tilted forward-down, covers eye
-const LOWER_LID_CLOSED_ROT = -Math.PI * 0.60      // tilted forward-up, covers eye
+const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 0.85        // fits inside socket
+const LID_MESH_Y_OFFSET = -LID_RADIUS * 0.55           // dome center near pivot axis
+const UPPER_LID_PIVOT_Y = +EYE_PAIR_DISC_RADIUS * 0.55 // inside socket, not at the rim
+const LOWER_LID_PIVOT_Y = -EYE_PAIR_DISC_RADIUS * 0.55
+const LID_PIVOT_Z = SOCKET_Z_DISC                      // sits in the socket plane
+const UPPER_LID_PARKED_ROT = -Math.PI * 0.48           // tucked well back, behind body
+const LOWER_LID_PARKED_ROT = +Math.PI * 0.48           // tucked well forward/down, behind
+const UPPER_LID_CLOSED_ROT = +Math.PI * 0.45           // forward-down, covers eye
+const LOWER_LID_CLOSED_ROT = -Math.PI * 0.45           // forward-up, covers eye
 
 /**
  * Catchlight placement within the pupil group. Two per eye — a
@@ -646,12 +644,15 @@ function buildPairedEye(
   // "creepy smudge" bug. The lid's own pigment + the body's key
   // light already carry the closed-eye read; a cast shadow from
   // the lid onto the iris is not worth the false-mouth artifact.
+  // Lids are offset along their pivot-local -Y so the dome center
+  // sits closer to the pivot axis — short travel radius during
+  // rotation, keeps the cap inside the socket silhouette.
   const upperLidPivot = new THREE.Object3D()
   upperLidPivot.position.set(0, UPPER_LID_PIVOT_Y, LID_PIVOT_Z)
   upperLidPivot.rotation.x = UPPER_LID_PARKED_ROT
   group.add(upperLidPivot)
   const upperLid = new THREE.Mesh(lidGeometry, bodyMaterial)
-  upperLid.position.set(0, 0, 0)
+  upperLid.position.set(0, LID_MESH_Y_OFFSET, 0)
   upperLid.castShadow = false
   upperLid.receiveShadow = true
   upperLidPivot.add(upperLid)
@@ -661,9 +662,11 @@ function buildPairedEye(
   lowerLidPivot.rotation.x = LOWER_LID_PARKED_ROT
   group.add(lowerLidPivot)
   const lowerLid = new THREE.Mesh(lidGeometry, bodyMaterial)
-  // Lower lid is the same dome rotated 180° around X so it opens
-  // UPWARD (toward the socket) — lets both lids share one geometry.
+  // Lower lid mirrors the upper: same geometry, rotated 180° around X
+  // so it opens upward, same -Y offset (which in its rotated frame
+  // places the dome center near its pivot axis).
   lowerLid.rotation.x = Math.PI
+  lowerLid.position.set(0, LID_MESH_Y_OFFSET, 0)
   lowerLid.castShadow = false
   lowerLid.receiveShadow = true
   lowerLidPivot.add(lowerLid)
