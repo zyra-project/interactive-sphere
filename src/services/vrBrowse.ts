@@ -125,7 +125,9 @@ function fillRoundRect(
  * each chip lives.
  */
 interface ChipRect {
-  category: string | null // null = the active chip tapped again (toggle off)
+  /** Filter this chip applies when tapped. null = the "All" chip (clears the filter). */
+  category: string | null
+  /** Text rendered on the pill — "All" for the reset chip, else the category name. */
   label: string
   x: number
   y: number
@@ -145,7 +147,6 @@ interface ChipRect {
 function layoutChips(
   ctx: CanvasRenderingContext2D,
   categories: string[],
-  selectedCategory: string | null,
 ): ChipRect[] {
   const chips: ChipRect[] = []
   ctx.save()
@@ -154,19 +155,36 @@ function layoutChips(
   let x = CHIP_MARGIN_X
   const y = CHIP_ROW_TOP + CHIP_VERTICAL_OFFSET
 
+  // "All" chip always leads the row — gives the user a clear way
+  // out of any filter without having to discover the "tap the
+  // active chip again to clear" trick. Its `category: null` maps
+  // directly to setCategoryFilter(null).
+  const allMetrics = ctx.measureText('All')
+  const allWidth = allMetrics.width + CHIP_PADDING_X * 2
+  chips.push({
+    category: null,
+    label: 'All',
+    x,
+    y,
+    width: allWidth,
+    height: CHIP_HEIGHT,
+  })
+  x += allWidth + CHIP_GAP
+
   for (const cat of categories) {
     const metrics = ctx.measureText(cat)
     const width = metrics.width + CHIP_PADDING_X * 2
     // Bail out cleanly when the next chip won't fit — no wrapping
     // in v1 (categories that don't fit are simply unreachable).
-    // Canvas width at 800 px holds ~5-7 typical-length chips;
-    // enough for the common categories without per-chip scrolling.
+    // Canvas width at 800 px holds ~5-7 typical-length chips plus
+    // "All"; enough for the common categories without per-chip
+    // scrolling.
     if (x + width > CANVAS_WIDTH - CHIP_MARGIN_X) break
-    // `category: cat` on a chip tap means "filter to this category";
-    // the hit-test post-processing maps to `null` (toggle off) when
-    // the user taps the already-selected chip.
+    // Chip's `category` is the filter it applies when tapped —
+    // just the category string. No toggle-off-by-tapping-active
+    // cleverness; "All" is the reset path.
     chips.push({
-      category: cat === selectedCategory ? null : cat,
+      category: cat,
       label: cat,
       x,
       y,
@@ -226,14 +244,15 @@ function drawCanvas(
 
   // --- Chip row ---
   // Active chip lights up in accent; inactives use card-background
-  // so they read as "tappable but not selected". Divider line below
-  // separates chips from the list cleanly.
-  const chips = layoutChips(ctx, categories, selectedCategory)
+  // so they read as "tappable but not selected". The "All" chip
+  // (chip.category === null) is active when no filter is set.
+  // Divider line below separates chips from the list cleanly.
+  const chips = layoutChips(ctx, categories)
   ctx.font = '500 15px system-ui, -apple-system, sans-serif'
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
   for (const chip of chips) {
-    const isActive = chip.label === selectedCategory
+    const isActive = chip.category === selectedCategory
     ctx.fillStyle = isActive ? ACCENT_COLOR : CARD_BG
     fillRoundRect(ctx, chip.x, chip.y, chip.width, chip.height, chip.height / 2)
     ctx.fillStyle = isActive ? '#ffffff' : TITLE_COLOR
@@ -484,16 +503,15 @@ export function createVrBrowse(THREE_: typeof THREE): VrBrowseHandle {
 
   /**
    * Chip hit at UV, or null if the ray landed elsewhere in the chip
-   * row. Returned `category` is whichever the chip's own `category`
-   * field says — by convention that field encodes the toggle
-   * (`null` if the chip is currently active, the category string
-   * otherwise). See layoutChips for the encoding.
+   * row. Returned `category` is the filter the tap applies —
+   * `null` for the "All" chip (clears the filter), the category
+   * string for a specific-category chip.
    */
   function chipAtUv(u: number, v: number): { category: string | null } | null {
     const canvasX = u * CANVAS_WIDTH
     const canvasY = (1 - v) * CANVAS_HEIGHT
     if (canvasY < CHIP_ROW_TOP || canvasY > CHIP_ROW_BOTTOM) return null
-    const chips = layoutChips(ctx2d!, categories, selectedCategory)
+    const chips = layoutChips(ctx2d!, categories)
     for (const chip of chips) {
       if (
         canvasX >= chip.x && canvasX <= chip.x + chip.width &&
