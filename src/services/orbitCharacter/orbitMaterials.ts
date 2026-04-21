@@ -171,19 +171,6 @@ export function createEyeFieldMaterial(_palette: PaletteKey = 'cyan'): EyeFieldM
   const material = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
-    // Disable the depth test so the socket disc always wins against
-    // the body mesh behind it. At the nose-bridge rim of each socket
-    // (inner edge of the disc closest to the face centerline), the
-    // body sphere's forward surface sits at almost exactly the same
-    // Z as the disc — the body's breathing squash nudges it forward
-    // and it wins the depth fight, poking through as a wedge that
-    // oscillates at breathing frequency. The disc is already clipped
-    // to its own silhouette via the fragment `discard` and framed by
-    // the bezel torus on every side, and no scene element ever
-    // renders between the body surface and the disc within the
-    // disc's XY footprint, so disabling depthTest is safe and
-    // localized.
-    depthTest: false,
     vertexShader: `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
