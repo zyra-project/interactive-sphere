@@ -506,8 +506,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
         ctx.loadDataset(action.datasetId)
         browse.setVisible(false)
       } else if (action.kind === 'category') {
-        // null = user tapped the active chip → clear filter.
-        // non-null = filter to that category.
+        // null = user tapped the dedicated "All" chip → clear filter.
+        // non-null = filter to that category (re-tapping the
+        // already-active chip re-applies the same filter; no toggle-
+        // off, see VrBrowseAction docstring).
         browse.setCategoryFilter(action.category)
       }
     },
@@ -623,6 +625,16 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
    */
   let lastBrowseDatasetsLen = -1
   let lastBrowseCategoryCount = -1
+  /**
+   * Last wall-clock ms we polled `ctx.getDatasets()`. main.ts rebuilds
+   * the catalog array (filter + map + Set + Array.from) every call,
+   * so we don't want to hit it at XR frame rate. Poll at 1 Hz while
+   * the browse panel is open; skip entirely while it's closed.
+   */
+  let lastBrowseDatasetsPollMs = -Infinity
+  /** True last frame — forces a poll on the frame the panel opens. */
+  let lastBrowseVisible = false
+  const BROWSE_POLL_INTERVAL_MS = 1000
 
   const hudOffset = new THREE_.Vector3(0, -0.65, 0.15)
   const placeOffset = new THREE_.Vector3(0, -0.5, 0.15)
@@ -688,27 +700,37 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     active.scene.setTexture(ctx.getDatasetTexture())
     syncSecondaryTextures(active.scene, ctx, panelCount)
 
-    // Dataset catalog may have arrived or changed since VR-entry
-    // (enriched metadata loads async; the 2D app can also refresh
-    // the catalog mid-session). Re-push to the browse panel when
-    // either the catalog length or the total-categories-across-all-
-    // entries count changes. Cheap — a single pass per frame, no
-    // per-entry allocation. Total category count catches both the
-    // initial populate and the enrichment arrival (where length is
-    // stable but datasets gain categories).
-    const currentDatasets = ctx.getDatasets()
-    let categoryCount = 0
-    for (let i = 0; i < currentDatasets.length; i++) {
-      categoryCount += currentDatasets[i].categories.length
+    // Poll the 2D catalog only while the browse panel is open, and
+    // only at 1 Hz once open — main.ts rebuilds the catalog array
+    // (filter + map + Set + Array.from) on every getDatasets() call,
+    // and at XR frame rate (72–90 Hz) that adds up to pointless
+    // per-frame allocation. A 1-second refresh is fast enough for
+    // the user to notice new chips when enriched metadata lands or
+    // the 2D app updates the catalog. Always poll the moment the
+    // panel becomes visible so the first render has fresh data.
+    const browseVisibleNow = active.browse.isVisible()
+    if (browseVisibleNow) {
+      const becameVisible = !lastBrowseVisible
+      const sinceLastPoll = now - lastBrowseDatasetsPollMs
+      if (becameVisible || sinceLastPoll >= BROWSE_POLL_INTERVAL_MS) {
+        lastBrowseDatasetsPollMs = now
+        const currentDatasets = ctx.getDatasets()
+        let categoryCount = 0
+        for (let i = 0; i < currentDatasets.length; i++) {
+          categoryCount += currentDatasets[i].categories.length
+        }
+        if (
+          becameVisible ||
+          currentDatasets.length !== lastBrowseDatasetsLen ||
+          categoryCount !== lastBrowseCategoryCount
+        ) {
+          lastBrowseDatasetsLen = currentDatasets.length
+          lastBrowseCategoryCount = categoryCount
+          active.browse.setDatasets(currentDatasets)
+        }
+      }
     }
-    if (
-      currentDatasets.length !== lastBrowseDatasetsLen ||
-      categoryCount !== lastBrowseCategoryCount
-    ) {
-      lastBrowseDatasetsLen = currentDatasets.length
-      lastBrowseCategoryCount = categoryCount
-      active.browse.setDatasets(currentDatasets)
-    }
+    lastBrowseVisible = browseVisibleNow
 
     // HUD reflects the latest app state every frame. setState is
     // internally debounced — it only redraws when a field changes.

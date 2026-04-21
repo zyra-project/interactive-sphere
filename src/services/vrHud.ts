@@ -209,11 +209,15 @@ function drawCanvas(
   ctx.font = '500 54px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  // Title spans mute.uMax → browse.uMin (0.28 → 0.64, 36 % of w).
+  // Title region grows left when there's no video (play/pause and
+  // mute are hidden), so image datasets don't waste the left third
+  // of the HUD on blank space. Right edge always stops before the
+  // Browse button regardless.
+  //
   // Crude ellipsis — if the title doesn't fit at full size, truncate
   // character-by-character until it does. Fine for typical dataset
   // names (< 40 chars); a longer implementation would binary-search.
-  const titleUMin = BUTTON_LAYOUT.mute.uMax
+  const titleUMin = state.hasVideo ? BUTTON_LAYOUT.mute.uMax : 0
   const titleUMax = BUTTON_LAYOUT.browse.uMin
   const titleMaxWidth = (titleUMax - titleUMin) * w * 0.92
   const titleCenterX = ((titleUMin + titleUMax) / 2) * w

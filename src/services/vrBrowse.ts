@@ -74,9 +74,11 @@ export type VrBrowseAction =
   | { kind: 'close' }
   | { kind: 'select'; datasetId: string }
   /**
-   * Tapped a category chip. `category === null` means the user
-   * tapped the active chip again (toggle off) — caller should
-   * clear the filter. Otherwise filter the list to that category.
+   * Tapped a chip in the category row. `category === null` means the
+   * user tapped the dedicated "All" chip — caller clears the filter.
+   * Otherwise filter the list to `category`; tapping an already-
+   * selected specific-category chip is a no-op re-send (the caller
+   * reapplies the same filter), not a toggle-off.
    */
   | { kind: 'category'; category: string | null }
 
