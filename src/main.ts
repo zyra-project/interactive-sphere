@@ -1206,6 +1206,19 @@ class InteractiveSphere {
       togglePlayPause: () => togglePlayPause(
         this.hlsService, this.appState, (m) => this.announce(m),
       ),
+      isMuted: () => {
+        // Read directly off the primary's <video> element —
+        // hlsService sets it muted by default for autoplay
+        // compliance; the 2D mute button (and the new VR HUD mute
+        // button) flip it when the user wants sound.
+        return this.hlsService?.video?.muted ?? true
+      },
+      toggleMute: () => {
+        const video = this.hlsService?.video
+        if (!video) return
+        video.muted = !video.muted
+        this.announce(video.muted ? 'Muted' : 'Unmuted')
+      },
 
       // --- Phase 2.5 multi-panel getters ---
       getPanelCount: () => this.viewports.getPanelCount(),

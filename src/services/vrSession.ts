@@ -51,6 +51,10 @@ export interface VrSessionContext {
   isPlaying(): boolean
   /** Called when the user taps play/pause in VR. Toggles the primary's video. */
   togglePlayPause(): void
+  /** Drives the HUD mute icon variant (speaker vs speaker-slash). */
+  isMuted(): boolean
+  /** Called when the user taps the HUD mute button. Flips `video.muted`. */
+  toggleMute(): void
 
   // --- Phase 2.5 multi-panel getters ---
   //
@@ -468,6 +472,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     datasetTitle: ctx.getDatasetTitle(),
     isPlaying: ctx.isPlaying(),
     hasVideo: ctx.hasVideoDataset(),
+    isMuted: ctx.isMuted(),
     panelCount: ctx.getPanelCount(),
     primaryIndex: ctx.getPrimaryIndex(),
     browseOpen: browse.isVisible(),
@@ -502,6 +507,11 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     onHudAction: (action) => {
       if (action === 'play-pause') {
         ctx.togglePlayPause()
+      } else if (action === 'mute') {
+        // Flip the primary video's muted flag. The per-frame
+        // hud.setState pipes ctx.isMuted() back through so the
+        // icon updates on the next redraw.
+        ctx.toggleMute()
       } else if (action === 'browse') {
         // Toggle the in-VR dataset browse panel. Its `isVisible`
         // feeds `hud.setState({ browseOpen })` each frame, so the
@@ -665,6 +675,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       datasetTitle: ctx.getDatasetTitle(),
       isPlaying: ctx.isPlaying(),
       hasVideo: ctx.hasVideoDataset(),
+      isMuted: ctx.isMuted(),
       panelCount,
       primaryIndex: ctx.getPrimaryIndex(),
       browseOpen: active.browse.isVisible(),

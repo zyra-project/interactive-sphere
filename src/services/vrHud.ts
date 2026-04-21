@@ -46,31 +46,34 @@ const CANVAS_HEIGHT = 256
  * All regions are full-height bands; users don't need fine-grained
  * vertical targeting for buttons this small.
  *
- * Layout:
- *   [play-pause] [ title ...        ] [browse] [exit]
- *     0.00-0.18    0.18-0.64            0.64-   0.82-
- *                                         0.82    1.00
+ * Layout when a video dataset is loaded:
+ *   [play-pause] [mute] [ title ...  ] [browse] [exit]
+ *     0.00-0.14   .14-.28   0.28-0.64    0.64-    0.82-
+ *                                         0.82     1.00
  *
- * Title shrinks from 64 % of the bar to 46 % to make room for the
- * Browse button; typical dataset names still fit at 46 % width with
- * ellipsis falling back for long outliers.
+ * The title shrank from 46 % of the bar to 36 % to fit the mute
+ * button next to play-pause — those two are a logical group
+ * ("audio/video playback controls") so they belong together.
  */
 const BUTTON_LAYOUT = {
-  playPause: { uMin: 0.0, uMax: 0.18 },
+  playPause: { uMin: 0.0, uMax: 0.14 },
+  mute: { uMin: 0.14, uMax: 0.28 },
   browse: { uMin: 0.64, uMax: 0.82 },
   exit: { uMin: 0.82, uMax: 1.0 },
-  // 0.18-0.64 is the dataset title — non-interactive.
+  // 0.28-0.64 is the dataset title — non-interactive.
 } as const
 
-export type VrHudAction = 'play-pause' | 'browse' | 'exit-vr'
+export type VrHudAction = 'play-pause' | 'mute' | 'browse' | 'exit-vr'
 
 export interface VrHudState {
   /** Title shown in the middle of the panel. Null/empty renders "No dataset". */
   datasetTitle: string | null
   /** Drives the play/pause icon. */
   isPlaying: boolean
-  /** Hides the play/pause button when the loaded dataset is an image (no playback). */
+  /** Hides the play/pause + mute buttons when the loaded dataset is an image (no playback). */
   hasVideo: boolean
+  /** Drives the speaker / muted-speaker icon variant on the mute button. */
+  isMuted: boolean
   /**
    * Number of panels in the 2D layout (1/2/4). When > 1 the HUD renders
    * a small indicator strip so the user can see how many globes exist
@@ -136,19 +139,64 @@ function drawCanvas(
     ctx.fillStyle = 'rgba(77, 166, 255, 0.9)' // --color-accent
     if (state.isPlaying) {
       // Pause icon — two vertical bars
-      const barW = 18
-      const barH = 80
-      ctx.fillRect(ppCenterX - barW - 8, ppCenterY - barH / 2, barW, barH)
-      ctx.fillRect(ppCenterX + 8, ppCenterY - barH / 2, barW, barH)
+      const barW = 16
+      const barH = 72
+      ctx.fillRect(ppCenterX - barW - 6, ppCenterY - barH / 2, barW, barH)
+      ctx.fillRect(ppCenterX + 6, ppCenterY - barH / 2, barW, barH)
     } else {
       // Play icon — right-pointing triangle
-      const size = 48
+      const size = 40
       ctx.beginPath()
       ctx.moveTo(ppCenterX - size / 2, ppCenterY - size)
       ctx.lineTo(ppCenterX - size / 2, ppCenterY + size)
       ctx.lineTo(ppCenterX + size, ppCenterY)
       ctx.closePath()
       ctx.fill()
+    }
+
+    // --- Mute button (speaker glyph / speaker-with-slash when muted) ---
+    const muMinX = BUTTON_LAYOUT.mute.uMin * w
+    const muMaxX = BUTTON_LAYOUT.mute.uMax * w
+    const muCenterX = (muMinX + muMaxX) / 2
+    const muCenterY = h / 2
+    ctx.fillStyle = state.isMuted
+      ? 'rgba(232, 234, 240, 0.5)' // dimmed when muted
+      : 'rgba(77, 166, 255, 0.9)' // accent when sound is on
+    // Speaker body: rectangular base + triangular cone
+    const bodyW = 16
+    const bodyH = 32
+    const coneW = 28
+    const coneH = 60
+    ctx.beginPath()
+    // Rectangular part (left side of speaker)
+    ctx.moveTo(muCenterX - coneW / 2 - bodyW, muCenterY - bodyH / 2)
+    ctx.lineTo(muCenterX - coneW / 2, muCenterY - bodyH / 2)
+    // Triangular cone tip (right side — points away)
+    ctx.lineTo(muCenterX + coneW / 2, muCenterY - coneH / 2)
+    ctx.lineTo(muCenterX + coneW / 2, muCenterY + coneH / 2)
+    ctx.lineTo(muCenterX - coneW / 2, muCenterY + bodyH / 2)
+    ctx.lineTo(muCenterX - coneW / 2 - bodyW, muCenterY + bodyH / 2)
+    ctx.closePath()
+    ctx.fill()
+    if (state.isMuted) {
+      // Slash through the speaker when muted.
+      ctx.strokeStyle = 'rgba(232, 234, 240, 0.85)'
+      ctx.lineWidth = 6
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(muCenterX - coneW / 2 - bodyW - 6, muCenterY - coneH / 2 - 6)
+      ctx.lineTo(muCenterX + coneW / 2 + 6, muCenterY + coneH / 2 + 6)
+      ctx.stroke()
+    } else {
+      // Two short arc "sound waves" emanating to the right.
+      ctx.strokeStyle = 'rgba(77, 166, 255, 0.9)'
+      ctx.lineWidth = 5
+      ctx.lineCap = 'round'
+      for (const r of [18, 32]) {
+        ctx.beginPath()
+        ctx.arc(muCenterX + coneW / 2 + 4, muCenterY, r, -Math.PI / 4, Math.PI / 4)
+        ctx.stroke()
+      }
     }
   }
 
@@ -161,11 +209,11 @@ function drawCanvas(
   ctx.font = '500 54px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  // Title spans playPause.uMax → browse.uMin (0.18 → 0.64, 46 % of w).
+  // Title spans mute.uMax → browse.uMin (0.28 → 0.64, 36 % of w).
   // Crude ellipsis — if the title doesn't fit at full size, truncate
   // character-by-character until it does. Fine for typical dataset
   // names (< 40 chars); a longer implementation would binary-search.
-  const titleUMin = BUTTON_LAYOUT.playPause.uMax
+  const titleUMin = BUTTON_LAYOUT.mute.uMax
   const titleUMax = BUTTON_LAYOUT.browse.uMin
   const titleMaxWidth = (titleUMax - titleUMin) * w * 0.92
   const titleCenterX = ((titleUMin + titleUMax) / 2) * w
@@ -275,6 +323,7 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
     datasetTitle: null,
     isPlaying: false,
     hasVideo: false,
+    isMuted: true,
     panelCount: 1,
     primaryIndex: 0,
     browseOpen: false,
@@ -296,6 +345,7 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
         state.datasetTitle !== currentState.datasetTitle ||
         state.isPlaying !== currentState.isPlaying ||
         state.hasVideo !== currentState.hasVideo ||
+        state.isMuted !== currentState.isMuted ||
         state.panelCount !== currentState.panelCount ||
         state.primaryIndex !== currentState.primaryIndex ||
         state.browseOpen !== currentState.browseOpen
@@ -313,6 +363,13 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
         u <= BUTTON_LAYOUT.playPause.uMax
       ) {
         return 'play-pause'
+      }
+      if (
+        currentState.hasVideo &&
+        u >= BUTTON_LAYOUT.mute.uMin &&
+        u <= BUTTON_LAYOUT.mute.uMax
+      ) {
+        return 'mute'
       }
       if (u >= BUTTON_LAYOUT.browse.uMin && u <= BUTTON_LAYOUT.browse.uMax) {
         return 'browse'
