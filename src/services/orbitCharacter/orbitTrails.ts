@@ -49,6 +49,7 @@
 import * as THREE from 'three'
 import { PALETTES, type PaletteKey } from './orbitTypes'
 import { expressionFor, STATES } from './orbitStates'
+import { GESTURES } from './orbitGestures'
 import type { StateKey, GestureKind } from './orbitTypes'
 
 /**
@@ -109,7 +110,33 @@ const EXPRESSIVE_TRAIL_STATES = new Set<StateKey>([
   'EXCITED', 'HAPPY', 'CURIOUS', 'SURPRISED', 'CONFUSED',
 ])
 
-export function trailColorFor(state: StateKey, palette: PaletteKey): string {
+/**
+ * Resolve the trail color for the current frame. Precedence, highest
+ * to lowest:
+ *
+ *   1. **Active gesture's `trailColor`** (if any) — Affirm's gold,
+ *      Shrug's amber, etc. Overrides everything else for the
+ *      gesture's duration.
+ *   2. **State's `pupilColor`** (if set) — SOLEMN's reverent blue,
+ *      CONFUSED's questioning amber. Ties the trail visually to the
+ *      character's emotional register so the color signal runs
+ *      across pupil AND wake.
+ *   3. **Expressive-state palette accent** — the existing behavior
+ *      for states like TALKING, POINTING, EXCITED, etc.
+ *   4. **Warm off-white idle default** — for quiet states and any
+ *      future state not listed in `EXPRESSIVE_TRAIL_STATES`.
+ */
+export function trailColorFor(
+  state: StateKey,
+  palette: PaletteKey,
+  activeGestureKind: GestureKind | null = null,
+): string {
+  if (activeGestureKind) {
+    const g = GESTURES[activeGestureKind]
+    if (g.trailColor) return g.trailColor
+  }
+  const s = STATES[state]
+  if (s.pupilColor) return s.pupilColor
   return EXPRESSIVE_TRAIL_STATES.has(state)
     ? PALETTES[palette].accent
     : IDLE_TRAIL_COLOR
@@ -296,7 +323,7 @@ export function updateTrails(
 ): void {
   const s = STATES[state]
   const expr = expressionFor(state)
-  const trailColor = trailColorFor(state, palette)
+  const trailColor = trailColorFor(state, palette, activeGestureKind)
   trails.forEach((trail, i) => {
     const sub = subSpheres[i]
 

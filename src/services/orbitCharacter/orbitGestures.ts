@@ -40,6 +40,16 @@ export interface Gesture {
   label: string
   duration: number // seconds
   compute: (t: number, ctx: GestureContext) => GestureFrame
+  /**
+   * Optional solid tint for the sparkle trail during this gesture.
+   * If set, overrides the state/palette color in `trailColorFor`
+   * for the duration of the gesture. Used to reinforce gesture
+   * semantics via color — e.g. Affirm's gold "mm-hm," Shrug's
+   * amber "questioning" tone.
+   *
+   * Undefined means the trail stays on the current state color.
+   */
+  trailColor?: string
 }
 
 const smoothstep01 = (x: number): number => {
@@ -51,6 +61,9 @@ export const GESTURES: Record<GestureKind, Gesture> = {
   shrug: {
     label: 'Shrug',
     duration: 1.4,
+    // Amber tint reads as "questioning / uncertain" — the
+    // emotional register of Shrug.
+    trailColor: '#d9a85c',
     compute: (t, _ctx) => {
       // "I don't know" — sub-spheres trace an ARM-like arc: they
       // sweep outward and upward along a curved path rather than
@@ -108,15 +121,42 @@ export const GESTURES: Record<GestureKind, Gesture> = {
     label: 'Wave',
     duration: 1.8,
     compute: (t, _ctx) => {
-      // One sub-sphere swings side-to-side (waving hand); other tucks close.
+      // "Hi!" — sub 0 is the "hand": it rises along a Bezier arc
+      // from rest to a wave-ready position, holds there while
+      // swinging side-to-side (the actual wave), then returns
+      // along the arc. Sub 1 stays tucked close to body throughout.
       const r = 0.14
-      const peak = Math.sin(smoothstep01((t - 0.05) / 0.9) * Math.PI)
-      const swing = Math.sin(t * Math.PI * 4) // two full cycles
-      const waveY = r * 0.55 + 0.02 * peak
-      const waveX = r * 0.7 + swing * 0.08 * peak
+
+      // Phase envelope — rise / hold / return with smooth endpoints.
+      let rise: number
+      if (t < 0.20) rise = smoothstep01(t / 0.20)
+      else if (t < 0.80) rise = 1.0
+      else rise = smoothstep01((1.0 - t) / 0.20)
+
+      // Bezier arm path: REST (tucked) → CONTROL (up + slightly
+      // wider) → PEAK (wave-ready, up and wide). Control biased
+      // outward + upward from the midpoint gives the arc.
+      const restX = r * 0.35, restY = -r * 0.15
+      const peakX = r * 0.85, peakY = r * 0.55
+      const ctrlX = (restX + peakX) * 0.5 + r * 0.15
+      const ctrlY = (restY + peakY) * 0.5 + r * 0.35
+      const s = rise, u = 1 - s
+      const baseX = u * u * restX + 2 * u * s * ctrlX + s * s * peakX
+      const baseY = u * u * restY + 2 * u * s * ctrlY + s * s * peakY
+
+      // Hand swing — only during the hold plateau. Smooth gate so
+      // the swing doesn't appear mid-rise. ~3 cycles over the
+      // held 60 % of the gesture duration.
+      const swingGate = smoothstep01((rise - 0.85) / 0.15)
+      const swingX = Math.sin(t * Math.PI * 6) * swingGate * r * 0.22
+
+      // Forward Z bow during the arc + a held forward lean during
+      // the swing — reads as "hand extended toward viewer."
+      const archZ = 4 * rise * (1 - rise) * 0.015 + swingGate * 0.02
+
       return {
         subSpheres: [
-          { x:  waveX, y: waveY, z: 0.02 * peak },
+          { x: baseX + swingX, y: baseY, z: archZ },
           { x: -r * 0.5, y: -r * 0.2, z: -0.01 },
         ],
       }
@@ -129,6 +169,11 @@ export const GESTURES: Record<GestureKind, Gesture> = {
     // (CHAT_FEATURE at chat, Earth feature at Earth). Head turns
     // slightly toward the target. Pairs with Pointing/Presenting:
     // Point shows WHERE; Beckon says "come toward THERE."
+    //
+    // Arc/curl layered on the base extension pulse so the sub's
+    // path reads as a "curl" rather than a linear extend-retract
+    // — arm rises when extending, dips when pulling back,
+    // approximating fingers curling inward toward the palm.
     compute: (t, ctx) => {
       const r = 0.14
       const peak = Math.sin(smoothstep01((t - 0.05) / 0.9) * Math.PI)
@@ -137,11 +182,19 @@ export const GESTURES: Record<GestureKind, Gesture> = {
       const extBase = 0.09
       const extPulse = (0.5 + 0.5 * cycle) * 0.10
       const extDist = (extBase + extPulse) * peak
+      // Arc/curl — Y rises on extend (cycle > 0), dips on pull-back
+      // (cycle < 0). Syncs with the pulse so the motion reads as a
+      // curl rather than a straight extend-retract.
+      const curlY = cycle * 0.035 * peak
       const refDist = r * 0.55
       return {
         subSpheres: [
           { x: -dir.x * refDist, y: -dir.y * refDist + 0.01, z: -dir.z * refDist },
-          { x:  dir.x * extDist, y:  dir.y * extDist + 0.02 * peak, z:  dir.z * extDist },
+          {
+            x: dir.x * extDist,
+            y: dir.y * extDist + 0.02 * peak + curlY,
+            z: dir.z * extDist,
+          },
         ],
         head: {
           pitch: -dir.y * 0.10 * peak,
@@ -153,6 +206,9 @@ export const GESTURES: Record<GestureKind, Gesture> = {
   affirm: {
     label: 'Affirm',
     duration: 0.9,
+    // Gold tint matches the pupil flash — reinforces the positive
+    // "mm-hm" acknowledgment across every visual channel.
+    trailColor: '#efc85c',
     compute: (t, _ctx) => {
       // Quiet "mm-hm" — a single small nod + gold pupil flash. Smaller
       // motion than YES state; meant as transient acknowledgment
