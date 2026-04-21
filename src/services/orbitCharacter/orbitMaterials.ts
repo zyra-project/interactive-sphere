@@ -161,12 +161,12 @@ export interface EyeFieldMaterialBundle {
 
 export function createEyeFieldMaterial(_palette: PaletteKey = 'cyan'): EyeFieldMaterialBundle {
   const uniforms = {
-    // Warm dark charcoal for the socket interior — reads as "shadowed
-    // recess" rather than "black hole on flat plastic." The inner
-    // disc is darker than the rim so the bezel torus catches a
-    // lighter halo around the socket without any additional geometry.
-    uEyeColor: { value: new THREE.Color(0x0b0910) },
-    uRimColor: { value: new THREE.Color(0x1f1a24) },
+    // DIAGNOSTIC — eye-field shader tinted bright pink. If the inner
+    // wedges turn pink, the eye-field itself is responsible. If they
+    // stay white, it's something else (maybe the body mesh showing
+    // through a different path, or something I haven't considered).
+    uEyeColor: { value: new THREE.Color(0xff00aa) },
+    uRimColor: { value: new THREE.Color(0xff66cc) },
   }
   const material = new THREE.ShaderMaterial({
     uniforms,
