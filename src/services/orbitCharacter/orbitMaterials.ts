@@ -82,10 +82,7 @@ export interface BodyMaterialBundle {
   }
 }
 
-export function createBodyMaterial(
-  palette: PaletteKey = 'cyan',
-  diagnosticPurple: boolean = false,
-): BodyMaterialBundle {
+export function createBodyMaterial(palette: PaletteKey = 'cyan'): BodyMaterialBundle {
   const p = PALETTES[palette]
   const uniforms = {
     uTime: { value: 0 },
@@ -130,20 +127,12 @@ export function createBodyMaterial(
       )
       .replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
-        diagnosticPurple
-          // DIAGNOSTIC — body mesh tinted bright purple. If the
-          // inner-wedge artifact turns purple, the body surface is
-          // somehow rendering in the socket area. Lid material
-          // (createLidMaterial) doesn't pass this flag, so lids keep
-          // their normal vinyl gradient — if the wedge is purple it
-          // uniquely points at the body mesh, not the lid.
-          ? `vec4 diffuseColor = vec4(0.6, 0.0, 0.8, opacity);`
-          // Project the object-space position onto the gradient axis.
-          // uAxis points from cool → warm anchor; dot() returns + when
-          // the fragment sits on the warm side. Remap to [0,1], mix.
-          : `float orbitG = clamp(dot(vOrbitObjPos, uAxis) / uSpan * 0.5 + 0.5, 0.0, 1.0);
-             vec3 orbitGradient = mix(uCool, uWarm, orbitG);
-             vec4 diffuseColor = vec4( orbitGradient, opacity );`,
+        // Project the object-space position onto the gradient axis.
+        // uAxis points from cool → warm anchor; dot() returns + when
+        // the fragment sits on the warm side. Remap to [0,1], mix.
+        `float orbitG = clamp(dot(vOrbitObjPos, uAxis) / uSpan * 0.5 + 0.5, 0.0, 1.0);
+         vec3 orbitGradient = mix(uCool, uWarm, orbitG);
+         vec4 diffuseColor = vec4( orbitGradient, opacity );`,
       )
   }
   return { material, uniforms }
@@ -172,16 +161,29 @@ export interface EyeFieldMaterialBundle {
 
 export function createEyeFieldMaterial(_palette: PaletteKey = 'cyan'): EyeFieldMaterialBundle {
   const uniforms = {
-    // DIAGNOSTIC — eye-field shader tinted bright pink. If the inner
-    // wedges turn pink, the eye-field itself is responsible. If they
-    // stay white, it's something else (maybe the body mesh showing
-    // through a different path, or something I haven't considered).
-    uEyeColor: { value: new THREE.Color(0xff00aa) },
-    uRimColor: { value: new THREE.Color(0xff66cc) },
+    // Warm dark charcoal for the socket interior — reads as "shadowed
+    // recess" rather than "black hole on flat plastic." The inner
+    // disc is darker than the rim so the bezel torus catches a
+    // lighter halo around the socket without any additional geometry.
+    uEyeColor: { value: new THREE.Color(0x0b0910) },
+    uRimColor: { value: new THREE.Color(0x1f1a24) },
   }
   const material = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
+    // Disable the depth test so the socket disc always wins against
+    // the body mesh behind it. At the nose-bridge rim of each socket
+    // (inner edge of the disc closest to the face centerline), the
+    // body sphere's forward surface sits at almost exactly the same
+    // Z as the disc — the body's breathing squash nudges it forward
+    // and it wins the depth fight, poking through as a wedge that
+    // oscillates at breathing frequency. The disc is already clipped
+    // to its own silhouette via the fragment `discard` and framed by
+    // the bezel torus on every side, and no scene element ever
+    // renders between the body surface and the disc within the
+    // disc's XY footprint, so disabling depthTest is safe and
+    // localized.
+    depthTest: false,
     vertexShader: `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -536,14 +538,15 @@ export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial 
       varying vec2 vUv;
       uniform float uOpacity;
       void main() {
-        // DIAGNOSTIC — catchlight output tinted bright red so we can
-        // confirm / reject whether the "inner-wedge" artifact is a
-        // catchlight rendering at unexpected scale or position.
+        // Distance from disc center, 0 at center to 1 at disc edge.
+        // Quadratic falloff (pow exponent 2.2) pushes the bright
+        // zone toward the center so the highlight has a clear
+        // core rather than a uniform wash across the disc.
         vec2 c = vUv - vec2(0.5);
         float d = length(c) * 2.0;
         if (d >= 1.0) discard;
         float fade = pow(1.0 - d, 2.2);
-        gl_FragColor = vec4(1.0, 0.0, 0.0, uOpacity * fade);
+        gl_FragColor = vec4(1.0, 1.0, 1.0, uOpacity * fade);
       }`,
   })
   // Catchlights ride the pupilGroup so they track gaze. Stencil
@@ -578,14 +581,7 @@ const BACKLIGHT_COLOR = 0xffd4a0
 
 export function createBacklightMaterial(): BacklightMaterialBundle {
   const uniforms = {
-    // DIAGNOSTIC — backlight halo tinted bright green. The halo is
-    // additive, 3.2× body radius, parented behind the body. If the
-    // body's breathing squash ever leaves a gap where the halo peeks
-    // through near the socket area, the inner-wedge artifact would
-    // inherit this green color and oscillate at breathing frequency
-    // (matches the user's observed symptom). If the wedge goes green,
-    // backlight is the culprit.
-    uColor: { value: new THREE.Color(0x00ff00) },
+    uColor: { value: new THREE.Color(BACKLIGHT_COLOR) },
     uOpacity: { value: 0.42 },
   }
   const material = new THREE.ShaderMaterial({

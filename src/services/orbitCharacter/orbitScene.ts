@@ -428,15 +428,7 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   backlight.position.z = -BODY_RADIUS * 0.8
   head.add(backlight)
 
-  // DIAGNOSTIC — body material tinted bright purple (second arg
-  // `diagnosticPurple=true`). The `createLidMaterial` path does NOT
-  // pass this flag, so lids keep their normal vinyl gradient. If the
-  // inner-wedge artifact picks up purple, the body mesh surface is
-  // somehow rendering in the socket area; if it picks up green
-  // (from the simultaneous backlight diagnostic) the backlight halo
-  // is leaking through. Distinct colors so a single screenshot
-  // disambiguates both hypotheses at once.
-  const bodyBundle = createBodyMaterial(palette, true)
+  const bodyBundle = createBodyMaterial(palette)
   const body = new THREE.Mesh(
     new THREE.IcosahedronGeometry(BODY_RADIUS, 4),
     bodyBundle.material,
@@ -753,13 +745,6 @@ function buildPairedEye(
   upperLidPivot.position.set(0, UPPER_LID_PIVOT_Y, LID_PIVOT_Z)
   upperLidPivot.rotation.x = UPPER_LID_PARKED_ROT
   group.add(upperLidPivot)
-  // DIAGNOSTIC — lids restored to normal vinyl material. The red
-  // tint from the previous commit confirmed the lids are NOT the
-  // source of the inner-wedge artifact. Now testing the BEZEL —
-  // hypothesis is that the torus tube's inner-facing surface is
-  // catching a specular highlight from the key light. The bezel
-  // material is tinted bright blue in the scene build so the
-  // wedges' color will tell us whether it's the bezel or not.
   const upperLid = new THREE.Mesh(lidGeometry, lidMaterial)
   upperLid.position.set(0, LID_MESH_Y_OFFSET, 0)
   upperLid.castShadow = false
