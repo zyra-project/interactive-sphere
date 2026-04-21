@@ -44,9 +44,11 @@ const CHIP_PADDING_X = 14
 const CHIP_GAP = 8
 const CHIP_MARGIN_X = 12
 const CHIP_VERTICAL_OFFSET = (CHIP_ROW_HEIGHT - CHIP_HEIGHT) / 2
-const CARD_HEIGHT = 56
+const CARD_HEIGHT = 72
 const CARD_GAP = 4
-const CARD_PADDING_X = 16
+const CARD_PADDING_X = 14
+const THUMB_SIZE = CARD_HEIGHT - 12 // square thumb, 6-px top+bottom inset
+const THUMB_MARGIN_RIGHT = 12
 const LIST_PADDING = 12
 const SCROLLBAR_WIDTH = 8
 
@@ -185,6 +187,7 @@ function drawCanvas(
   selectedCategory: string | null,
   scrollY: number,
   highlightIndex: number,
+  thumbnails: Map<string, HTMLImageElement>,
 ): void {
   const w = CANVAS_WIDTH
   const h = CANVAS_HEIGHT
@@ -289,23 +292,62 @@ function drawCanvas(
     ctx.fillStyle = i === highlightIndex ? CARD_BG_HOVER : CARD_BG
     fillRoundRect(ctx, x, cardY, cardW, CARD_HEIGHT, 6)
 
-    // Title
+    // --- Thumbnail (left edge of card) ---
+    // Mirrors the 2D browse UI — thumbnail gives a recognizable
+    // visual even before the user reads the title. Cached loads
+    // show up instantly; first sightings draw a placeholder tile
+    // and trigger an async decode that'll appear on the next
+    // redraw. Fallback to a simple globe glyph when a thumbnail
+    // is missing or still loading.
+    const thumbX = x + 6
+    const thumbY = cardY + 6
+    const thumbImg = ds.thumbnailUrl ? thumbnails.get(ds.thumbnailUrl) : null
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)'
+    fillRoundRect(ctx, thumbX, thumbY, THUMB_SIZE, THUMB_SIZE, 4)
+    if (thumbImg && thumbImg.complete && thumbImg.naturalWidth > 0) {
+      // Rounded-corner clip around the thumbnail so it matches the
+      // card's aesthetic. Save / restore so the clip doesn't
+      // leak into later draws on this card (title + chip).
+      ctx.save()
+      ctx.beginPath()
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(thumbX, thumbY, THUMB_SIZE, THUMB_SIZE, 4)
+      } else {
+        ctx.rect(thumbX, thumbY, THUMB_SIZE, THUMB_SIZE)
+      }
+      ctx.clip()
+      ctx.drawImage(thumbImg, thumbX, thumbY, THUMB_SIZE, THUMB_SIZE)
+      ctx.restore()
+    } else {
+      // Placeholder glyph — small centered globe. Readable at
+      // every font-fallback so we don't depend on a specific
+      // emoji font being present.
+      ctx.fillStyle = 'rgba(232, 234, 240, 0.35)'
+      ctx.font = '500 28px system-ui, -apple-system, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('\u{1F30D}', thumbX + THUMB_SIZE / 2, thumbY + THUMB_SIZE / 2)
+    }
+
+    // --- Title + category (right of thumbnail) ---
+    const textX = thumbX + THUMB_SIZE + THUMB_MARGIN_RIGHT
+    const textMaxWidth = x + cardW - textX - CARD_PADDING_X
+
     ctx.fillStyle = TITLE_COLOR
     ctx.font = '500 20px system-ui, -apple-system, sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
     let title = ds.title
-    const maxTitleWidth = cardW - CARD_PADDING_X * 2
-    while (ctx.measureText(title).width > maxTitleWidth && title.length > 4) {
+    while (ctx.measureText(title).width > textMaxWidth && title.length > 4) {
       title = title.slice(0, -2) + '…'
     }
-    ctx.fillText(title, x + CARD_PADDING_X, cardY + 10)
+    ctx.fillText(title, textX, cardY + 14)
 
-    // Category chip
+    // Category chip inline below title
     if (ds.category) {
       ctx.fillStyle = ACCENT_COLOR
       ctx.font = '400 14px system-ui, -apple-system, sans-serif'
-      ctx.fillText(ds.category, x + CARD_PADDING_X, cardY + 35)
+      ctx.fillText(ds.category, textX, cardY + 44)
     }
   }
 
@@ -357,6 +399,43 @@ export function createVrBrowse(THREE_: typeof THREE): VrBrowseHandle {
   let scrollY = 0
   let highlightIndex = -1
 
+  /**
+   * Keyed by thumbnail URL. `Image` is the common DOM type that
+   * Canvas 2D's `drawImage` accepts directly, so we don't need to
+   * round-trip through a bitmap. Cache by URL so revisiting the
+   * same dataset in a later session reuses the decoded image and
+   * doesn't re-hit the network.
+   */
+  const thumbnailCache = new Map<string, HTMLImageElement>()
+
+  /**
+   * Kick off async decode of every thumbnail URL in the current
+   * catalog. Each `Image` triggers its own redraw on `load` so the
+   * thumb appears as soon as the bytes arrive — matches the
+   * progressive-render pattern the 2D browse panel uses.
+   */
+  function loadThumbnails(): void {
+    for (const d of datasets) {
+      if (!d.thumbnailUrl || thumbnailCache.has(d.thumbnailUrl)) continue
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.decoding = 'async'
+      // Tight coupling to the URL as cache key — survives setDatasets
+      // calls, so reshuffles don't re-fetch. Errors leave the entry
+      // in the cache as an incomplete Image so `complete &&
+      // naturalWidth > 0` stays false and the placeholder renders.
+      thumbnailCache.set(d.thumbnailUrl, img)
+      img.onload = () => {
+        if (visible) redraw()
+      }
+      img.onerror = () => {
+        // Leave the entry; subsequent renders fall through to the
+        // placeholder glyph. No retry.
+      }
+      img.src = d.thumbnailUrl
+    }
+  }
+
   /** Rebuild the `visibleDatasets` slice when datasets or filter change. */
   function recomputeFilter(): void {
     visibleDatasets = selectedCategory
@@ -383,7 +462,7 @@ export function createVrBrowse(THREE_: typeof THREE): VrBrowseHandle {
   }
 
   function redraw(): void {
-    drawCanvas(ctx2d!, visibleDatasets, categories, selectedCategory, scrollY, highlightIndex)
+    drawCanvas(ctx2d!, visibleDatasets, categories, selectedCategory, scrollY, highlightIndex, thumbnailCache)
     texture.needsUpdate = true
   }
 
@@ -450,6 +529,9 @@ export function createVrBrowse(THREE_: typeof THREE): VrBrowseHandle {
         selectedCategory = null
       }
       recomputeFilter()
+      // Kick off thumbnail loads — async, each fires its own redraw
+      // on load so the thumb pops in as soon as the bytes arrive.
+      loadThumbnails()
       scrollY = 0
       highlightIndex = -1
       if (visible) redraw()

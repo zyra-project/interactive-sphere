@@ -605,6 +605,18 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // silhouette even when looking straight at the globe. Small +z
   // offset pulls them slightly closer to the user than the globe
   // for comfortable reading.
+  /**
+   * Minimal fingerprint to detect "catalog has changed in a way the
+   * browse panel cares about" — the array length plus the number of
+   * entries that carry a category. Captures both the initial
+   * populate (length goes from 0 to N) and the enriched-metadata
+   * arrival (length stable, category-count goes from 0 to N). main.ts
+   * returns a fresh array every call to `getDatasets()`, so we don't
+   * bother with an identity check.
+   */
+  let lastBrowseDatasetsLen = -1
+  let lastBrowseCategoryCount = -1
+
   const hudOffset = new THREE_.Vector3(0, -0.65, 0.15)
   const placeOffset = new THREE_.Vector3(0, -0.5, 0.15)
   const browseOffset = new THREE_.Vector3(0.7, 0, 0.3)
@@ -668,6 +680,26 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     active.scene.setPanelCount(panelCount)
     active.scene.setTexture(ctx.getDatasetTexture())
     syncSecondaryTextures(active.scene, ctx, panelCount)
+
+    // Dataset catalog may have arrived or changed since VR-entry
+    // (enriched metadata loads async; the 2D app can also refresh
+    // the catalog mid-session). Re-push to the browse panel when
+    // either the catalog length or the number of entries with
+    // category info changes. Cheap — a single pass over the array
+    // per frame, no per-entry allocation.
+    const currentDatasets = ctx.getDatasets()
+    let categoryCount = 0
+    for (let i = 0; i < currentDatasets.length; i++) {
+      if (currentDatasets[i].category) categoryCount++
+    }
+    if (
+      currentDatasets.length !== lastBrowseDatasetsLen ||
+      categoryCount !== lastBrowseCategoryCount
+    ) {
+      lastBrowseDatasetsLen = currentDatasets.length
+      lastBrowseCategoryCount = categoryCount
+      active.browse.setDatasets(currentDatasets)
+    }
 
     // HUD reflects the latest app state every frame. setState is
     // internally debounced — it only redraws when a field changes.
