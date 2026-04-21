@@ -138,7 +138,15 @@ export class OrbitController {
     this.container.appendChild(this.renderer.domElement)
 
     window.addEventListener('resize', this.handleResize)
-    this.renderer.domElement.addEventListener('pointermove', this.handlePointerMove)
+    // `pointermove` is attached to WINDOW (not the canvas) so
+    // cursor movement over the debug panel or topbar — both
+    // positioned above the canvas at z-index: 10 — still updates
+    // `mouseX` / `mouseY`. Eye tracking needs to work anywhere
+    // on the page, not only when the cursor is inside the canvas.
+    // `pointerdown` stays on the canvas so tickle-gesture clicks
+    // only fire when the user actually clicks in the character
+    // view area, not when they click on debug controls.
+    window.addEventListener('pointermove', this.handlePointerMove)
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown)
     this.animate()
   }
@@ -254,7 +262,7 @@ export class OrbitController {
     this.disposed = true
     cancelAnimationFrame(this.rafId)
     window.removeEventListener('resize', this.handleResize)
-    this.renderer.domElement.removeEventListener('pointermove', this.handlePointerMove)
+    window.removeEventListener('pointermove', this.handlePointerMove)
     this.renderer.domElement.removeEventListener('pointerdown', this.handlePointerDown)
     this.reducedMotionMql?.removeEventListener('change', this.handleReducedMotionChange)
     this.reducedMotionMql = null
@@ -299,9 +307,16 @@ export class OrbitController {
   }
 
   private handlePointerMove = (e: PointerEvent): void => {
+    // Clamp to [-1, 1] since the pointermove listener is attached to
+    // `window` — cursor movement over the topbar / debug panel (both
+    // z-indexed above the canvas) still drives eye tracking, but if
+    // the cursor escapes the canvas rect we don't want runaway NDC
+    // values steering the gaze off-screen.
     const rect = this.renderer.domElement.getBoundingClientRect()
-    this.mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1
-    this.mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1
+    const rawX = ((e.clientX - rect.left) / rect.width) * 2 - 1
+    const rawY = -((e.clientY - rect.top) / rect.height) * 2 + 1
+    this.mouseX = Math.max(-1, Math.min(1, rawX))
+    this.mouseY = Math.max(-1, Math.min(1, rawY))
     this.cursorLastMoveTime = this.time
   }
 
@@ -324,10 +339,12 @@ export class OrbitController {
     const dx = ndcX - headNdc.x
     const dy = ndcY - headNdc.y
     const dist = Math.sqrt(dx * dx + dy * dy)
-    // NDC radius that covers Orbit's body silhouette at the close
-    // preset. Close preset fills roughly 0.12 NDC radius; generous
-    // click target a touch bigger.
-    const clickRadius = 0.15
+    // NDC radius that generously covers Orbit's body silhouette.
+    // At the close preset Orbit occupies roughly 0.12 NDC radius on
+    // a landscape viewport; a 0.22 target makes tickle fire on
+    // anything that visually looks "on the character" without
+    // needing pixel-perfect placement on the body.
+    const clickRadius = 0.22
     if (dist <= clickRadius) {
       this.playGesture('tickle')
     }

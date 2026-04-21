@@ -1223,14 +1223,19 @@ export function updateCharacter(
     twitchUpper = Math.sin(time * 12.0) * 0.030 + Math.sin(time * 19.3 + 1.1) * 0.020
     twitchLower = Math.sin(time * 10.5 + 1.7) * 0.030 + Math.sin(time * 17.1 + 0.5) * 0.020
   }
-  // Proximity lid soften — alert attention when the user is close
-  // opens lids slightly without fully overriding state lids. Max
-  // -0.08 of lid coverage each side at full proximity, so a SLEEPY
-  // Orbit still reads as sleepy (0.56 upper → 0.48 at full proximity),
-  // and an IDLE Orbit (0.08 upper → 0.00) opens wider into alert.
-  const lidSoften = anim.userProximity * 0.08
-  const upperBase = Math.max(0, s.upperLid - lidSoften) + twitchUpper
-  const lowerBase = Math.max(0, s.lowerLid - lidSoften) + twitchLower
+  // Proximity lid soften — cursor close to Orbit opens the lids a
+  // touch (alert attention). The soften is CAPPED at half of the
+  // state's baseline so a low-lid state like IDLE (0.08) can't
+  // wipe its visible lid rim entirely when the cursor is near; the
+  // baseline lid stays readable even at full proximity.
+  //   IDLE   (0.08)  max soften 0.04 → 0.04 at full proximity
+  //   HAPPY  (0.06)  max soften 0.03 → 0.03 at full proximity
+  //   SLEEPY (0.56)  max soften 0.08 → 0.48 at full proximity (still sleepy)
+  const proximitySoften = anim.userProximity * 0.08
+  const upperSoften = Math.min(proximitySoften, s.upperLid * 0.5)
+  const lowerSoften = Math.min(proximitySoften, s.lowerLid * 0.5)
+  const upperBase = Math.max(0, s.upperLid - upperSoften) + twitchUpper
+  const lowerBase = Math.max(0, s.lowerLid - lowerSoften) + twitchLower
   const effectiveUpper = Math.max(upperBase, blinkAmount)
   const effectiveLower = Math.max(lowerBase, blinkAmount * 0.35)
   // 3-D lid meshes: interpolate pivot rotation between "parked" (out
