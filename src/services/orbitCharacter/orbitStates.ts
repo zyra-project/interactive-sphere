@@ -108,15 +108,14 @@ export interface ExpressionConfig {
    */
   talkPulse: boolean
   /**
-   * Persistent sparkle orbit rings drawn around Orbit's body, tracing
-   * each satellite's elliptical idle-orbit path (see `orbitBasis` on
-   * each sub-sphere). Intensity is 0..1; 0 hides the rings entirely.
-   * Ambient character feature — visible even when subs break away
-   * from their orbit path, since the rings read as "identity feature"
-   * rather than "literal current sub position." See the reference
-   * concept art in `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Trails.
+   * Sparkle trail intensity. 0 hides the trail entirely; 1.0 is full
+   * brightness. During steady idle orbit (submode = 'orbit') the
+   * long trail buffer wraps into a visible sparkle ring; during
+   * breakaway sub-modes (POINTING / TRACE / BURST) the same trail
+   * reads as a comet wake behind the sub. See
+   * `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §4.
    */
-  ringIntensity: number
+  trailIntensity: number
 }
 
 export const EXPRESSION_DEFAULT: ExpressionConfig = {
@@ -126,28 +125,32 @@ export const EXPRESSION_DEFAULT: ExpressionConfig = {
   hopAmp: 0,
   surpriseGasp: false,
   talkPulse: false,
-  ringIntensity: 0.85,
+  trailIntensity: 0.80,
 }
 
 /**
  * Per-state overrides — only list the fields that differ from
  * EXPRESSION_DEFAULT. Every state not mentioned here gets the
  * default silently (extensibility requirement).
+ *
+ * Trail intensity ranges:
+ *   - quiet states (SLEEPY, SOLEMN, THINKING): 0.25–0.40 — trail
+ *     still visible but dim, reads as "barely there wake."
+ *   - default active states: 0.80 (fallback).
+ *   - expressive states (TALKING, POINTING, PRESENTING, EXCITED):
+ *     0.9–1.2 — trail is a primary visual element in these modes.
  */
 export const EXPRESSIONS: Partial<Record<StateKey, Partial<ExpressionConfig>>> = {
-  SLEEPY:    { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025, ringIntensity: 0.30 },
-  SOLEMN:    { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018, ringIntensity: 0.40 },
-  EXCITED:   { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010, ringIntensity: 1.15 },
-  SURPRISED: { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true, ringIntensity: 1.20 },
-  THINKING:  { breathRate: 0.55, breathAmp: 0.014, ringIntensity: 0.35 },
-  TALKING:   { talkPulse: true, ringIntensity: 1.00 },
-  HAPPY:     { ringIntensity: 1.05 },
-  CURIOUS:   { ringIntensity: 1.00 },
-  // POINTING/PRESENTING: subs are doing work elsewhere; rings still
-  // exist as ambient identity cue, just at reduced intensity so the
-  // foreground action dominates the read.
-  POINTING:   { ringIntensity: 0.55 },
-  PRESENTING: { ringIntensity: 0.55 },
+  SLEEPY:     { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025, trailIntensity: 0.25 },
+  SOLEMN:     { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018, trailIntensity: 0.35 },
+  EXCITED:    { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010, trailIntensity: 1.15 },
+  SURPRISED:  { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true, trailIntensity: 0.90 },
+  THINKING:   { breathRate: 0.55, breathAmp: 0.014, trailIntensity: 0.30 },
+  TALKING:    { talkPulse: true, trailIntensity: 0.95 },
+  HAPPY:      { trailIntensity: 0.95 },
+  CURIOUS:    { trailIntensity: 0.90 },
+  POINTING:   { trailIntensity: 1.10 },
+  PRESENTING: { trailIntensity: 1.10 },
 }
 
 /** Merge the per-state override (if any) with EXPRESSION_DEFAULT. */

@@ -37,8 +37,7 @@ import { PALETTES, type EyeMode, type PaletteKey, type ScaleKey, type StateKey }
 import { STATES, expressionFor } from './orbitStates'
 import {
   buildTrails, updateTrails,
-  buildOrbitRings, updateOrbitRings,
-  type TrailHandle, type OrbitRingHandle,
+  type TrailHandle,
 } from './orbitTrails'
 import { GESTURES, type GestureKind, type GestureFrame } from './orbitGestures'
 import {
@@ -206,13 +205,14 @@ export interface OrbitSceneHandles {
    * intensity or reparent it without touching scene traversal.
    */
   keyLight: THREE.DirectionalLight
-  trails: TrailHandle[]
   /**
-   * Persistent sparkle orbit rings — one per sub, parented to the
-   * head group. Intensity is state-driven; see
-   * `ExpressionConfig.ringIntensity`.
+   * Rolling sparkle trails — one per sub. Buffer is long enough that
+   * during steady idle orbit the trail wraps into a visible sparkle
+   * ring behind the sub; during expressive sub-modes (point / trace /
+   * burst) the same buffer reads as a comet wake following the sub.
+   * Intensity is state-driven via `ExpressionConfig.trailIntensity`.
    */
-  orbitRings: OrbitRingHandle[]
+  trails: TrailHandle[]
   /**
    * Photoreal Earth stack — diffuse + night lights + atmosphere +
    * clouds + sun, shared with the VR view. Rebuilt on scale-preset
@@ -335,13 +335,6 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
 
   const trails = buildTrails(scene, subSpheres, palette, pixelRatio)
 
-  // Persistent sparkle rings — parented to `head` so they follow the
-  // character through flight, sway, and squash/stretch without any
-  // per-frame position writes. The rings are geometrically fixed in
-  // head-local space (sampled from each sub's orbitBasis), so there's
-  // no per-frame geometry work either — just uniform writes.
-  const orbitRings = buildOrbitRings(head, subSpheres, SUB_ORBIT_RADIUS, palette, pixelRatio)
-
   // Earth — photoreal stack (diffuse + night lights + atmosphere +
   // clouds + sun), shared with the VR view. Radius + position come
   // from the preset; ground shadow omitted (multiple presets at
@@ -369,7 +362,7 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
     backlight, backlightBundle,
     eyeBundle, pupilMaterials,
     eyeRigs,
-    subSpheres, subBundles, keyLight, trails, orbitRings,
+    subSpheres, subBundles, keyLight, trails,
     earth,
     targetMarker, targetHalo, targetMat, targetHaloMat,
     appliedPreset: initialPreset,
@@ -1190,15 +1183,10 @@ export function updateCharacter(
   // Must run after sub-sphere positions finalize so the rolling
   // buffer writes the actual current position, not last frame's.
   // Flight adds a 0.6 boost so the journey leaves a visible arc.
+  // The long trail buffer naturally wraps into a sparkle ring during
+  // steady idle orbit; breakaway sub-modes (point/trace/burst) show
+  // the same buffer as a comet wake following the sub.
   updateTrails(handles.trails, handles.subSpheres, state, palette, time, inFlight ? 0.6 : 0)
-
-  // ── Orbit rings ───────────────────────────────────────────────────
-  // Persistent sparkle rings tracing each sub's idle orbit. Intensity
-  // comes from the state's ExpressionConfig (new states inherit the
-  // default via expressionFor). No geometry writes — the rings are
-  // static in head-local space and ride the head group's world
-  // transform.
-  updateOrbitRings(handles.orbitRings, state, palette, time)
 
   // ── Target marker (POINTING / PRESENTING) ────────────────────────
   const wantMarker = (state === 'POINTING' || state === 'PRESENTING') && !inFlight ? 1 : 0

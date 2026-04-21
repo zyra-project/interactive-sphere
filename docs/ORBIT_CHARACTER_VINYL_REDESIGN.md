@@ -40,7 +40,7 @@ unchanged.
 | Sub-sphere material | `MeshBasicMaterial` (flat accent color) | `MeshStandardMaterial` with the vinyl gradient |
 | Idle orbits | Single shared orbit phase | Two distinct crossing ellipses, tighter radius |
 | Shadows | None | Sub-spheres cast eclipse shadows onto body (educational cue: planetary eclipses) |
-| Trails | Palette-accent color, steady tapering | Warm-white sparkle comet tails + persistent closed sparkle orbit rings (§4.1) |
+| Trails | 42-point taper, always follows sub | 160-point buffer with downsampled writes + flat alpha body; wraps into a sparkle ring during steady idle orbit, reads as comet wake in breakaway sub-modes — one buffer, two natural visual reads (§4.1) |
 | Backlight | None | Soft warm radial halo behind body — sells "luminous vinyl toy" without emissive on the matte material |
 | Body dynamics | Subtle wobble | Procedural squash/stretch — breathing, velocity smear, surprise gasp, satellite anthropomorphism |
 
@@ -251,53 +251,54 @@ changed). Two tweaks:
    - Per-vertex twinkle: `alpha *= 0.6 + 0.4 * sin(uTime * 6 + seed * 6.28)`.
    - New `uTime` uniform written by `updateTrails`.
 
-Trails still strictly follow sub-sphere positions via the existing
-rolling-buffer write.
+### 4.1 Trails wrap into rings during steady orbit
 
-### 4.1 Orbit rings (persistent closed sparkle paths)
+The concept-art reference shows bright sparkle rings wrapping Orbit
+during idle. We deliberately **don't** render rings as separate
+geometry — a separate ring wouldn't follow the satellite's actual
+position when the sub breaks away for POINTING/TRACE/BURST, and
+would misrepresent what's happening. Instead, the **same** trail
+that comet-tails behind the sub during expressive modes is tuned
+long enough that during steady idle orbit the rolling buffer wraps
+all the way around the orbital path — reading as a closed sparkle
+ring while still strictly following the sub's current position.
 
-The concept art shows **closed bright sparkle rings** wrapping Orbit
-continuously — not tapered comet tails. A 42-point rolling buffer
-fades to transparent behind the sub and can never close a ring at
-any length (the oldest vertex is the dimmest).
+Tuning numbers:
 
-Orbit rings are a **separate** visual system: one `THREE.Points`
-geometry per sub, 140 points sampled along the sub's precomputed
-`orbitBasis` ellipse, parented to the head group so they ride the
-character through flight and sway without per-frame position writes.
-Same sparkle shader as the trails (color + twinkle + distance-
-scaled size), but no alpha taper — every point renders at full
-intensity scaled only by its twinkle phase.
-
-```
-head
-├── body
-├── subSpheres[]
-└── orbitRings[]   ← NEW, one per sub, head-parented
-```
-
-**Intensity is state-driven** via `ExpressionConfig.ringIntensity`,
-sitting alongside the other procedural shape parameters in §5.1.
-A new state gets the default (`0.85`, visibly on) with zero edits;
-sleepy/thinking states dial down (`~0.30`); excited/talking dial up
-(`~1.15`). Per-state overrides are listed below:
-
-| State | ringIntensity | Notes |
+| Parameter | Value | Rationale |
 |---|---|---|
-| default | `0.85` | All unlisted states inherit this |
-| `SLEEPY` | `0.30` | Barely-there rings — character is low-energy |
-| `SOLEMN` | `0.40` | Dim reverent read |
-| `THINKING` | `0.35` | Low intensity matches cluster sub-mode's quietness |
-| `CURIOUS`, `HAPPY`, `TALKING` | `1.00-1.05` | Full brightness |
-| `EXCITED`, `SURPRISED` | `1.15-1.20` | Brighter than default |
-| `POINTING`, `PRESENTING` | `0.55` | Ambient — foreground sub action dominates |
+| `TRAIL_LENGTH` | `160` points | Was `42`. Long enough to cover most of an IDLE orbit period. |
+| `TRAIL_WRITE_EVERY_N_FRAMES` | `2` | Downsamples the rolling-buffer shift. At 60 fps that's 30 writes/sec; 160 / 30 ≈ 5.3 s of coverage, close to the ~6.3 s IDLE orbit period. |
+| Alpha profile | Head spike + flat body + soft tail fade | Was a linear `1 → 0` taper. A linear taper reads as a dimming spiral when it wraps; a flat profile with a gentle tail fade reads as a closed ring. Head spike keeps the sub's current position legible. |
 
-**Ring color** shares `trailColorFor(state, palette)` — warm
-off-white for quiet states, palette accent for expressive.
+When the sub is in idle-orbit sub-mode, the trail grows into a nearly
+complete ring over ~5 seconds with a subtle bright spot marking the
+current sub position. When the sub breaks into POINTING/TRACE/BURST,
+the buffer still follows its current motion — now as a comet wake.
+No state switching, no hidden geometry: one buffer, two natural
+visual reads.
 
-Cost: 2 rings × 140 points = 280 extra points. No per-frame geometry
-mutations; only `uColor`, `uIntensity`, `uTime` uniform writes. Well
-inside Quest budget.
+**Intensity** reads `expressionFor(state).trailIntensity` (part of
+the shared EXPRESSIONS table in §5.1). New states inherit the
+default (`0.80`, clearly visible) without edits. Per-state overrides:
+
+| State | trailIntensity | Notes |
+|---|---|---|
+| _default_ | `0.80` | All unlisted states inherit this |
+| `SLEEPY` | `0.25` | Barely-there wake, matches low-energy read |
+| `SOLEMN` | `0.35` | Dim, reverent |
+| `THINKING` | `0.30` | Subs cluster near body; little motion to trail |
+| `CURIOUS`, `HAPPY` | `0.90-0.95` | Warm sparkle ring |
+| `TALKING` | `0.95` | figure-8 sub-mode leaves a lemniscate wake |
+| `POINTING`, `PRESENTING` | `1.10` | Trail IS the communication in these modes |
+| `EXCITED` | `1.15` | burst sub-mode + bright trail |
+| `SURPRISED` | `0.90` | Scatter wake |
+
+**Color** still comes from `trailColorFor(state, palette)` — warm
+off-white for idle / quiet register, palette accent for expressive.
+
+Cost: 2 trails × 160 points = 320 points. Same sparkle shader as
+before, same uniform writes per frame. Well inside Quest budget.
 
 ### 4.2 Backlight halo
 
@@ -335,31 +336,31 @@ touched:
 
 ```ts
 export interface ExpressionConfig {
-  breathRate:    number   // cycles per second
-  breathAmp:     number   // peak Y-scale offset (X/Z move inversely)
-  meltXZ:        number   // extra XZ widening (sleepy/solemn)
-  hopAmp:        number   // rhythmic Y hop (excited)
-  surpriseGasp:  boolean  // one-shot spring on state entry
-  talkPulse:     boolean  // subs pulse with pupil pulse
-  ringIntensity: number   // persistent sparkle ring brightness (§4.1)
+  breathRate:     number   // cycles per second
+  breathAmp:      number   // peak Y-scale offset (X/Z move inversely)
+  meltXZ:         number   // extra XZ widening (sleepy/solemn)
+  hopAmp:         number   // rhythmic Y hop (excited)
+  surpriseGasp:   boolean  // one-shot spring on state entry
+  talkPulse:      boolean  // subs pulse with pupil pulse
+  trailIntensity: number   // sparkle trail brightness (§4.1)
 }
 
 export const EXPRESSION_DEFAULT: ExpressionConfig = {
   breathRate: 0.8, breathAmp: 0.012, meltXZ: 0, hopAmp: 0,
-  surpriseGasp: false, talkPulse: false, ringIntensity: 0.85,
+  surpriseGasp: false, talkPulse: false, trailIntensity: 0.80,
 }
 
 export const EXPRESSIONS: Partial<Record<StateKey, Partial<ExpressionConfig>>> = {
-  SLEEPY:    { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025, ringIntensity: 0.30 },
-  SOLEMN:    { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018, ringIntensity: 0.40 },
-  EXCITED:   { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010, ringIntensity: 1.15 },
-  SURPRISED: { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true, ringIntensity: 1.20 },
-  THINKING:  { breathRate: 0.55, breathAmp: 0.014, ringIntensity: 0.35 },
-  TALKING:   { talkPulse: true, ringIntensity: 1.00 },
-  HAPPY:     { ringIntensity: 1.05 },
-  CURIOUS:   { ringIntensity: 1.00 },
-  POINTING:  { ringIntensity: 0.55 },
-  PRESENTING:{ ringIntensity: 0.55 },
+  SLEEPY:     { breathRate: 0.35, breathAmp: 0.018, meltXZ: 0.025, trailIntensity: 0.25 },
+  SOLEMN:     { breathRate: 0.40, breathAmp: 0.015, meltXZ: 0.018, trailIntensity: 0.35 },
+  EXCITED:    { breathRate: 2.4,  breathAmp: 0.006, hopAmp: 0.010, trailIntensity: 1.15 },
+  SURPRISED:  { breathRate: 0.8,  breathAmp: 0.004, surpriseGasp: true, trailIntensity: 0.90 },
+  THINKING:   { breathRate: 0.55, breathAmp: 0.014, trailIntensity: 0.30 },
+  TALKING:    { talkPulse: true, trailIntensity: 0.95 },
+  HAPPY:      { trailIntensity: 0.95 },
+  CURIOUS:    { trailIntensity: 0.90 },
+  POINTING:   { trailIntensity: 1.10 },
+  PRESENTING: { trailIntensity: 1.10 },
   // states omitted from this table get EXPRESSION_DEFAULT
 }
 
