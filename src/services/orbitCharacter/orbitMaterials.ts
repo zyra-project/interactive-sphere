@@ -312,9 +312,12 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
     transparent: true,
   })
   const starMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+    // DIAGNOSTIC — stars temporarily tinted bright magenta to test
+    // whether the "inner-wedge" artifact is the upper-inner star
+    // on each eye. Revert on next commit.
+    color: 0xff00ff,
     transparent: true,
-    opacity: 0.85,
+    opacity: 1.0,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   })
@@ -345,10 +348,7 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
 
 export function createBezelMaterial(): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
-    // DIAGNOSTIC — temporarily bright blue so the user can tell
-    // whether the "inner-wedge" artifacts they see are specular
-    // highlights on the bezel's torus tube. Revert on next commit.
-    color: 0x0088ff,
+    color: 0x1a1620,
     roughness: 0.45,
     metalness: 0.0,
   })
