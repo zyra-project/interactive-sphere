@@ -139,42 +139,34 @@ export function createBodyMaterial(palette: PaletteKey = 'cyan'): BodyMaterialBu
 }
 
 // -----------------------------------------------------------------------
-// Eye field — flat disc with shader-driven upper/lower lid coverage.
-// Lids render in the body's WARM anchor color so the eye reads as
-// "skin folding over opaque vinyl" with no visible seam against the
-// new gradient body. See ORBIT_CHARACTER_VINYL_REDESIGN.md "Face".
+// Eye-field (socket interior) — flat disc with a soft dark-rim shader.
+//
+// Lids used to be painted here via `uUpperLid` / `uLowerLid` smoothstep
+// bands, but that produced a flat-disc read and a pink "eyeshadow"
+// band from the accent-color crease blend. Lids are now 3-D
+// spherical-cap meshes rotating on their own pivots (see
+// {@link createLidGeometry} + `buildPairedEye` in `orbitScene.ts`),
+// so this shader's only remaining job is to render the socket
+// interior behind the iris stack: darker in the center, a touch
+// lifted at the rim so the 3-D bezel torus has something to frame.
 // -----------------------------------------------------------------------
 
 export interface EyeFieldMaterialBundle {
   material: THREE.ShaderMaterial
   uniforms: {
-    uUpperLid: { value: number }
-    uLowerLid: { value: number }
-    uBodyColor: { value: THREE.Color }
-    uBodyAccent: { value: THREE.Color }
     uEyeColor: { value: THREE.Color }
     uRimColor: { value: THREE.Color }
   }
 }
 
-export function createEyeFieldMaterial(palette: PaletteKey = 'cyan'): EyeFieldMaterialBundle {
-  const p = PALETTES[palette]
+export function createEyeFieldMaterial(_palette: PaletteKey = 'cyan'): EyeFieldMaterialBundle {
   const uniforms = {
-    uUpperLid: { value: 0 },
-    uLowerLid: { value: 0 },
-    // `uBodyColor` now gets written with the palette's WARM anchor
-    // (the left side of the gradient), which is the hue that sits
-    // directly above/below the eye disc. Lids close to that color so
-    // the lid+body seam is invisible.
-    uBodyColor: { value: new THREE.Color(p.warm) },
-    uBodyAccent: { value: new THREE.Color(p.accent) },
-    // Warm dark charcoal instead of near-black — reads as socket
-    // shadow, not void. Inner disc is ever-so-slightly lighter so
-    // the outer rim reads as a distinct bezel edge (the 3-D-looking
-    // socket ring in the concept art), sold entirely by the inner
-    // vs. rim contrast without extra geometry.
-    uEyeColor: { value: new THREE.Color(0x1f1a24) },
-    uRimColor: { value: new THREE.Color(0x0f0a12) },
+    // Warm dark charcoal for the socket interior — reads as "shadowed
+    // recess" rather than "black hole on flat plastic." The inner
+    // disc is darker than the rim so the bezel torus catches a
+    // lighter halo around the socket without any additional geometry.
+    uEyeColor: { value: new THREE.Color(0x0b0910) },
+    uRimColor: { value: new THREE.Color(0x1f1a24) },
   }
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -184,27 +176,16 @@ export function createEyeFieldMaterial(palette: PaletteKey = 'cyan'): EyeFieldMa
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
       varying vec2 vUv;
-      uniform float uUpperLid; uniform float uLowerLid;
-      uniform vec3 uBodyColor; uniform vec3 uBodyAccent;
       uniform vec3 uEyeColor; uniform vec3 uRimColor;
       void main() {
         vec2 c = vUv - vec2(0.5);
         float dist = length(c);
         float eyeMask = 1.0 - smoothstep(0.48, 0.50, dist);
         if (eyeMask < 0.01) discard;
-        // Wider bezel zone — darker ring around the iris. Reads as a
-        // soft 3-D socket rim even though the geometry is flat.
-        float rimFactor = smoothstep(0.30, 0.49, dist);
-        float y = c.y + 0.5;
-        float upperCov = smoothstep(1.0 - uUpperLid - 0.04, 1.0 - uUpperLid + 0.04, y);
-        float lowerCov = 1.0 - smoothstep(uLowerLid - 0.04, uLowerLid + 0.04, y);
-        float covered = max(upperCov, lowerCov);
-        float crease = 1.0 - abs(y - (1.0 - uUpperLid)) * 6.0;
-        crease = max(crease, 1.0 - abs(y - uLowerLid) * 6.0);
-        crease = clamp(crease, 0.0, 1.0) * covered;
-        vec3 lidColor = mix(uBodyColor, uBodyAccent, crease * 0.2);
-        vec3 baseColor = mix(uEyeColor, uRimColor, rimFactor);
-        vec3 color = mix(baseColor, lidColor, covered);
+        // Interior is deep; the outer ~30% brightens slightly to
+        // suggest the socket's rim curving up toward the bezel.
+        float rimFactor = smoothstep(0.32, 0.49, dist);
+        vec3 color = mix(uEyeColor, uRimColor, rimFactor);
         gl_FragColor = vec4(color, eyeMask);
       }`,
   })
@@ -245,10 +226,12 @@ export interface PupilMaterials {
    */
   irisGlowMat: THREE.MeshBasicMaterial
   /**
-   * Dark navy pupil-field disc. Covers the iris center, leaving the
-   * iris visible only as a ring. Holds the star sparkles on top.
+   * Dark navy pupil-field disc with a soft radial edge so it feathers
+   * into the iris color underneath instead of stacking as a sharp
+   * navy donut. Holds the star sparkles on top.
    */
-  pupilFieldMat: THREE.MeshBasicMaterial
+  pupilFieldMat: THREE.ShaderMaterial
+  pupilFieldUniforms: { uColor: { value: THREE.Color }; uOpacity: { value: number } }
   /**
    * Tiny near-black pupil-center dot. The "real" anatomical pupil;
    * scales with state pupilSize like the old single-color pupil did.
@@ -263,6 +246,31 @@ export interface PupilMaterials {
 
 export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMaterials {
   const accent = new THREE.Color(PALETTES[palette].accent)
+  const pupilFieldUniforms = {
+    uColor: { value: new THREE.Color(PUPIL_FIELD_COLOR) },
+    uOpacity: { value: 1.0 },
+  }
+  const pupilFieldMat = new THREE.ShaderMaterial({
+    uniforms: pupilFieldUniforms,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform vec3 uColor; uniform float uOpacity;
+      void main() {
+        vec2 c = vUv - vec2(0.5);
+        float d = length(c) * 2.0;   // 0 at center, 1 at disc edge
+        if (d > 1.0) discard;
+        // Soft outer edge — the last 15% of radius feathers into the
+        // iris layer behind, so the pupil/iris transition reads as
+        // "liquid eye" rather than two stacked stickers.
+        float a = uOpacity * (1.0 - smoothstep(0.82, 1.0, d));
+        gl_FragColor = vec4(uColor, a);
+      }`,
+  })
   return {
     irisMat: new THREE.MeshBasicMaterial({
       color: accent.clone(),
@@ -274,10 +282,8 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
       opacity: 0.35,
       blending: THREE.AdditiveBlending,
     }),
-    pupilFieldMat: new THREE.MeshBasicMaterial({
-      color: new THREE.Color(PUPIL_FIELD_COLOR),
-      transparent: true,
-    }),
+    pupilFieldMat,
+    pupilFieldUniforms,
     pupilDotMat: new THREE.MeshBasicMaterial({
       color: new THREE.Color(PUPIL_DOT_COLOR),
       transparent: true,
@@ -290,6 +296,47 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
       depthWrite: false,
     }),
   }
+}
+
+// -----------------------------------------------------------------------
+// Socket bezel ring — 3-D torus around each eye. Sits flush with the
+// body surface, framing the recessed socket below. Matte charcoal
+// `MeshStandardMaterial` so the scene key light picks it up: the
+// upper arc brightens, the lower arc shadows, and the socket
+// silhouette reads as a real hole in the body rather than a painted
+// spot. Shared across both eyes (one material, two meshes).
+// -----------------------------------------------------------------------
+
+export function createBezelMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: 0x1a1620,
+    roughness: 0.45,
+    metalness: 0.0,
+  })
+}
+
+// -----------------------------------------------------------------------
+// Eyelid geometry — a shallow spherical cap. Shared across every lid
+// instance (two per eye × two eyes = four meshes). The cap opens
+// downward (toward the eye it covers); rotation on the parenting
+// pivot swings it into/out of frame.
+// -----------------------------------------------------------------------
+
+/**
+ * Build the shared spherical-cap geometry for eyelids. Called once
+ * at buildScene time; all four lid meshes share the result. A cap
+ * of phi-length `Math.PI * 2` and theta-length `Math.PI * 0.42`
+ * gives a shallow dome about 40% of a hemisphere tall — enough to
+ * cover the socket when closed, thin enough to read as a "lid"
+ * rather than a hat.
+ */
+export function createLidGeometry(radius: number): THREE.BufferGeometry {
+  return new THREE.SphereGeometry(
+    radius,
+    24, 8,                  // widthSegs, heightSegs — ample for the smooth edge
+    0, Math.PI * 2,          // full azimuth (the whole ring)
+    0, Math.PI * 0.42,       // top 40% of the sphere = shallow dome
+  )
 }
 
 /**

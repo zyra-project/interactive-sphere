@@ -27,6 +27,8 @@ import {
   createStarGeometry,
   createSubSphereMaterial,
   createBacklightMaterial,
+  createBezelMaterial,
+  createLidGeometry,
   type BodyMaterialBundle,
   type EyeFieldMaterialBundle,
   type PupilMaterials,
@@ -105,31 +107,85 @@ export function computeEffectiveFov(baseVerticalFovDegrees: number, aspect: numb
 const EYE_PAIR_OFFSET_X = 0.028
 const EYE_PAIR_OFFSET_Y = -0.012
 const EYE_PAIR_DISC_RADIUS = 0.018
-const EYE_PAIR_IRIS_RADIUS = 0.0108
-const EYE_PAIR_IRIS_GLOW_RADIUS = 0.0130
-const EYE_PAIR_PUPIL_FIELD_RADIUS = 0.0080
+
+/**
+ * Iris + pupil-field sizing — thin teal ring, dominant navy pupil.
+ * Ring thickness (iris − pupil-field) works out to ~0.0016 (~15% of
+ * iris diameter), matching the reference concept art. Bumping
+ * pupilField too close to iris starts to eat the ring; tuned to
+ * leave a clean 1.6 mm band.
+ */
+const EYE_PAIR_IRIS_RADIUS = 0.0112
+const EYE_PAIR_IRIS_GLOW_RADIUS = 0.0132
+const EYE_PAIR_PUPIL_FIELD_RADIUS = 0.0096
 const EYE_PAIR_PUPIL_DOT_RADIUS = 0.0025
 const EYE_PAIR_JITTER_SCALE = 0.60
 
 /**
- * Catchlight placement within an eye disc. Two per eye — a larger
- * primary highlight in the upper-right quadrant, a smaller secondary
- * in the lower-left. The two-highlight convention is what sells
- * "wet, alive" eyes in animation rigs; it also gives the subtle
- * cross-pupil gleam visible in the concept art.
+ * Z-depth layering for the recessed socket. The socket disc sits
+ * INSIDE the body surface (negative offset from BODY_RADIUS), so the
+ * bezel torus — sitting at BODY_RADIUS — frames a real recess rather
+ * than stamping a ring onto a flat plane. The iris / pupil / stars /
+ * catchlights step progressively back out toward the body surface,
+ * stacking correctly in depth without any Z-fight tolerance tricks.
  *
- * Catchlights are parented to the same gaze-tracking pupil group as
- * the iris/pupil, so they track the eye (big anime-style rigs do
- * that; a floating static highlight on a flat disc reads wrong).
+ * Every Z below is relative to head-space; BODY_RADIUS defines the
+ * body surface at the eye's center.
+ */
+const SOCKET_Z_DISC        = BODY_RADIUS - 0.0020   // deepest — socket floor
+const SOCKET_Z_IRIS_GLOW   = BODY_RADIUS - 0.0014
+const SOCKET_Z_IRIS        = BODY_RADIUS - 0.0010
+const SOCKET_Z_PUPIL_FIELD = BODY_RADIUS - 0.0008
+const SOCKET_Z_STARS       = BODY_RADIUS - 0.0005
+const SOCKET_Z_PUPIL_DOT   = BODY_RADIUS - 0.0004
+const SOCKET_Z_CATCHLIGHT  = BODY_RADIUS - 0.0002
+const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0003   // flush, slightly proud
+
+/**
+ * Bezel torus — matte charcoal ring framing each socket. The major
+ * radius is pushed slightly outside the socket disc so the ring
+ * silhouette hugs the outside of the rim; tube radius is thick
+ * enough to catch the key light meaningfully without visually
+ * overpowering the iris.
+ */
+const BEZEL_MAJOR_RADIUS = EYE_PAIR_DISC_RADIUS + 0.0010
+const BEZEL_TUBE_RADIUS  = 0.0018
+
+/**
+ * Eyelid geometry + pivot placement. Lids are shallow spherical
+ * caps (see {@link createLidGeometry}), pivoted just outside the
+ * socket so they swing into frame like real lids rather than
+ * clamshelling through the eye center. Upper pivot sits above the
+ * socket; lower pivot sits below. At rotation 0 the lid is parked
+ * out of frame; at LID_CLOSE_ANGLE the cap fully covers the socket.
+ */
+const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 1.10   // slightly bigger than socket
+const UPPER_LID_PIVOT_Y = +EYE_PAIR_DISC_RADIUS * 0.88
+const LOWER_LID_PIVOT_Y = -EYE_PAIR_DISC_RADIUS * 0.88
+const UPPER_LID_PARKED_ROT = -Math.PI * 0.58      // rotated up, out of view
+const LOWER_LID_PARKED_ROT = +Math.PI * 0.58      // rotated down, out of view
+const UPPER_LID_CLOSED_ROT = -Math.PI * 0.12      // covers socket from above
+const LOWER_LID_CLOSED_ROT = +Math.PI * 0.12      // covers socket from below
+
+/**
+ * Catchlight placement within the pupil group. Two per eye — a
+ * larger primary highlight in the upper-right quadrant, a smaller
+ * secondary in the lower-left. The two-highlight convention is what
+ * sells "wet, alive" eyes in animation rigs; it also gives the
+ * subtle cross-pupil gleam visible in the concept art.
+ *
+ * Catchlights are parented to the gaze-tracking pupil group (with
+ * the iris + pupil), so they track the eye's look direction — anime-
+ * style rigs handle highlights that way.
  */
 const CATCHLIGHT_PRIMARY_OFFSET_X = 0.0035
-const CATCHLIGHT_PRIMARY_OFFSET_Y = 0.0035
-const CATCHLIGHT_PRIMARY_RADIUS = 0.0020
+const CATCHLIGHT_PRIMARY_OFFSET_Y = 0.0038
+const CATCHLIGHT_PRIMARY_RADIUS = 0.0022
 const CATCHLIGHT_PRIMARY_OPACITY = 1.0
-const CATCHLIGHT_SECONDARY_OFFSET_X = -0.0024
-const CATCHLIGHT_SECONDARY_OFFSET_Y = -0.0020
-const CATCHLIGHT_SECONDARY_RADIUS = 0.0010
-const CATCHLIGHT_SECONDARY_OPACITY = 0.70
+const CATCHLIGHT_SECONDARY_OFFSET_X = -0.0030
+const CATCHLIGHT_SECONDARY_OFFSET_Y = -0.0026
+const CATCHLIGHT_SECONDARY_RADIUS = 0.0012
+const CATCHLIGHT_SECONDARY_OPACITY = 0.75
 
 /**
  * Number of tiny white five-point stars scattered inside each eye's
@@ -148,23 +204,35 @@ const EYE_STAR_RADIUS = 0.00085
  * writes iterate every rig so adding rigs later (e.g. a third
  * expressive cue) stays one-liner-simple.
  *
- * The stacked layers (outer to inner):
- *   group (at face offset, static)
- *   └── pupilGroup (moves for gaze tracking)
- *       ├── iris       — accent color ring (takes state tint)
- *       ├── pupilField — dark navy, covers iris center
- *       ├── stars[]    — tiny white sparkles inside pupil field
- *       ├── pupilDot   — near-black center, scales with pupilSize
- *       └── catchlights (primary + secondary)
+ * Hierarchy (outer to inner):
+ *   group (at face offset — static, anchors the eye on the body)
+ *   ├── bezel         — 3-D torus ring framing the socket
+ *   ├── disc          — socket-interior shader, recessed into body
+ *   ├── pupilGroup    (moves for gaze tracking)
+ *   │   ├── irisGlow
+ *   │   ├── iris       — accent color ring (takes state tint)
+ *   │   ├── pupilField — soft-edge navy, covers iris center
+ *   │   ├── stars[]    — tiny white sparkles inside pupil field
+ *   │   ├── pupilDot   — near-black center, scales with pupilSize
+ *   │   └── catchlights (primary + secondary)
+ *   ├── upperLidPivot (hinge above socket, rotates X)
+ *   │   └── upperLid  — shared spherical-cap body material
+ *   └── lowerLidPivot (hinge below socket, rotates X)
+ *       └── lowerLid
  */
 export interface EyeRig {
   group: THREE.Group
+  bezel: THREE.Mesh
   pupilGroup: THREE.Group
   iris: THREE.Mesh
   irisGlow: THREE.Mesh
   pupilField: THREE.Mesh
   pupilDot: THREE.Mesh
   stars: THREE.Mesh[]
+  upperLidPivot: THREE.Object3D
+  upperLid: THREE.Mesh
+  lowerLidPivot: THREE.Object3D
+  lowerLid: THREE.Mesh
   jitterScale: number
 }
 
@@ -294,17 +362,22 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
 
   const eyeBundle = createEyeFieldMaterial(palette)
   const pupilMaterials = createPupilMaterials(palette)
+  // Bezel material + lid geometry are shared across both eyes — one
+  // allocation, two instances. Held on the handles so dispose walks
+  // them once via the scene traversal.
+  const bezelMaterial = createBezelMaterial()
+  const lidGeometry = createLidGeometry(LID_RADIUS)
 
   // Paired eyes — the vinyl redesign's permanent face configuration.
   // Placed lower (Y offset) and wider (X offset) than the original
   // rig so the character reads as neotenous and approachable. See
   // `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Face.
   const eyeLeft = buildPairedEye(
-    head, eyeBundle, pupilMaterials,
+    head, eyeBundle, pupilMaterials, bodyBundle.material, bezelMaterial, lidGeometry,
     -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_LEFT,
   )
   const eyeRight = buildPairedEye(
-    head, eyeBundle, pupilMaterials,
+    head, eyeBundle, pupilMaterials, bodyBundle.material, bezelMaterial, lidGeometry,
     +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_RIGHT,
   )
 
@@ -414,17 +487,28 @@ const EYE_STAR_POSITIONS_RIGHT: Array<[number, number]> = [
 /**
  * Build one half of the paired-eye configuration.
  *
- * The eye is a stacked rig: the socket disc (eye-field shader with
- * lids, static in the face) holds a gaze-tracking **pupilGroup** that
- * carries the iris, pupil field, sparkle stars, pupil dot, and the
- * two catchlights. Moving the whole pupil group for gaze keeps
- * everything anatomically aligned — iris + pupil + catchlight slide
- * together as the eye looks around.
+ * The eye is a stacked rig with depth:
+ *   • Socket disc is **recessed** into the body surface (Z < BODY_RADIUS).
+ *   • Iris + pupil + stars + catchlights sit in the socket, progressively
+ *     stepping back toward the body surface.
+ *   • A **3-D bezel torus** sits flush with the body surface, framing
+ *     the recess so the key light rims the upper arc.
+ *   • **3-D spherical-cap lids** (upper + lower) on their own pivots
+ *     rotate to cover the socket — they share the body's vinyl
+ *     material so their color + shading match Orbit's skin exactly,
+ *     and cast proper shadows into the socket.
+ *
+ * The gaze-tracking `pupilGroup` carries iris, pupil field, stars,
+ * pupil dot, and catchlights; moving that one group for gaze keeps
+ * everything anatomically aligned.
  */
 function buildPairedEye(
   head: THREE.Group,
   eyeBundle: EyeFieldMaterialBundle,
   pupilMaterials: PupilMaterials,
+  bodyMaterial: THREE.Material,
+  bezelMaterial: THREE.Material,
+  lidGeometry: THREE.BufferGeometry,
   offsetX: number,
   offsetY: number,
   starPositions: Array<[number, number]>,
@@ -433,13 +517,27 @@ function buildPairedEye(
   group.position.set(offsetX, offsetY, 0)
   head.add(group)
 
-  // Socket disc — static. Holds the lid shader that closes lids in
-  // body color and the widened dark rim that reads as a 3-D bezel.
+  // Bezel torus — sits flush with the body surface, framing the
+  // recessed socket. Matte charcoal `MeshStandardMaterial` so the
+  // scene key light rims it.
+  const bezel = new THREE.Mesh(
+    new THREE.TorusGeometry(BEZEL_MAJOR_RADIUS, BEZEL_TUBE_RADIUS, 12, 32),
+    bezelMaterial,
+  )
+  bezel.position.z = SOCKET_Z_BEZEL
+  bezel.castShadow = false
+  bezel.receiveShadow = true
+  group.add(bezel)
+
+  // Socket disc — static, recessed into the body. The eye-field
+  // shader now does the socket interior only (no lid logic); 3-D lid
+  // meshes handle coverage below.
   const disc = new THREE.Mesh(
     new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS, 48),
     eyeBundle.material,
   )
-  disc.position.z = BODY_RADIUS + 0.0003
+  disc.position.z = SOCKET_Z_DISC
+  disc.receiveShadow = true
   group.add(disc)
 
   // Gaze-tracking pupil group — everything below moves together.
@@ -452,24 +550,26 @@ function buildPairedEye(
     new THREE.CircleGeometry(EYE_PAIR_IRIS_GLOW_RADIUS, 32),
     pupilMaterials.irisGlowMat,
   )
-  irisGlow.position.z = BODY_RADIUS + 0.00045
+  irisGlow.position.z = SOCKET_Z_IRIS_GLOW
   pupilGroup.add(irisGlow)
 
-  // Iris disc — accent-colored. The pupil-field disc on top covers
-  // the center, leaving the teal visible as a ring.
+  // Iris disc — accent-colored. Thin teal ring once the pupil field
+  // covers the center.
   const iris = new THREE.Mesh(
     new THREE.CircleGeometry(EYE_PAIR_IRIS_RADIUS, 48),
     pupilMaterials.irisMat,
   )
-  iris.position.z = BODY_RADIUS + 0.00050
+  iris.position.z = SOCKET_Z_IRIS
   pupilGroup.add(iris)
 
-  // Pupil field — dark navy, covers the iris center. Holds the stars.
+  // Pupil field — soft-edge navy that feathers into the iris layer
+  // underneath. The soft alpha edge is what sells the "liquid eye"
+  // read vs. two stacked donut stickers.
   const pupilField = new THREE.Mesh(
     new THREE.CircleGeometry(EYE_PAIR_PUPIL_FIELD_RADIUS, 40),
     pupilMaterials.pupilFieldMat,
   )
-  pupilField.position.z = BODY_RADIUS + 0.00055
+  pupilField.position.z = SOCKET_Z_PUPIL_FIELD
   pupilGroup.add(pupilField)
 
   // Sparkle stars — tiny white five-point lights inside the pupil
@@ -478,7 +578,7 @@ function buildPairedEye(
   for (let i = 0; i < Math.min(EYE_STARS_PER_EYE, starPositions.length); i++) {
     const [sx, sy] = starPositions[i]
     const star = new THREE.Mesh(_starGeometry, pupilMaterials.starMat)
-    star.position.set(sx, sy, BODY_RADIUS + 0.00060)
+    star.position.set(sx, sy, SOCKET_Z_STARS)
     // Tiny per-star rotation variance so they read as "different stars"
     // rather than a rubber-stamped pattern.
     star.rotation.z = (i * 0.37) % (Math.PI * 2)
@@ -491,7 +591,7 @@ function buildPairedEye(
     new THREE.CircleGeometry(EYE_PAIR_PUPIL_DOT_RADIUS, 24),
     pupilMaterials.pupilDotMat,
   )
-  pupilDot.position.z = BODY_RADIUS + 0.00065
+  pupilDot.position.z = SOCKET_Z_PUPIL_DOT
   pupilGroup.add(pupilDot)
 
   // Primary catchlight — dominant upper-right gleam.
@@ -502,11 +602,9 @@ function buildPairedEye(
   catchPrimary.position.set(
     CATCHLIGHT_PRIMARY_OFFSET_X,
     CATCHLIGHT_PRIMARY_OFFSET_Y,
-    BODY_RADIUS + 0.00080,
+    SOCKET_Z_CATCHLIGHT,
   )
   pupilGroup.add(catchPrimary)
-  // Secondary catchlight — smaller, lower-left. Animator convention:
-  // a second highlight reads as "wet" and adds the approachable gleam.
   const catchSecondary = new THREE.Mesh(
     new THREE.CircleGeometry(CATCHLIGHT_SECONDARY_RADIUS, 12),
     createCatchlightMaterial(CATCHLIGHT_SECONDARY_OPACITY),
@@ -514,13 +612,44 @@ function buildPairedEye(
   catchSecondary.position.set(
     CATCHLIGHT_SECONDARY_OFFSET_X,
     CATCHLIGHT_SECONDARY_OFFSET_Y,
-    BODY_RADIUS + 0.00085,
+    SOCKET_Z_CATCHLIGHT + 0.00005,
   )
   pupilGroup.add(catchSecondary)
 
+  // Upper + lower lids — shared spherical-cap geometry, shared body
+  // vinyl material. Each lid is parented to a pivot Object3D so the
+  // rotation axis is the hinge (just above/below the socket), not
+  // the lid's own centroid. `castShadow = true` lets the key light
+  // drop a soft crescent onto the iris at partial closure.
+  const upperLidPivot = new THREE.Object3D()
+  upperLidPivot.position.set(0, UPPER_LID_PIVOT_Y, BODY_RADIUS)
+  upperLidPivot.rotation.x = UPPER_LID_PARKED_ROT
+  group.add(upperLidPivot)
+  const upperLid = new THREE.Mesh(lidGeometry, bodyMaterial)
+  // Lid geometry is a dome opening downward. Position at origin
+  // relative to the pivot; rotation pivots around X, so the dome
+  // swings down and forward to cover the socket.
+  upperLid.position.set(0, 0, 0)
+  upperLid.castShadow = true
+  upperLid.receiveShadow = true
+  upperLidPivot.add(upperLid)
+
+  const lowerLidPivot = new THREE.Object3D()
+  lowerLidPivot.position.set(0, LOWER_LID_PIVOT_Y, BODY_RADIUS)
+  lowerLidPivot.rotation.x = LOWER_LID_PARKED_ROT
+  group.add(lowerLidPivot)
+  const lowerLid = new THREE.Mesh(lidGeometry, bodyMaterial)
+  // Lower lid is the same dome rotated 180° around X so it opens
+  // UPWARD (toward the socket) — lets both lids share one geometry.
+  lowerLid.rotation.x = Math.PI
+  lowerLid.castShadow = true
+  lowerLid.receiveShadow = true
+  lowerLidPivot.add(lowerLid)
+
   return {
-    group, pupilGroup,
+    group, bezel, pupilGroup,
     iris, irisGlow, pupilField, pupilDot, stars,
+    upperLidPivot, upperLid, lowerLidPivot, lowerLid,
     jitterScale: EYE_PAIR_JITTER_SCALE,
   }
 }
@@ -816,8 +945,9 @@ export function updateCharacter(
   handles.bodyBundle.uniforms.uBaseColor.value.set(p.base)
   handles.bodyBundle.uniforms.uAccentColor.value.set(p.accent)
   handles.bodyBundle.uniforms.uGlowColor.value.set(p.glow)
-  handles.eyeBundle.uniforms.uBodyColor.value.set(p.warm)
-  handles.eyeBundle.uniforms.uBodyAccent.value.set(p.accent)
+  // Eye-field uniforms carry only socket interior colors now (no
+  // palette-tinted lid blend), so palette propagation doesn't touch
+  // them — they're set once at build and stay constant.
   for (const bundle of handles.subBundles) {
     bundle.uniforms.uWarm.value.set(p.warm)
     bundle.uniforms.uCool.value.set(p.cool)
@@ -876,8 +1006,20 @@ export function updateCharacter(
   }
   const effectiveUpper = Math.max(s.upperLid, blinkAmount)
   const effectiveLower = Math.max(s.lowerLid, blinkAmount * 0.35)
-  handles.eyeBundle.uniforms.uUpperLid.value = effectiveUpper
-  handles.eyeBundle.uniforms.uLowerLid.value = effectiveLower
+  // 3-D lid meshes: interpolate pivot rotation between "parked" (out
+  // of frame) and "closed" (covering the socket) by the lid amount.
+  // No shader uniforms involved — the lid's own silhouette and
+  // material occlude the iris naturally.
+  const upperLidRot = lerp(UPPER_LID_PARKED_ROT, UPPER_LID_CLOSED_ROT, effectiveUpper)
+  const lowerLidRot = lerp(LOWER_LID_PARKED_ROT, LOWER_LID_CLOSED_ROT, effectiveLower)
+  for (const rig of handles.eyeRigs) {
+    rig.upperLidPivot.rotation.x = lerp(rig.upperLidPivot.rotation.x, upperLidRot, 0.25)
+    rig.lowerLidPivot.rotation.x = lerp(rig.lowerLidPivot.rotation.x, lowerLidRot, 0.25)
+  }
+  // Keep iris/pupil opacity tracking lid closure: when a lid is
+  // mostly down the iris behind it should fade (so the crescent of
+  // exposed iris reads as a genuine sliver rather than bleeding
+  // through the lid edge at partial closure).
   const coverByUpper = sat((effectiveUpper - 0.35) / 0.25)
   const coverByLower = sat((effectiveLower - 0.35) / 0.25)
   const pupilVis = 1 - Math.max(coverByUpper, coverByLower)
@@ -909,8 +1051,10 @@ export function updateCharacter(
   handles.pupilMaterials.irisMat.opacity = sat(pupilVis)
   handles.pupilMaterials.irisGlowMat.opacity = sat(0.4 * finalPupilBright * pupilVis)
   // Pupil field + dot + stars fade with the same lid coverage so a
-  // closing eye hides everything cleanly.
-  handles.pupilMaterials.pupilFieldMat.opacity = sat(pupilVis)
+  // closing eye hides everything cleanly. The pupil field is a
+  // custom ShaderMaterial (soft radial edge), so its fade is on a
+  // uOpacity uniform rather than the top-level `.opacity` property.
+  handles.pupilMaterials.pupilFieldUniforms.uOpacity.value = sat(pupilVis)
   handles.pupilMaterials.pupilDotMat.opacity = sat(pupilVis)
   handles.pupilMaterials.starMat.opacity = sat(0.85 * pupilVis)
 

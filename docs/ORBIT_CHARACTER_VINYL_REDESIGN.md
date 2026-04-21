@@ -34,8 +34,9 @@ unchanged.
 |---|---|---|
 | Body material | `ShaderMaterial`, fresnel + iridescent hue shift | `MeshStandardMaterial`, matte vinyl (rough 0.5, metal 0.0), warm-top → cool-bottom gradient (15° diagonal) via `onBeforeCompile` |
 | Face | Single inset lens-eye (EVE / BB-8 lineage) | Two paired eyes only — larger, lower, wider; mammalian neoteny proportions |
-| Eye structure | Flat accent-colored disc | Stacked iris rig: teal iris ring → navy pupil field → sparkle stars → black pupil dot → two catchlights, all gaze-tracked |
-| Eye socket | Near-black (`#060810`) | Warm charcoal (`#1f1a24`) + widened rim zone reads as 3-D bezel |
+| Eye structure | Flat accent-colored disc | Recessed socket with a 3-D bezel torus, iris ring → navy pupil field (soft-edge) → sparkle stars → black pupil dot → two catchlights, all gaze-tracked |
+| Eye socket | Near-black (`#060810`) flat disc | Recessed into body (Z < BODY_RADIUS), deeper interior color, framed by a matte-charcoal `TorusGeometry` bezel that catches the key light |
+| Eyelids | Shader smoothstep on a flat disc | **3-D spherical-cap meshes** on pivots, sharing the body's vinyl material, cast shadows into the socket |
 | Catchlights | None | Two per eye (primary upper-right, secondary lower-left), parented to gaze-tracking pupil group |
 | Sub-sphere material | `MeshBasicMaterial` (flat accent color) | `MeshStandardMaterial` with the vinyl gradient |
 | Idle orbits | Single shared orbit phase | Two distinct crossing ellipses, tighter radius |
@@ -117,48 +118,126 @@ We match:
 | `EYE_PAIR_DISC_RADIUS` | `0.014` | `0.018` (bigger) |
 | Eye group `.position.y` | `0` | `-0.012` (lower) |
 
-### Stacked iris rig
+### Recessed socket with 3-D bezel
 
-The concept art's eye is anatomically structured — a teal iris ring
-around a dark-navy pupil field speckled with white stars, a tiny
-black pupil dot, and bright catchlights on top. Flat-disc
-"pupil + glow" was wrong; we rebuild the eye as a stack of
-concentric discs parented into a gaze-tracking pupil group:
+The first-pass flat-disc eye read as "a sticker on a sphere." The
+concept art's eye is a **real socket** — the character has a hole
+in its face that the iris sits inside, framed by a 3-D bezel ring
+that catches the key light. We match that structurally rather than
+faking it with a shader.
 
 ```
 eyeGroup (static, at face offset)
-├── disc        (eye-field shader: lids + widened dark bezel)
-└── pupilGroup  (moves for gaze)
-    ├── irisGlow    (additive accent halo)
-    ├── iris        (accent-colored disc, r=0.0108)    — "teal ring"
-    ├── pupilField  (dark navy, r=0.0080)              — covers iris center
-    ├── stars[3]    (tiny white 5-point sparkles)
-    ├── pupilDot    (near-black, r=0.0025)             — anatomical pupil
-    ├── catchPrimary  (additive white, r=0.0020, upper-right)
-    └── catchSecondary (additive white, r=0.0010, lower-left)
+├── bezel         TorusGeometry at Z = BODY_RADIUS + 0.0003 (flush, slightly proud)
+├── disc          socket-interior shader at Z = BODY_RADIUS - 0.0020 (RECESSED)
+├── pupilGroup    (moves for gaze)
+│   ├── irisGlow    Z = BODY_RADIUS - 0.0014   (additive accent halo)
+│   ├── iris        Z = BODY_RADIUS - 0.0010   (accent ring, r=0.0112)
+│   ├── pupilField  Z = BODY_RADIUS - 0.0008   (soft-edge navy, r=0.0096)
+│   ├── stars[3]    Z = BODY_RADIUS - 0.0005   (white 5-point sparkles)
+│   ├── pupilDot    Z = BODY_RADIUS - 0.0004   (near-black, r=0.0025)
+│   └── catchlights Z = BODY_RADIUS - 0.0002   (primary + secondary)
+├── upperLidPivot  rotates X; carries upper lid cap
+└── lowerLidPivot  rotates X; carries lower lid cap
 ```
 
-Layer ordering uses Z offsets (`0.00045` → `0.00085` above the body
-radius) so the stack renders back-to-front without a depth test.
+**Bezel.** `TorusGeometry(EYE_PAIR_DISC_RADIUS + 0.001, 0.0018, 12, 32)`
+with `MeshStandardMaterial({ color: 0x1a1620, roughness: 0.45 })`.
+Sits flush with the body surface, framing the recess. The scene
+key light rims the upper arc of the torus and drops the lower arc
+into shadow; that top-vs-bottom contrast is what sells the 3-D
+read. `receiveShadow = true` so it integrates with the rest of the
+shadow cast by lids and subs. One material, two meshes.
 
-**Why a group for gaze instead of moving individual meshes:**
-moving one `pupilGroup` per eye keeps iris, pupil dot, stars, and
-catchlights anatomically aligned under any gaze angle. The old code
-moved pupil + glow separately and left catchlights static; the
-catchlights drifted off the pupil on wide gaze.
+**Recessed interior.** The socket disc sits at `BODY_RADIUS - 0.0020`
+(inward of the body surface). The eye-field shader renders only the
+socket interior — a dark-center, slightly-lifted-rim gradient — with
+all lid logic removed. Iris, pupil, stars, and catchlights sit at
+progressively deeper-then-shallower Z inside the socket, stacking
+correctly in depth without any Z-fight tolerance tricks.
 
-**Socket bezel.** The eye-field shader's `rimFactor` now ramps from
-`0.30` → `0.49` (was `0.36` → `0.48`), widening the dark ring around
-the iris. Combined with `uEyeColor` `0x1f1a24` (warm charcoal) and a
-darker `uRimColor` `0x0f0a12`, this reads as a 3-D socket bezel —
-the mechanical-toy look from the concept art — without any extra
-geometry.
+**Thinner iris ring, dominant pupil field.**
 
-**Iris color carrier.** The iris — not the pupil dot — is what
-carries the palette accent and state-driven pupil color (SOLEMN
-blue, CONFUSED amber, gesture flashes). The pupil dot stays near-
-black and scales with `s.pupilSize` (so SURPRISED still constricts
-the pupil to 0.55× while the iris stays full).
+| Constant | First pass | Refined |
+|---|---|---|
+| `EYE_PAIR_IRIS_RADIUS` | `0.0108` | `0.0112` |
+| `EYE_PAIR_PUPIL_FIELD_RADIUS` | `0.0080` | `0.0096` |
+| Ring thickness | `0.0028` (~26 % of iris diameter) | `0.0016` (~14 %) |
+
+Matches the concept art: a clean teal band around a dominant navy
+pupil, not two stacked donut rings.
+
+**Soft-edge pupil field.** The pupil field was a hard-edged
+`MeshBasicMaterial` disc — a visible seam where it met the iris.
+Now a small `ShaderMaterial` with a radial soft alpha:
+
+```glsl
+float a = uOpacity * (1.0 - smoothstep(0.82, 1.0, d));
+```
+
+The last 18 % of radius feathers into the iris color underneath;
+reads as "liquid eye" rather than two stickers stacked.
+
+**Iris color carrier.** The iris — not the pupil dot — carries the
+palette accent and state-driven pupil color (SOLEMN blue, CONFUSED
+amber, gesture flashes). The pupil dot stays near-black and scales
+with `s.pupilSize` (SURPRISED still constricts the pupil to 0.55×
+while the iris stays full).
+
+### 3-D eyelid meshes (replaces shader lid)
+
+The first pass drew lids with a shader `smoothstep` band on the
+flat disc. That created two problems: (1) the lid couldn't escape
+the disc's circular silhouette, so the lid had no "puff" — real
+lids bulge outward from the body; (2) the crease-blend pulled the
+palette accent into the lid zone, reading as saturated pink
+eyeshadow. Both are gone now.
+
+Lids are **3-D spherical caps** per eye, on their own pivots:
+
+```ts
+const lidGeometry = new THREE.SphereGeometry(
+  LID_RADIUS,              // 1.10 × disc radius — slightly larger
+  24, 8,                   // widthSegs, heightSegs
+  0, Math.PI * 2,          // full azimuth
+  0, Math.PI * 0.42,       // top 40% of a sphere = shallow dome
+)
+```
+
+One geometry, shared across all four lid meshes (2 lids × 2 eyes).
+Each lid's material is **the body's gradient `MeshStandardMaterial`
+bundle** — the lid picks up the same warm→cool pigment, same matte
+roughness, same specular, same shadow interaction as Orbit's skin.
+Lid color therefore matches whatever body tone happens to sit
+behind the eye. No more coordinating a separate `uBodyColor`
+uniform with the palette.
+
+Each lid lives under an `Object3D` pivot, positioned at the hinge:
+upper pivot at `y = +0.88 × DISC_RADIUS`, lower at `-0.88 ×
+DISC_RADIUS`, both at `z = BODY_RADIUS`. The dome sits at pivot
+origin; rotating the pivot around X swings it through the eye's
+plane like a real lid.
+
+**Rotation angles (eased):**
+
+| | Parked (lid = 0) | Closed (lid = 1) |
+|---|---|---|
+| Upper lid pivot | `-0.58 π` (rotated up, above brow) | `-0.12 π` (covers socket from above) |
+| Lower lid pivot | `+0.58 π` (rotated down, below chin) | `+0.12 π` (covers socket from below) |
+
+`updateCharacter` lerps each pivot's rotation toward the target
+each frame (factor `0.25`) from `effectiveUpper` / `effectiveLower`
+— which already combines `s.upperLid` + `blinkAmount`. No new state
+plumbing.
+
+**Shadows.** Each lid has `castShadow = true, receiveShadow = true`.
+At partial closure, the key light drops a soft crescent shadow onto
+the iris — the exact cue that sold the 3-D lid read in the concept
+art reference.
+
+**Cost.** `SphereGeometry(24, 8, 0, 2π, 0, 0.42π)` = ~130 tris × 4
+lid meshes = **~520 extra triangles**, all sharing one geometry
+buffer and the body's material bundle. Well inside Quest budget.
 
 ### Sparkle stars
 
@@ -168,25 +247,21 @@ fixed per-eye table so the two eyes read as distinct "star charts"
 but never shimmer between frames. Additive white, shared material
 across both eyes.
 
-Total new geometry cost: **2 × (1 iris + 1 iris-glow + 1 pupil-field
-+ 3 stars + 1 pupil-dot + 2 catchlights) = 18 meshes,** all sharing
-materials. Well under the Quest budget.
+### Catchlights (both sizes, bumped)
 
-### Catchlights (both sizes, bigger)
-
-Two additive white discs per eye, now parented to the gaze-tracking
-`pupilGroup` (not the static eye group). Big anime-style rigs track
-catchlights with the iris; a floating static highlight reads as
-misaligned parallax under wide gaze. Sizes bumped from the first
-pass:
+Two additive white discs per eye, parented to the gaze-tracking
+`pupilGroup` (not the static eye group). Big anime-style rigs
+track catchlights with the iris; a floating static highlight reads
+as misaligned parallax under wide gaze. Sizes bumped to pop against
+the expanded navy pupil field:
 
 | | Primary | Secondary |
 |---|---|---|
-| Offset (x, y) | `+0.0035, +0.0035` | `-0.0024, -0.0020` |
-| Radius | `0.0020` | `0.0010` |
-| Opacity | `1.0` | `0.70` |
+| Offset (x, y) | `+0.0035, +0.0038` | `-0.0030, -0.0026` |
+| Radius | `0.0022` | `0.0012` |
+| Opacity | `1.0` | `0.75` |
 
-The primary catchlight covers ~18% of the iris radius — the
+The primary catchlight covers ~20 % of the iris radius — the
 dominant upper-right gleam from the concept art.
 
 -----
