@@ -180,7 +180,15 @@ export function createEyeFieldMaterial(_palette: PaletteKey = 'cyan'): EyeFieldM
       void main() {
         vec2 c = vUv - vec2(0.5);
         float dist = length(c);
-        float eyeMask = 1.0 - smoothstep(0.48, 0.50, dist);
+        // Tight alpha edge (smoothstep window 0.495-0.500 = 1% of
+        // radius) — the earlier 4% soft edge let the body surface
+        // behind the eye-field show through where the bezel torus
+        // didn't cover, producing the "inner-wedge" artifact that
+        // oscillated with the body's breathing squash. The bezel
+        // covers the outer silhouette from in front, so a hard
+        // alpha edge under it reads cleanly without the body
+        // pigment peeking through.
+        float eyeMask = 1.0 - smoothstep(0.495, 0.500, dist);
         if (eyeMask < 0.01) discard;
         // Interior is deep; the outer ~30% brightens slightly to
         // suggest the socket's rim curving up toward the bezel.
@@ -273,9 +281,7 @@ function applyPupilStencilClip(mat: THREE.Material): void {
 export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMaterials {
   const accent = new THREE.Color(PALETTES[palette].accent)
   const pupilFieldUniforms = {
-    // DIAGNOSTIC — pupil field tinted bright yellow for inner-wedge
-    // identification pass.
-    uColor: { value: new THREE.Color(0xffff00) },
+    uColor: { value: new THREE.Color(PUPIL_FIELD_COLOR) },
     uOpacity: { value: 1.0 },
   }
   const pupilFieldMat = new THREE.ShaderMaterial({
@@ -299,33 +305,24 @@ export function createPupilMaterials(palette: PaletteKey = 'cyan'): PupilMateria
         gl_FragColor = vec4(uColor, a);
       }`,
   })
-  // DIAGNOSTIC RAINBOW — every pupil-group element tinted a distinct
-  // bright color so the user can identify the inner-wedge artifact's
-  // source from a single screenshot. Revert on next commit.
-  //   iris       = bright GREEN
-  //   irisGlow   = bright ORANGE
-  //   pupilField = bright YELLOW
-  //   pupilDot   = bright CYAN
-  //   stars      = bright MAGENTA (kept from previous diagnostic)
-  //   catchlight (in createCatchlightMaterial) = bright PINK via overlay
   const irisMat = new THREE.MeshBasicMaterial({
-    color: 0x00ff00,  // green
+    color: accent.clone(),
     transparent: true,
   })
   const irisGlowMat = new THREE.MeshBasicMaterial({
-    color: 0xff8800,  // orange
+    color: accent.clone(),
     transparent: true,
-    opacity: 1.0,
+    opacity: 0.35,
     blending: THREE.AdditiveBlending,
   })
   const pupilDotMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffff,  // cyan
+    color: new THREE.Color(PUPIL_DOT_COLOR),
     transparent: true,
   })
   const starMat = new THREE.MeshBasicMaterial({
-    color: 0xff00ff,  // magenta
+    color: 0xffffff,
     transparent: true,
-    opacity: 1.0,
+    opacity: 0.85,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   })
