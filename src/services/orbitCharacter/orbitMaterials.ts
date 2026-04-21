@@ -316,6 +316,65 @@ export function createBezelMaterial(): THREE.MeshStandardMaterial {
 }
 
 // -----------------------------------------------------------------------
+// Socket stencil mask + lid material.
+//
+// The eyelid dome geometry extends beyond the socket rim at wide
+// rotations — there's no dome shape that covers the full iris AND
+// stays inside the small socket silhouette during its travel arc.
+// The fix is a stencil clip: a tiny invisible mask disc the size of
+// the socket is drawn first, writing a per-pixel stencil ID; the
+// lid material then tests the stencil and only paints fragments
+// where the ID matches. Anything that would render outside the
+// socket gets clipped by the GPU for free.
+//
+// Each eye uses a different stencil ID (left=1, right=2) so the
+// left lid can't accidentally bleed through the right socket's mask.
+// -----------------------------------------------------------------------
+
+/**
+ * Build an invisible stencil-writing material for the socket mask.
+ * Writes `stencilRef` to the stencil buffer wherever the mask mesh
+ * covers. Does not write color or depth — the mask is purely a
+ * stencil-setup pass.
+ */
+export function createSocketMaskMaterial(stencilRef: number): THREE.MeshBasicMaterial {
+  const mat = new THREE.MeshBasicMaterial({
+    // Don't touch color or depth — the mask is purely a stencil
+    // setup pass, invisible to the final image.
+    colorWrite: false,
+    depthWrite: false,
+  })
+  mat.stencilWrite = true
+  mat.stencilRef = stencilRef
+  mat.stencilFunc = THREE.AlwaysStencilFunc
+  mat.stencilZPass = THREE.ReplaceStencilOp
+  mat.stencilFail = THREE.KeepStencilOp
+  mat.stencilZFail = THREE.KeepStencilOp
+  return mat
+}
+
+/**
+ * Build a lid material — the body's vinyl gradient pipeline + a
+ * stencil test that clips the lid to the socket interior. Shares
+ * the palette uniforms with the main body bundle so palette swaps
+ * propagate correctly; only the stencil flags differ.
+ *
+ * Each eye gets its own lid material instance with its own
+ * `stencilRef` so left/right sockets don't cross-contaminate.
+ */
+export function createLidMaterial(palette: PaletteKey, stencilRef: number): BodyMaterialBundle {
+  const bundle = createBodyMaterial(palette)
+  const mat = bundle.material
+  mat.stencilWrite = false
+  mat.stencilRef = stencilRef
+  mat.stencilFunc = THREE.EqualStencilFunc
+  mat.stencilFail = THREE.KeepStencilOp
+  mat.stencilZFail = THREE.KeepStencilOp
+  mat.stencilZPass = THREE.KeepStencilOp
+  return bundle
+}
+
+// -----------------------------------------------------------------------
 // Eyelid geometry — a shallow spherical cap. Shared across every lid
 // instance (two per eye × two eyes = four meshes). The cap opens
 // downward (toward the eye it covers); rotation on the parenting

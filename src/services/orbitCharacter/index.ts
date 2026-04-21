@@ -100,7 +100,11 @@ export class OrbitController {
     this.palette = options.palette ?? 'cyan'
     this.onStateChange = options.onStateChange
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true })
+    // `stencil: true` is the WebGLRenderer default but set explicitly:
+    // the eyelid clip uses a socket-shaped stencil mask to keep lid
+    // geometry from escaping the bezel (see
+    // `orbitMaterials.ts/createSocketMaskMaterial`).
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true })
     const isMobile = typeof window !== 'undefined'
       && window.matchMedia?.('(max-width: 768px)').matches
     const pixelRatio = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2)

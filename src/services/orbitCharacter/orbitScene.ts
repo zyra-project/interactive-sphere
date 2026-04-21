@@ -29,6 +29,8 @@ import {
   createBacklightMaterial,
   createBezelMaterial,
   createLidGeometry,
+  createLidMaterial,
+  createSocketMaskMaterial,
   type BodyMaterialBundle,
   type EyeFieldMaterialBundle,
   type PupilMaterials,
@@ -154,28 +156,29 @@ const BEZEL_TUBE_RADIUS  = 0.0018
 /**
  * Eyelid geometry + pivot placement.
  *
- * The dome's radius is kept smaller than the socket disc's radius so
- * the lid silhouette fits INSIDE the socket rim when viewed head-on
- * — at the earlier tuning of `DISC_RADIUS * 1.10` the dome was
- * always visible as a white cap protruding above/below the eye,
- * even when parked. Shrinking the dome + pushing the parked
- * rotation further back tucks the lid fully inside the socket at
- * rest and only sweeps it forward when closing.
+ * The lid dome is now **oversized** (`1.20 × DISC_RADIUS`) so that at
+ * any closed rotation the dome footprint fully covers the iris
+ * width. Overflow beyond the socket rim is clipped by a stencil
+ * mask (see `createSocketMaskMaterial` + `createLidMaterial`) — the
+ * GPU discards any lid fragment that falls outside the socket
+ * silhouette, so a bigger dome gets us full iris coverage when
+ * closed without the lid ever "escaping" the bezel.
  *
- * The lid mesh is also offset inward along its own pivot-local -Y
- * so the dome's center sits near the pivot's rotation axis; that
- * keeps the cap's travel radius short during rotation and prevents
- * it from swinging outside the socket at intermediate angles.
+ * Stencil IDs: left eye = 1, right eye = 2. Per-eye IDs mean the
+ * left lid can't bleed through the right socket's mask or vice
+ * versa.
  */
-const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 0.85        // fits inside socket
-const LID_MESH_Y_OFFSET = -LID_RADIUS * 0.55           // dome center near pivot axis
+const LEFT_EYE_STENCIL_REF = 1
+const RIGHT_EYE_STENCIL_REF = 2
+const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 1.20        // oversized; stencil clips overflow
+const LID_MESH_Y_OFFSET = -LID_RADIUS * 0.35           // dome center near pivot axis
 const UPPER_LID_PIVOT_Y = +EYE_PAIR_DISC_RADIUS * 0.55 // inside socket, not at the rim
 const LOWER_LID_PIVOT_Y = -EYE_PAIR_DISC_RADIUS * 0.55
 const LID_PIVOT_Z = SOCKET_Z_DISC                      // sits in the socket plane
-const UPPER_LID_PARKED_ROT = -Math.PI * 0.48           // tucked well back, behind body
-const LOWER_LID_PARKED_ROT = +Math.PI * 0.48           // tucked well forward/down, behind
-const UPPER_LID_CLOSED_ROT = +Math.PI * 0.45           // forward-down, covers eye
-const LOWER_LID_CLOSED_ROT = -Math.PI * 0.45           // forward-up, covers eye
+const UPPER_LID_PARKED_ROT = -Math.PI * 0.50           // tucked well back, clipped by stencil
+const LOWER_LID_PARKED_ROT = +Math.PI * 0.50
+const UPPER_LID_CLOSED_ROT = +Math.PI * 0.40           // covers socket; stencil clips overflow
+const LOWER_LID_CLOSED_ROT = -Math.PI * 0.40
 
 /**
  * Catchlight placement within the pupil group. Two per eye — a
@@ -277,6 +280,12 @@ export interface OrbitSceneHandles {
    * both in step.
    */
   subBundles: BodyMaterialBundle[]
+  /**
+   * Lid material bundles — one per eye, each with its own stencil
+   * ref. Shares the vinyl gradient pipeline with the body + subs;
+   * palette propagation updates all three in lockstep.
+   */
+  lidBundles: BodyMaterialBundle[]
   /**
    * Scene key light. Cast shadows from sub-spheres onto the body
    * (eclipse cue). Held on the handle so the controller can tweak
@@ -385,17 +394,24 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   const bezelMaterial = createBezelMaterial()
   const lidGeometry = createLidGeometry(LID_RADIUS)
 
+  // Each eye has its own lid material bundle — same vinyl gradient as
+  // the body, plus stencil flags keyed to that eye's stencilRef. Held
+  // on the handles so palette propagation updates both along with the
+  // body + subs.
+  const lidBundleLeft = createLidMaterial(palette, LEFT_EYE_STENCIL_REF)
+  const lidBundleRight = createLidMaterial(palette, RIGHT_EYE_STENCIL_REF)
+
   // Paired eyes — the vinyl redesign's permanent face configuration.
   // Placed lower (Y offset) and wider (X offset) than the original
   // rig so the character reads as neotenous and approachable. See
   // `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Face.
   const eyeLeft = buildPairedEye(
-    head, eyeBundle, pupilMaterials, bodyBundle.material, bezelMaterial, lidGeometry,
-    -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_LEFT,
+    head, eyeBundle, pupilMaterials, lidBundleLeft.material, bezelMaterial, lidGeometry,
+    -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_LEFT, LEFT_EYE_STENCIL_REF,
   )
   const eyeRight = buildPairedEye(
-    head, eyeBundle, pupilMaterials, bodyBundle.material, bezelMaterial, lidGeometry,
-    +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_RIGHT,
+    head, eyeBundle, pupilMaterials, lidBundleRight.material, bezelMaterial, lidGeometry,
+    +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, EYE_STAR_POSITIONS_RIGHT, RIGHT_EYE_STENCIL_REF,
   )
 
   const eyeRigs: EyeRig[] = [eyeLeft, eyeRight]
@@ -452,7 +468,8 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
     backlight, backlightBundle,
     eyeBundle, pupilMaterials,
     eyeRigs,
-    subSpheres, subBundles, keyLight, trails,
+    subSpheres, subBundles, lidBundles: [lidBundleLeft, lidBundleRight],
+    keyLight, trails,
     earth,
     targetMarker, targetHalo, targetMat, targetHaloMat,
     appliedPreset: initialPreset,
@@ -523,16 +540,31 @@ function buildPairedEye(
   head: THREE.Group,
   eyeBundle: EyeFieldMaterialBundle,
   pupilMaterials: PupilMaterials,
-  bodyMaterial: THREE.Material,
+  lidMaterial: THREE.Material,
   bezelMaterial: THREE.Material,
   lidGeometry: THREE.BufferGeometry,
   offsetX: number,
   offsetY: number,
   starPositions: Array<[number, number]>,
+  stencilRef: number,
 ): EyeRig {
   const group = new THREE.Group()
   group.position.set(offsetX, offsetY, 0)
   head.add(group)
+
+  // Socket stencil mask — invisible disc the size of the socket, drawn
+  // BEFORE the lids to write `stencilRef` to the stencil buffer
+  // everywhere the socket covers. Lids then test for this ID and only
+  // render where it matches, so any dome geometry that swings outside
+  // the socket rim gets clipped by the GPU. `renderOrder = -2` forces
+  // this pass to run ahead of the lid passes within the same frame.
+  const socketMask = new THREE.Mesh(
+    new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS, 48),
+    createSocketMaskMaterial(stencilRef),
+  )
+  socketMask.position.z = SOCKET_Z_DISC
+  socketMask.renderOrder = -2
+  group.add(socketMask)
 
   // Bezel torus — sits flush with the body surface, framing the
   // recessed socket. Matte charcoal `MeshStandardMaterial` so the
@@ -644,24 +676,26 @@ function buildPairedEye(
   // "creepy smudge" bug. The lid's own pigment + the body's key
   // light already carry the closed-eye read; a cast shadow from
   // the lid onto the iris is not worth the false-mouth artifact.
-  // Lids are offset along their pivot-local -Y so the dome center
-  // sits closer to the pivot axis — short travel radius during
-  // rotation, keeps the cap inside the socket silhouette.
+  // Lid meshes use `lidMaterial` (a lid-specific clone of the body
+  // bundle with stencil-EQUAL test enabled). The material is shared
+  // across both lids of one eye. Render order +1 ensures the stencil
+  // mask has already run.
   const upperLidPivot = new THREE.Object3D()
   upperLidPivot.position.set(0, UPPER_LID_PIVOT_Y, LID_PIVOT_Z)
   upperLidPivot.rotation.x = UPPER_LID_PARKED_ROT
   group.add(upperLidPivot)
-  const upperLid = new THREE.Mesh(lidGeometry, bodyMaterial)
+  const upperLid = new THREE.Mesh(lidGeometry, lidMaterial)
   upperLid.position.set(0, LID_MESH_Y_OFFSET, 0)
   upperLid.castShadow = false
   upperLid.receiveShadow = true
+  upperLid.renderOrder = 1
   upperLidPivot.add(upperLid)
 
   const lowerLidPivot = new THREE.Object3D()
   lowerLidPivot.position.set(0, LOWER_LID_PIVOT_Y, LID_PIVOT_Z)
   lowerLidPivot.rotation.x = LOWER_LID_PARKED_ROT
   group.add(lowerLidPivot)
-  const lowerLid = new THREE.Mesh(lidGeometry, bodyMaterial)
+  const lowerLid = new THREE.Mesh(lidGeometry, lidMaterial)
   // Lower lid mirrors the upper: same geometry, rotated 180° around X
   // so it opens upward, same -Y offset (which in its rotated frame
   // places the dome center near its pivot axis).
@@ -669,6 +703,7 @@ function buildPairedEye(
   lowerLid.position.set(0, LID_MESH_Y_OFFSET, 0)
   lowerLid.castShadow = false
   lowerLid.receiveShadow = true
+  lowerLid.renderOrder = 1
   lowerLidPivot.add(lowerLid)
 
   return {
@@ -974,6 +1009,12 @@ export function updateCharacter(
   // palette-tinted lid blend), so palette propagation doesn't touch
   // them — they're set once at build and stay constant.
   for (const bundle of handles.subBundles) {
+    bundle.uniforms.uWarm.value.set(p.warm)
+    bundle.uniforms.uCool.value.set(p.cool)
+  }
+  // Lid materials mirror the body gradient so their skin color matches
+  // whatever body region sits behind the socket, palette and all.
+  for (const bundle of handles.lidBundles) {
     bundle.uniforms.uWarm.value.set(p.warm)
     bundle.uniforms.uCool.value.set(p.cool)
   }
