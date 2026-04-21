@@ -454,13 +454,43 @@ export function createStarGeometry(radius: number): THREE.BufferGeometry {
 // the "wet, alive" read that rigid pupils alone can't.
 // -----------------------------------------------------------------------
 
-export function createCatchlightMaterial(opacity: number): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+/**
+ * Build a catchlight material — additive-white specular highlight
+ * with a soft radial falloff (bright core → transparent edge). Reads
+ * as a light reflection on the iris rather than a flat white decal
+ * stamped onto the eye, which is what a plain `MeshBasicMaterial`
+ * produced. Each instance carries its own `uOpacity` uniform so
+ * primary / secondary catchlights can have different intensities
+ * but share the same shader.
+ */
+export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uOpacity: { value: opacity },
+    },
     transparent: true,
-    opacity,
-    blending: THREE.AdditiveBlending,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uOpacity;
+      void main() {
+        // Distance from disc center, 0 at center to 1 at disc edge.
+        // Quadratic falloff (pow exponent 2.2) pushes the bright
+        // zone toward the center so the highlight has a clear
+        // core rather than a uniform wash across the disc.
+        vec2 c = vUv - vec2(0.5);
+        float d = length(c) * 2.0;
+        if (d >= 1.0) discard;
+        float fade = pow(1.0 - d, 2.2);
+        gl_FragColor = vec4(1.0, 1.0, 1.0, uOpacity * fade);
+      }`,
   })
 }
 

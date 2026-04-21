@@ -210,15 +210,25 @@ const LOWER_LID_CLOSED_ROT = -Math.PI * 0.40
  * Catchlights are parented to the gaze-tracking pupil group (with
  * the iris + pupil), so they track the eye's look direction — anime-
  * style rigs handle highlights that way.
+ *
+ * Positioning pulls the primary slightly inward toward the iris
+ * center (vs. the earlier tuning which sat on the pupil field's
+ * soft edge and produced a wedge-shaped silhouette where the
+ * additive white met the feathered navy). The radius is bumped so
+ * the soft-falloff shader has room to bloom without looking like
+ * a sticker; segment counts are tripled so the disc silhouette
+ * reads round rather than polygonal at small pixel sizes.
  */
-const CATCHLIGHT_PRIMARY_OFFSET_X = 0.0035
-const CATCHLIGHT_PRIMARY_OFFSET_Y = 0.0038
-const CATCHLIGHT_PRIMARY_RADIUS = 0.0022
+const CATCHLIGHT_PRIMARY_OFFSET_X = 0.0028
+const CATCHLIGHT_PRIMARY_OFFSET_Y = 0.0030
+const CATCHLIGHT_PRIMARY_RADIUS = 0.0030
 const CATCHLIGHT_PRIMARY_OPACITY = 1.0
-const CATCHLIGHT_SECONDARY_OFFSET_X = -0.0030
-const CATCHLIGHT_SECONDARY_OFFSET_Y = -0.0026
-const CATCHLIGHT_SECONDARY_RADIUS = 0.0012
-const CATCHLIGHT_SECONDARY_OPACITY = 0.75
+const CATCHLIGHT_PRIMARY_SEGMENTS = 32
+const CATCHLIGHT_SECONDARY_OFFSET_X = -0.0024
+const CATCHLIGHT_SECONDARY_OFFSET_Y = -0.0020
+const CATCHLIGHT_SECONDARY_RADIUS = 0.0014
+const CATCHLIGHT_SECONDARY_OPACITY = 0.85
+const CATCHLIGHT_SECONDARY_SEGMENTS = 24
 
 /**
  * Number of tiny white five-point stars scattered inside each eye's
@@ -276,6 +286,14 @@ export interface EyeRig {
   pupilField: THREE.Mesh
   pupilDot: THREE.Mesh
   stars: THREE.Mesh[]
+  /**
+   * Primary + secondary catchlights. Held on the rig so the
+   * per-frame update can subtly shimmer their scale during
+   * expressive states (TALKING / EXCITED / SURPRISED) for the
+   * "wet, alive" read without the highlight going static.
+   */
+  catchPrimary: THREE.Mesh
+  catchSecondary: THREE.Mesh
   upperLidPivot: THREE.Object3D
   upperLid: THREE.Mesh
   lowerLidPivot: THREE.Object3D
@@ -677,9 +695,12 @@ function buildPairedEye(
   pupilDot.position.z = SOCKET_Z_PUPIL_DOT
   pupilGroup.add(pupilDot)
 
-  // Primary catchlight — dominant upper-right gleam.
+  // Primary catchlight — dominant upper-right gleam. Soft radial
+  // falloff via custom shader; scaling is animated per-frame for
+  // expressive states so the highlight shimmers subtly instead of
+  // sitting static like a decal.
   const catchPrimary = new THREE.Mesh(
-    new THREE.CircleGeometry(CATCHLIGHT_PRIMARY_RADIUS, 16),
+    new THREE.CircleGeometry(CATCHLIGHT_PRIMARY_RADIUS, CATCHLIGHT_PRIMARY_SEGMENTS),
     createCatchlightMaterial(CATCHLIGHT_PRIMARY_OPACITY),
   )
   catchPrimary.position.set(
@@ -689,7 +710,7 @@ function buildPairedEye(
   )
   pupilGroup.add(catchPrimary)
   const catchSecondary = new THREE.Mesh(
-    new THREE.CircleGeometry(CATCHLIGHT_SECONDARY_RADIUS, 12),
+    new THREE.CircleGeometry(CATCHLIGHT_SECONDARY_RADIUS, CATCHLIGHT_SECONDARY_SEGMENTS),
     createCatchlightMaterial(CATCHLIGHT_SECONDARY_OPACITY),
   )
   catchSecondary.position.set(
@@ -755,6 +776,7 @@ function buildPairedEye(
   return {
     group, bezel, pupilGroup,
     iris, irisGlow, pupilField, pupilDot, stars,
+    catchPrimary, catchSecondary,
     upperLidPivot, upperLid, lowerLidPivot, lowerLid,
     jitterScale: EYE_PAIR_JITTER_SCALE,
   }
@@ -1195,6 +1217,30 @@ export function updateCharacter(
   for (const rig of handles.eyeRigs) {
     rig.pupilDot.scale.setScalar(lerp(rig.pupilDot.scale.x, targetDotScale, 0.15))
     rig.irisGlow.scale.setScalar(rig.pupilDot.scale.x * 1.10)
+  }
+
+  // ── Catchlight shimmer (TALKING / EXCITED / SURPRISED) ───────────
+  // A small scale oscillation reinforces "wet, alive" during
+  // expressive states without pulling attention. Suppressed under
+  // reducedMotion per the accessibility pattern. Other states get
+  // a lerp back to scale 1 so leaving a shimmer state doesn't leave
+  // the catchlight stuck off-size.
+  const wantsShimmer = (state === 'TALKING' || state === 'EXCITED' || state === 'SURPRISED')
+    && !reducedMotion
+  if (wantsShimmer) {
+    // ~4 Hz with small amplitude; primary and secondary slightly
+    // out of phase so the two highlights don't pulse in lockstep.
+    const shimmerPrimary = 1 + Math.sin(time * 4.0 * Math.PI * 2) * 0.05
+    const shimmerSecondary = 1 + Math.sin(time * 4.0 * Math.PI * 2 + 1.5) * 0.05
+    for (const rig of handles.eyeRigs) {
+      rig.catchPrimary.scale.setScalar(shimmerPrimary)
+      rig.catchSecondary.scale.setScalar(shimmerSecondary)
+    }
+  } else {
+    for (const rig of handles.eyeRigs) {
+      rig.catchPrimary.scale.setScalar(lerp(rig.catchPrimary.scale.x, 1, 0.18))
+      rig.catchSecondary.scale.setScalar(lerp(rig.catchSecondary.scale.x, 1, 0.18))
+    }
   }
 
   // ── Blink scheduler ───────────────────────────────────────────────
