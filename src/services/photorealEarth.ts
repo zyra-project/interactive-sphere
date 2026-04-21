@@ -601,13 +601,16 @@ export function createPhotorealEarth(
       return tex
     }
 
+    // depthTest stays ON (Three.js default) so the globe's depth
+    // buffer naturally occludes the sprite when the sun is behind
+    // the planet. depthWrite stays OFF because additive-blended
+    // sprites shouldn't clobber depth for anything else.
     const coreTexture = buildGlowTexture(SUN_GLOW_TEXTURE_SIZE, 0.25, [255, 252, 230], 1.0)
     const coreMaterial = new THREE_.SpriteMaterial({
       map: coreTexture,
       blending: THREE_.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
     })
     sunCoreSprite = new THREE_.Sprite(coreMaterial)
     sunCoreSprite.scale.set(sunCoreScale, sunCoreScale, 1)
@@ -620,7 +623,6 @@ export function createPhotorealEarth(
       blending: THREE_.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
     })
     sunGlowSprite = new THREE_.Sprite(glowMaterial)
     sunGlowSprite.scale.set(sunGlowScale, sunGlowScale, 1)
@@ -956,6 +958,8 @@ export function createPhotorealEarth(
         if (cloudMesh) cloudMesh.visible = true
         if (atmosphereInner) atmosphereInner.visible = true
         if (atmosphereOuter) atmosphereOuter.visible = true
+        if (sunCoreSprite) sunCoreSprite.visible = true
+        if (sunGlowSprite) sunGlowSprite.visible = true
         // Planet mode: directional sun on, dataset-fill off.
         if (sunLight) sunLight.intensity = 1.8
         if (datasetAmbient) datasetAmbient.intensity = 0
@@ -985,6 +989,8 @@ export function createPhotorealEarth(
         if (cloudMesh) cloudMesh.visible = false
         if (atmosphereInner) atmosphereInner.visible = false
         if (atmosphereOuter) atmosphereOuter.visible = false
+        if (sunCoreSprite) sunCoreSprite.visible = false
+        if (sunGlowSprite) sunGlowSprite.visible = false
         // Dataset mode: directional sun off so scientific-viz colors
         // read uniformly, dataset-fill bumps ambient up so the globe
         // isn't black on what-used-to-be the night side.
@@ -1071,6 +1077,8 @@ export function createPhotorealEarth(
         if (cloudMesh) cloudMesh.visible = false
         if (atmosphereInner) atmosphereInner.visible = false
         if (atmosphereOuter) atmosphereOuter.visible = false
+        if (sunCoreSprite) sunCoreSprite.visible = false
+        if (sunGlowSprite) sunGlowSprite.visible = false
         // Dataset mode lighting — see video branch.
         if (sunLight) sunLight.intensity = 0
         if (datasetAmbient) datasetAmbient.intensity = 1.6
