@@ -28,18 +28,26 @@ export interface StateConfig {
   pupilColor?: string
 }
 
+// Baseline lid coverage for "open-eye" states. The reference
+// concept art has lids visible at all times except during full shock
+// — zero-lid eyes read as ghostly/vacant without any top or bottom
+// rim. States like IDLE / CHATTING / LISTENING / TALKING get a
+// small symmetric coverage (top + bottom each ~8 %) so the lid
+// silhouette is always part of the face. SURPRISED and EXCITED
+// stay at 0 because those specifically ARE wide-open-eye states
+// (shock / thrill).
 export const STATES: Record<StateKey, StateConfig> = {
   // Behavior —────────────────────────────────────────────────────────
-  IDLE:       { label: 'Idle',       orbitSpeed: 0.5,  orbitRadiusScale: 1.00, pupilSize: 1.00, pupilBrightness: 1.00, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.00, lowerLid: 0.00, subMode: 'orbit',     trail: 0.00, head: 'none',  blinkInterval: 4.0, blinkDuration: 0.14 },
-  CHATTING:   { label: 'Chatting',   orbitSpeed: 0.5,  orbitRadiusScale: 1.00, pupilSize: 1.20, pupilBrightness: 1.00, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.00, lowerLid: 0.00, subMode: 'orbit',     trail: 0.00, head: 'none',  blinkInterval: 3.5, blinkDuration: 0.14 },
-  LISTENING:  { label: 'Listening',  orbitSpeed: 0.3,  orbitRadiusScale: 1.00, pupilSize: 1.15, pupilBrightness: 0.95, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.00, lowerLid: 0.00, subMode: 'listening', trail: 0.00, head: 'none',  blinkInterval: 5.0, blinkDuration: 0.14 },
-  TALKING:    { label: 'Talking',    orbitSpeed: 1.2,  orbitRadiusScale: 1.00, pupilSize: 1.20, pupilBrightness: 1.00, pupilPulse: true,  pupilJitter: 0.00, upperLid: 0.00, lowerLid: 0.00, subMode: 'figure8',   trail: 0.55, head: 'none',  blinkInterval: 3.0, blinkDuration: 0.14 },
+  IDLE:       { label: 'Idle',       orbitSpeed: 0.5,  orbitRadiusScale: 1.00, pupilSize: 1.00, pupilBrightness: 1.00, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.08, lowerLid: 0.08, subMode: 'orbit',     trail: 0.00, head: 'none',  blinkInterval: 4.0, blinkDuration: 0.14 },
+  CHATTING:   { label: 'Chatting',   orbitSpeed: 0.5,  orbitRadiusScale: 1.00, pupilSize: 1.20, pupilBrightness: 1.00, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.08, lowerLid: 0.08, subMode: 'orbit',     trail: 0.00, head: 'none',  blinkInterval: 3.5, blinkDuration: 0.14 },
+  LISTENING:  { label: 'Listening',  orbitSpeed: 0.3,  orbitRadiusScale: 1.00, pupilSize: 1.15, pupilBrightness: 0.95, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.08, lowerLid: 0.08, subMode: 'listening', trail: 0.00, head: 'none',  blinkInterval: 5.0, blinkDuration: 0.14 },
+  TALKING:    { label: 'Talking',    orbitSpeed: 1.2,  orbitRadiusScale: 1.00, pupilSize: 1.20, pupilBrightness: 1.00, pupilPulse: true,  pupilJitter: 0.00, upperLid: 0.06, lowerLid: 0.06, subMode: 'figure8',   trail: 0.55, head: 'none',  blinkInterval: 3.0, blinkDuration: 0.14 },
   POINTING:   { label: 'Pointing',   orbitSpeed: 0.5,  orbitRadiusScale: 1.00, pupilSize: 0.90, pupilBrightness: 1.10, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.22, lowerLid: 0.10, subMode: 'point',     trail: 1.00, head: 'none',  blinkInterval: 5.0, blinkDuration: 0.14 },
   PRESENTING: { label: 'Presenting', orbitSpeed: 0.4,  orbitRadiusScale: 1.00, pupilSize: 0.95, pupilBrightness: 1.10, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.15, lowerLid: 0.05, subMode: 'trace',     trail: 1.00, head: 'none',  blinkInterval: 4.0, blinkDuration: 0.14 },
   THINKING:   { label: 'Thinking',   orbitSpeed: 0.2,  orbitRadiusScale: 0.70, pupilSize: 0.80, pupilBrightness: 0.80, pupilPulse: false, pupilJitter: 0.03, upperLid: 0.20, lowerLid: 0.05, subMode: 'cluster',   trail: 0.00, head: 'none',  blinkInterval: 3.0, blinkDuration: 0.16 },
 
   // Emotion —─────────────────────────────────────────────────────────
-  CURIOUS:    { label: 'Curious',    orbitSpeed: 0.6,  orbitRadiusScale: 1.00, pupilSize: 1.35, pupilBrightness: 1.05, pupilPulse: false, pupilJitter: 0.05, upperLid: 0.00, lowerLid: 0.00, subMode: 'orbit',     trail: 0.30, head: 'none',  blinkInterval: 3.0, blinkDuration: 0.14 },
+  CURIOUS:    { label: 'Curious',    orbitSpeed: 0.6,  orbitRadiusScale: 1.00, pupilSize: 1.35, pupilBrightness: 1.05, pupilPulse: false, pupilJitter: 0.05, upperLid: 0.05, lowerLid: 0.05, subMode: 'orbit',     trail: 0.30, head: 'none',  blinkInterval: 3.0, blinkDuration: 0.14 },
   HAPPY:      { label: 'Happy',      orbitSpeed: 0.9,  orbitRadiusScale: 1.05, pupilSize: 1.10, pupilBrightness: 1.10, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.06, lowerLid: 0.48, subMode: 'orbit',     trail: 0.35, head: 'none',  blinkInterval: 2.5, blinkDuration: 0.14 },
   EXCITED:    { label: 'Excited',    orbitSpeed: 2.5,  orbitRadiusScale: 1.30, pupilSize: 1.30, pupilBrightness: 1.20, pupilPulse: false, pupilJitter: 0.35, upperLid: 0.00, lowerLid: 0.00, subMode: 'burst',     trail: 0.70, head: 'none',  blinkInterval: 4.0, blinkDuration: 0.11 },
   SURPRISED:  { label: 'Surprised',  orbitSpeed: 0.2,  orbitRadiusScale: 1.30, pupilSize: 0.55, pupilBrightness: 1.30, pupilPulse: false, pupilJitter: 0.55, upperLid: 0.00, lowerLid: 0.00, subMode: 'scatter',   trail: 0.00, head: 'none',  blinkInterval: 0,   blinkDuration: 0 },
@@ -48,8 +56,8 @@ export const STATES: Record<StateKey, StateConfig> = {
   CONFUSED:   { label: 'Confused',   orbitSpeed: 0.35, orbitRadiusScale: 1.10, pupilSize: 0.95, pupilBrightness: 0.90, pupilPulse: false, pupilJitter: 0.40, upperLid: 0.08, lowerLid: 0.12, subMode: 'confused',  trail: 0.00, head: 'tilt',  blinkInterval: 3.2, blinkDuration: 0.18, pupilColor: '#d9a85c' },
 
   // Head-gesture —────────────────────────────────────────────────────
-  YES:        { label: 'Yes',        orbitSpeed: 0.5,  orbitRadiusScale: 0.75, pupilSize: 1.10, pupilBrightness: 1.10, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.00, lowerLid: 0.22, subMode: 'nod',       trail: 0.00, head: 'nod',   blinkInterval: 3.0, blinkDuration: 0.14 },
-  NO:         { label: 'No',         orbitSpeed: 0.5,  orbitRadiusScale: 0.75, pupilSize: 0.90, pupilBrightness: 0.95, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.15, lowerLid: 0.00, subMode: 'shake',     trail: 0.00, head: 'shake', blinkInterval: 3.0, blinkDuration: 0.14 },
+  YES:        { label: 'Yes',        orbitSpeed: 0.5,  orbitRadiusScale: 0.75, pupilSize: 1.10, pupilBrightness: 1.10, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.08, lowerLid: 0.22, subMode: 'nod',       trail: 0.00, head: 'nod',   blinkInterval: 3.0, blinkDuration: 0.14 },
+  NO:         { label: 'No',         orbitSpeed: 0.5,  orbitRadiusScale: 0.75, pupilSize: 0.90, pupilBrightness: 0.95, pupilPulse: false, pupilJitter: 0.00, upperLid: 0.15, lowerLid: 0.08, subMode: 'shake',     trail: 0.00, head: 'shake', blinkInterval: 3.0, blinkDuration: 0.14 },
 }
 
 export const BEHAVIOR_STATES: StateKey[] = ['IDLE', 'CHATTING', 'LISTENING', 'TALKING', 'POINTING', 'PRESENTING', 'THINKING']

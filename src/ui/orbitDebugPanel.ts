@@ -7,26 +7,13 @@
  * preset; Phase 5 adds the palette radio group.
  */
 
-import type { OrbitController, StateKey, GestureKind, PaletteKey, ScaleKey, EyeMode } from '../services/orbitCharacter'
+import type { OrbitController, StateKey, GestureKind, PaletteKey, ScaleKey } from '../services/orbitCharacter'
 import {
   BEHAVIOR_STATES, EMOTION_STATES, GESTURE_STATES, STATES,
   GESTURE_KEYS, GESTURES,
   PALETTE_KEYS, PALETTES,
   PRESET_KEYS, SCALE_PRESETS,
 } from '../services/orbitCharacter'
-
-/**
- * Labels for the Eyes A/B segmented control. Keep them short — the
- * tooltip carries the design lineage detail, the visible label just
- * needs to read at a glance.
- */
-// Single-eye configuration was retired with the vinyl redesign
-// (see `docs/ORBIT_CHARACTER_VINYL_REDESIGN.md` §Face). The control
-// is left as a single-button radio so the panel layout is unchanged
-// and the "eyes" label still communicates the active configuration.
-const EYE_MODES: { key: EyeMode; label: string; tag: string }[] = [
-  { key: 'two', label: 'Two', tag: 'paired eyes — vinyl redesign, permanent' },
-]
 
 export interface OrbitDebugPanelHandle {
   /**
@@ -60,11 +47,9 @@ export function initOrbitDebugPanel(controller: OrbitController): OrbitDebugPane
   buildPaletteSwatches(paletteHost, controller)
 
   const scaleHost = document.getElementById('orbit-debug-scales')
-  const eyesHost = document.getElementById('orbit-debug-eyes')
   const flyBtn = document.getElementById('orbit-debug-fly') as HTMLButtonElement | null
   const homeBtn = document.getElementById('orbit-debug-home') as HTMLButtonElement | null
   if (scaleHost) buildScaleControl(scaleHost, controller)
-  if (eyesHost) buildEyesControl(eyesHost, controller)
   const flightIntervalId = (flyBtn && homeBtn) ? wireFlightButtons(flyBtn, homeBtn, controller) : null
 
   toggleBtn.addEventListener('click', () => {
@@ -157,32 +142,6 @@ function buildScaleControl(host: HTMLElement, controller: OrbitController): void
       controller.setScalePreset(key as ScaleKey)
       sync()
       announce(`Scale: ${SCALE_PRESETS[key].label}`)
-    })
-    host.appendChild(btn)
-  }
-  sync()
-}
-
-function buildEyesControl(host: HTMLElement, controller: OrbitController): void {
-  host.innerHTML = ''
-  const sync = () => {
-    const current = controller.getEyeMode()
-    host.querySelectorAll<HTMLButtonElement>('.orbit-debug-eye').forEach((btn) => {
-      btn.setAttribute('aria-checked', btn.dataset.eye === current ? 'true' : 'false')
-    })
-  }
-  for (const { key, label, tag } of EYE_MODES) {
-    const btn = document.createElement('button')
-    btn.type = 'button'
-    btn.className = 'orbit-debug-eye'
-    btn.dataset.eye = key
-    btn.setAttribute('role', 'radio')
-    btn.textContent = label
-    btn.title = tag
-    btn.addEventListener('click', () => {
-      controller.setEyeMode(key)
-      sync()
-      announce(`Eyes: ${label}`)
     })
     host.appendChild(btn)
   }

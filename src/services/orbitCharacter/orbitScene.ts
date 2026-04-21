@@ -123,7 +123,11 @@ export function computeEffectiveFov(baseVerticalFovDegrees: number, aspect: numb
  * values keep working unchanged.
  */
 const EYE_PAIR_OFFSET_X = 0.028
-const EYE_PAIR_OFFSET_Y = -0.004
+// Eyes sit very slightly above the face's vertical center. A
+// negative Y reads as "drooping" once the lid stack fills in; the
+// small positive offset keeps the eyes up-and-alert without drifting
+// into a forehead-high arrangement.
+const EYE_PAIR_OFFSET_Y = 0.003
 const EYE_PAIR_DISC_RADIUS = 0.018
 
 /**
