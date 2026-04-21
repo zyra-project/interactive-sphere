@@ -144,24 +144,31 @@ const EYE_PAIR_PUPIL_DOT_RADIUS = 0.0025
 const EYE_PAIR_JITTER_SCALE = 0.60
 
 /**
- * Z-depth layering for the recessed socket. The socket disc sits
- * INSIDE the body surface (negative offset from BODY_RADIUS), so the
- * bezel torus — sitting at BODY_RADIUS — frames a real recess rather
- * than stamping a ring onto a flat plane. The iris / pupil / stars /
- * catchlights step progressively back out toward the body surface,
- * stacking correctly in depth without any Z-fight tolerance tricks.
+ * Z-depth layering for the socket stack. The disc sits slightly
+ * PROUD of the body surface at the nose-bridge rim of each eye
+ * (the inner edge closest to the face centerline, where the body
+ * sphere's forward surface is naturally deepest-to-camera — at
+ * `z ≈ 0.0730` for an eye centered at `x = ±0.028`). Putting the
+ * disc at `BODY_RADIUS = 0.0750` gives it a clean ~0.0020 lead
+ * over the body surface at that tightest point, eliminating the
+ * wedge-shaped depth-fight artifact that oscillated with breathing.
+ *
+ * The bezel torus sits further forward to frame the disc from
+ * above; iris / pupil / stars / catchlights step progressively
+ * forward from the disc up to (but not past) the bezel plane so
+ * the layering reads correctly in perspective.
  *
  * Every Z below is relative to head-space; BODY_RADIUS defines the
  * body surface at the eye's center.
  */
-const SOCKET_Z_DISC        = BODY_RADIUS - 0.0020   // deepest — socket floor
-const SOCKET_Z_IRIS_GLOW   = BODY_RADIUS - 0.0014
-const SOCKET_Z_IRIS        = BODY_RADIUS - 0.0010
-const SOCKET_Z_PUPIL_FIELD = BODY_RADIUS - 0.0008
-const SOCKET_Z_STARS       = BODY_RADIUS - 0.0005
-const SOCKET_Z_PUPIL_DOT   = BODY_RADIUS - 0.0004
-const SOCKET_Z_CATCHLIGHT  = BODY_RADIUS - 0.0002
-const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0003   // flush, slightly proud
+const SOCKET_Z_DISC        = BODY_RADIUS + 0.0000   // flush with body radius
+const SOCKET_Z_IRIS_GLOW   = BODY_RADIUS + 0.0006
+const SOCKET_Z_IRIS        = BODY_RADIUS + 0.0010
+const SOCKET_Z_PUPIL_FIELD = BODY_RADIUS + 0.0012
+const SOCKET_Z_STARS       = BODY_RADIUS + 0.0015
+const SOCKET_Z_PUPIL_DOT   = BODY_RADIUS + 0.0016
+const SOCKET_Z_CATCHLIGHT  = BODY_RADIUS + 0.0018
+const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0023   // farthest forward
 
 /**
  * Bezel torus — matte charcoal ring framing each socket. The major
