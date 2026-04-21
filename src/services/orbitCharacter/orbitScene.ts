@@ -745,7 +745,12 @@ function buildPairedEye(
   upperLidPivot.position.set(0, UPPER_LID_PIVOT_Y, LID_PIVOT_Z)
   upperLidPivot.rotation.x = UPPER_LID_PARKED_ROT
   group.add(upperLidPivot)
-  const upperLid = new THREE.Mesh(lidGeometry, lidMaterial)
+  // DIAGNOSTIC — lids temporarily rendered in solid bright red so the
+  // user can confirm whether the "inner-wedge" artifacts they're
+  // seeing ARE the lid dome silhouette. Revert on next commit after
+  // confirmation / fix.
+  const diagnosticLidMat = new THREE.MeshBasicMaterial({ color: 0xff0044 })
+  const upperLid = new THREE.Mesh(lidGeometry, diagnosticLidMat)
   upperLid.position.set(0, LID_MESH_Y_OFFSET, 0)
   upperLid.castShadow = false
   upperLid.receiveShadow = true
@@ -756,7 +761,7 @@ function buildPairedEye(
   lowerLidPivot.position.set(0, LOWER_LID_PIVOT_Y, LID_PIVOT_Z)
   lowerLidPivot.rotation.x = LOWER_LID_PARKED_ROT
   group.add(lowerLidPivot)
-  const lowerLid = new THREE.Mesh(lidGeometry, lidMaterial)
+  const lowerLid = new THREE.Mesh(lidGeometry, diagnosticLidMat)
   // Lower lid mirrors the upper: same geometry, rotated 180° around X
   // so it opens upward. Offset NEGATED vs. the upper lid —
   // Three.js applies mesh.rotation first, then mesh.position, so
