@@ -102,6 +102,16 @@ export class OrbitController {
    */
   private cursorLastMoveTime = -100
 
+  /**
+   * Counts the first few `pointermove` events and the first few
+   * animation frames, logging to console so a developer can verify
+   * in DevTools that the handler is actually firing and that the
+   * presence-awareness values are updating. Throttled (not an
+   * every-frame stream) so it doesn't flood the console.
+   */
+  private pointerMoveLogCount = 0
+  private frameLogIntervalFrames = 0
+
   constructor(options: OrbitControllerOptions) {
     this.container = options.container
     this.palette = options.palette ?? 'cyan'
@@ -318,6 +328,16 @@ export class OrbitController {
     this.mouseX = Math.max(-1, Math.min(1, rawX))
     this.mouseY = Math.max(-1, Math.min(1, rawY))
     this.cursorLastMoveTime = this.time
+    // First few events only — confirms the listener is firing so
+    // users can diagnose "eyes aren't tracking" issues from DevTools
+    // without us shipping a debug build.
+    if (this.pointerMoveLogCount < 5) {
+      this.pointerMoveLogCount++
+      console.log(
+        `[orbit] pointermove #${this.pointerMoveLogCount}`,
+        { mouseX: this.mouseX.toFixed(3), mouseY: this.mouseY.toFixed(3) },
+      )
+    }
   }
 
   /**
@@ -402,6 +422,20 @@ export class OrbitController {
       reducedMotion: this.reducedMotion,
       cursorActivityTime: this.time - this.cursorLastMoveTime,
     })
+    // Presence-state diagnostics: once every ~60 frames (~1 s at
+    // 60 fps), log the eased scalars so DevTools users can verify
+    // that gaze and proximity are responding to mouse movement.
+    this.frameLogIntervalFrames++
+    if (this.frameLogIntervalFrames >= 60) {
+      this.frameLogIntervalFrames = 0
+      console.log('[orbit] presence', {
+        mouseX: this.mouseX.toFixed(3),
+        mouseY: this.mouseY.toFixed(3),
+        gazeBias: this.anim.gazeBias.toFixed(2),
+        proximity: this.anim.userProximity.toFixed(2),
+        cursorIdle: (this.time - this.cursorLastMoveTime).toFixed(2),
+      })
+    }
     this.renderer.render(this.handles.scene, this.handles.camera)
   }
 }
