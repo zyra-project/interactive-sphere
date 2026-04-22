@@ -147,32 +147,38 @@ const EYE_PAIR_PUPIL_DOT_RADIUS = 0.0025
 const EYE_PAIR_JITTER_SCALE = 0.60
 
 /**
- * Z-depth layering for the socket stack. The disc sits slightly
- * PROUD of the body surface at the nose-bridge rim of each eye
- * (the inner edge closest to the face centerline, where the body
- * sphere's forward surface is naturally deepest-to-camera — at
- * `z ≈ 0.0730` for an eye centered at `x = ±0.028`). Putting the
- * disc at `BODY_RADIUS = 0.0750` gives it a clean ~0.0020 lead
- * over the body surface at that tightest point, eliminating the
- * wedge-shaped depth-fight artifact that oscillated with breathing.
+ * Z-depth layering for the socket stack. The disc sits PROUD of
+ * the body surface at the nose-bridge rim of each eye — that's
+ * the tightest depth clearance on the body sphere (inner edge
+ * closest to face centerline, where `body_z ≈ 0.0730` at rest)
+ * and, critically, where expressive states with `meltXZ` > 0
+ * stretch the body forward. An earlier pass had disc at
+ * `BODY_RADIUS + 0.0000` which cleared IDLE (bodyScaleZ peaks at
+ * ~1.004) but NOT SLEEPY or SOLEMN (meltXZ 0.025 / 0.018 push
+ * bodyScaleZ to ~1.03 / ~1.02; body_z at inner rim becomes
+ * ~0.0752 / ~0.0745 and beats the disc). Adding a +0.003 margin
+ * to every layer covers meltXZ states cleanly and leaves room for
+ * the arrival squash (+0.05 transient) without the wedge
+ * reappearing. Flight smear (up to +0.28) is not covered but the
+ * camera moves with flight so visibility is limited.
  *
- * The bezel torus sits further forward to frame the disc from
- * above; iris / pupil / stars / catchlights step progressively
- * forward from the disc up to (but not past) the bezel plane so
- * the layering reads correctly in perspective.
+ * The bezel torus sits farthest forward to frame the disc; iris /
+ * pupil / stars / catchlight step progressively forward from the
+ * disc up to (but not past) the bezel plane. Glass dome caps
+ * everything.
  *
  * Every Z below is relative to head-space; BODY_RADIUS defines the
  * body surface at the eye's center.
  */
-const SOCKET_Z_DISC        = BODY_RADIUS + 0.0000   // flush with body radius
-const SOCKET_Z_IRIS_GLOW   = BODY_RADIUS + 0.0006
-const SOCKET_Z_IRIS        = BODY_RADIUS + 0.0010
-const SOCKET_Z_PUPIL_FIELD = BODY_RADIUS + 0.0012
-const SOCKET_Z_STARS       = BODY_RADIUS + 0.0015
-const SOCKET_Z_PUPIL_DOT   = BODY_RADIUS + 0.0016
-const SOCKET_Z_CATCHLIGHT  = BODY_RADIUS + 0.0018
-const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0023   // frames the socket
-const SOCKET_Z_GLASS_DOME  = BODY_RADIUS + 0.0026   // glass crystal, in front of bezel
+const SOCKET_Z_DISC        = BODY_RADIUS + 0.0030   // clears meltXZ states
+const SOCKET_Z_IRIS_GLOW   = BODY_RADIUS + 0.0036
+const SOCKET_Z_IRIS        = BODY_RADIUS + 0.0040
+const SOCKET_Z_PUPIL_FIELD = BODY_RADIUS + 0.0042
+const SOCKET_Z_STARS       = BODY_RADIUS + 0.0045
+const SOCKET_Z_PUPIL_DOT   = BODY_RADIUS + 0.0046
+const SOCKET_Z_CATCHLIGHT  = BODY_RADIUS + 0.0048
+const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0053   // frames the socket
+const SOCKET_Z_GLASS_DOME  = BODY_RADIUS + 0.0056   // glass crystal
 
 /**
  * Bezel torus — matte charcoal ring framing each socket. The major
