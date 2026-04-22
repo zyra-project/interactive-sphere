@@ -1027,6 +1027,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // the globe, gaze-follow overlays lerp toward a camera-local
     // target. No-op when no overlays exist, which is the common
     // case (most users aren't on a tour).
+    //
+    // Multi-globe hint shifts NEW overlay default placement above
+    // the primary when an arc is visible — keeps wide popup /
+    // image / question panels from landing between globes and
+    // occluding the sibling data. Idempotent; cheap to call every
+    // frame. Existing overlays keep their stored offset.
+    active.tourOverlay.setMultiGlobeHint(panelCount > 1)
     active.tourOverlay.update(active.camera, active.scene.globe.position, delta)
 
     // Track HUD + Place button to the globe's current position so

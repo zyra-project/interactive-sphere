@@ -319,6 +319,18 @@ export interface VrTourOverlayHandle {
   /** Current default mode — exposed so the HUD toggle can reflect it. */
   getGazeFollowDefault(): boolean
   /**
+   * Tell the manager whether a multi-globe arc is currently on
+   * screen (Phase 2.5 setEnvView: 2/4globes). When true, new
+   * world-anchored overlays default to sitting ABOVE the primary
+   * globe instead of beside it — the single-globe default (+x)
+   * would land wide panels (popup, image, question) inside the
+   * arc and occlude the sibling data tours are set up to
+   * compare. Called per frame by vrSession; idempotent at the
+   * overlay-position level (only affects overlays added after the
+   * most recent call).
+   */
+  setMultiGlobeHint(enabled: boolean): void
+  /**
    * Per-frame positioning pass. `globePosition` drives world-anchor
    * placement; `camera` drives gaze-follow and also provides the
    * billboard target for world-anchored panels. `delta` in seconds
@@ -397,12 +409,29 @@ const CLOSE_BUTTON_MARGIN = 10
 // ── Defaults for anchor modes ──────────────────────────────────────
 
 /**
- * World-anchored default offset from the globe: above-right of the
- * globe at eye level, slightly pulled toward the user so it reads
- * as "floating near the Earth" rather than intersecting it. Matches
- * the spatial feel of the browse panel's offset from the globe.
+ * World-anchored default offset from the primary globe for the
+ * single-globe case: above-right of the globe at eye level,
+ * slightly pulled toward the user so it reads as "floating near
+ * the Earth" rather than intersecting it. Matches the spatial
+ * feel of the browse panel's offset from the globe.
  */
-const DEFAULT_WORLD_OFFSET = { x: 0.6, y: 0.2, z: 0.15 }
+const DEFAULT_WORLD_OFFSET_SINGLE = { x: 0.6, y: 0.2, z: 0.15 }
+
+/**
+ * World-anchored default offset when a multi-globe arc is on
+ * screen (Phase 2.5 setEnvView: 2/4globes). In that layout
+ * secondaries fan 1.2 m to the primary's right, so the
+ * single-globe default (+0.6 m x) would land overlays INSIDE the
+ * arc, occluding the sibling data the tour is asking the user to
+ * compare. Lifting overlays above the primary keeps them clearly
+ * anchored to the tour narrative (the primary drives playback
+ * and tour controls) without covering any globe.
+ *
+ * Overlays that arrive with an explicit `anchor` hint in their
+ * params bypass this switch entirely — tour authors who specify a
+ * layout-aware position keep it regardless of panel count.
+ */
+const DEFAULT_WORLD_OFFSET_MULTI = { x: 0, y: 0.85, z: 0.15 }
 
 /**
  * Gaze-follow default offset in camera-local axes: in front of the
@@ -1063,6 +1092,22 @@ export function createVrTourOverlay(THREE_: typeof THREE): VrTourOverlayHandle {
    */
   const questionStates = new Map<string, QuestionContext>()
   let gazeFollowDefault = false
+  /**
+   * True while a multi-globe arc is on screen. Flipped by vrSession
+   * each frame based on the Phase 2.5 panel count. New overlays
+   * without an explicit `anchor` hint use the multi-globe default
+   * offset (above the primary) instead of the single-globe default
+   * (beside it) so wide panels don't occlude secondary globes.
+   * Existing overlays keep their stored offset — tour authors who
+   * hide + re-show at a layout transition get the updated
+   * placement naturally.
+   */
+  let multiGlobeHint = false
+
+  /** Default world-anchor offset for newly-minted overlays. */
+  function currentDefaultWorldOffset(): { x: number; y: number; z: number } {
+    return multiGlobeHint ? DEFAULT_WORLD_OFFSET_MULTI : DEFAULT_WORLD_OFFSET_SINGLE
+  }
 
   /**
    * Scratch vectors + quaternions reused across `update` calls so
@@ -1105,10 +1150,11 @@ export function createVrTourOverlay(THREE_: typeof THREE): VrTourOverlayHandle {
     const mesh = new THREE_.Mesh(geometry, material)
     mesh.renderOrder = 8
 
+    const worldDefault = currentDefaultWorldOffset()
     const worldOffset = new THREE_.Vector3(
-      anchor.mode === 'world' ? (anchor.offset?.x ?? DEFAULT_WORLD_OFFSET.x) : 0,
-      anchor.mode === 'world' ? (anchor.offset?.y ?? DEFAULT_WORLD_OFFSET.y) : 0,
-      anchor.mode === 'world' ? (anchor.offset?.z ?? DEFAULT_WORLD_OFFSET.z) : 0,
+      anchor.mode === 'world' ? (anchor.offset?.x ?? worldDefault.x) : 0,
+      anchor.mode === 'world' ? (anchor.offset?.y ?? worldDefault.y) : 0,
+      anchor.mode === 'world' ? (anchor.offset?.z ?? worldDefault.z) : 0,
     )
     const gazeOffset = new THREE_.Vector3(
       anchor.mode === 'gaze' ? (anchor.offset?.x ?? DEFAULT_GAZE_OFFSET.x) : 0,
@@ -1169,10 +1215,11 @@ export function createVrTourOverlay(THREE_: typeof THREE): VrTourOverlayHandle {
     const mesh = new THREE_.Mesh(geometry, material)
     mesh.renderOrder = 8
 
+    const worldDefault = currentDefaultWorldOffset()
     const worldOffset = new THREE_.Vector3(
-      anchor.mode === 'world' ? (anchor.offset?.x ?? DEFAULT_WORLD_OFFSET.x) : 0,
-      anchor.mode === 'world' ? (anchor.offset?.y ?? DEFAULT_WORLD_OFFSET.y) : 0,
-      anchor.mode === 'world' ? (anchor.offset?.z ?? DEFAULT_WORLD_OFFSET.z) : 0,
+      anchor.mode === 'world' ? (anchor.offset?.x ?? worldDefault.x) : 0,
+      anchor.mode === 'world' ? (anchor.offset?.y ?? worldDefault.y) : 0,
+      anchor.mode === 'world' ? (anchor.offset?.z ?? worldDefault.z) : 0,
     )
     const gazeOffset = new THREE_.Vector3(
       anchor.mode === 'gaze' ? (anchor.offset?.x ?? DEFAULT_GAZE_OFFSET.x) : 0,
@@ -1618,6 +1665,10 @@ export function createVrTourOverlay(THREE_: typeof THREE): VrTourOverlayHandle {
 
     getGazeFollowDefault() {
       return gazeFollowDefault
+    },
+
+    setMultiGlobeHint(enabled) {
+      multiGlobeHint = enabled
     },
 
     update(camera, globePosition, delta) {
