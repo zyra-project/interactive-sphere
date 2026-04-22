@@ -10,6 +10,7 @@
 
 import { logger } from '../utils/logger'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
+import { setBordersVisible } from '../utils/viewPreferences'
 import { getSunPosition } from '../utils/time'
 import type {
   TourFile, TourTaskDef, TourState, TourCallbacks, TourViewLayout,
@@ -752,6 +753,11 @@ export class TourEngine {
       // command controls only the lines, not labels.
     }
     syncToolsMenuState({ borders: on })
+    // Mirror to the shared preference so a VR session running
+    // alongside this tour picks up the toggle on its next frame.
+    // In a VR-only (non-tour) session the flag is written by the
+    // Tools-menu button instead.
+    setBordersVisible(on)
   }
 
   private execWorldBorderObj(params: { worldBorders: 'on' | 'off' }): void {

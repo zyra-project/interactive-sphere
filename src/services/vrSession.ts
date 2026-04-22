@@ -30,6 +30,7 @@ import {
   loadPersistedAnchorHandle,
   savePersistedAnchorHandle,
 } from '../utils/vrPersistence'
+import { getBordersVisible } from '../utils/viewPreferences'
 import { logger } from '../utils/logger'
 
 /**
@@ -840,6 +841,12 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // unchanged state is a cheap equality check. `active` toggling
     // to false hides the mesh without further work.
     active.tourControls.setState(ctx.getTourState())
+
+    // Borders overlay mirrors the shared view preference. 2D toggles
+    // (Tools menu / tour envShowWorldBorder) write to the same
+    // preference, so the VR globe stays in sync without a dedicated
+    // callback. `scene.setBordersVisible` is internally idempotent.
+    active.scene.setBordersVisible(getBordersVisible())
 
     active.interaction.update(delta)
     // Scene-level per-frame sync (e.g. ground shadow scale matching

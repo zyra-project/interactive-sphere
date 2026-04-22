@@ -1,9 +1,23 @@
 /**
  * View preferences persistence — user choices about what parts of
- * the UI to show alongside the globe. Currently covers the Dataset
- * info panel and the per-dataset legend. Stored under a single
- * localStorage key as JSON so the set can grow without proliferating
- * keys.
+ * the UI to show alongside the globe. Covers the Dataset info panel,
+ * the per-dataset legend, and shared globe-overlay flags that need
+ * to stay in sync between 2D (MapLibre) and VR (Three.js).
+ *
+ * Two access patterns are supported:
+ *
+ * 1. **Blob load/save.** `loadViewPreferences()` / `saveViewPreferences()`
+ *    hand back and persist the full object. Used by initial bootstrap
+ *    and by UI code that already tracks its own flag values.
+ *
+ * 2. **In-memory shared flags.** `getBordersVisible()` /
+ *    `setBordersVisible()` (and future siblings) wrap a lazily-
+ *    initialized module-level cache so VR can poll the value every
+ *    frame without hitting localStorage. Setters persist through
+ *    `saveViewPreferences()`. This is the pattern for tour-driven
+ *    env toggles (`envShowWorldBorder`, `envShowClouds`, etc.) that
+ *    need to bridge the 2D MapLibre surface and the VR Three.js
+ *    scene without threading a new callback through every consumer.
  *
  * Defaults favour discovery for first-time users (info panel on,
  * legend on) and persist the user's override once they flip a
@@ -20,11 +34,20 @@ export interface ViewPreferences {
   /** Whether dataset legends are visible (inline in info panel or
    *  floating per-panel in multi-view). */
   legendVisible: boolean
+  /**
+   * Country/coastline borders overlay. Toggled from the Tools menu,
+   * from tour `envShowWorldBorder` tasks, and reflected in VR as a
+   * transparent-PNG shell on top of each globe. Defaults to false —
+   * the 2D default for a freshly-loaded dataset is no borders, and
+   * the Tools menu button starts inactive.
+   */
+  bordersVisible: boolean
 }
 
 const DEFAULTS: ViewPreferences = {
   infoPanelVisible: true,
   legendVisible: true,
+  bordersVisible: false,
 }
 
 /** Read preferences from localStorage, falling back to defaults. */
@@ -36,6 +59,7 @@ export function loadViewPreferences(): ViewPreferences {
     return {
       infoPanelVisible: typeof parsed?.infoPanelVisible === 'boolean' ? parsed.infoPanelVisible : DEFAULTS.infoPanelVisible,
       legendVisible: typeof parsed?.legendVisible === 'boolean' ? parsed.legendVisible : DEFAULTS.legendVisible,
+      bordersVisible: typeof parsed?.bordersVisible === 'boolean' ? parsed.bordersVisible : DEFAULTS.bordersVisible,
     }
   } catch (err) {
     logger.warn('[viewPreferences] Failed to parse, using defaults:', err)
@@ -50,4 +74,52 @@ export function saveViewPreferences(prefs: ViewPreferences): void {
   } catch (err) {
     logger.warn('[viewPreferences] Failed to save:', err)
   }
+}
+
+// ── In-memory shared flags ─────────────────────────────────────────
+//
+// Lazy-initialized module cache so VR's per-frame poll doesn't touch
+// localStorage. Every getter resolves `cache` on first access;
+// setters mutate it in place AND persist. Callers that already have
+// a ViewPreferences instance (the UI bootstrap path) should keep
+// using loadViewPreferences/saveViewPreferences — the in-memory
+// cache stays coherent because setters update it.
+
+let cache: ViewPreferences | null = null
+
+function ensureCache(): ViewPreferences {
+  if (!cache) cache = loadViewPreferences()
+  return cache
+}
+
+/**
+ * Current borders-overlay state. Cheap — reads from the in-memory
+ * cache, which is safe to call every frame from the VR session poll.
+ */
+export function getBordersVisible(): boolean {
+  return ensureCache().bordersVisible
+}
+
+/**
+ * Update the shared borders flag. Callers:
+ *
+ * - The 2D Tools menu borders button handler (after toggling
+ *   MapLibre layer visibility).
+ * - The tour engine's `execWorldBorder` (after iterating renderers).
+ * - Any future UI entry point that toggles borders.
+ *
+ * VR reads the flag via {@link getBordersVisible} every frame and
+ * reflects it on its own globe shells — no additional wiring needed
+ * here.
+ *
+ * Not idempotent at this layer — always writes to localStorage.
+ * Downstream consumers that care (like `vrScene.setBordersVisible`)
+ * already short-circuit repeat writes, and toggling borders is a
+ * user-initiated action that happens rarely enough that a redundant
+ * localStorage write is immaterial.
+ */
+export function setBordersVisible(visible: boolean): void {
+  const current = ensureCache()
+  current.bordersVisible = visible
+  saveViewPreferences(current)
 }
