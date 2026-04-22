@@ -597,13 +597,18 @@ export function createPhotorealEarth(
       return tex
     }
 
+    // Sun sprites — additive, no depth WRITE (they shouldn't occlude
+    // anything behind them), but default depth TEST is left ON so
+    // opaque objects in front of the sun (globe, Orbit body) naturally
+    // occlude it. Without the depth test the sun renders on top of
+    // everything and shows through whatever should be in front of it
+    // — matches the VR scene's earlier fix for the same issue.
     const coreTexture = buildGlowTexture(SUN_GLOW_TEXTURE_SIZE, 0.25, [255, 252, 230], 1.0)
     const coreMaterial = new THREE_.SpriteMaterial({
       map: coreTexture,
       blending: THREE_.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
     })
     sunCoreSprite = new THREE_.Sprite(coreMaterial)
     sunCoreSprite.scale.set(sunCoreScale, sunCoreScale, 1)
@@ -616,7 +621,6 @@ export function createPhotorealEarth(
       blending: THREE_.AdditiveBlending,
       transparent: true,
       depthWrite: false,
-      depthTest: false,
     })
     sunGlowSprite = new THREE_.Sprite(glowMaterial)
     sunGlowSprite.scale.set(sunGlowScale, sunGlowScale, 1)
