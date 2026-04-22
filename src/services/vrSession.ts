@@ -31,7 +31,7 @@ import {
   loadPersistedAnchorHandle,
   savePersistedAnchorHandle,
 } from '../utils/vrPersistence'
-import { getBordersVisible } from '../utils/viewPreferences'
+import { getBordersVisible, getGazeFollowOverlays } from '../utils/viewPreferences'
 import { logger } from '../utils/logger'
 
 /**
@@ -497,9 +497,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     showImage: (params) => tourOverlay.showImage(params),
     hideImage: (id) => tourOverlay.hideOverlay(id),
     hideAllImages: () => tourOverlay.hideAllImages(),
-    showVideo: (_params, video, videoID) => tourOverlay.showVideo({
+    showVideo: (params, video, videoID) => tourOverlay.showVideo({
       id: videoID,
       video,
+      anchor: params.anchor,
     }),
     hideVideo: (id) => tourOverlay.hideOverlay(id),
     hideAllVideos: () => tourOverlay.hideAllVideos(),
@@ -509,6 +510,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       answerImageUrl: params.answerImageUrl,
       numberOfAnswers: params.numberOfAnswers,
       correctAnswerIndex: params.correctAnswerIndex,
+      anchor: params.anchor,
       // `onComplete` was already wrapped by tourUI.showTourQuestion
       // to call hideAllTourQuestions before resolving the engine
       // promise — we just pass it through as the VR overlay's
@@ -1056,6 +1058,13 @@ isPlaying: ctx.isPlaying(),
     // occluding the sibling data. Idempotent; cheap to call every
     // frame. Existing overlays keep their stored offset.
     active.tourOverlay.setMultiGlobeHint(panelCount > 1)
+    // Global default anchor mode — per-overlay `anchor` hints in
+    // the tour JSON still win over this. No runtime UI toggles
+    // this yet; the preference is settable programmatically (or
+    // via a future Tools-menu checkbox) so power users can flip
+    // their default without losing the tour-author's specific
+    // overrides.
+    active.tourOverlay.setGazeFollowDefault(getGazeFollowOverlays())
     active.tourOverlay.update(active.camera, active.scene.globe.position, delta)
 
     // Track HUD + Place button to the globe's current position so

@@ -42,12 +42,24 @@ export interface ViewPreferences {
    * the Tools menu button starts inactive.
    */
   bordersVisible: boolean
+  /**
+   * Default placement mode for VR tour overlays. When true, panels
+   * ride in front of the user's head (gaze-follow, subtitle-style)
+   * instead of floating near the globe (world-anchored). Per-overlay
+   * `anchor` hints in the tour JSON still win — this only sets the
+   * default for overlays that don't specify. No UI toggle ships in
+   * the initial release; tour authors typically control placement
+   * via the per-overlay field, and this is kept as a programmatic
+   * escape hatch for a future Tools-menu or HUD setting.
+   */
+  gazeFollowOverlays: boolean
 }
 
 const DEFAULTS: ViewPreferences = {
   infoPanelVisible: true,
   legendVisible: true,
   bordersVisible: false,
+  gazeFollowOverlays: false,
 }
 
 /** Read preferences from localStorage, falling back to defaults. */
@@ -60,6 +72,7 @@ export function loadViewPreferences(): ViewPreferences {
       infoPanelVisible: typeof parsed?.infoPanelVisible === 'boolean' ? parsed.infoPanelVisible : DEFAULTS.infoPanelVisible,
       legendVisible: typeof parsed?.legendVisible === 'boolean' ? parsed.legendVisible : DEFAULTS.legendVisible,
       bordersVisible: typeof parsed?.bordersVisible === 'boolean' ? parsed.bordersVisible : DEFAULTS.bordersVisible,
+      gazeFollowOverlays: typeof parsed?.gazeFollowOverlays === 'boolean' ? parsed.gazeFollowOverlays : DEFAULTS.gazeFollowOverlays,
     }
   } catch (err) {
     logger.warn('[viewPreferences] Failed to parse, using defaults:', err)
@@ -121,5 +134,20 @@ export function getBordersVisible(): boolean {
 export function setBordersVisible(visible: boolean): void {
   const current = ensureCache()
   current.bordersVisible = visible
+  saveViewPreferences(current)
+}
+
+/**
+ * Default placement mode for VR tour overlays. Read every frame by
+ * vrSession → `tourOverlay.setGazeFollowDefault`. Per-overlay
+ * `anchor` hints on individual tour tasks still win.
+ */
+export function getGazeFollowOverlays(): boolean {
+  return ensureCache().gazeFollowOverlays
+}
+
+export function setGazeFollowOverlays(enabled: boolean): void {
+  const current = ensureCache()
+  current.gazeFollowOverlays = enabled
   saveViewPreferences(current)
 }

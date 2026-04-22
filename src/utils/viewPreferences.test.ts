@@ -23,18 +23,19 @@ describe('viewPreferences', () => {
   })
 
   it('round-trips a saved preference', () => {
-    saveViewPreferences({ infoPanelVisible: false, legendVisible: true, bordersVisible: false })
+    saveViewPreferences({ infoPanelVisible: false, legendVisible: true, bordersVisible: false, gazeFollowOverlays: false })
     const prefs = loadViewPreferences()
     expect(prefs.infoPanelVisible).toBe(false)
     expect(prefs.legendVisible).toBe(true)
   })
 
   it('round-trips both flags independently', () => {
-    saveViewPreferences({ infoPanelVisible: false, legendVisible: false, bordersVisible: true })
+    saveViewPreferences({ infoPanelVisible: false, legendVisible: false, bordersVisible: true, gazeFollowOverlays: true })
     const prefs = loadViewPreferences()
     expect(prefs.infoPanelVisible).toBe(false)
     expect(prefs.legendVisible).toBe(false)
     expect(prefs.bordersVisible).toBe(true)
+    expect(prefs.gazeFollowOverlays).toBe(true)
   })
 
   it('falls back to defaults on malformed JSON', () => {
@@ -73,7 +74,7 @@ describe('viewPreferences', () => {
     Storage.prototype.setItem = vi.fn(() => { throw new Error('quota') })
     try {
       expect(() => saveViewPreferences({
-        infoPanelVisible: false, legendVisible: false, bordersVisible: false,
+        infoPanelVisible: false, legendVisible: false, bordersVisible: false, gazeFollowOverlays: false,
       })).not.toThrow()
     } finally {
       Storage.prototype.setItem = orig
@@ -82,7 +83,7 @@ describe('viewPreferences', () => {
 
   describe('shared borders flag', () => {
     it('reflects the saved preference on first read', () => {
-      saveViewPreferences({ infoPanelVisible: true, legendVisible: true, bordersVisible: true })
+      saveViewPreferences({ infoPanelVisible: true, legendVisible: true, bordersVisible: true, gazeFollowOverlays: false })
       // getBordersVisible lazy-loads from localStorage on first call; fresh
       // state across tests is guaranteed by localStorage.clear() in beforeEach
       // plus the module cache being initialized here for the first time in

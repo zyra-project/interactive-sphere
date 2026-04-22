@@ -36,6 +36,7 @@ import type {
   ShowImageTaskParams,
   ShowPopupHtmlTaskParams,
   ShowRectTaskParams,
+  TourOverlayAnchor,
 } from '../types'
 
 /**
@@ -53,14 +54,18 @@ import type {
  *   so slight head motion doesn't shake the panel. Matches the
  *   "subtitle rail" pattern used by movie captioning in VR apps.
  */
-export type VrTourAnchorMode = 'world' | 'gaze'
+export type VrTourAnchorMode = TourOverlayAnchor['mode']
 
 /**
- * A caller-supplied anchor override for a specific overlay. When
- * omitted, the manager's current default (set via
- * `setGazeFollowDefault`) is used. The offset is interpreted
- * differently per mode:
+ * A caller-supplied anchor override for a specific overlay. Alias
+ * of the shared {@link TourOverlayAnchor} type defined in
+ * `src/types/index.ts` — tour task params (`ShowRectTaskParams`,
+ * `ShowPopupHtmlTaskParams`, …) carry an optional `anchor` field
+ * of the same shape, and this module consumes it directly. When
+ * omitted on a task, the manager's current default (toggled by
+ * `setGazeFollowDefault`) applies.
  *
+ * Interpretation of `offset` is mode-specific:
  * - `world`: offset is in world axes relative to the globe's
  *   position. A positive y lifts the overlay above the globe, a
  *   positive x puts it to the globe's right from the user's default
@@ -72,10 +77,7 @@ export type VrTourAnchorMode = 'world' | 'gaze'
  *   the panel ~1.4 m in front of the camera and slightly below eye
  *   level so it doesn't occlude the globe.
  */
-export interface VrTourAnchor {
-  mode: VrTourAnchorMode
-  offset?: { x: number; y: number; z: number }
-}
+export type VrTourAnchor = TourOverlayAnchor
 
 /**
  * Subset of {@link ShowRectTaskParams} that the text-overlay path

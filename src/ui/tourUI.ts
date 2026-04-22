@@ -14,7 +14,7 @@
 
 import type {
   ShowRectTaskParams, ShowImageTaskParams, PlayVideoTaskParams,
-  ShowPopupHtmlTaskParams, QuestionTaskParams,
+  ShowPopupHtmlTaskParams, QuestionTaskParams, TourOverlayAnchor,
 } from '../types'
 import type { TourEngine } from '../services/tourEngine'
 
@@ -63,7 +63,9 @@ export interface VrTourOverlaySink {
    * Interactive question overlay. Params are the already-resolved
    * URLs plus the engine's `onComplete` (already wrapped by
    * {@link showTourQuestion} to also clean up the 2D DOM when VR's
-   * Continue button fires).
+   * Continue button fires). `anchor` threads the optional VR
+   * placement override from the tour JSON through to the overlay
+   * manager.
    */
   showQuestion(params: {
     id: string
@@ -71,6 +73,7 @@ export interface VrTourOverlaySink {
     answerImageUrl: string
     numberOfAnswers: number
     correctAnswerIndex: number
+    anchor?: TourOverlayAnchor
     onComplete: () => void
   }): void
   hideAllQuestions(): void
@@ -757,6 +760,7 @@ export function showTourQuestion(params: QuestionDisplayParams): void {
     answerImageUrl: params.imgAnswerFilename,
     numberOfAnswers: params.numberOfAnswers,
     correctAnswerIndex: params.correctAnswerIndex,
+    anchor: params.anchor,
     onComplete: () => {
       hideAllTourQuestions()
       params.onComplete()
