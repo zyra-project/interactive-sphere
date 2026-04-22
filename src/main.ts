@@ -42,6 +42,7 @@ import { initLegendForDataset, clearLegendCache, loadConfig } from './services/d
 import { isMobile, IS_MOBILE_NATIVE, getCloudTextureUrl } from './utils/deviceCapability'
 import { initDeepLinks } from './services/deepLinkService'
 import { initVrButton } from './ui/vrButton'
+import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
@@ -1316,7 +1317,14 @@ class InteractiveSphere {
     initPlaybackPositioning()
     initChatUI({
       onLoadDataset: (id) => { void this.selectDatasetFromChat(id) },
-      onFlyTo: (lat, lon, altitude) => { void this.renderer?.flyTo(lat, lon, altitude) },
+      onFlyTo: (lat, lon, altitude) => {
+        void this.renderer?.flyTo(lat, lon, altitude)
+        // Also rotate the VR globe if a session is live. Fire-and-
+        // forget — chat isn't awaiting the settle, and the VR-side
+        // animation runs off the existing render loop regardless
+        // of whether anyone holds the promise.
+        if (isVrActive()) void flyToOnGlobe(lat, lon)
+      },
       onSetTime: (isoDate) => seekToDate(isoDate, this.hlsService, this.appState, this.playback),
       onFitBounds: (bounds, _label) => { this.renderer?.fitBounds(bounds) },
       onAddMarker: (lat, lng, label) => { this.renderer?.addMarker(lat, lng, label) },

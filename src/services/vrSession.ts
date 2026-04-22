@@ -197,6 +197,111 @@ export function isVrActive(): boolean {
 }
 
 /**
+ * In-flight flyTo animation driven by the render loop. The tour
+ * engine awaits the returned promise so the "next" task doesn't run
+ * until the rotation settles. A new `flyToOnGlobe` call while one
+ * is running resolves the previous one and replaces it — the last
+ * call wins.
+ */
+interface PendingFlyTo {
+  startQuat: THREE.Quaternion
+  endQuat: THREE.Quaternion
+  startTime: number
+  durationMs: number
+  resolve: () => void
+}
+let pendingFlyTo: PendingFlyTo | null = null
+
+/**
+ * Default flyTo animation length. Matches the 2D MapLibre `flyTo`
+ * default duration (`easeTo` pacing, ~1.5 s), so tours that await
+ * the camera settle get the same rhythm in VR as in 2D.
+ */
+const FLY_TO_DEFAULT_DURATION_MS = 1500
+
+/**
+ * Rotate the VR globe so `(lat, lng)` faces the user's head. No-op
+ * when no VR session is active.
+ *
+ * In 2D, `flyTo` moves the camera to look at a lat/lng. VR can't
+ * move the user's head (WebXR owns the view transform — moving it
+ * would induce motion sickness), so we rotate the globe instead:
+ * the point on the sphere corresponding to `(lat, lng)` rotates to
+ * the surface position closest to the user's current head position.
+ *
+ * Captured at animation start:
+ * - `startQuat`: globe's current orientation.
+ * - `endQuat`: orientation that maps the local unit vector of
+ *   `(lat, lng)` onto the world-space direction from globe center
+ *   to the camera. If the user walks to the other side of the
+ *   globe in AR mode, re-calling `flyToOnGlobe` captures the new
+ *   head position and rotates accordingly.
+ *
+ * Slerp + ease-in-out drives the interpolation each frame until the
+ * duration elapses, at which point the returned promise resolves.
+ * Tour engine's `execFlyTo` awaits both this and the 2D renderer's
+ * `flyTo` via `Promise.all`, so the longer of the two paces the
+ * next task.
+ */
+export async function flyToOnGlobe(
+  lat: number,
+  lng: number,
+  durationMs: number = FLY_TO_DEFAULT_DURATION_MS,
+): Promise<void> {
+  if (!active) return
+  const THREE_ = await loadThree()
+  if (!active) return // session may have ended between await + resume
+
+  // Target direction in world space = unit vector from globe center
+  // to the user's head. `camera.getWorldPosition` accounts for the
+  // XR view matrix, so this is the actual user position in
+  // local-floor coords (not a fixed nominal spot).
+  const camPos = new THREE_.Vector3()
+  active.camera.getWorldPosition(camPos)
+  const worldDir = camPos.clone().sub(active.scene.globe.position).normalize()
+
+  // Local-space target point for (lat, lng). Matches the
+  // convention `photorealEarth.sunDirectionFromLatLng` uses
+  // internally so the orientation lines up with the dataset /
+  // photoreal Earth texture's equirectangular wrap on the sphere
+  // (including the negated Z that Three.js SphereGeometry's
+  // default phiStart introduces).
+  const latRad = (lat * Math.PI) / 180
+  const lngRad = (lng * Math.PI) / 180
+  const localTarget = new THREE_.Vector3(
+    Math.cos(latRad) * Math.cos(lngRad),
+    Math.sin(latRad),
+    -Math.cos(latRad) * Math.sin(lngRad),
+  )
+
+  // Resolve any prior flyTo first so callers that awaited it don't
+  // hang waiting on a superseded animation.
+  if (pendingFlyTo) {
+    const prior = pendingFlyTo
+    pendingFlyTo = null
+    prior.resolve()
+  }
+
+  return new Promise<void>((resolve) => {
+    pendingFlyTo = {
+      startQuat: active!.scene.globe.quaternion.clone(),
+      endQuat: new THREE_.Quaternion().setFromUnitVectors(localTarget, worldDir),
+      startTime: performance.now(),
+      durationMs,
+      resolve,
+    }
+  })
+}
+
+/** Cancel any in-flight flyTo animation — used by session teardown. */
+function cancelFlyTo(): void {
+  if (!pendingFlyTo) return
+  const prior = pendingFlyTo
+  pendingFlyTo = null
+  prior.resolve()
+}
+
+/**
  * Push the non-primary panels' textures into scene slots 1..N-1.
  * Scene slot 0 holds the 2D app's primary panel (set via
  * `scene.setTexture`); the remaining scene slots are filled from the
@@ -872,6 +977,34 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     active.scene.setBordersVisible(getBordersVisible())
 
     active.interaction.update(delta)
+
+    // flyTo animation — drives the globe quaternion toward the
+    // captured target each frame. Must run AFTER interaction.update
+    // (which writes user-grab rotations) and BEFORE scene.update
+    // (which propagates the primary's quaternion to secondaries).
+    // A fresh user grab mid-animation will overwrite globe.quaternion,
+    // but the very next frame slerp reads `startQuat` not the current
+    // quat — so flyTo "wins" until the duration elapses. Good enough
+    // for v1; a user-grab interrupt is cheap follow-up if requested.
+    if (pendingFlyTo) {
+      const elapsed = now - pendingFlyTo.startTime
+      const t = Math.min(1, elapsed / pendingFlyTo.durationMs)
+      // Ease-in-out cubic — matches MapLibre flyTo's perceived pacing.
+      const eased = t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2
+      active.scene.globe.quaternion.slerpQuaternions(
+        pendingFlyTo.startQuat,
+        pendingFlyTo.endQuat,
+        eased,
+      )
+      if (t >= 1) {
+        const done = pendingFlyTo
+        pendingFlyTo = null
+        done.resolve()
+      }
+    }
+
     // Scene-level per-frame sync (e.g. ground shadow scale matching
     // globe zoom). Cheap and always runs even when the loading
     // scene is still up so the shadow is correct the moment the
@@ -920,6 +1053,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     const a = active
     active = null
     a.renderer.setAnimationLoop(null)
+    // Resolve any in-flight flyTo so awaiting callers don't hang
+    // after the session ends (tour engine's execFlyTo, chat's
+    // onFlyTo handler).
+    cancelFlyTo()
     a.interaction.dispose()
     a.hud.dispose()
     a.browse.dispose()

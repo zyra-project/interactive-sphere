@@ -12,6 +12,7 @@ import { logger } from '../utils/logger'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { setBordersVisible } from '../utils/viewPreferences'
 import { getSunPosition } from '../utils/time'
+import { flyToOnGlobe, isVrActive } from './vrSession'
 import type {
   TourFile, TourTaskDef, TourState, TourCallbacks, TourViewLayout,
   LoadDatasetTaskParams,
@@ -488,10 +489,24 @@ export class TourEngine {
       if (map?.jumpTo) {
         const zoom = Math.log2(6371 * 2 / Math.max(altKm, 1))
         map.jumpTo({ center: [params.lon, params.lat], zoom })
-        return
       }
+      // VR path is also "instant" — use a very short duration so the
+      // rotation is visible (no-teleport) but doesn't pace the tour.
+      if (isVrActive()) {
+        await flyToOnGlobe(params.lat, params.lon, 0)
+      }
+      return
     }
-    await renderer.flyTo(params.lat, params.lon, altKm)
+
+    // Animated path: run 2D MapLibre flyTo and the VR globe
+    // rotation in parallel. Promise.all resolves when both settle
+    // so the tour's next task waits on the longer of the two.
+    // VR defaults to MapLibre's standard 1.5 s duration (see
+    // FLY_TO_DEFAULT_DURATION_MS in vrSession.ts).
+    await Promise.all([
+      renderer.flyTo(params.lat, params.lon, altKm),
+      isVrActive() ? flyToOnGlobe(params.lat, params.lon) : Promise.resolve(),
+    ])
   }
 
   private async execTiltRotateCamera(params: TiltRotateCameraTaskParams): Promise<void> {
