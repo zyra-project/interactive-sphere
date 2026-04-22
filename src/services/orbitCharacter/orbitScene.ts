@@ -1464,6 +1464,17 @@ export function updateCharacter(
   handles.pupilMaterials.pupilFieldUniforms.uOpacity.value = sat(pupilVis)
   handles.pupilMaterials.pupilDotMat.opacity = sat(pupilVis)
   handles.pupilMaterials.starMat.opacity = sat(0.85 * pupilVis)
+  // Catchlight opacity gates on lid closure. The catchlight material
+  // runs with depthTest: false so it's never occluded by the upper
+  // lid's 3-D dome sweeping through its screen position during a
+  // YES-nod peak. In exchange we need this explicit opacity fade so
+  // a genuine blink (or a mostly-closed SLEEPY state) still hides
+  // the catchlight cleanly. Each eye has its own catchlight material
+  // instance (per buildPairedEye), so the write iterates the rigs.
+  for (const rig of handles.eyeRigs) {
+    const catchMat = rig.catchPrimary.material as THREE.ShaderMaterial
+    catchMat.uniforms.uOpacity.value = CATCHLIGHT_PRIMARY_OPACITY * sat(pupilVis)
+  }
 
   // ── Eye gaze (flight-aware, then state-specific) ─────────────────
   let tYaw = 0, tPitch = 0

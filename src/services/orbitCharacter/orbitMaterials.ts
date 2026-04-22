@@ -621,6 +621,20 @@ export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial 
     },
     transparent: true,
     depthWrite: false,
+    // Skip the depth test so the catchlight always renders on top of
+    // whatever is behind it in world space. Without this, head
+    // rotation (YES nod) translates the upper lid's 3-D dome in
+    // world space enough that it starts occluding the catchlight's
+    // screen position — counter-rotating the lid orientation isn't
+    // enough because the pivot still TRANSLATES with head rotation
+    // and drags the dome mesh across the catchlight. The stencil
+    // clip (applyPupilStencilClip) keeps the catchlight bounded to
+    // the socket silhouette, so it can't leak outside the eye even
+    // with depth test off. A lid-closure opacity fade (wired in
+    // updateCharacter) handles the one case this creates a problem
+    // for: a full blink still needs to hide the catchlight, which
+    // now needs explicit opacity gating rather than depth occlusion.
+    depthTest: false,
     blending: THREE.AdditiveBlending,
     vertexShader: `
       varying vec2 vUv;
