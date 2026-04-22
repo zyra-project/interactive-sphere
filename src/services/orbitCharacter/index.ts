@@ -411,17 +411,17 @@ export class OrbitController {
     const dist = Math.sqrt(dx * dx + dy * dy)
     // Derive the tickle hit-test radius from Orbit's actual projected
     // silhouette rather than a hardcoded NDC constant. At the close
-    // preset Orbit fills a large fraction of the viewport; at
-    // continental / planetary presets the character is much smaller
-    // on screen and a fixed 0.22 would cover empty space. Using the
-    // projected body radius (with 1.8× slack for "clicked near
-    // Orbit" forgiveness) keeps the target appropriately sized at
-    // every zoom level.
+    // preset Orbit already fills most of the viewport (projected
+    // body radius ~0.47 NDC), so any multiplier above 1.0 eats into
+    // the "click empty space to drag the globe" zone. Using exactly
+    // the projected body radius keeps tickle firing when the user
+    // clicks ON Orbit while leaving everything outside the body
+    // silhouette — including the Earth next to Orbit at close
+    // preset — available for drag-to-rotate.
     const cam = this.handles.camera
     const distToHead = cam.position.distanceTo(this.handles.head.position)
     const fovRad = (cam.fov * Math.PI) / 180
-    const projectedBodyRadius = BODY_RADIUS / (distToHead * Math.tan(fovRad / 2))
-    const clickRadius = projectedBodyRadius * 1.8
+    const clickRadius = BODY_RADIUS / (distToHead * Math.tan(fovRad / 2))
     if (dist <= clickRadius) {
       this.playGesture('tickle')
       return
