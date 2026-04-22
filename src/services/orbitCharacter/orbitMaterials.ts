@@ -123,6 +123,16 @@ export function createBodyMaterial(palette: PaletteKey = 'cyan'): BodyMaterialBu
          uniform vec3 uCool;
          uniform float uSpan;
          uniform vec3 uAxis;
+         // normalMatrix is a built-in Three.js per-mesh uniform that
+         // WebGLRenderer populates automatically. The stock
+         // meshphysical frag shader only declares it under
+         // USE_NORMALMAP_OBJECTSPACE; we don't use an object-space
+         // normal map here but we DO need the matrix below to
+         // transform the procedural object-space noise bump into
+         // view space before projecting onto the view-space normal.
+         // Declaring it here adds the uniform slot; the value is
+         // auto-bound by the renderer.
+         uniform mat3 normalMatrix;
          varying vec3 vOrbitObjPos;
 
          // Cheap 3-D value noise for procedural vinyl surface detail.
