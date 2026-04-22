@@ -1199,6 +1199,19 @@ class InteractiveSphere {
       // the panel-slot version with the current primary index.
       getDatasetTexture: () => getPanelTexture(this.viewports.getPrimaryIndex()),
       getDatasetTitle: () => this.appState.currentDataset?.title ?? null,
+      getDatasetTimeLabel: () => {
+        // Mirror the 2D #time-label visibility logic: show only when
+        // the dataset has startTime metadata AND appState.timeLabel
+        // has been populated (i.e. not the '--' bootstrap value).
+        // `appState.timeLabel` is updated every frame by
+        // updateVideoTimeLabel() during playback (or once on image
+        // load), so this getter is cheap to call per VR frame.
+        const ds = this.appState.currentDataset
+        if (!ds?.startTime) return null
+        const label = this.appState.timeLabel
+        if (!label || label === '--') return null
+        return label
+      },
       hasVideoDataset: () => {
         const ds = this.appState.currentDataset
         return !!ds && dataService.isVideoDataset(ds)

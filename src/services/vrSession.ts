@@ -49,6 +49,16 @@ export interface VrSessionContext {
   getDatasetTexture(): VrDatasetTexture | null
   /** Dataset title for the HUD (primary panel). null/empty → "No dataset loaded". */
   getDatasetTitle(): string | null
+  /**
+   * Formatted time-label string for the current primary dataset —
+   * mirrors the 2D `#time-label` overlay (e.g. `"2023-06-15"` or
+   * `"2023-06-15 18:00"` for sub-daily). null when the dataset
+   * lacks `startTime` metadata or no dataset is loaded. Polled per
+   * frame; the host's implementation reads `appState.timeLabel`
+   * which is updated by the per-frame playback loop already
+   * driving the 2D label.
+   */
+  getDatasetTimeLabel(): string | null
   /** True iff a video dataset is loaded on the primary — drives the HUD play/pause button visibility. */
   hasVideoDataset(): boolean
   /** Drives the HUD play/pause icon. Reflects the primary panel's state. */
@@ -665,6 +675,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   })
   hud.setState({
     datasetTitle: ctx.getDatasetTitle(),
+    datasetTimeLabel: ctx.getDatasetTimeLabel(),
     isPlaying: ctx.isPlaying(),
     hasVideo: ctx.hasVideoDataset(),
     isMuted: ctx.isMuted(),
@@ -956,6 +967,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // internally debounced — it only redraws when a field changes.
     active.hud.setState({
       datasetTitle: ctx.getDatasetTitle(),
+      datasetTimeLabel: ctx.getDatasetTimeLabel(),
       isPlaying: ctx.isPlaying(),
       hasVideo: ctx.hasVideoDataset(),
       isMuted: ctx.isMuted(),
