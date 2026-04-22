@@ -185,8 +185,13 @@ export class OrbitController {
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown)
     // `pointerup` on window (not the canvas) so a drag that started
     // on the canvas still ends cleanly if the user releases over a
-    // debug panel or outside the viewport.
+    // debug panel or outside the viewport. `pointercancel` covers
+    // touch/pen paths where the OS takes over the gesture (app
+    // switch, system gesture, etc.) and the browser never fires a
+    // pointerup — without this, `draggingEarth` stays stuck true and
+    // gaze tracking is permanently disabled.
     window.addEventListener('pointerup', this.handlePointerUp)
+    window.addEventListener('pointercancel', this.handlePointerUp)
     this.animate()
   }
 
@@ -304,6 +309,7 @@ export class OrbitController {
     window.removeEventListener('pointermove', this.handlePointerMove)
     this.renderer.domElement.removeEventListener('pointerdown', this.handlePointerDown)
     window.removeEventListener('pointerup', this.handlePointerUp)
+    window.removeEventListener('pointercancel', this.handlePointerUp)
     this.reducedMotionMql?.removeEventListener('change', this.handleReducedMotionChange)
     this.reducedMotionMql = null
     this.renderer.dispose()
@@ -409,19 +415,26 @@ export class OrbitController {
     const dx = ndcX - this._headNdc.x
     const dy = ndcY - this._headNdc.y
     const dist = Math.sqrt(dx * dx + dy * dy)
-    // Derive the tickle hit-test radius from Orbit's actual projected
-    // silhouette rather than a hardcoded NDC constant. At the close
-    // preset Orbit already fills most of the viewport (projected
-    // body radius ~0.47 NDC), so any multiplier above 1.0 eats into
-    // the "click empty space to drag the globe" zone. Using exactly
-    // the projected body radius keeps tickle firing when the user
-    // clicks ON Orbit while leaving everything outside the body
-    // silhouette — including the Earth next to Orbit at close
-    // preset — available for drag-to-rotate.
+    // Derive the tickle hit-test radius from Orbit's current rendered
+    // body silhouette — NOT the unscaled BODY_RADIUS constant — so
+    // the target tracks breathing / meltXZ / flight-smear / arrival-
+    // pulse scale changes. Without this, the hit-test either fires
+    // outside the visible body during peak inhale (body shrunk),
+    // or misses legitimate clicks during flight smear (body
+    // stretched). Uses the larger of scale.x / scale.y because the
+    // body animates non-uniformly (Y breathing amplitude exceeds
+    // XZ), and a conservative max keeps clicks on the tall edge
+    // still landing on the body. At the close preset this gives
+    // the projected body silhouette exactly — any multiplier above
+    // 1.0 would eat into "click empty space to drag the globe"
+    // (the body already fills ~0.47 NDC at close, leaving little
+    // margin beyond its edge before reaching the Earth).
     const cam = this.handles.camera
     const distToHead = cam.position.distanceTo(this.handles.head.position)
     const fovRad = (cam.fov * Math.PI) / 180
-    const clickRadius = BODY_RADIUS / (distToHead * Math.tan(fovRad / 2))
+    const bodyScale = Math.max(this.handles.body.scale.x, this.handles.body.scale.y)
+    const scaledBodyRadius = BODY_RADIUS * bodyScale
+    const clickRadius = scaledBodyRadius / (distToHead * Math.tan(fovRad / 2))
     if (dist <= clickRadius) {
       this.playGesture('tickle')
       return
@@ -494,6 +507,15 @@ export class OrbitController {
       if (this.anim.arrivalSquashStart >= 0) this.anim.arrivalSquashStart -= shift
       this.flight.startTime -= shift
       this.cursorLastMoveTime -= shift
+      // Trail handles carry their own absolute-time stamp for the
+      // state-change fade. Without shifting these, `updateTrails()`
+      // computes a large negative elapsed after a rebase and clamps
+      // the state-fade envelope to 0 — the trails render effectively
+      // dead until the next state or gesture change resets the
+      // timestamp to the fresh `time`.
+      for (const trail of this.handles.trails) {
+        trail.stateChangeTime -= shift
+      }
     }
     updateCharacter(this.handles, this.anim, {
       state: this.state,

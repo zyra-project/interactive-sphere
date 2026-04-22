@@ -305,7 +305,8 @@ const EYE_SHAPE_Y_SCALE = 1.18
  * Hierarchy (outer to inner):
  *   group (at face offset — static, anchors the eye on the body)
  *   ├── bezel         — 3-D torus ring framing the socket
- *   ├── disc          — socket-interior shader, recessed into body
+ *   ├── disc          — socket-interior shader, sits in front of body
+ *   │                    surface to avoid depth-fight with the shell
  *   ├── pupilGroup    (moves for gaze tracking)
  *   │   ├── irisGlow
  *   │   ├── iris       — accent color ring (takes state tint)
@@ -644,15 +645,21 @@ _fourPointStarGeometry.dispose = () => {}
  * Build one half of the paired-eye configuration.
  *
  * The eye is a stacked rig with depth:
- *   • Socket disc is **recessed** into the body surface (Z < BODY_RADIUS).
- *   • Iris + pupil + stars + catchlights sit in the socket, progressively
- *     stepping back toward the body surface.
- *   • A **3-D bezel torus** sits flush with the body surface, framing
- *     the recess so the key light rims the upper arc.
+ *   • Socket disc sits just **in front of** the body surface
+ *     (Z > BODY_RADIUS) to avoid depth fighting with the body shell
+ *     during breathing / meltXZ — the earlier "recessed" layout
+ *     produced a nose-bridge wedge artifact under animation.
+ *   • Iris + pupil + stars + catchlight stack FORWARD from the disc
+ *     (progressively larger Z) up to the bezel plane, so the viewer
+ *     sees them layered over the socket interior.
+ *   • A **3-D bezel torus** sits in front of everything, framing the
+ *     eye opening so the key light rims the upper arc.
  *   • **3-D spherical-cap lids** (upper + lower) on their own pivots
- *     rotate to cover the socket — they share the body's vinyl
- *     material so their color + shading match Orbit's skin exactly,
- *     and cast proper shadows into the socket.
+ *     rotate to cover the socket. They share the body's vinyl
+ *     material so their color + shading match Orbit's skin exactly.
+ *     Cast-shadow is OFF (`castShadow = false`) to avoid a "creepy
+ *     mouth smudge" the earlier lid-shadow pass dropped onto the
+ *     lower face; receive-shadow stays on.
  *
  * The gaze-tracking `pupilGroup` carries iris, pupil field, stars,
  * pupil dot, and catchlights; moving that one group for gaze keeps
@@ -688,9 +695,9 @@ function buildPairedEye(
   socketMask.renderOrder = -2
   group.add(socketMask)
 
-  // Bezel torus — sits flush with the body surface, framing the
-  // recessed socket. Matte charcoal `MeshStandardMaterial` so the
-  // scene key light rims it.
+  // Bezel torus — sits in front of the body surface at SOCKET_Z_BEZEL,
+  // framing the eye opening. Matte charcoal `MeshStandardMaterial`
+  // so the scene key light rims the upper arc and reads as 3-D.
   const bezel = new THREE.Mesh(
     new THREE.TorusGeometry(BEZEL_MAJOR_RADIUS, BEZEL_TUBE_RADIUS, 12, 32),
     bezelMaterial,
@@ -700,9 +707,9 @@ function buildPairedEye(
   bezel.receiveShadow = true
   group.add(bezel)
 
-  // Socket disc — static, recessed into the body. The eye-field
-  // shader now does the socket interior only (no lid logic); 3-D lid
-  // meshes handle coverage below.
+  // Socket disc — static, sits in front of the body surface at
+  // SOCKET_Z_DISC. The eye-field shader does the socket interior
+  // only (no lid logic); 3-D lid meshes handle coverage below.
   const disc = new THREE.Mesh(
     new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS, 48),
     eyeBundle.material,

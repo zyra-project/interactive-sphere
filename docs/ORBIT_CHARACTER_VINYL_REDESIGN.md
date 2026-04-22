@@ -128,33 +128,42 @@ faking it with a shader.
 
 ```
 eyeGroup (static, at face offset)
-├── bezel         TorusGeometry at Z = BODY_RADIUS + 0.0003 (flush, slightly proud)
-├── disc          socket-interior shader at Z = BODY_RADIUS - 0.0020 (RECESSED)
+├── socketMask    invisible disc writing stencil ref (renderOrder -2)
+├── bezel         TorusGeometry at Z = BODY_RADIUS + 0.0053 (frames the socket)
+├── disc          socket-interior shader at Z = BODY_RADIUS + 0.0030
 ├── pupilGroup    (moves for gaze)
-│   ├── irisGlow    Z = BODY_RADIUS - 0.0014   (additive accent halo)
-│   ├── iris        Z = BODY_RADIUS - 0.0010   (accent ring, r=0.0112)
-│   ├── pupilField  Z = BODY_RADIUS - 0.0008   (soft-edge navy, r=0.0096)
-│   ├── stars[3]    Z = BODY_RADIUS - 0.0005   (white 5-point sparkles)
-│   ├── pupilDot    Z = BODY_RADIUS - 0.0004   (near-black, r=0.0025)
+│   ├── irisGlow    Z = BODY_RADIUS + 0.0036   (additive accent halo)
+│   ├── iris        Z = BODY_RADIUS + 0.0040   (accent ring, r=0.0112)
+│   ├── pupilField  Z = BODY_RADIUS + 0.0042   (soft-edge navy, r=0.0096)
+│   ├── stars[3]    Z = BODY_RADIUS + 0.0045   (5-pt centre + two 4-pt flanking)
+│   ├── pupilDot    Z = BODY_RADIUS + 0.0046   (near-black, r=0.0025)
 │   └── catchlight  Z = BODY_RADIUS + 0.0048   (single "planet")
-├── upperLidPivot  rotates X; carries upper lid cap
-└── lowerLidPivot  rotates X; carries lower lid cap
+├── glassDome     CircleGeometry at Z = BODY_RADIUS + 0.0056 (renderOrder 2)
+├── upperLidPivot rotates X; carries upper lid cap (counter-rotated vs head pitch)
+└── lowerLidPivot rotates X; carries lower lid cap (counter-rotated vs head pitch)
 ```
 
 **Bezel.** `TorusGeometry(EYE_PAIR_DISC_RADIUS + 0.001, 0.0018, 12, 32)`
 with `MeshStandardMaterial({ color: 0x1a1620, roughness: 0.45 })`.
-Sits flush with the body surface, framing the recess. The scene
-key light rims the upper arc of the torus and drops the lower arc
-into shadow; that top-vs-bottom contrast is what sells the 3-D
-read. `receiveShadow = true` so it integrates with the rest of the
-shadow cast by lids and subs. One material, two meshes.
+Frames the eye opening. The scene key light rims the upper arc of
+the torus and drops the lower arc into shadow; that top-vs-bottom
+contrast is what sells the 3-D read. `receiveShadow = true` so it
+integrates with the rest of the shadow cast by lids and subs. One
+material, two meshes.
 
-**Recessed interior.** The socket disc sits at `BODY_RADIUS - 0.0020`
-(inward of the body surface). The eye-field shader renders only the
-socket interior — a dark-center, slightly-lifted-rim gradient — with
-all lid logic removed. Iris, pupil, stars, and catchlights sit at
-progressively deeper-then-shallower Z inside the socket, stacking
-correctly in depth without any Z-fight tolerance tricks.
+**Socket Z layering.** Every SOCKET_Z_* constant sits in FRONT of
+the body surface (Z > BODY_RADIUS), not recessed. The disc starts
+at `BODY_RADIUS + 0.0030` — proud of the body's worst-case forward
+surface at the nose-bridge rim under meltXZ states
+(`bodyScaleZ ≈ 1.030` for SLEEPY pushes the body to ~`0.0752`;
+`SOCKET_Z_DISC = 0.0780` clears it). An earlier pass put these
+layers INSIDE the body (`Z < BODY_RADIUS`, "recessed") which produced
+the nose-bridge wedge artifact under breathing. The current layout
+trades a slight loss of literal recess for reliable depth separation;
+the bezel's framing and the gradient shading on the body around
+the socket still sell the recessed read visually. Iris, pupil field,
+stars, pupil dot, and catchlight step progressively forward from
+the disc up to the bezel plane.
 
 **Thinner iris ring, dominant pupil field.**
 
