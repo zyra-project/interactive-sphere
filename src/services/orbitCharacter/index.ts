@@ -103,6 +103,19 @@ export class OrbitController {
   private cursorLastMoveTime = -100
 
   /**
+   * Drag-to-rotate-Earth state. When the user pointer-downs outside
+   * Orbit's silhouette, drag deltas rotate `handles.earth.globe`,
+   * which in turn rotates the sun direction in world space (per the
+   * photoreal Earth's `local × quaternion` convention). Lets you
+   * visualize how Orbit's key-light + glass-dome-streak respond to
+   * a changing sun angle without waiting minutes for the UTC clock
+   * to move the real subsolar point.
+   */
+  private draggingEarth = false
+  private dragLastClientX = 0
+  private dragLastClientY = 0
+
+  /**
    * Counts the first few `pointermove` events and the first few
    * animation frames, logging to console so a developer can verify
    * in DevTools that the handler is actually firing and that the
@@ -158,6 +171,10 @@ export class OrbitController {
     // view area, not when they click on debug controls.
     window.addEventListener('pointermove', this.handlePointerMove)
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown)
+    // `pointerup` on window (not the canvas) so a drag that started
+    // on the canvas still ends cleanly if the user releases over a
+    // debug panel or outside the viewport.
+    window.addEventListener('pointerup', this.handlePointerUp)
     this.animate()
   }
 
@@ -274,6 +291,7 @@ export class OrbitController {
     window.removeEventListener('resize', this.handleResize)
     window.removeEventListener('pointermove', this.handlePointerMove)
     this.renderer.domElement.removeEventListener('pointerdown', this.handlePointerDown)
+    window.removeEventListener('pointerup', this.handlePointerUp)
     this.reducedMotionMql?.removeEventListener('change', this.handleReducedMotionChange)
     this.reducedMotionMql = null
     this.renderer.dispose()
@@ -317,6 +335,32 @@ export class OrbitController {
   }
 
   private handlePointerMove = (e: PointerEvent): void => {
+    // Drag-to-rotate-Earth applies pointer deltas to the globe's
+    // quaternion. Runs BEFORE the gaze-tracking path so the drag
+    // doesn't also drive Orbit's eye gaze (which would feel weird —
+    // the character's eyes chasing the user's drag gesture).
+    if (this.draggingEarth) {
+      const dx = e.clientX - this.dragLastClientX
+      const dy = e.clientY - this.dragLastClientY
+      this.dragLastClientX = e.clientX
+      this.dragLastClientY = e.clientY
+      // Pixels → radians. 300px of drag roughly equals π radians,
+      // matching the "one swipe across the screen rotates a
+      // hemisphere" feel the main scene's MapLibre globe has.
+      const pxToRad = Math.PI / 300
+      const globe = this.handles.earth.globe
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0), dx * pxToRad,
+      )
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(1, 0, 0), dy * pxToRad,
+      )
+      // Pre-multiply in world space so axes stay world-aligned even
+      // after successive rotations. (Post-multiplying would make the
+      // rotation axes drift with the globe's current orientation.)
+      globe.quaternion.premultiply(qYaw).premultiply(qPitch)
+      return
+    }
     // Clamp to [-1, 1] since the pointermove listener is attached to
     // `window` — cursor movement over the topbar / debug panel (both
     // z-indexed above the canvas) still drives eye tracking, but if
@@ -367,6 +411,35 @@ export class OrbitController {
     const clickRadius = 0.22
     if (dist <= clickRadius) {
       this.playGesture('tickle')
+      return
+    }
+    // Click missed Orbit — start an Earth-rotate drag. The globe's
+    // quaternion is applied to the photoreal Earth's local sun
+    // direction every frame, so rotating the globe effectively
+    // rotates the sun in world space. Let the user "move the sun"
+    // interactively to eyeball Orbit's sun-driven shading.
+    this.draggingEarth = true
+    this.dragLastClientX = e.clientX
+    this.dragLastClientY = e.clientY
+    // Capture the pointer so subsequent move/up events still reach
+    // us even if the cursor leaves the canvas mid-drag.
+    try {
+      this.renderer.domElement.setPointerCapture(e.pointerId)
+    } catch {
+      // setPointerCapture can throw if the pointer was already lost;
+      // not worth handling — the fallback is that drag just ends
+      // when the user releases over the canvas, which is fine for
+      // a debug interaction.
+    }
+  }
+
+  private handlePointerUp = (e: PointerEvent): void => {
+    if (!this.draggingEarth) return
+    this.draggingEarth = false
+    try {
+      this.renderer.domElement.releasePointerCapture(e.pointerId)
+    } catch {
+      // releasePointerCapture after pointer is lost is a no-op; swallow.
     }
   }
 
