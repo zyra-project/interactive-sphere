@@ -227,6 +227,22 @@ const UPPER_LID_CLOSED_ROT = +Math.PI * 0.40           // covers socket; stencil
 const LOWER_LID_CLOSED_ROT = -Math.PI * 0.40
 
 /**
+ * How much of the head's pitch the lids counter-rotate against.
+ * 0 = lids fully couple to the head (their 3-D dome projects
+ * differently at every head angle, producing visible
+ * "is-the-lid-opening-or-closing?" flicker during a YES nod plus
+ * catchlight occlusion as the upper dome sweeps through the
+ * pupil's screen-space position). 1 = lids stay world-aligned,
+ * no projection drift, but the head can feel detached from the
+ * face at extreme nod angles. 0.8 is the compromise: 80% of the
+ * head pitch is cancelled at the lid pivot, leaving only 20%
+ * coupling — enough to register that the face is part of the
+ * head while still keeping the lid silhouette stable enough that
+ * the catchlight stays visible across a full YES nod.
+ */
+const LID_HEAD_COUNTER_FACTOR = 0.8
+
+/**
  * Catchlight placement within the pupil group. One bright "planet"
  * highlight per eye, positioned upper-right in pupil-local space.
  * Both eyes use the SAME local offsets (no per-eye mirror) so the
@@ -1387,8 +1403,18 @@ export function updateCharacter(
   // the iris at that amount. lid=0 still parks fully (sqrt(0) = 0),
   // so wide-eyed states like SURPRISED / EXCITED remain lidless.
   const lidCurve = (x: number): number => Math.sqrt(Math.max(0, x))
-  const upperLidRot = lerp(UPPER_LID_PARKED_ROT, UPPER_LID_CLOSED_ROT, lidCurve(effectiveUpper))
-  const lowerLidRot = lerp(LOWER_LID_PARKED_ROT, LOWER_LID_CLOSED_ROT, lidCurve(effectiveLower))
+  // Head-pitch counter-rotation. The head group rotates by
+  // anim.headPitch, and every child (eye groups + lid pivots) inherits
+  // that rotation in world space. Subtracting `headPitch *
+  // LID_HEAD_COUNTER_FACTOR` from each lid pivot's local rotation
+  // cancels most of that inheritance at the lid, so the lid's
+  // world-space orientation stays close to what it would be with the
+  // head straight — fixes the YES-nod projection drift that made the
+  // lower lid visually open/close and occluded the primary catchlight
+  // at nod extremes.
+  const headCounter = -anim.headPitch * LID_HEAD_COUNTER_FACTOR
+  const upperLidRot = lerp(UPPER_LID_PARKED_ROT, UPPER_LID_CLOSED_ROT, lidCurve(effectiveUpper)) + headCounter
+  const lowerLidRot = lerp(LOWER_LID_PARKED_ROT, LOWER_LID_CLOSED_ROT, lidCurve(effectiveLower)) + headCounter
   for (const rig of handles.eyeRigs) {
     rig.upperLidPivot.rotation.x = lerp(rig.upperLidPivot.rotation.x, upperLidRot, 0.25)
     rig.lowerLidPivot.rotation.x = lerp(rig.lowerLidPivot.rotation.x, lowerLidRot, 0.25)
