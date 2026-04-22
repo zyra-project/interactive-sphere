@@ -660,10 +660,14 @@ export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial 
         gl_FragColor = vec4(1.0, 1.0, 1.0, uOpacity * alpha);
       }`,
   })
-  // Catchlights ride the pupilGroup so they track gaze. Stencil
-  // clip keeps them inside the socket silhouette at extreme gaze
-  // angles, matching the rest of the pupil-group meshes.
-  applyPupilStencilClip(mat)
+  // DIAGNOSTIC — stencil clip removed so we can determine whether
+  // the stencil test is what's culling the catchlight at YES/NO
+  // head-rotation extremes. Without this, the catchlight would
+  // normally be bounded to the socket silhouette; during the test
+  // we accept that it may leak slightly past the bezel at extreme
+  // gaze/head angles in exchange for knowing whether stencil was
+  // the culprit.
+  // applyPupilStencilClip(mat)
   return mat
 }
 
