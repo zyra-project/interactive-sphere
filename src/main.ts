@@ -1200,17 +1200,39 @@ class InteractiveSphere {
       getDatasetTexture: () => getPanelTexture(this.viewports.getPrimaryIndex()),
       getDatasetTitle: () => this.appState.currentDataset?.title ?? null,
       getDatasetTimeLabel: () => {
-        // Mirror the 2D #time-label visibility logic: show only when
-        // the dataset has startTime metadata AND appState.timeLabel
-        // has been populated (i.e. not the '--' bootstrap value).
-        // `appState.timeLabel` is updated every frame by
-        // updateVideoTimeLabel() during playback (or once on image
-        // load), so this getter is cheap to call per VR frame.
+        // Compute the label fresh from video.currentTime every call.
+        //
+        // Why not read appState.timeLabel? WebXR pauses
+        // window.requestAnimationFrame while an immersive session
+        // is live, which freezes `startPlaybackLoop` — the
+        // per-frame loop that normally keeps appState.timeLabel
+        // updated. A VR session reading appState.timeLabel would
+        // see the value from the instant the user tapped Enter VR
+        // and stay there forever. Recomputing here makes the
+        // label advance on the XR animation loop instead, and as
+        // a bonus gives us correct pause behaviour for free: a
+        // paused video's currentTime doesn't advance, so the
+        // formatted string stays fixed until playback resumes.
         const ds = this.appState.currentDataset
         if (!ds?.startTime) return null
-        const label = this.appState.timeLabel
-        if (!label || label === '--') return null
-        return label
+
+        if (dataService.isVideoDataset(ds)) {
+          const video = this.hlsService?.video
+          if (!video || !ds.endTime) return null
+          const duration = this.hlsService?.duration ?? 1
+          const start = new Date(ds.startTime)
+          const end = new Date(ds.endTime)
+          const snapMs = this.playback.displayInterval?.intervalMs
+          const currentDate = videoTimeToDate(video.currentTime, duration, start, end, snapMs)
+          const showTime = ds.period
+            ? isSubDailyPeriod(ds.period)
+            : (this.playback.displayInterval?.showTime ?? false)
+          return formatDate(currentDate, showTime)
+        }
+
+        // Image dataset — the startTime is the only thing to show.
+        const showTime = ds.period ? isSubDailyPeriod(ds.period) : false
+        return formatDate(new Date(ds.startTime), showTime)
       },
       hasVideoDataset: () => {
         const ds = this.appState.currentDataset

@@ -68,16 +68,6 @@ export type VrHudAction = 'play-pause' | 'mute' | 'browse' | 'exit-vr'
 export interface VrHudState {
   /** Title shown in the middle of the panel. Null/empty renders "No dataset". */
   datasetTitle: string | null
-  /**
-   * Formatted time-label string for the current dataset — e.g.
-   * `"2023-06-15"` for daily-cadence data or `"2023-06-15 18:00"`
-   * for sub-daily. Mirrors the 2D `#time-label` overlay; null
-   * hides the sub-line. Driven per frame by
-   * `VrSessionContext.getDatasetTimeLabel()`, which returns null
-   * when no dataset is loaded or the dataset has no `startTime`
-   * metadata.
-   */
-  datasetTimeLabel: string | null
   /** Drives the play/pause icon. */
   isPlaying: boolean
   /** Hides the play/pause + mute buttons when the loaded dataset is an image (no playback). */
@@ -210,50 +200,39 @@ function drawCanvas(
     }
   }
 
-  // --- Middle: dataset title (+ optional time label sub-line) ---
+  // --- Middle: dataset title ---
   // When no dataset is loaded the MVP has nothing to play, so steer
   // the user back to the 2D browse panel. Dataset switching inside
   // VR is Phase 3 work (see VR_INVESTIGATION_PLAN.md).
   //
-  // When the dataset carries time metadata (`startTime` + optionally
-  // `endTime`), the current playback position / start date is
-  // formatted into `datasetTimeLabel` and rendered underneath the
-  // title at a smaller size. Parity with the 2D `#time-label`
-  // overlay — tours and videos need the "what year is this?"
-  // anchor to be readable in VR.
+  // Running date display lives on its own floating panel above the
+  // globe (vrTimeLabel) — not here. Embedding it in the HUD
+  // required the host to feed a per-frame string AND the HUD to
+  // redraw its canvas every frame, which was both wasteful and
+  // indirect. The standalone panel computes the label itself from
+  // video.currentTime and billboards to face the user.
   const titleText = state.datasetTitle || 'Load a dataset in 2D view first'
+  ctx.fillStyle = '#e8eaf0' // --color-text
+  ctx.font = '500 54px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
+  // Title region grows left when there's no video (play/pause and
+  // mute are hidden), so image datasets don't waste the left third
+  // of the HUD on blank space. Right edge always stops before the
+  // Browse button regardless.
+  //
+  // Crude ellipsis — if the title doesn't fit at full size, truncate
+  // character-by-character until it does. Fine for typical dataset
+  // names (< 40 chars); a longer implementation would binary-search.
   const titleUMin = state.hasVideo ? BUTTON_LAYOUT.mute.uMax : 0
   const titleUMax = BUTTON_LAYOUT.browse.uMin
   const titleMaxWidth = (titleUMax - titleUMin) * w * 0.92
   const titleCenterX = ((titleUMin + titleUMax) / 2) * w
-
-  const hasTimeLabel = !!state.datasetTimeLabel
-  // With a time label, stack title above + time below; without,
-  // keep the title vertically centered as before.
-  const titleFontPx = hasTimeLabel ? 46 : 54
-  const titleY = hasTimeLabel ? h * 0.38 : h / 2
-  ctx.fillStyle = '#e8eaf0' // --color-text
-  ctx.font = `500 ${titleFontPx}px system-ui, -apple-system, sans-serif`
-  // Crude ellipsis — if the title doesn't fit at full size, truncate
-  // character-by-character until it does. Fine for typical dataset
-  // names (< 40 chars); a longer implementation would binary-search.
   let title = titleText
   while (ctx.measureText(title).width > titleMaxWidth && title.length > 4) {
     title = title.slice(0, -2) + '…'
   }
-  ctx.fillText(title, titleCenterX, titleY)
-
-  if (hasTimeLabel) {
-    ctx.fillStyle = 'rgba(232, 234, 240, 0.65)' // --color-text muted
-    ctx.font = '500 34px system-ui, -apple-system, sans-serif'
-    let timeLabel = state.datasetTimeLabel!
-    while (ctx.measureText(timeLabel).width > titleMaxWidth && timeLabel.length > 4) {
-      timeLabel = timeLabel.slice(0, -2) + '…'
-    }
-    ctx.fillText(timeLabel, titleCenterX, h * 0.72)
-  }
+  ctx.fillText(title, titleCenterX, h / 2)
 
   // --- Browse button (three horizontal bars, "list" glyph) ---
   // Highlights in accent when the panel is currently open so the
@@ -353,7 +332,6 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
   // changed (cheap but a nice win during typical playback).
   let currentState: VrHudState = {
     datasetTitle: null,
-    datasetTimeLabel: null,
     isPlaying: false,
     hasVideo: false,
     isMuted: true,
@@ -376,7 +354,6 @@ export function createVrHud(THREE_: typeof THREE): VrHudHandle {
     setState(state) {
       const changed =
         state.datasetTitle !== currentState.datasetTitle ||
-        state.datasetTimeLabel !== currentState.datasetTimeLabel ||
         state.isPlaying !== currentState.isPlaying ||
         state.hasVideo !== currentState.hasVideo ||
         state.isMuted !== currentState.isMuted ||

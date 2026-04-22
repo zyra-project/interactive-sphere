@@ -21,6 +21,7 @@ import { createVrHud, type VrHudHandle } from './vrHud'
 import { createVrBrowse, type VrBrowseHandle } from './vrBrowse'
 import { createVrTourControls, type VrTourControlsHandle } from './vrTourControls'
 import { createVrTourOverlay, type VrTourOverlayHandle } from './vrTourOverlay'
+import { createVrTimeLabel, type VrTimeLabelHandle } from './vrTimeLabel'
 import { setVrTourOverlaySink } from '../ui/tourUI'
 import { createVrInteraction, type VrInteractionHandle } from './vrInteraction'
 import { createVrLoading, type VrLoadingHandle } from './vrLoading'
@@ -185,6 +186,8 @@ interface ActiveSession {
   tourControls: VrTourControlsHandle
   /** In-VR tour overlay manager (text / popup / ... panels). Always present; hosts per-tour overlays. */
   tourOverlay: VrTourOverlayHandle
+  /** Floating date readout above the globe for datasets with time metadata. */
+  timeLabel: VrTimeLabelHandle
   /** Loading scene shown during entry; null after fade-out + dispose. */
   loading: VrLoadingHandle | null
   /** AR-only spatial placement (hit-test reticle + Place button). Null when hit-test unavailable. */
@@ -475,6 +478,15 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // op from `tourUI` into this manager.
   const tourOverlay = createVrTourOverlay(THREE_)
   scene.scene.add(tourOverlay.group)
+
+  // Floating date readout above the globe. Hidden by default;
+  // per-frame setText(ctx.getDatasetTimeLabel()) flips it on when
+  // a time-metadata-bearing dataset is loaded and drives it
+  // forward each XR frame (2D's playback loop is paused during
+  // the session so we can't rely on appState.timeLabel — we
+  // recompute from video.currentTime directly instead).
+  const timeLabel = createVrTimeLabel(THREE_)
+  scene.scene.add(timeLabel.mesh)
   setVrTourOverlaySink({
     showText: (params) => tourOverlay.showText(params),
     hideText: (id) => tourOverlay.hideOverlay(id),
@@ -675,8 +687,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   })
   hud.setState({
     datasetTitle: ctx.getDatasetTitle(),
-    datasetTimeLabel: ctx.getDatasetTimeLabel(),
-    isPlaying: ctx.isPlaying(),
+isPlaying: ctx.isPlaying(),
     hasVideo: ctx.hasVideoDataset(),
     isMuted: ctx.isMuted(),
     panelCount: ctx.getPanelCount(),
@@ -820,6 +831,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     browse,
     tourControls,
     tourOverlay,
+    timeLabel,
     interaction,
     loading,
     placement,
@@ -967,8 +979,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // internally debounced — it only redraws when a field changes.
     active.hud.setState({
       datasetTitle: ctx.getDatasetTitle(),
-      datasetTimeLabel: ctx.getDatasetTimeLabel(),
-      isPlaying: ctx.isPlaying(),
+    isPlaying: ctx.isPlaying(),
       hasVideo: ctx.hasVideoDataset(),
       isMuted: ctx.isMuted(),
       panelCount,
@@ -981,6 +992,15 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // unchanged state is a cheap equality check. `active` toggling
     // to false hides the mesh without further work.
     active.tourControls.setState(ctx.getTourState())
+
+    // Time label — recompute from video.currentTime every XR frame
+    // (the 2D playback loop that normally drives appState.timeLabel
+    // is paused while WebXR is active, so we can't read a cached
+    // value). setText is idempotent when the string is unchanged,
+    // so this is cheap in the steady state. Pause behaviour falls
+    // out naturally — a paused video's currentTime doesn't advance.
+    active.timeLabel.setText(ctx.getDatasetTimeLabel())
+    active.timeLabel.update(active.camera, active.scene.globe.position)
 
     // Borders overlay mirrors the shared view preference. 2D toggles
     // (Tools menu / tour envShowWorldBorder) write to the same
@@ -1080,6 +1100,8 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     a.hud.dispose()
     a.browse.dispose()
     a.tourControls.dispose()
+    a.scene.scene.remove(a.timeLabel.mesh)
+    a.timeLabel.dispose()
     // Clear the tourUI sink first so any in-flight `hideAll*` calls
     // from the tour engine (e.g. tour cleanup fired by stopTour()
     // during exit) don't land on the about-to-be-disposed manager.
