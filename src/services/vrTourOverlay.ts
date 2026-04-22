@@ -187,7 +187,38 @@ export interface VrTourVideoParams {
  * alongside each future overlay type (question) as those commits
  * land.
  */
-export type VrTourOverlayKind = 'text' | 'popup' | 'image' | 'video'
+export type VrTourOverlayKind = 'text' | 'popup' | 'image' | 'video' | 'question'
+
+/**
+ * Parameters for an interactive tour question. The image URLs are
+ * resolved (not raw filenames) — the tour engine runs
+ * `resolveMediaUrl` before handing off. `onContinue` fires when the
+ * user taps the Continue button in the `showing-answer` phase; the
+ * sink adapter in vrSession wraps it to also clean up the 2D DOM
+ * wrapper (`hideAllTourQuestions`) so both surfaces stay coherent.
+ */
+export interface VrTourQuestionParams {
+  id: string
+  questionImageUrl: string
+  answerImageUrl: string
+  numberOfAnswers: number
+  correctAnswerIndex: number
+  anchor?: VrTourAnchor
+  /** World-space size. Defaults to 0.9 × 0.65 m — wider than other overlays to fit the answer-button row. */
+  size?: { width: number; height: number }
+  /** Fires on Continue tap, after the user has seen the answer. */
+  onContinue: () => void
+}
+
+/**
+ * Interactive-overlay action surfaced by `hitTestInteractive` and
+ * dispatched by `activateInteractive`. Extended alongside each
+ * future interactive overlay type (close X on popups/images/videos
+ * is a natural follow-on once the raycast wiring is in place).
+ */
+export type VrTourInteractiveAction =
+  | { kind: 'question-answer'; overlayId: string; index: number }
+  | { kind: 'question-continue'; overlayId: string }
 
 /** Every mesh carries its overlay id + mode so per-frame pose resolution is keyed off userData. */
 interface OverlayUserData {
@@ -249,6 +280,35 @@ export interface VrTourOverlayHandle {
   /** Remove every video overlay. */
   hideAllVideos(): void
   /**
+   * Show an interactive question panel. Pre-loads both the question
+   * and answer images, drives a small state machine per question
+   * (loading → idle → selected → showing-answer) and fires
+   * `params.onContinue` once the user taps Continue.
+   */
+  showQuestion(params: VrTourQuestionParams): void
+  /** Remove every question overlay. */
+  hideAllQuestions(): void
+  /**
+   * Meshes that controller raycasts should hit-test. Right now this
+   * is the question overlays (which need per-region hit tests for
+   * answer buttons and Continue). Extends to close X on other
+   * overlay types in a later commit.
+   */
+  getInteractiveMeshes(): THREE.Mesh[]
+  /**
+   * Translate a raycast intersection (specific mesh + UV) into a
+   * semantic action, or null if the hit missed every interactive
+   * region. Paired with {@link activateInteractive} on selectend
+   * using the same DOM-click-semantics pattern as the HUD.
+   */
+  hitTestInteractive(mesh: THREE.Mesh, uv: { x: number; y: number }): VrTourInteractiveAction | null
+  /**
+   * Fire a hit-tested action. Safe to call with an action whose
+   * overlay has been disposed between selectstart and selectend —
+   * activateInteractive silently drops stale actions.
+   */
+  activateInteractive(action: VrTourInteractiveAction): void
+  /**
    * Toggle the default anchor mode used when an overlay arrives
    * without an explicit `anchor` hint. Persists until flipped;
    * overlays already on screen keep their anchor (authors who tag
@@ -301,6 +361,22 @@ const IMAGE_PANEL_HEIGHT = 0.6
  */
 const VIDEO_PANEL_WIDTH = 0.8
 const VIDEO_PANEL_HEIGHT = 0.45
+
+/**
+ * Interactive question overlay default size — wider than the other
+ * overlays so the answer-button row has room for 4+ answers at
+ * readable font sizes. Taller, too, because it carries both an
+ * image and a button row (vs. just image for image overlays).
+ */
+const QUESTION_PANEL_WIDTH = 0.9
+const QUESTION_PANEL_HEIGHT = 0.65
+
+/**
+ * Post-answer delay before swapping to the answer image + Continue
+ * button. Matches the 2D DOM path's 1500 ms so a user who plays
+ * the same tour in 2D and VR experiences the same pacing.
+ */
+const QUESTION_REVEAL_DELAY_MS = 1500
 
 /** Canvas pixel dimensions. 5:3 aspect matches the default 0.6 × 0.36 m plane. */
 const CANVAS_WIDTH = 1000
@@ -742,6 +818,204 @@ function drawImagePanel(
   }
 }
 
+// ── Question overlay drawing + layout ──────────────────────────────
+
+/**
+ * Per-question state held alongside the `ManagedOverlay`. Tracks
+ * which phase the small state machine is in plus the most recent
+ * button / continue rects so hit-test can resolve UV coords against
+ * the same pixel geometry the drawer laid down.
+ */
+interface QuestionContext {
+  managed: ManagedOverlay
+  params: VrTourQuestionParams
+  /** Preloaded on `showQuestion`. Null while the Image is still decoding. */
+  questionImage: HTMLImageElement | null
+  answerImage: HTMLImageElement | null
+  phase: 'loading' | 'idle' | 'selected' | 'showing-answer'
+  chosenIdx: number | null
+  /** UV rects for each answer button — populated in `idle` / `selected` phases. */
+  answerRects: { uMin: number; uMax: number; vMin: number; vMax: number }[]
+  /** UV rect for Continue — populated only in the `showing-answer` phase. */
+  continueRect: { uMin: number; uMax: number; vMin: number; vMax: number } | null
+  /** setTimeout id for the selected → showing-answer reveal; cancelled on dispose. */
+  revealTimerId: ReturnType<typeof setTimeout> | null
+  /** Cancel both preloads if the overlay is disposed mid-load. */
+  cancelImageLoads: () => void
+}
+
+/** Canvas-pixel answer-button / continue-button region constants. */
+const QUESTION_IMAGE_BOTTOM_PX = 420   // image occupies y = padding..420
+const QUESTION_BUTTON_TOP_PX = 480
+const QUESTION_BUTTON_BOTTOM_PX = 560
+const QUESTION_BUTTON_MARGIN_X = 40
+const QUESTION_BUTTON_GAP = 20
+const QUESTION_BUTTON_RADIUS = 14
+
+/**
+ * Pixel-space rect for answer button `i` of `n`. Shared between the
+ * drawer and the hit-test path so they can never disagree about
+ * where a button lives.
+ */
+function answerButtonRectPx(
+  i: number,
+  n: number,
+): { x: number; y: number; w: number; h: number } {
+  const totalGap = QUESTION_BUTTON_GAP * Math.max(0, n - 1)
+  const innerW = CANVAS_WIDTH - QUESTION_BUTTON_MARGIN_X * 2 - totalGap
+  const w = innerW / n
+  const x = QUESTION_BUTTON_MARGIN_X + i * (w + QUESTION_BUTTON_GAP)
+  return { x, y: QUESTION_BUTTON_TOP_PX, w, h: QUESTION_BUTTON_BOTTOM_PX - QUESTION_BUTTON_TOP_PX }
+}
+
+/** Pixel-space rect for the full-width Continue button. */
+function continueButtonRectPx(): { x: number; y: number; w: number; h: number } {
+  // Narrower than the full width — reads as a single call-to-action
+  // rather than matching the visual weight of the N answer buttons.
+  const w = CANVAS_WIDTH * 0.4
+  const x = (CANVAS_WIDTH - w) / 2
+  return { x, y: QUESTION_BUTTON_TOP_PX, w, h: QUESTION_BUTTON_BOTTOM_PX - QUESTION_BUTTON_TOP_PX }
+}
+
+/** Convert a canvas-pixel rect to a Three.js PlaneGeometry UV rect. */
+function pxToUv(
+  rect: { x: number; y: number; w: number; h: number },
+): { uMin: number; uMax: number; vMin: number; vMax: number } {
+  return {
+    uMin: rect.x / CANVAS_WIDTH,
+    uMax: (rect.x + rect.w) / CANVAS_WIDTH,
+    vMin: 1 - (rect.y + rect.h) / CANVAS_HEIGHT,
+    vMax: 1 - rect.y / CANVAS_HEIGHT,
+  }
+}
+
+/**
+ * Paint a question overlay in its current phase. Mutates `ctx` with
+ * the phase's rendering and writes the latest hit-region rects back
+ * onto `state.answerRects` / `state.continueRect` so hit tests on the
+ * next selectstart see the same layout.
+ */
+function drawQuestionPanel(
+  ctx: CanvasRenderingContext2D,
+  state: QuestionContext,
+): void {
+  const w = CANVAS_WIDTH
+  const h = CANVAS_HEIGHT
+  ctx.clearRect(0, 0, w, h)
+
+  // Background + border — consistent with other overlays.
+  ctx.fillStyle = BG_COLOR
+  fillRoundRect(ctx, 0, 0, w, h, 18)
+  ctx.strokeStyle = BORDER_DIM
+  ctx.lineWidth = 2
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath()
+    ctx.roundRect(1, 1, w - 2, h - 2, 17)
+    ctx.stroke()
+  } else {
+    ctx.strokeRect(1, 1, w - 2, h - 2)
+  }
+
+  // Loading placeholder — no image, no buttons.
+  if (state.phase === 'loading') {
+    ctx.fillStyle = 'rgba(232, 234, 240, 0.6)'
+    ctx.font = '500 28px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('Loading question\u2026', w / 2, h / 2)
+    state.answerRects = []
+    state.continueRect = null
+    return
+  }
+
+  // Image region (question or answer depending on phase).
+  const srcImg = state.phase === 'showing-answer' ? state.answerImage : state.questionImage
+  const imgTop = CANVAS_PADDING
+  const imgBottom = QUESTION_IMAGE_BOTTOM_PX
+  const imgLeft = CANVAS_PADDING
+  const imgRight = w - CANVAS_PADDING
+  const regionW = imgRight - imgLeft
+  const regionH = imgBottom - imgTop
+
+  if (srcImg && srcImg.naturalWidth > 0) {
+    const scale = Math.min(regionW / srcImg.naturalWidth, regionH / srcImg.naturalHeight)
+    const drawW = srcImg.naturalWidth * scale
+    const drawH = srcImg.naturalHeight * scale
+    const drawX = imgLeft + (regionW - drawW) / 2
+    const drawY = imgTop + (regionH - drawH) / 2
+    try {
+      ctx.drawImage(srcImg, drawX, drawY, drawW, drawH)
+    } catch { /* tainted canvas — leave empty */ }
+  } else {
+    // Image still decoding (answer image may arrive after question).
+    ctx.fillStyle = 'rgba(232, 234, 240, 0.3)'
+    ctx.font = '500 24px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('\u2026', w / 2, imgTop + regionH / 2)
+  }
+
+  // Phases that show answer buttons.
+  if (state.phase === 'idle' || state.phase === 'selected') {
+    const n = state.params.numberOfAnswers
+    const rects: QuestionContext['answerRects'] = []
+    ctx.font = '600 40px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    for (let i = 0; i < n; i++) {
+      const px = answerButtonRectPx(i, n)
+
+      // Phase-aware coloring:
+      //   idle                      → neutral accent fill
+      //   selected + chosen wrong   → red
+      //   selected + chosen correct → green
+      //   selected + was-correct    → green (highlight even if not chosen)
+      //   selected + not chosen     → neutral
+      let fillColor = 'rgba(77, 166, 255, 0.85)' // accent
+      let textColor = '#ffffff'
+      if (state.phase === 'selected') {
+        const isChosen = i === state.chosenIdx
+        const isCorrect = i === state.params.correctAnswerIndex
+        if (isChosen && isCorrect) {
+          fillColor = 'rgba(56, 176, 86, 0.92)' // green — right answer
+        } else if (isChosen && !isCorrect) {
+          fillColor = 'rgba(220, 75, 75, 0.92)' // red — wrong answer
+        } else if (!isChosen && isCorrect) {
+          fillColor = 'rgba(56, 176, 86, 0.92)' // also highlight correct
+        } else {
+          fillColor = 'rgba(232, 234, 240, 0.18)' // dimmed
+          textColor = 'rgba(232, 234, 240, 0.6)'
+        }
+      }
+
+      ctx.fillStyle = fillColor
+      fillRoundRect(ctx, px.x, px.y, px.w, px.h, QUESTION_BUTTON_RADIUS)
+      ctx.fillStyle = textColor
+      ctx.fillText(String(i + 1), px.x + px.w / 2, px.y + px.h / 2 + 3)
+
+      rects.push(pxToUv(px))
+    }
+    state.answerRects = rects
+    state.continueRect = null
+    return
+  }
+
+  // showing-answer phase: Continue button instead of answer row.
+  if (state.phase === 'showing-answer') {
+    const px = continueButtonRectPx()
+    ctx.fillStyle = 'rgba(77, 166, 255, 0.95)'
+    fillRoundRect(ctx, px.x, px.y, px.w, px.h, QUESTION_BUTTON_RADIUS)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '600 32px system-ui, -apple-system, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('Continue', px.x + px.w / 2, px.y + px.h / 2 + 2)
+    state.answerRects = []
+    state.continueRect = pxToUv(px)
+    return
+  }
+}
+
 // ── Per-overlay mesh lifecycle ─────────────────────────────────────
 
 interface ManagedOverlay {
@@ -781,6 +1055,13 @@ export function createVrTourOverlay(THREE_: typeof THREE): VrTourOverlayHandle {
 
   /** Keyed by overlay id. Map preserves insertion order → render order. */
   const overlays = new Map<string, ManagedOverlay>()
+  /**
+   * Per-question state alongside the generic ManagedOverlay. Only
+   * populated for overlays with `kind === 'question'` — separate
+   * map avoids widening ManagedOverlay with fields that are null
+   * for every other overlay kind.
+   */
+  const questionStates = new Map<string, QuestionContext>()
   let gazeFollowDefault = false
 
   /**
@@ -1151,6 +1432,183 @@ export function createVrTourOverlay(THREE_: typeof THREE): VrTourOverlayHandle {
         const managed = overlays.get(id)
         if (managed) disposeOverlay(managed)
         overlays.delete(id)
+      }
+    },
+
+    showQuestion(params) {
+      // Replace-by-id, same discipline as other show methods.
+      const existing = overlays.get(params.id)
+      if (existing) {
+        disposeOverlay(existing)
+        overlays.delete(params.id)
+      }
+
+      const size = params.size ?? { width: QUESTION_PANEL_WIDTH, height: QUESTION_PANEL_HEIGHT }
+      const anchor = resolveAnchor(params.anchor)
+      const managed = buildMeshForOverlay(params.id, 'question', size, anchor)
+
+      const questionImage = new Image()
+      questionImage.crossOrigin = 'anonymous'
+      questionImage.decoding = 'async'
+
+      const answerImage = new Image()
+      answerImage.crossOrigin = 'anonymous'
+      answerImage.decoding = 'async'
+
+      const state: QuestionContext = {
+        managed,
+        params,
+        questionImage: null,
+        answerImage: null,
+        phase: 'loading',
+        chosenIdx: null,
+        answerRects: [],
+        continueRect: null,
+        revealTimerId: null,
+        cancelImageLoads: () => { /* populated below */ },
+      }
+
+      const onQuestionLoad = () => {
+        if (questionStates.get(params.id) !== state) return
+        state.questionImage = questionImage
+        if (state.phase === 'loading') state.phase = 'idle'
+        drawQuestionPanel(managed.ctx2d!, state)
+        managed.texture.needsUpdate = true
+      }
+      const onAnswerLoad = () => {
+        if (questionStates.get(params.id) !== state) return
+        state.answerImage = answerImage
+        // If we already advanced to showing-answer while the image
+        // was decoding, repaint now that we have the bytes.
+        if (state.phase === 'showing-answer') {
+          drawQuestionPanel(managed.ctx2d!, state)
+          managed.texture.needsUpdate = true
+        }
+      }
+      const onAnyError = () => { /* leave placeholder — same as 2D */ }
+
+      questionImage.addEventListener('load', onQuestionLoad, { once: true })
+      questionImage.addEventListener('error', onAnyError, { once: true })
+      answerImage.addEventListener('load', onAnswerLoad, { once: true })
+      answerImage.addEventListener('error', onAnyError, { once: true })
+
+      state.cancelImageLoads = () => {
+        questionImage.removeEventListener('load', onQuestionLoad)
+        questionImage.removeEventListener('error', onAnyError)
+        answerImage.removeEventListener('load', onAnswerLoad)
+        answerImage.removeEventListener('error', onAnyError)
+      }
+
+      // Hook question-specific teardown onto the overlay's
+      // `cancelImageLoad` slot — disposeOverlay calls it, so every
+      // path that removes the mesh (hideOverlay, hideAllQuestions,
+      // hideAll, session-end dispose) also cancels timers and
+      // evicts from questionStates.
+      managed.cancelImageLoad = () => {
+        state.cancelImageLoads()
+        if (state.revealTimerId !== null) {
+          clearTimeout(state.revealTimerId)
+          state.revealTimerId = null
+        }
+        questionStates.delete(params.id)
+      }
+
+      // Initial paint (loading placeholder) before async images land.
+      drawQuestionPanel(managed.ctx2d!, state)
+      managed.texture.needsUpdate = true
+
+      questionImage.src = params.questionImageUrl
+      answerImage.src = params.answerImageUrl
+
+      group.add(managed.mesh)
+      overlays.set(params.id, managed)
+      questionStates.set(params.id, state)
+    },
+
+    hideAllQuestions() {
+      const ids: string[] = []
+      for (const [id, managed] of overlays) {
+        if ((managed.mesh.userData as OverlayUserData).kind === 'question') ids.push(id)
+      }
+      for (const id of ids) {
+        const managed = overlays.get(id)
+        // disposeOverlay → cancelImageLoad → cancels timers +
+        // evicts from questionStates (wired in showQuestion).
+        if (managed) disposeOverlay(managed)
+        overlays.delete(id)
+      }
+    },
+
+    getInteractiveMeshes() {
+      const out: THREE.Mesh[] = []
+      for (const managed of overlays.values()) {
+        if ((managed.mesh.userData as OverlayUserData).kind === 'question') {
+          out.push(managed.mesh)
+        }
+      }
+      return out
+    },
+
+    hitTestInteractive(mesh, uv) {
+      const ud = mesh.userData as OverlayUserData | undefined
+      if (!ud || ud.kind !== 'question') return null
+      const state = questionStates.get(ud.overlayId)
+      if (!state) return null
+
+      // Only certain phases accept input. During 'selected' the
+      // 1.5 s reveal timer is running and the UI is locked out so
+      // users can't double-tap into the next phase before they see
+      // the feedback. 'loading' has nothing to hit.
+      if (state.phase === 'idle') {
+        for (let i = 0; i < state.answerRects.length; i++) {
+          const r = state.answerRects[i]
+          if (uv.x >= r.uMin && uv.x <= r.uMax && uv.y >= r.vMin && uv.y <= r.vMax) {
+            return { kind: 'question-answer', overlayId: ud.overlayId, index: i }
+          }
+        }
+        return null
+      }
+      if (state.phase === 'showing-answer' && state.continueRect) {
+        const r = state.continueRect
+        if (uv.x >= r.uMin && uv.x <= r.uMax && uv.y >= r.vMin && uv.y <= r.vMax) {
+          return { kind: 'question-continue', overlayId: ud.overlayId }
+        }
+      }
+      return null
+    },
+
+    activateInteractive(action) {
+      if (action.kind === 'question-answer') {
+        const state = questionStates.get(action.overlayId)
+        // Overlay may have been disposed between selectstart and
+        // selectend (tour stopped, next step advanced early).
+        // Silently drop the stale action.
+        if (!state || state.phase !== 'idle') return
+        state.phase = 'selected'
+        state.chosenIdx = action.index
+        drawQuestionPanel(state.managed.ctx2d!, state)
+        state.managed.texture.needsUpdate = true
+        // Schedule the reveal. Stored so dispose can cancel it if
+        // the overlay is hidden before the 1.5 s elapses.
+        state.revealTimerId = setTimeout(() => {
+          state.revealTimerId = null
+          // Guard against stale firing — dispose normally clears
+          // this timer, but a race with Promise microtasks is cheap
+          // to defend against.
+          if (questionStates.get(action.overlayId) !== state) return
+          state.phase = 'showing-answer'
+          drawQuestionPanel(state.managed.ctx2d!, state)
+          state.managed.texture.needsUpdate = true
+        }, QUESTION_REVEAL_DELAY_MS)
+      } else if (action.kind === 'question-continue') {
+        const state = questionStates.get(action.overlayId)
+        if (!state || state.phase !== 'showing-answer') return
+        // Fire the caller's onContinue. The sink adapter in
+        // vrSession wraps this to also call `hideAllTourQuestions`
+        // which mirrors back to vrTourOverlay.hideAllQuestions()
+        // and disposes this very mesh — so don't touch `state`
+        // after this call returns.
+        state.params.onContinue()
       }
     },
 

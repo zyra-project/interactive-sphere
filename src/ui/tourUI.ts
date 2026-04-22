@@ -59,6 +59,21 @@ export interface VrTourOverlaySink {
   showVideo(params: PlayVideoTaskParams, video: HTMLVideoElement, videoID: string): void
   hideVideo(videoID: string): void
   hideAllVideos(): void
+  /**
+   * Interactive question overlay. Params are the already-resolved
+   * URLs plus the engine's `onComplete` (already wrapped by
+   * {@link showTourQuestion} to also clean up the 2D DOM when VR's
+   * Continue button fires).
+   */
+  showQuestion(params: {
+    id: string
+    questionImageUrl: string
+    answerImageUrl: string
+    numberOfAnswers: number
+    correctAnswerIndex: number
+    onComplete: () => void
+  }): void
+  hideAllQuestions(): void
 }
 
 let vrOverlaySink: VrTourOverlaySink | null = null
@@ -731,9 +746,28 @@ export function showTourQuestion(params: QuestionDisplayParams): void {
 
   container.appendChild(wrapper)
   questions.add(params.id, wrapper)
+
+  // Mirror to VR. Wrap `onComplete` so VR's Continue tap also
+  // cleans up the 2D DOM — the 2D `continueBtn` handler above
+  // calls `hideAllTourQuestions` inline; VR's path goes through
+  // this wrapper instead (which mirrors back into VR cleanup).
+  vrOverlaySink?.showQuestion({
+    id: params.id,
+    questionImageUrl: params.imgQuestionFilename,
+    answerImageUrl: params.imgAnswerFilename,
+    numberOfAnswers: params.numberOfAnswers,
+    correctAnswerIndex: params.correctAnswerIndex,
+    onComplete: () => {
+      hideAllTourQuestions()
+      params.onComplete()
+    },
+  })
 }
 
-export function hideAllTourQuestions(): void { questions.removeAll() }
+export function hideAllTourQuestions(): void {
+  questions.removeAll()
+  vrOverlaySink?.hideAllQuestions()
+}
 
 // ── Tour controls bar ────────────────────────────────────────────────
 

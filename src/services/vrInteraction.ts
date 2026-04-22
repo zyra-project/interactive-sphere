@@ -25,6 +25,7 @@ import type { VrHudAction, VrHudHandle } from './vrHud'
 import type { VrBrowseAction, VrBrowseHandle } from './vrBrowse'
 import type { VrPlacementHandle } from './vrPlacement'
 import type { VrTourControlsAction, VrTourControlsHandle } from './vrTourControls'
+import type { VrTourInteractiveAction, VrTourOverlayHandle } from './vrTourOverlay'
 import { MAX_GLOBE_SCALE, MIN_GLOBE_SCALE } from './vrScene'
 import { logger } from '../utils/logger'
 
@@ -126,6 +127,8 @@ export interface VrInteractionContext {
   browse: VrBrowseHandle
   /** In-VR tour control strip — visible only while a tour is active. */
   tourControls: VrTourControlsHandle
+  /** Tour overlay manager — exposes interactive meshes (currently question panels) for controller raycast. */
+  tourOverlay: VrTourOverlayHandle
   /** AR-only spatial placement. Null in VR mode or when hit-test isn't available. */
   placement: VrPlacementHandle | null
   renderer: THREE.WebGLRenderer
@@ -361,6 +364,8 @@ export function createVrInteraction(
   const browseArmed: (VrBrowseAction | null)[] = [null, null]
   /** Per-controller tour-control action armed on selectstart (DOM click semantics). */
   const tourArmed: (VrTourControlsAction | null)[] = [null, null]
+  /** Per-controller tour-overlay interactive action armed on selectstart (question answer / continue). */
+  const tourOverlayArmed: (VrTourInteractiveAction | null)[] = [null, null]
   /** Per-controller "ray is currently on the browse panel" — drives thumbstick scroll. */
   const rayOnBrowse: boolean[] = [false, false]
   /**
@@ -420,11 +425,30 @@ export function createVrInteraction(
    * mesh reference — all globes rotate in lockstep, so grabbing any
    * of them initiates the same surface-pinned drag.
    */
+  /**
+   * Equality check for tour-overlay interactive actions — used by
+   * the selectend "still armed on the same thing?" guard. Actions
+   * discriminate by `kind`, then by `overlayId`, and for answer
+   * hits also by `index`.
+   */
+  function tourOverlayActionsEqual(
+    a: VrTourInteractiveAction,
+    b: VrTourInteractiveAction,
+  ): boolean {
+    if (a.kind !== b.kind) return false
+    if (a.overlayId !== b.overlayId) return false
+    if (a.kind === 'question-answer' && b.kind === 'question-answer') {
+      return a.index === b.index
+    }
+    return true
+  }
+
   function pickHit(controller: THREE.XRTargetRaySpace):
     | { kind: 'hud'; action: VrHudAction }
     | { kind: 'browse'; action: VrBrowseAction }
     | { kind: 'browse-scroll' }
     | { kind: 'tour-control'; action: VrTourControlsAction }
+    | { kind: 'tour-overlay'; action: VrTourInteractiveAction }
     | { kind: 'place-button' }
     | { kind: 'globe'; mesh: THREE.Mesh }
     | null {
@@ -464,6 +488,24 @@ export function createVrInteraction(
           y: tourHits[0].uv.y,
         })
         if (action) return { kind: 'tour-control', action }
+      }
+    }
+
+    // Tour overlay interactive surfaces — currently question panels
+    // with answer / Continue regions. Checked after tourControls so
+    // an answer button that visually stacks near the strip still
+    // goes to the strip (defensive — they're spatially separated in
+    // practice). Short-circuits when no interactive overlays exist.
+    const interactiveMeshes = ctx.tourOverlay.getInteractiveMeshes()
+    if (interactiveMeshes.length > 0) {
+      const overlayHits = raycaster.intersectObjects(interactiveMeshes, false)
+      if (overlayHits.length > 0 && overlayHits[0].uv) {
+        const hitMesh = overlayHits[0].object as THREE.Mesh
+        const action = ctx.tourOverlay.hitTestInteractive(hitMesh, {
+          x: overlayHits[0].uv.x,
+          y: overlayHits[0].uv.y,
+        })
+        if (action) return { kind: 'tour-overlay', action }
       }
     }
 
@@ -700,6 +742,11 @@ export function createVrInteraction(
       return
     }
 
+    if (hit.kind === 'tour-overlay') {
+      tourOverlayArmed[index] = hit.action
+      return
+    }
+
     if (hit.kind === 'place-button') {
       placeArmed[index] = true
       return
@@ -749,6 +796,16 @@ export function createVrInteraction(
         ctx.onTourAction(tourArmed[index]!)
       }
       tourArmed[index] = null
+    }
+    // Tour overlay interactions (question answers / continue).
+    if (tourOverlayArmed[index]) {
+      const controller = controllers[index]
+      const hit = pickHit(controller)
+      const armed = tourOverlayArmed[index]!
+      if (hit?.kind === 'tour-overlay' && tourOverlayActionsEqual(hit.action, armed)) {
+        ctx.tourOverlay.activateInteractive(armed)
+      }
+      tourOverlayArmed[index] = null
     }
     // Place button: same press-and-release-on-same-target click semantics.
     if (placeArmed[index]) {
@@ -1065,6 +1122,15 @@ export function createVrInteraction(
     }
     if (ctx.tourControls.isVisible()) {
       rayTargets.push(ctx.tourControls.mesh)
+    }
+    // Tour-overlay interactive meshes — question panels only right
+    // now. Fetched fresh each frame because the set changes as
+    // tours advance (question appears/disappears between steps);
+    // the tourOverlay handle returns an empty array when nothing
+    // interactive is showing so the cost is negligible.
+    const overlayTargets = ctx.tourOverlay.getInteractiveMeshes()
+    for (let i = 0; i < overlayTargets.length; i++) {
+      rayTargets.push(overlayTargets[i])
     }
     if (ctx.placement && ctx.placement.placeButtonMesh.visible) {
       rayTargets.push(ctx.placement.placeButtonMesh)

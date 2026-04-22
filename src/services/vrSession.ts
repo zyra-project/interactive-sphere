@@ -376,6 +376,19 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     }),
     hideVideo: (id) => tourOverlay.hideOverlay(id),
     hideAllVideos: () => tourOverlay.hideAllVideos(),
+    showQuestion: (params) => tourOverlay.showQuestion({
+      id: params.id,
+      questionImageUrl: params.questionImageUrl,
+      answerImageUrl: params.answerImageUrl,
+      numberOfAnswers: params.numberOfAnswers,
+      correctAnswerIndex: params.correctAnswerIndex,
+      // `onComplete` was already wrapped by tourUI.showTourQuestion
+      // to call hideAllTourQuestions before resolving the engine
+      // promise — we just pass it through as the VR overlay's
+      // "Continue tap" handler.
+      onContinue: params.onComplete,
+    }),
+    hideAllQuestions: () => tourOverlay.hideAllQuestions(),
   })
 
   // --- Spatial placement (AR-only) + local-floor ref space ---
@@ -568,6 +581,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     hud,
     browse,
     tourControls,
+    tourOverlay,
     placement,
     renderer,
     onBrowseAction: (action) => {
