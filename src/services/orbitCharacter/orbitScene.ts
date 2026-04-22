@@ -26,6 +26,7 @@ import {
   createCatchlightMaterial,
   createStarGeometry,
   createFourPointStarGeometry,
+  createGlassDomeMaterial,
   createSubSphereMaterial,
   createBacklightMaterial,
   createBezelMaterial,
@@ -169,7 +170,8 @@ const SOCKET_Z_PUPIL_FIELD = BODY_RADIUS + 0.0012
 const SOCKET_Z_STARS       = BODY_RADIUS + 0.0015
 const SOCKET_Z_PUPIL_DOT   = BODY_RADIUS + 0.0016
 const SOCKET_Z_CATCHLIGHT  = BODY_RADIUS + 0.0018
-const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0023   // farthest forward
+const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0023   // frames the socket
+const SOCKET_Z_GLASS_DOME  = BODY_RADIUS + 0.0026   // glass crystal, in front of bezel
 
 /**
  * Bezel torus — matte charcoal ring framing each socket. The major
@@ -180,6 +182,15 @@ const SOCKET_Z_BEZEL       = BODY_RADIUS + 0.0023   // farthest forward
  */
 const BEZEL_MAJOR_RADIUS = EYE_PAIR_DISC_RADIUS + 0.0010
 const BEZEL_TUBE_RADIUS  = 0.0018
+
+/**
+ * Glass dome radius — the "watch crystal" covering each socket.
+ * Sized to match the bezel's outer rim (major + tube) so the glass
+ * visually caps the whole socket including the bezel ring. A
+ * fresnel-rim + diagonal specular streak in the shader (see
+ * {@link createGlassDomeMaterial}) gives it the glossy-glass read.
+ */
+const GLASS_DOME_RADIUS = BEZEL_MAJOR_RADIUS + BEZEL_TUBE_RADIUS
 
 /**
  * Eyelid geometry + pivot placement.
@@ -770,11 +781,28 @@ function buildPairedEye(
   lowerLid.renderOrder = 1
   lowerLidPivot.add(lowerLid)
 
+  // Glass dome — the last socket layer. Flat disc with a shader
+  // that fakes a convex glass crystal via a UV-derived normal plus
+  // a fresnel rim and a single upper-left specular streak (see
+  // createGlassDomeMaterial). Parented to the eye GROUP (not the
+  // pupilGroup) so the reflection stays fixed to the socket as gaze
+  // moves — a real glass cap doesn't tilt when the eye underneath
+  // rotates. renderOrder = 2 puts it after the lids (renderOrder 1)
+  // in the transparent pass; the lids are opaque so they still
+  // occlude the dome via the depth buffer when closed.
+  const glassDome = new THREE.Mesh(
+    new THREE.CircleGeometry(GLASS_DOME_RADIUS, 48),
+    createGlassDomeMaterial(),
+  )
+  glassDome.position.z = SOCKET_Z_GLASS_DOME
+  glassDome.renderOrder = 2
+  group.add(glassDome)
+
   // Stretch the whole eye group vertically into the slight ellipse
   // the concept art shows. Disc, bezel torus, iris, pupil field,
-  // stars, catchlights, lid pivots + lid meshes, and the stencil
-  // mask all inherit this scale together — they all stretch in
-  // lockstep so iris/mask alignment holds at any closed rotation.
+  // stars, catchlights, glass dome, lid pivots + lid meshes, and the
+  // stencil mask all inherit this scale together — they all stretch
+  // in lockstep so iris/mask alignment holds at any closed rotation.
   group.scale.set(1, EYE_SHAPE_Y_SCALE, 1)
 
   return {

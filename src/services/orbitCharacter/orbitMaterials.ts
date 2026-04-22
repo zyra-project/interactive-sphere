@@ -581,6 +581,87 @@ export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial 
 }
 
 // -----------------------------------------------------------------------
+// Glass dome — a thin convex "watch crystal" that sits just in front
+// of the bezel, giving each eye a glossy covered-lens read.
+// Implemented as a FLAT disc with a shader that fakes a dome by
+// computing a sphere-surface normal from the fragment's UV
+// distance-to-center — one draw call per eye, no real 3-D
+// geometry. The fragment program combines:
+//
+//   • A tiny flat base tint (barely visible; just enough to hint
+//     that there's a layer of glass covering the eye).
+//   • A fresnel rim that brightens as the fake normal turns away
+//     from the camera — reads as the dome's curved edge catching
+//     a skylight bounce.
+//   • A single diagonal specular streak in the upper-left quadrant
+//     (opposite the "planet" catchlight in the upper-right). The
+//     two treatments read as distinct highlights: the catchlight
+//     sits on the cornea (iris layer), the streak sits on the
+//     glass layer, selling depth.
+//
+// Unparented to the pupilGroup on purpose — the dome is fixed to
+// the socket and does NOT track gaze (a real glass covering
+// doesn't tilt when the eye moves).
+// -----------------------------------------------------------------------
+
+export function createGlassDomeMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec2 vUv;
+      void main() {
+        vec2 c = vUv - vec2(0.5);
+        float r2 = dot(c, c);
+        // Circular silhouette — anything outside the disc is clipped.
+        if (r2 > 0.25) discard;
+        float r = sqrt(r2) * 2.0;  // normalized 0..1 center-to-edge
+
+        // Fake dome normal — project the fragment's (x, y) position
+        // up onto a unit hemisphere to get a sphere-surface normal.
+        // At center r=0 → normal=(0,0,1) (facing camera); at edge r=1
+        // → normal points outward along +X/Y (grazing). Camera is
+        // assumed along +Z for the cap's local frame.
+        float h = sqrt(max(0.0, 1.0 - r * r));
+        vec3 N = vec3(c.x * 2.0, c.y * 2.0, h);
+
+        // Fresnel rim. Grazing angles (small N.z) get brighter,
+        // head-on (N.z ~ 1) stays near zero. pow exponent shapes the
+        // thickness of the rim glow.
+        float rim = pow(1.0 - h, 2.5);
+
+        // Diagonal specular streak in the upper-left quadrant. Define
+        // a streak direction (unit vector pointing upper-left) and
+        // its perpendicular; a Gaussian across the perpendicular gives
+        // the streak its thin banded profile.
+        //
+        // The streak's "along" coordinate (bandAlong) controls where
+        // along the diagonal the streak exists — a smoothstep window
+        // limits it to the upper-left portion so it doesn't wrap
+        // around the whole dome.
+        vec2 streakDir = vec2(-0.7071, 0.7071);        // upper-left unit
+        vec2 perpDir   = vec2( 0.7071, 0.7071);        // 90° CCW from streakDir
+        float bandPerp  = dot(c, perpDir);
+        float bandAlong = dot(c, streakDir);
+        float streak = exp(-bandPerp * bandPerp * 600.0);
+        streak *= smoothstep(0.05, 0.18, bandAlong) * smoothstep(0.42, 0.25, bandAlong);
+
+        // Compose. Tiny flat base + rim + streak, all under a single
+        // opacity multiplier. Numbers tuned for subtlety — the glass
+        // should be felt, not dominate the eye read.
+        float alpha = 0.04 + rim * 0.22 + streak * 0.85;
+        gl_FragColor = vec4(vec3(1.0), alpha);
+      }`,
+  })
+}
+
+// -----------------------------------------------------------------------
 // Backlight halo — soft warm radial glow that sits behind the body
 // and bleeds outward to the scene background. Closes the "luminous
 // vinyl toy" read from the concept art without having to pump
