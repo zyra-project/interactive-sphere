@@ -884,6 +884,8 @@ isPlaying: ctx.isPlaying(),
   const tourControlsOffset = new THREE_.Vector3(0, -0.80, 0.15)
   /** Scratch reused per-frame for position math; avoids GC churn. */
   const scratchPos = new THREE_.Vector3()
+  /** Scratch vector reused every frame by the billboard-lookAt block below. */
+  const scratchCamPos = new THREE_.Vector3()
   // `lastTime` starts null so the very first frame uses its own
   // timestamp as "previous" and computes a 0-duration delta —
   // rather than mixing XR's frame timestamp (first callback arg)
@@ -1063,19 +1065,32 @@ isPlaying: ctx.isPlaying(),
     // inherit rotation + wobble with user grab); manual sync via
     // offset vectors lets us keep position while leaving orientation
     // globe-independent.
+    //
+    // Each panel also billboards toward the camera via lookAt — if
+    // the user walks around a placed globe in AR (or starts from a
+    // non-default standing position), the panel would otherwise
+    // stay facing -z world and end up edge-on to the viewer. Same
+    // pattern as vrTimeLabel above and the tour-overlay's
+    // world-anchor billboard — user always sees panels face-on.
+    active.camera.getWorldPosition(scratchCamPos)
+
     scratchPos.copy(active.scene.globe.position).add(hudOffset)
     active.hud.mesh.position.copy(scratchPos)
+    active.hud.mesh.lookAt(scratchCamPos)
     if (active.browse.isVisible()) {
       scratchPos.copy(active.scene.globe.position).add(browseOffset)
       active.browse.mesh.position.copy(scratchPos)
+      active.browse.mesh.lookAt(scratchCamPos)
     }
     if (active.tourControls.isVisible()) {
       scratchPos.copy(active.scene.globe.position).add(tourControlsOffset)
       active.tourControls.mesh.position.copy(scratchPos)
+      active.tourControls.mesh.lookAt(scratchCamPos)
     }
     if (active.placement) {
       scratchPos.copy(active.scene.globe.position).add(placeOffset)
       active.placement.placeButtonMesh.position.copy(scratchPos)
+      active.placement.placeButtonMesh.lookAt(scratchCamPos)
     }
 
     // Drive the loading scene's animation (rings spin, sphere
