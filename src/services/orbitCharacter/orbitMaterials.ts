@@ -558,16 +558,18 @@ export function createCatchlightMaterial(opacity: number): THREE.ShaderMaterial 
       uniform float uOpacity;
       void main() {
         // Distance from disc center, 0 at center to 1 at disc edge.
-        // Mostly-solid white core with a thin smooth edge — reads as
-        // a "planet" catchlight rather than a soft glow. The inner
-        // 80% of the disc is full brightness; only the outer 20%
-        // feathers. Compared to the earlier pow(1.0 - d, 2.2) fade
-        // this keeps the highlight crisp and round like the
-        // reference art rather than diffusing into the iris.
+        // Mostly-solid white core with a tight 5% edge feather — the
+        // inner 95% is full alpha so it fully occludes anything
+        // behind it (pupil dot, iris, pupil field) and reads as a
+        // single cohesive "planet" highlight rather than a glow that
+        // lets the pupil dot bleed through. The outer 5% feathers
+        // purely for antialiasing. An earlier 20% feather let the
+        // pupil dot's near-black show through via additive blending
+        // wherever the two overlapped.
         vec2 c = vUv - vec2(0.5);
         float d = length(c) * 2.0;
         if (d >= 1.0) discard;
-        float alpha = smoothstep(1.0, 0.80, d);
+        float alpha = smoothstep(1.0, 0.95, d);
         gl_FragColor = vec4(1.0, 1.0, 1.0, uOpacity * alpha);
       }`,
   })
