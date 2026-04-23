@@ -900,7 +900,7 @@ function buildPairedEye(
  * stack rather than mutating geometries in place.
  */
 function buildEarth(preset: ScalePreset): PhotorealEarthHandle {
-  return createPhotorealEarth(THREE, {
+  const handle = createPhotorealEarth(THREE, {
     radius: preset.earthRadius,
     position: {
       x: preset.earthCenter[0],
@@ -909,6 +909,19 @@ function buildEarth(preset: ScalePreset): PhotorealEarthHandle {
     },
     includeShadow: false,
   })
+  // Belt-and-suspenders: explicitly opt the globe out of receiving
+  // shadows from any scene light. Three.js default is false so this
+  // is redundant today, but Orbit's key light has `castShadow: true`
+  // and lives alongside the globe in the same scene — if a future
+  // change ever accidentally flips receiveShadow on, Orbit's body
+  // or sub-spheres would project a physically-nonsensical shadow
+  // onto a planet many orders of magnitude larger, breaking the
+  // scale read. Keeping this explicit guards against that class of
+  // regression. The day/night terminator is a shader effect on the
+  // globe's material (uSunDir), not shadow mapping, so disabling
+  // receiveShadow here doesn't affect it.
+  handle.globe.receiveShadow = false
+  return handle
 }
 
 /**
