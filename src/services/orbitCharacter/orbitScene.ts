@@ -454,6 +454,10 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   //     the first `updateCharacter` call fires.
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.35)
   scene.add(ambientLight)
+
+  const head = new THREE.Group()
+  scene.add(head)
+
   const keyLight = new THREE.DirectionalLight(0xfff6e8, 1.6)
   keyLight.position.set(0.18, 0.30, 0.45)
   keyLight.castShadow = true
@@ -465,10 +469,16 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   shadowCam.top = 0.28; shadowCam.bottom = -0.28
   shadowCam.near = 0.10; shadowCam.far = 1.20
   shadowCam.updateProjectionMatrix()
+  // Point the light AT the head, so its shadow frustum stays centered
+  // on Orbit wherever the character goes (flight to Earth, scale
+  // preset changes). Three.js auto-updates the light's direction
+  // from `position → target.position` every frame; using `head` as
+  // the target hands off the "where is Orbit" bookkeeping to the
+  // scene graph so we only need to write the light's OWN position
+  // in the per-frame update (offset from the head by the sun
+  // direction times a fixed distance).
+  keyLight.target = head
   scene.add(keyLight)
-
-  const head = new THREE.Group()
-  scene.add(head)
 
   // Backlight halo — parented to head, behind the body, facing +Z.
   // The camera sits at +Z looking toward origin for every preset, so
@@ -1189,7 +1199,14 @@ export function updateCharacter(
   // tracking stays on (non-vestibular), but startle / recoil are
   // suppressed.
   _tmpHeadNdc.copy(handles.head.position).project(handles.camera)
-  const ndcDx = _tmpHeadNdc.x - mouseX
+  // NDC X and Y are not isotropic in pixel space when aspect != 1 —
+  // a horizontal 1.0-wide NDC span covers `aspect × viewportHeight`
+  // pixels while vertical covers `viewportHeight`. Multiply the
+  // horizontal delta by aspect before the Euclidean distance so
+  // PROXIMITY_* thresholds correspond to the same on-screen
+  // distance at any canvas shape.
+  const proximityAspect = handles.camera.aspect > 0 ? handles.camera.aspect : 1
+  const ndcDx = (_tmpHeadNdc.x - mouseX) * proximityAspect
   const ndcDy = _tmpHeadNdc.y - mouseY
   const ndcDist = Math.sqrt(ndcDx * ndcDx + ndcDy * ndcDy)
   const rawProximity = sat(
@@ -1305,18 +1322,26 @@ export function updateCharacter(
   // scene is lit coherently: body shading, sub shadows, eye glints,
   // Earth terminator — all aligned.
   const sun = handles.earth.sunDir
-  // Place the key light at `sunDir * 0.5` (≈ the original static
-  // position's distance from origin) so the tight shadow-camera
-  // frustum set at build time (near 0.10, far 1.20) still encloses
-  // Orbit. An earlier pass used `* 10` by analogy with the Earth's
-  // own sun light, but that pushed Orbit completely outside the
-  // shadow frustum and silently dropped sub-sphere shadows on the
-  // body — which were one of the character's best "little moons
-  // eclipsing the planet" reads. Distance doesn't affect a
+  // Place the key light at `head + sunDir * 0.5`. The 0.5 offset
+  // keeps the light within the shadow camera's tight frustum
+  // (near 0.10, far 1.20 from the light's own position), and
+  // anchoring to the head's current world position keeps that
+  // frustum centered on Orbit wherever the character goes —
+  // during flight the head moves up to ~0.6 units from world
+  // origin, which would push the character outside the shadow
+  // volume if the light stayed at world-origin-relative position
+  // and silently drop the sub-sphere eclipse shadows. The light's
+  // TARGET is already bound to `head` at build time, so rays
+  // shine FROM `head + sun*0.5` TOWARD `head` — i.e. from the
+  // sun direction, as expected. Distance doesn't affect a
   // DirectionalLight's illumination (only direction matters), so
-  // 0.5 keeps shadows intact while the sun direction drives the
-  // light and the streak identically.
-  handles.keyLight.position.set(sun.x * 0.5, sun.y * 0.5, sun.z * 0.5)
+  // 0.5 is purely a shadow-frustum sizing concern.
+  const headPos = handles.head.position
+  handles.keyLight.position.set(
+    headPos.x + sun.x * 0.5,
+    headPos.y + sun.y * 0.5,
+    headPos.z + sun.z * 0.5,
+  )
   // 2-D streak direction: take (sun.x, sun.y) and renormalize. When
   // the sun's Z dominates (sun is roughly along the view axis) this
   // can collapse toward a zero vector; guard with a small epsilon so

@@ -126,6 +126,11 @@ export class OrbitController {
   // Scratch for projecting the head's world position into NDC when
   // computing the hit-test radius for tickle clicks.
   private readonly _headNdc = new THREE.Vector3()
+  // Scratch for the tickle hit-test: second Vector3 holds the
+  // head-plus-scaled-body-radius point, and a third holds the
+  // camera's world-space right axis.
+  private readonly _headOffsetNdc = new THREE.Vector3()
+  private readonly _cameraRight = new THREE.Vector3()
 
   /**
    * Counts the first few `pointermove` events and the first few
@@ -389,7 +394,7 @@ export class OrbitController {
     // First few events only — confirms the listener is firing so
     // users can diagnose "eyes aren't tracking" issues from DevTools
     // without us shipping a debug build.
-    if (this.pointerMoveLogCount < 5) {
+    if (this.pointerMoveLogCount < 5 && logger.isEnabled('debug')) {
       this.pointerMoveLogCount++
       logger.debug(
         `[orbit] pointermove #${this.pointerMoveLogCount}`,
@@ -411,30 +416,39 @@ export class OrbitController {
     const rect = this.renderer.domElement.getBoundingClientRect()
     const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1
     const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1
-    this._headNdc.copy(this.handles.head.position).project(this.handles.camera)
-    const dx = ndcX - this._headNdc.x
-    const dy = ndcY - this._headNdc.y
-    const dist = Math.sqrt(dx * dx + dy * dy)
-    // Derive the tickle hit-test radius from Orbit's current rendered
-    // body silhouette — NOT the unscaled BODY_RADIUS constant — so
-    // the target tracks breathing / meltXZ / flight-smear / arrival-
-    // pulse scale changes. Without this, the hit-test either fires
-    // outside the visible body during peak inhale (body shrunk),
-    // or misses legitimate clicks during flight smear (body
-    // stretched). Uses the larger of scale.x / scale.y because the
-    // body animates non-uniformly (Y breathing amplitude exceeds
-    // XZ), and a conservative max keeps clicks on the tall edge
-    // still landing on the body. At the close preset this gives
-    // the projected body silhouette exactly — any multiplier above
-    // 1.0 would eat into "click empty space to drag the globe"
-    // (the body already fills ~0.47 NDC at close, leaving little
-    // margin beyond its edge before reaching the Earth).
     const cam = this.handles.camera
-    const distToHead = cam.position.distanceTo(this.handles.head.position)
-    const fovRad = (cam.fov * Math.PI) / 180
+    // Project the head and a point offset from it by the current
+    // scaled body radius along the camera's world-space right axis.
+    // The NDC delta between those two projections IS the projected
+    // body radius in NDC X units — no analytic approximation via
+    // `distToHead / tan(fov/2)`, which drifts when Orbit is off the
+    // camera axis (distanceTo uses Euclidean world distance, not
+    // view-space depth). The `.project()` path handles perspective
+    // divide correctly at every head position.
+    //
+    // Multiplying body.scale.max(x, y) into the offset so the hit
+    // target tracks the rendered silhouette under breathing,
+    // meltXZ, flight smear, and arrival pulse — without this the
+    // click zone drifts off the visible body during animation.
     const bodyScale = Math.max(this.handles.body.scale.x, this.handles.body.scale.y)
     const scaledBodyRadius = BODY_RADIUS * bodyScale
-    const clickRadius = scaledBodyRadius / (distToHead * Math.tan(fovRad / 2))
+    this._headNdc.copy(this.handles.head.position).project(cam)
+    this._cameraRight.set(1, 0, 0).transformDirection(cam.matrixWorld)
+    this._headOffsetNdc.copy(this.handles.head.position)
+      .addScaledVector(this._cameraRight, scaledBodyRadius)
+      .project(cam)
+    // Aspect-correct BOTH the click's X delta AND the projected
+    // radius so the Euclidean distance and the hit-test threshold
+    // live in the same pixel-proportional space. NDC X is stretched
+    // by viewport aspect relative to Y, so without the correction
+    // the body's elliptical-in-NDC silhouette doesn't match the
+    // isotropic circular distance we're measuring.
+    const aspect = rect.width / rect.height
+    const clickRadius =
+      Math.abs(this._headOffsetNdc.x - this._headNdc.x) * aspect
+    const dx = (ndcX - this._headNdc.x) * aspect
+    const dy = ndcY - this._headNdc.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
     if (dist <= clickRadius) {
       this.playGesture('tickle')
       return
@@ -534,7 +548,7 @@ export class OrbitController {
     // 60 fps), log the eased scalars so DevTools users can verify
     // that gaze and proximity are responding to mouse movement.
     this.frameLogIntervalFrames++
-    if (this.frameLogIntervalFrames >= 60) {
+    if (this.frameLogIntervalFrames >= 60 && logger.isEnabled('debug')) {
       this.frameLogIntervalFrames = 0
       logger.debug('[orbit] presence', {
         mouseX: this.mouseX.toFixed(3),
