@@ -1,30 +1,59 @@
 /**
- * In-VR tour overlay manager — floating CanvasTexture panels that
- * replace the 2D tour-overlay DOM surface (`src/ui/tourUI.ts`) while
- * the user is inside a WebXR session.
+ * In-VR tour overlay manager — floating CanvasTexture and
+ * VideoTexture panels that replace the 2D tour-overlay DOM surface
+ * (`src/ui/tourUI.ts`) while the user is inside a WebXR session.
  *
- * This is the scaffold (Phase 3.5 commit 2):
+ * Supports every overlay kind the tour engine emits:
  *
- * - A parent `THREE.Group` hosts every tour overlay mesh; `vrSession`
- *   adds the group once and everything inside tracks automatically.
- * - The text overlay type is implemented end-to-end (panel mesh,
- *   CanvasTexture drawing, title + body + close affordance) as the
- *   prototype for the other overlay types landing in later commits
- *   (image, video, popup, interactive question).
- * - Two anchor modes — world-anchored (overlay position follows the
- *   globe in world space; matches how the HUD and browse panel
- *   track the placed globe in AR) and gaze-follow (overlay rides
- *   in front of the user's head, subtitle-style). Both ship together
- *   per the locked-in Phase 3.5 decision.
- * - No tour engine wiring yet — that lands in commit 4. The public
- *   API is deliberately shaped around the tour-task params
- *   (`ShowRectTaskParams` and friends in `src/types/index.ts`) so
- *   hooking the engine up later is a plumbing change rather than a
- *   rework of this module.
+ * - **Text** (`showRect`) — wrapped caption on a glass-surface panel.
+ * - **Popup** (`showPopupHtml`) — HTML body stripped to plain text,
+ *   or a "view in 2D" prompt with the URL for iframe-only popups
+ *   we can't faithfully render in a CanvasTexture.
+ * - **Image** (`showImage`) — async-loaded image letterboxed into
+ *   the panel with an optional caption underneath.
+ * - **Video** (`playVideo` / `showVideo`) — VideoTexture wrapping
+ *   the `<video>` element the 2D layer already manages, so the
+ *   stream decodes once.
+ * - **Question** (`question`) — state machine (loading → idle →
+ *   selected → showing-answer) with raycast-driven numbered
+ *   answer buttons + a Continue advance.
  *
- * The close affordance is rendered but not yet raycastable; the
- * controller hit-test wiring comes in commit 6 alongside interactive
- * questions, which need the same pattern.
+ * Pose modes per overlay (with optional per-overlay JSON anchor
+ * hint in the tour task params):
+ *
+ * - **`world`** — panel floats at a fixed offset from the globe
+ *   and billboards to face the user. Follows the globe through
+ *   AR placement + pinch-zoom. Multi-globe arcs lift the default
+ *   offset above the primary so wide panels don't land inside
+ *   secondaries.
+ * - **`gaze`** — panel rides in front of the user's head at
+ *   comfortable reading distance (subtitle-style), lerped each
+ *   frame so slight head motion doesn't rigidly lock the panel.
+ *
+ * Interactive surfaces exposed to `vrInteraction`:
+ *
+ * - `getInteractiveMeshes()` + `hitTestInteractive()` +
+ *   `activateInteractive()` — per-region hit-test on question
+ *   panels (answer buttons in the `idle` phase, Continue in the
+ *   `showing-answer` phase).
+ * - `getDraggableMeshes()` + `setOverlayCustomOffset()` —
+ *   world-mode text / popup / image panels are draggable with a
+ *   controller trigger; `vrInteraction` writes a custom offset
+ *   each frame, the panel "follows" the controller like a held
+ *   card, and release commits the position. Video panels stay
+ *   pinned (content-first); question panels stay pinned (their
+ *   answer-button taps use the same trigger gesture).
+ *
+ * The close-X glyph drawn on text / popup / image panels is
+ * currently decorative — the whole panel body is a drag target,
+ * so wiring a close gesture would need a dedicated handle region
+ * (future commit).
+ *
+ * Caller (`vrSession`) adds the root `THREE.Group` to the scene
+ * once, registers this manager as the `VrTourOverlaySink` in
+ * `tourUI` so the 2D tour engine's show/hide calls mirror through,
+ * drives `update()` each frame, and calls `dispose()` on session
+ * end.
  *
  * See {@link file://./../../docs/VR_INVESTIGATION_PLAN.md VR_INVESTIGATION_PLAN.md}
  * Phase 3.5 section.

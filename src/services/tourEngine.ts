@@ -504,7 +504,8 @@ export class TourEngine {
     // Animated path: run 2D MapLibre flyTo and the VR globe
     // rotation in parallel. Promise.all resolves when both settle
     // so the tour's next task waits on the longer of the two.
-    // VR defaults to MapLibre's standard 1.5 s duration (see
+    // VR defaults to this app's configured 2.5 s fly-to duration,
+    // matching MapRenderer.flyTo's easeTo duration (see
     // FLY_TO_DEFAULT_DURATION_MS in vrSession.ts).
     await Promise.all([
       renderer.flyTo(params.lat, params.lon, altKm),

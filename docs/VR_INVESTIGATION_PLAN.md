@@ -770,9 +770,12 @@ ambient noise) but a fixed level is fine for v1.
 
 Decisions baked in before the first code change:
 
-- **Overlay placement:** world-anchored default + gaze-follow
-  HUD toggle, both shipping together (see above). Per-overlay
-  tour-JSON anchor hint wins when present.
+- **Overlay placement:** world-anchored default (see above).
+  Per-overlay tour-JSON anchor hint wins when present. A
+  `gazeFollowOverlays` preference is persisted as a global
+  default flipper but ships without a HUD toggle binding —
+  runtime UI for it is deferred. Drag-to-reposition on world-
+  mode overlays lets users manually place any overlay.
 - **All work lands on one branch,** with mid-cycle pauses after
   commits 3 / 4 / 6 / 7 for on-device Quest validation before
   the next commit starts.
