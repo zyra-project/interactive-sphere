@@ -724,8 +724,245 @@ New questions this plan raises:
   already in D1. Including it in the event stream means we can build
   "which feature areas generate the most bug reports" without a
   cross-store join. I think yes, but it's borderline duplication.
-- **Do we want `error` as a sixth event type** (uncaught exceptions,
-  failed fetches, HLS errors)? Probably yes, but not in Phase 1.
+- ~~**Do we want `error` as a sixth event type?**~~ Resolved — yes,
+  with the two-tier model described in "Console and crash capture."
+
+---
+
+## Pre-implementation checklist
+
+What else needs a decision or spec before code lands. Grouped by
+priority — **Blockers** must be resolved in review; everything else
+can be deferred to the implementation PR but should be captured here
+so nothing slips.
+
+### Blockers — decide before coding starts
+
+#### First-launch experience
+
+When a brand-new user opens the app, what do they see, and when does
+the first event fire?
+
+Proposed:
+
+- **Web, first visit.** Tier defaults to `essential`. A slim,
+  dismissable banner pinned to the bottom of the viewport on first
+  load: *"Interactive Sphere reports anonymous usage data. [Learn
+  more](/privacy) · [Settings](#privacy)"*. The banner's existence
+  does not block any event from firing — essential tier is opt-out,
+  not opt-in. The banner's own impression is tracked as an
+  `settings_changed` event with `key=disclosure_seen`, so we can tell
+  whether users are seeing it
+- **Desktop, first launch.** A proper modal, Firefox-style: *"Help
+  make Interactive Sphere better?"* with three options — *Essential*,
+  *Essential + Research*, *No telemetry* — and a *Learn more* link to
+  `/privacy`. **No events fire before the user clicks.** This is the
+  main web/desktop divergence and it's deliberate: desktop apps are
+  held to a higher first-run-consent bar
+- **Returning users** (either platform): whatever they picked is
+  honored. No prompt, no banner re-show
+
+This needs sign-off because it's the one place the two-tier design
+meets the user, and getting it wrong is the kind of thing that
+shows up in a *"your app tracked me before I said yes"* Hacker News
+post.
+
+#### Tier-change semantics mid-session
+
+When the user toggles the tier from Tools → Privacy, what happens to
+in-flight state?
+
+- **Any tier → Off:** drop the in-memory batch queue immediately. No
+  final flush. `session_id` is *not* rotated (rotating it would be a
+  form of tracking). All subsequent emit calls no-op
+- **Off → Essential:** start emitting fresh. Do *not* backfill any
+  events that were suppressed during Off. Emit a synthetic
+  `session_start` with a `resumed=true` flag so downstream analysis
+  can tell this session began mid-app-lifetime
+- **Essential → Research:** Tier A events keep flowing unchanged.
+  Tier B call sites start firing at the next eligible boundary (e.g.
+  the next `moveend`, the next `handleSend`). No backfill
+- **Research → Essential:** stop Tier B emission immediately. Drop any
+  Tier B events still in the batch buffer. Tier A events unaffected
+
+These rules are non-obvious and need to be written into tests.
+
+#### Schema evolution process
+
+Events will evolve. We need a written workflow before the first
+schema change happens, not after.
+
+Proposed:
+
+- `session_start` carries a `schema_version` blob (semver string, e.g.
+  `"1.0"`)
+- **Additive changes** (new event type, new blob field) bump the
+  minor version. Old clients keep working; new dimensions show up as
+  NULL in historical rows
+- **Breaking changes** (rename, remove, type change) bump the major
+  version. The Pages Function accepts both versions for a deprecation
+  window (4 weeks), writes each to a version-tagged AE dataset slice
+  or Iceberg table partition
+- **Schema changes land in the same PR as the call-site changes.**
+  Reviewer checklist includes: `TelemetryEvent` union updated,
+  sanitizer rules verified, PRIVACY.md updated if user-visible, and
+  the schema snapshot test regenerated
+
+Document this in `docs/ANALYTICS.md` when it lands.
+
+#### Security posture of `/api/ingest`
+
+The endpoint accepts anonymous POSTs. Without discipline it's a free
+event-forging surface and a DoS target.
+
+Required controls:
+
+- **Origin allowlist.** Pages Function checks `Origin` / `Referer`
+  against a short list (`interactive-sphere.pages.dev`,
+  `*.interactive-sphere.*` custom domains, `tauri://localhost` for
+  desktop). Rejects with 403 otherwise. Not a strong forgery
+  defense — anyone can spoof — but it stops casual drive-by forging
+- **Per-IP + per-session rate limits.** Already in the plan; confirm
+  both dimensions, not just session (a scripted forger cycles
+  sessions)
+- **Body-size cap.** 64 KB (already spec'd)
+- **Schema validation.** Zod, fail-closed on unknown event types.
+  Never let an unknown-shaped event reach `writeDataPoint()`
+- **No auth token in the request.** Intentional — we want the endpoint
+  usable from the Tauri webview without bundling a key. Trade-off
+  explicit: a motivated forger can inject noise; nothing we put in the
+  client can prevent that, and pretending otherwise is security theater
+- **Circuit breaker.** If the endpoint's P95 latency or error rate
+  crosses a threshold, the Pages Function returns `503 Retry-After: 300`
+  and the client enters a 5-minute cooldown. Protects AE from cascade
+  failures
+
+I'd also recommend a simple **runtime kill switch**: an env var or KV
+entry the Pages Function reads at edge, which if set causes it to
+return `410 Gone` to all requests. Clients treat 410 as "stop sending
+for the rest of this session" and do not retry. This is the "we
+accidentally shipped a bug that's flooding AE" emergency brake.
+
+#### Dev experience
+
+Building this without a fast feedback loop is painful. Must-haves:
+
+- **Console mode.** `VITE_TELEMETRY_CONSOLE=true` makes the emitter
+  log every event to `console.debug` instead of sending. Default on
+  in `npm run dev`, off in `npm run build`. Lets anyone add an emit
+  call and see it fire without any backend wiring
+- **Dev dataset.** A second AE dataset name (e.g.
+  `interactive_sphere_events_dev`) bound in `wrangler.toml` under a
+  separate env, selected when `CF_PAGES_BRANCH !== 'main'`. Preview
+  deploys write to dev; main writes to prod. Standard Cloudflare
+  pattern
+- **Event inspector panel.** A hidden dev-only UI toggled by
+  `?debug=telemetry` on the URL — shows the in-memory batch buffer,
+  the dedup signature cache, and lets a dev force a flush. Lives
+  behind the same dev flag as the existing `debugPrompt` in
+  `DocentConfig`
+- **Fixture-based tests for the sanitizer.** A table of nasty inputs
+  (URLs with tokens, emails, UUIDs, stack traces containing prompts)
+  and expected post-sanitization outputs. Snapshot-tested in CI
+
+#### Testing strategy
+
+- **Unit tests.** `emitter.ts` (batcher, tier gate, offline queue,
+  session_id rotation, reentrant guard); `errorCapture.ts`
+  (sanitizer table-driven tests, dedup behavior, capture discipline);
+  `dwell.ts` (start/stop correctness, `visibilitychange` handling);
+  `config.ts` (load/save, migration from unset)
+- **Integration tests.** Using `@cloudflare/vitest-pool-workers` (or
+  the miniflare-based equivalent), exercise the Pages Function with a
+  fake AE binding. Confirm schema validation rejects bad shapes,
+  rate limiter trips at the expected threshold, origin check rejects
+  unknown origins
+- **End-to-end smoke.** Playwright test that boots the app, exercises
+  a handful of events, asserts the emitter saw them in console mode.
+  Not a real ingest round-trip — that's flaky and AE has no dev
+  tenant
+- **Schema snapshot test.** Serializes the `TelemetryEvent` union
+  shapes to a `.snap` file; a reviewer has to consciously regenerate
+  on a schema change, which acts as the workflow trip-wire described
+  above
+- **Sanitizer fuzz test.** Seeded random inputs containing PII-like
+  patterns; asserts no pattern leaks through
+
+#### CI and lint enforcement
+
+- **Lint rule: no direct `writeDataPoint()` outside
+  `functions/api/ingest.ts`.** ESLint custom rule or a simple grep in
+  CI
+- **Lint rule: no direct `console.error` / `console.warn` in
+  `src/analytics/errorCapture.ts`.** That file uses saved original
+  references only
+- **CI check: PRIVACY.md ↔ public/privacy.html parity** (when the
+  page lands in the impl PR). Strip markdown formatting, compare
+  normalized text, fail on drift
+- **CI check: every new event in the `TelemetryEvent` union has a
+  matching wiring-table row in this doc.** Annotation comment on the
+  union type → doc-linter that enforces the row exists
+
+### Medium priority — can be deferred to impl PR, but capture now
+
+#### Observability of the telemetry pipeline itself
+
+- **Synthetic heartbeat.** A cron trigger (Cloudflare Cron Trigger on
+  a dedicated Worker) fires a test event every 15 min with a
+  `synthetic=true` blob. Dashboard alarm fires if no heartbeat lands
+  for 30 min. This is the "is the pipe open?" signal
+- **Ingest error rate.** Alarm threshold: > 1 % 4xx or > 0.1 % 5xx
+  over a 10-min window
+- **AE quota tracking.** Panel in the Grafana dashboard showing
+  current-month data-point count against the free-tier cap. Spike
+  alerts at 70 / 90 %
+
+#### Accessibility
+
+- **Tools → Privacy panel.** Full keyboard access, radio group with
+  proper `role` + `aria-*`, live-region status message on tier change
+  ("Telemetry set to Essential"). WCAG AA contrast on all text
+- **First-launch modal (desktop).** Focus-trapped, Esc defaults to
+  *No telemetry* (not *Essential*) — the privacy-preserving default
+- **`/privacy` page.** Skip-link to main content, semantic headings,
+  WCAG AA contrast. No keyboard traps. Print stylesheet
+
+#### Ownership and on-call
+
+- **Schema ownership.** Who approves `TelemetryEvent` changes? Default:
+  Interactive Sphere maintainers + one Zyra contact for Phase 2
+  compatibility. Document in `docs/ANALYTICS.md`
+- **Pipeline on-call.** Who gets the heartbeat alarm? Defer until
+  we have a real user of the stream, which is post-Phase-2
+- **Policy ownership.** Who reviews substantive `PRIVACY.md` changes
+  (minor-version policy bump)? Recommend: project lead + infosec
+  sign-off for anything that changes what's collected
+
+#### Documentation deliverables
+
+Listed elsewhere; consolidating:
+
+- `docs/ANALYTICS.md` — user-facing schema + endpoint reference,
+  includes the schema evolution process, the "how to add an event"
+  checklist, and the dashboard inventory
+- `docs/ANALYTICS_QUERIES.md` — SQL query patterns for the SQL API
+  and example DuckDB / PyIceberg reads once Phase 2 lands
+- `docs/PRIVACY.md` — canonical policy (this branch)
+- `STYLE_GUIDE.md` additions — tokens / spacing for the Privacy panel
+  and disclosure banner
+
+### Low priority — explicit non-goals for Phase 1
+
+Recording these so they don't sneak back in as scope creep:
+
+- **Anomaly / bot detection.** Session-level outlier clustering can
+  wait until we have traffic. Free-tier AE is cheap
+- **Per-user longitudinal analysis.** Would require persistent IDs.
+  Deliberately ruled out by the privacy posture
+- **A/B experimentation framework.** Out of scope. Analytics observes;
+  experiments actively assign. Different tool
+- **Real-time dashboards for leadership.** Issue explicitly defers
+  this to Phase 2+
 
 ---
 
