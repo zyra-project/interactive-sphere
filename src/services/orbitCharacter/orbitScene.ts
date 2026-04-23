@@ -1776,11 +1776,21 @@ export function updateCharacter(
       relY = -0.010 + Math.cos(phase) * 0.003
       relZ = -0.080 + Math.sin(phase * 0.7) * 0.004
     } else if (effSubMode === 'cluster') {
-      const phase = anim.orbitPhaseAccum + pOff
-      const radius = r * 0.55
-      relX = Math.cos(phase) * radius * 0.5
-      relY = -Math.abs(Math.sin(phase * 0.5)) * radius * 0.8 - 0.025
-      relZ = -Math.abs(Math.sin(phase)) * radius
+      // "The Thinker" pose. Sub 0 parks at a fixed fist-under-chin
+      // position in front of and below Orbit's face, with only a
+      // tiny breathing oscillation so it reads as "held in place"
+      // rather than "frozen." Sub 1 drifts slowly above-and-behind
+      // like a thoughtful idea circling the head.
+      if (i === 0) {
+        relX = -0.045
+        relY = -0.058 + Math.sin(time * 0.9) * 0.0018
+        relZ =  0.085 + Math.sin(time * 0.7 + 1.1) * 0.0012
+      } else {
+        const phase = anim.orbitPhaseAccum * 0.35 + pOff
+        relX =  0.050 + Math.cos(phase) * 0.012
+        relY =  0.055 + Math.sin(phase * 0.6) * 0.008
+        relZ = -0.020 + Math.sin(phase * 0.9) * 0.015
+      }
     } else if (effSubMode === 'confused') {
       const pace = i === 0 ? 1.35 : 0.72
       const phase = anim.orbitPhaseAccum * pace + pOff
