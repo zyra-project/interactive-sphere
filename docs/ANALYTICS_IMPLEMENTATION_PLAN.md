@@ -571,32 +571,161 @@ New questions this plan raises:
 
 ---
 
-## Privacy policy
+## Privacy policy and the `/privacy` endpoint
 
-Draft policy lives at [`docs/PRIVACY.md`](PRIVACY.md). It renders at
-`/privacy` via `public/privacy.html` — a small static page that loads
-the markdown and renders it with the same CSS tokens the rest of the
-app uses.
+Draft policy lives at [`docs/PRIVACY.md`](PRIVACY.md). It must be
+reachable at a stable public URL before any telemetry ships — both
+because it's best practice for a website and because it's a hard
+requirement for several downstream distribution channels:
 
-The policy is structured to match the two-tier model 1:1 so users see
-the same vocabulary in-app (Tools → Privacy) and on the policy page.
-It explicitly enumerates what is *not* collected, so any future
-reviewer can compare the emitter source against the policy text
-line-by-line.
+- **Apple App Store / Mac App Store.** App Store Review guideline 5.1.1
+  requires a publicly accessible privacy policy URL in the App Store
+  listing metadata
+- **Google Play.** The Data safety section and Play policy require a
+  privacy policy URL for any app that handles personal or sensitive
+  data (we don't, but the platform definition is broad enough that
+  "we collect anonymous analytics" trips the requirement)
+- **Microsoft Store.** Requires a privacy policy URL for any app that
+  accesses the network
+- **F-Droid / Flathub / AUR.** Not strictly required by all three but
+  reviewers expect it and flag its absence
+- **Chrome Web Store.** If we ever package the web build as an
+  installable PWA / Chrome app, it's required there too
+- **NOAA / federal distribution.** If the app is referenced from a
+  `noaa.gov` property, federal Privacy Act / E-Government Act posture
+  applies and a linked policy is mandatory
 
-**Needs before release:**
+A policy buried inside an in-app help panel does not satisfy any of
+these channels. The URL has to be a direct link, reachable without
+launching the app.
+
+### Endpoint design
+
+Single static page: **`public/privacy.html`**, served by Cloudflare
+Pages at `/privacy.html` and at the clean `/privacy` URL.
+
+- **Static, not SPA.** The page is self-contained HTML/CSS with no
+  script dependencies. If the main app's JS bundle is broken, the
+  privacy page still loads. This is a legal deliverable; it must not
+  depend on the rest of the app working
+- **Content is canonical in HTML.** The HTML is the ship artifact.
+  `docs/PRIVACY.md` is the review-friendly mirror for GitHub and for
+  diff-in-PR workflows. The implementation PR is responsible for
+  keeping them in sync; a short CI lint (text equality after stripping
+  markdown syntax) can enforce it
+- **Visual consistency with the app.** Inline the design tokens from
+  `src/styles/tokens.css` so the page uses the same dark palette
+  (`--color-bg`, `--color-text`, `--color-accent`). No backdrop blur —
+  this is a reading surface, not a glass overlay
+- **Print-friendly.** `@media print` resets to black-on-white with
+  serif body text. Legal teams print these
+- **Accessible.** Semantic HTML5 (`<main>`, `<section>`, `<h2>`),
+  WCAG-AA contrast, `lang="en"`, skip-link to main content, no
+  images that carry meaning, logical heading order
+- **No third-party fonts, no analytics on this page.** Fresh irony
+  aside: the privacy page itself must be the one page that emits zero
+  telemetry regardless of tier setting. The emitter gates on a URL
+  check for `/privacy` and no-ops
+- **Content-Security-Policy:** tight — `default-src 'self'; style-src
+  'self' 'unsafe-inline'; script-src 'none'`. No script execution on
+  the policy page
+
+### Routing
+
+`public/_redirects` currently ends with a SPA catch-all:
+
+```
+/docs/* /docs/:splat 200
+/* /index.html 200
+```
+
+Add an explicit rule *before* the catch-all so `/privacy` never falls
+into the SPA:
+
+```
+/privacy /privacy.html 200
+/docs/* /docs/:splat 200
+/* /index.html 200
+```
+
+Clean URL resolution on Pages should do this anyway, but belt and
+braces — this is a legal URL and we want it to resolve deterministically
+across every edge cache.
+
+### Discoverability — where the link appears
+
+The `/privacy` URL must be linked from, at minimum:
+
+1. **Help panel → Privacy section** (`src/ui/helpUI.ts`) — replaces
+   the current hardcoded paragraph with a summary + explicit "Read
+   the full privacy policy" link
+2. **Tools → Privacy panel** (`src/ui/privacyUI.ts`) — below the
+   tier radio group
+3. **First-launch modal on desktop** (if we go with Tier A off by
+   default on Tauri — see open question) — a "Privacy" link sits
+   next to the Accept / Skip buttons
+4. **App store listings** — populated in the `tauri.conf.json`
+   `publisher` / `homepage` / `privacyPolicy` fields so it flows into
+   the generated install metadata
+5. **Browse overlay footer** (new, small) — a slim `Privacy · Source ·
+   NOAA SOS` link row at the bottom of the overlay. This is the "not
+   buried" surface a casual visitor will notice without opening help
+6. **`public/site.webmanifest`** — the PWA manifest gains an
+   application `shortcuts` entry pointing to `/privacy`, so platforms
+   that surface manifest shortcuts (Android PWA install, Edge sidebar)
+   expose it as a first-class destination
+7. **`package.json` `homepage` field** and the repository README —
+   the policy link sits in the README's top metadata so GitHub,
+   npm-ecosystem tools, and scrapers all find it
+
+Items 1–3 are must-have before telemetry ships. Items 4–7 are
+required before any mobile-store submission.
+
+### Versioning
+
+- The policy page carries a visible "Last updated: YYYY-MM-DD" line.
+  The date updates only when the **substantive** content changes —
+  typo fixes do not bump it
+- Prior versions are preserved in git history; a linked "See previous
+  versions" anchor at the bottom of the page points at the GitHub
+  log for `docs/PRIVACY.md`
+- Material changes get an in-app notice: a small banner on first
+  launch after the update, dismissable, linking to the changed
+  sections. Implementation lives alongside the existing Tauri-updater
+  changelog dialog
+- The `session_start` event's `schema_version` blob doubles as a
+  proxy for "which policy version was in effect when this event was
+  collected" — useful for retrospective compliance work
+
+### What lands on this branch vs. the implementation PR
+
+This branch is plan + policy draft. Specifically:
+
+- ✅ `docs/ANALYTICS_IMPLEMENTATION_PLAN.md` — this doc
+- ✅ `docs/PRIVACY.md` — policy draft, ready for legal review
+
+The implementation PR (separate, follows plan approval) delivers:
+
+- `public/privacy.html` — the live page
+- `public/_redirects` — explicit `/privacy` rule
+- `public/site.webmanifest` — shortcut entry
+- In-app link wiring in `helpUI.ts`, `privacyUI.ts`, `browseUI.ts`
+- Emitter URL-gate so the policy page emits zero events
+- CI check enforcing `docs/PRIVACY.md` ↔ `public/privacy.html` parity
+
+### Needs before release
 
 - Legal review — especially sections 8 (children / classroom use) and
   9 (international users / GDPR-CCPA framing), which are intentionally
   loose in the draft
 - Populate contact details in sections 1 and 11
 - Confirm federal / NOAA-adjacent posture: if the app is distributed
-  through a `noaa.gov` property the Privacy Act and Paperwork Reduction
-  Act may apply and the policy wording has to reflect that. Infosec
+  through a `noaa.gov` property the Privacy Act and E-Government Act
+  may apply and the policy wording has to reflect that. Infosec
   conversation needed
-- Link the policy from the Help panel (a new link in the Privacy
-  section, replacing the hardcoded paragraph), from the Tools →
-  Privacy panel, and from the footer of the desktop app About dialog
+- Confirm App Store metadata values — the `privacyPolicy` field in
+  `tauri.conf.json` needs to point at a stable URL before any store
+  submission
 
 ---
 
