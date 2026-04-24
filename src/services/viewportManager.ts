@@ -33,6 +33,15 @@
 
 import { MapRenderer, setActiveMapRenderer } from './mapRenderer'
 import { logger } from '../utils/logger'
+import { emit } from '../analytics'
+
+/** Map the internal ViewLayout string into the bucket the analytics
+ * schema understands ('1globe' / '2globes' / '4globes'). */
+function layoutForEvent(layout: ViewLayout): '1globe' | '2globes' | '4globes' {
+  if (layout === '1') return '1globe'
+  if (layout === '4') return '4globes'
+  return '2globes'
+}
 
 /** Viewport layout identifier. */
 export type ViewLayout = '1' | '2h' | '2v' | '4'
@@ -126,7 +135,10 @@ export class ViewportManager {
    * Fires `onLayoutChange` after the panels have been added/removed
    * so callers can resize their parallel per-panel state arrays.
    */
-  setLayout(layout: ViewLayout): void {
+  setLayout(
+    layout: ViewLayout,
+    trigger: 'tools' | 'tour' | 'orbit' = 'tools',
+  ): void {
     if (!this.grid) {
       logger.warn('[ViewportManager] setLayout called before init')
       return
@@ -159,6 +171,12 @@ export class ViewportManager {
     this.refreshActiveRenderer()
     this.refreshPrimaryStyling()
     this.resizeAll()
+
+    emit({
+      event_type: 'layout_changed',
+      layout: layoutForEvent(layout),
+      trigger,
+    })
 
     if (previousCount !== targetCount) {
       this.callbacks.onLayoutChange?.(targetCount, previousCount)
@@ -213,6 +231,11 @@ export class ViewportManager {
     this.primaryIndex = index
     this.refreshActiveRenderer()
     this.refreshPrimaryStyling()
+    emit({
+      event_type: 'viewport_focus',
+      slot_index: String(index),
+      layout: layoutForEvent(this.layout),
+    })
     this.callbacks.onPrimaryChange?.(this.primaryIndex, previous)
   }
 

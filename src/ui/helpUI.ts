@@ -11,11 +11,12 @@
  *   - #help-trigger-browse — inside the browse overlay header
  */
 
-import type { GeneralFeedbackKind, GeneralFeedbackPayload } from '../types'
+import type { GeneralFeedbackKind, GeneralFeedbackPayload, FeedbackKind } from '../types'
 import { captureFullScreen } from '../services/screenshotService'
 import { submitGeneralFeedback } from '../services/generalFeedbackService'
 import { closeChat } from './chatUI'
 import { logger } from '../utils/logger'
+import { emit } from '../analytics'
 
 const IS_TAURI = !!(window as any).__TAURI__
 const MESSAGE_MAX = 2000
@@ -344,6 +345,14 @@ function wireFeedbackForm(): void {
       status.className = 'help-form-status'
 
       const result = await submitGeneralFeedback(payload)
+
+      emit({
+        event_type: 'feedback',
+        context: 'general',
+        kind: kind as FeedbackKind,
+        status: result.ok ? 'ok' : 'error',
+        rating: 0,
+      })
 
       if (result.ok) {
         form.reset()

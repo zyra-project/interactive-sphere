@@ -13,6 +13,17 @@ import {
 import { closeDownloadPanel } from './downloadUI'
 import { toggleHelp } from './helpUI'
 import { escapeHtml, escapeAttr } from './domUtils'
+import { emit } from '../analytics'
+
+/** Bucket a result count for the `browse_filter.result_count_bucket`
+ * schema — we want coarse buckets so the telemetry can't be used to
+ * fingerprint a specific search's uniqueness. */
+function bucketResultCount(n: number): '0' | '1-10' | '11-50' | '50+' {
+  if (n <= 0) return '0'
+  if (n <= 10) return '1-10'
+  if (n <= 50) return '11-50'
+  return '50+'
+}
 
 // Re-export so existing callers (chatUI, downloadUI, datasetLoader)
 // continue to import these from browseUI.
@@ -36,12 +47,20 @@ export interface BrowseCallbacks {
  * Render and display the dataset browse overlay with category filters,
  * search, sort controls, and dataset cards.
  */
-export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): void {
+export function showBrowseUI(
+  datasets: Dataset[],
+  callbacks: BrowseCallbacks,
+  source: 'tools' | 'orbit' | 'shortcut' = 'tools',
+): void {
   const overlay = document.getElementById('browse-overlay')
   if (!overlay) return
+  const wasHidden = overlay.classList.contains('hidden')
   overlay.classList.remove('hidden')
   document.body.classList.add('browse-open')
   closeDownloadPanel()
+  if (wasHidden) {
+    emit({ event_type: 'browse_opened', source })
+  }
 
   // Wire the in-header help trigger once (idempotent)
   const helpBtn = document.getElementById('help-trigger-browse')
@@ -128,6 +147,12 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
       btn.setAttribute('aria-pressed', 'true')
       renderSubChips()
       renderCards()
+      const cardCount = document.querySelectorAll('#browse-grid .browse-card').length
+      emit({
+        event_type: 'browse_filter',
+        category: activeCategory,
+        result_count_bucket: bucketResultCount(cardCount),
+      })
     })
   }
 

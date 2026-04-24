@@ -16,6 +16,7 @@ import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
 import { isAvailable as isAppleIntelligenceAvailable } from '../services/appleIntelligenceProvider'
 import { setLogLevel, logger } from '../utils/logger'
+import { emit } from '../analytics'
 
 // --- Constants ---
 const SESSION_STORAGE_KEY = 'sos-docent-chat'
@@ -1138,6 +1139,13 @@ async function submitInlineRating(messageId: string, rating: FeedbackRating, btn
       throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`)
     }
     btn.classList.add('chat-feedback-success')
+    emit({
+      event_type: 'feedback',
+      context: 'ai_response',
+      kind: rating === 'thumbs-up' ? 'thumbs_up' : 'thumbs_down',
+      status: 'ok',
+      rating: rating === 'thumbs-up' ? 1 : -1,
+    })
     callbacks?.announce('Feedback submitted')
     // Show optional expansion for richer feedback
     showFeedbackExpansion(messageId, rating, btn)
@@ -1149,6 +1157,13 @@ async function submitInlineRating(messageId: string, rating: FeedbackRating, btn
       b.disabled = false
       b.classList.remove('chat-feedback-disabled', 'chat-feedback-rated')
       b.removeAttribute('aria-pressed')
+    })
+    emit({
+      event_type: 'feedback',
+      context: 'ai_response',
+      kind: rating === 'thumbs-up' ? 'thumbs_up' : 'thumbs_down',
+      status: 'error',
+      rating: rating === 'thumbs-up' ? 1 : -1,
     })
     callbacks?.announce('Feedback failed — please try again')
   }

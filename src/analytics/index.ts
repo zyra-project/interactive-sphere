@@ -10,6 +10,8 @@ export {
   flushOnUnload,
   size,
   getSessionId,
+  getEventCount,
+  getSessionDurationMs,
   tierGate,
   applyTierChange,
   setTransport,
@@ -44,3 +46,5 @@ export {
   sanitizeMessage,
   normalizeStack,
 } from './errorCapture'
+
+export { initSession, emitSessionEnd } from './session'

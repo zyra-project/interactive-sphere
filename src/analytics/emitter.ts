@@ -71,6 +71,12 @@ interface EmitterState {
   /** `performance.now()` captured at emitter construction. All
    * `client_offset_ms` values are computed relative to this. */
   sessionStartPerf: number
+  /** Wall-clock `Date.now()` captured at emitter construction.
+   * `session_end.duration_ms` is derived from this. */
+  sessionStartWall: number
+  /** Monotonically-incremented on every accepted emit(). Reported on
+   * `session_end.event_count`. */
+  eventCount: number
   queue: TelemetryEvent[]
   flushTimer: ReturnType<typeof setTimeout> | null
   /** True after the server responds 410. Caller should stop
@@ -99,6 +105,8 @@ function createState(): EmitterState {
     sessionId: generateSessionId(),
     sessionStartPerf:
       typeof performance !== 'undefined' ? performance.now() : 0,
+    sessionStartWall: Date.now(),
+    eventCount: 0,
     queue: [],
     flushTimer: null,
     cooledDown: false,
@@ -131,11 +139,23 @@ export function emit(event: TelemetryEvent): void {
     client_offset_ms: currentOffset(),
   }
   state.queue.push(stamped)
+  state.eventCount++
   if (state.queue.length >= BATCH_SIZE) {
     flush()
   } else {
     scheduleFlush()
   }
+}
+
+/** Total events accepted since app start. Used by `session_end`. */
+export function getEventCount(): number {
+  return state.eventCount
+}
+
+/** Wall-clock milliseconds since the session began. Used by
+ * `session_end.duration_ms`. */
+export function getSessionDurationMs(): number {
+  return Math.max(0, Date.now() - state.sessionStartWall)
 }
 
 /** True if events of the given type are allowed under the current
