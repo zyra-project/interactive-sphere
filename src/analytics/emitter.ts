@@ -28,6 +28,23 @@ export const BATCH_INTERVAL_MS = 5_000
 
 const TIER_B_SET: ReadonlySet<string> = new Set(TIER_B_EVENT_TYPES)
 
+/** Pathnames where the emitter must stay silent regardless of tier.
+ * The privacy policy page itself is a legal deliverable that must
+ * emit zero events — fresh irony aside, a "we don't track you" page
+ * that fires a session_start ping would be embarrassing. */
+const SILENCED_PATHS: ReadonlySet<string> = new Set([
+  '/privacy',
+  '/privacy.html',
+])
+
+/** True when the current page is a no-emit surface. Reads
+ * `location.pathname` defensively so non-DOM environments (early
+ * Node, isolated unit tests) don't blow up. */
+function isSilencedPath(): boolean {
+  if (typeof location === 'undefined') return false
+  return SILENCED_PATHS.has(location.pathname)
+}
+
 interface EmitterState {
   sessionId: string
   /** `performance.now()` captured at emitter construction. All
@@ -61,6 +78,7 @@ export function getSessionId(): string {
  * off, the whole body is dead code and tree-shakes out. */
 export function emit(event: TelemetryEvent): void {
   if (!TELEMETRY_BUILD_ENABLED) return
+  if (isSilencedPath()) return
   if (!tierGate(event.event_type)) return
   const stamped: TelemetryEvent = {
     ...event,

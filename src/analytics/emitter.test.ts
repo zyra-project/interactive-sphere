@@ -166,6 +166,53 @@ describe('emitter — client_offset_ms stamping', () => {
   })
 })
 
+describe('emitter — privacy page URL gate', () => {
+  const originalPath = window.location.pathname
+
+  beforeEach(() => {
+    localStorage.clear()
+    resetForTests()
+    setTier('research') // most permissive — proves the gate runs before the tier check
+  })
+
+  afterEach(() => {
+    window.history.pushState(null, '', originalPath)
+  })
+
+  it('no-ops on /privacy regardless of tier', () => {
+    window.history.pushState(null, '', '/privacy')
+    emit(layerLoaded())
+    emit(dwell())
+    emit(feedback())
+    expect(size()).toBe(0)
+  })
+
+  it('no-ops on /privacy.html regardless of tier', () => {
+    window.history.pushState(null, '', '/privacy.html')
+    emit(layerLoaded())
+    emit(dwell())
+    expect(size()).toBe(0)
+  })
+
+  it('emits normally on other paths', () => {
+    window.history.pushState(null, '', '/')
+    emit(layerLoaded())
+    expect(size()).toBe(1)
+
+    resetForTests()
+    setTier('research')
+    window.history.pushState(null, '', '/some/deep/route')
+    emit(layerLoaded())
+    expect(size()).toBe(1)
+  })
+
+  it('does not match unrelated paths that contain "privacy" as a substring', () => {
+    window.history.pushState(null, '', '/not-privacy')
+    emit(layerLoaded())
+    expect(size()).toBe(1)
+  })
+})
+
 describe('emitter — session ID', () => {
   beforeEach(() => {
     localStorage.clear()
