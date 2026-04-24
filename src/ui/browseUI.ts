@@ -210,7 +210,14 @@ export function showBrowseUI(
   let searchEmitTimer: ReturnType<typeof setTimeout> | null = null
   const scheduleSearchEmit = (raw: string) => {
     if (searchEmitTimer != null) clearTimeout(searchEmitTimer)
-    if (raw.length === 0) return
+    // Empty string isn't a search — bump the token to invalidate any
+    // in-flight hash from a prior keystroke. Without this, typing
+    // "h" then immediately backspacing could still emit the "h"
+    // event once its async hash settles.
+    if (raw.length === 0) {
+      searchEmitToken++
+      return
+    }
     const token = ++searchEmitToken
     searchEmitTimer = setTimeout(() => {
       searchEmitTimer = null

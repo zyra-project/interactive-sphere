@@ -1268,11 +1268,14 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
 
     // Telemetry: emit `vr_session_ended` once per session, before
     // any disposal happens so frame counters / timestamps still
-    // exist. Median FPS = total frames / wall-clock duration; null
-    // when the session was too short for a meaningful sample.
+    // exist. mean_fps = total frames / wall-clock duration (a true
+    // arithmetic mean, not a median — the name reflects what we
+    // compute). Null when the session was too short for a
+    // meaningful sample. For per-window medians, the perf_sampler
+    // emits fps_median_10s during the session.
     if (sessionTelemetry.sessionStartedAtWall > 0) {
       const durationMs = Math.max(0, Date.now() - sessionTelemetry.sessionStartedAtWall)
-      const medianFps = durationMs >= 1000
+      const meanFps = durationMs >= 1000
         ? Math.round((sessionTelemetry.frames * 1000) / durationMs)
         : null
       emit({
@@ -1280,7 +1283,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
         mode,
         exit_reason: sessionTelemetry.exitReason,
         duration_ms: durationMs,
-        median_fps: medianFps,
+        mean_fps: meanFps,
         // Snapshot of the loaded dataset at end-of-session. May
         // differ from `vr_session_started.layer_id` when the user
         // loaded something different while in VR.

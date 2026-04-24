@@ -905,7 +905,11 @@ export interface VrSessionEndedEvent extends TelemetryEventBase {
   mode: VrMode
   exit_reason: VrExitReason
   duration_ms: number
-  median_fps: number | null
+  /** End-of-session arithmetic mean of FPS over the whole session
+   * (`total frames / wall-clock duration`). For per-window medians
+   * during the session, see `perf_sample.fps_median_10s`. Null when
+   * the session was too short for a meaningful sample (< 1 s). */
+  mean_fps: number | null
   /** Dataset loaded in the primary panel at the moment the session
    * ended. May differ from `vr_session_started.layer_id` if the
    * user loaded a different dataset mid-session. Null when the

@@ -233,7 +233,7 @@ without storing free text. The full text never leaves the client.
 | Event | Tier | `blobs[]` | `doubles[]` |
 |---|---|---|---|
 | `vr_session_started` | A | `event_type`, `mode` (`ar`/`vr`), `device_class` (`quest`/`quest-pro`/`vision-pro`/`pcvr`/`unknown`), `layer_id` (nullable — dataset loaded at entry) | `entry_load_ms` |
-| `vr_session_ended` | A | `event_type`, `mode`, `exit_reason` (`user`/`error`/`session_lost`), `layer_id` (nullable — dataset loaded at exit; may differ from `vr_session_started.layer_id` when the user loaded something different mid-session) | `duration_ms`, `median_fps` (nullable) |
+| `vr_session_ended` | A | `event_type`, `mode`, `exit_reason` (`user`/`error`/`session_lost`), `layer_id` (nullable — dataset loaded at exit; may differ from `vr_session_started.layer_id` when the user loaded something different mid-session) | `duration_ms`, `mean_fps` (nullable; arithmetic mean over the whole session) |
 | `vr_placement` | A | `event_type`, `layer_id` (nullable), `persisted` (`true`/`false`) | — |
 | `vr_interaction` | B | `event_type`, `gesture` (`drag`/`pinch`/`thumbstick_zoom`/`flick_spin`/`hud_tap`) | `magnitude` (rotation deg or zoom factor) |
 
@@ -721,7 +721,7 @@ its cost.
 | Where on Earth do users look while studying X dataset? | `camera_settled` × current `layer_id` (from a session-scoped join) |
 | Which tours hold attention, which get abandoned? | `tour_started` / `tour_task_fired` / `tour_ended.outcome` |
 | Which Orbit answers are wrong? | `orbit_correction` — thumbs-down + rephrase + abandon |
-| How often does VR mode work end-to-end? | `vr_session_started` → `vr_session_ended.exit_reason` + `median_fps` |
+| How often does VR mode work end-to-end? | `vr_session_started` → `vr_session_ended.exit_reason` + `mean_fps` |
 | Is the app fast enough on real hardware? | `perf_sample.fps_median_10s` bucketed by `webgl_renderer_hash` |
 | Which categories of dataset do users search for that we don't have? | `browse_search.query_hash` cross-referenced with `browse_filter.result_count_bucket='0'` |
 

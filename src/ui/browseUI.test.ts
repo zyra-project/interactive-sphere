@@ -333,6 +333,20 @@ describe('showBrowseUI — browse_search emit', () => {
     await flushMicrotasks()
     expect(__peek().filter((e) => e.event_type === 'browse_search')).toHaveLength(0)
   })
+
+  it('backspacing to empty cancels an in-flight async hash', async () => {
+    showBrowseUI([makeDataset()], makeCallbacks())
+    // Fire a keystroke, advance the debounce so the async hash starts,
+    // then clear the box before the hash resolves. The pending emit
+    // must be invalidated by the empty-string token bump — not just
+    // the timer cancellation, which only handles the still-debouncing
+    // case.
+    fireSearch('h')
+    await vi.advanceTimersByTimeAsync(500)
+    fireSearch('')
+    await flushMicrotasks()
+    expect(__peek().filter((e) => e.event_type === 'browse_search')).toHaveLength(0)
+  })
 })
 
 // ---------------------------------------------------------------------------

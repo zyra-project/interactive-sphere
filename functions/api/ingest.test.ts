@@ -272,10 +272,10 @@ describe('toDataPoint', () => {
       mode: 'vr',
       exit_reason: 'user',
       duration_ms: 5000,
-      median_fps: null,
+      mean_fps: null,
     } as unknown as TelemetryEvent
     const dp = toDataPoint(event, 'sess', 'production', 'US', false)
-    // null median_fps should not appear anywhere
+    // null mean_fps should not appear anywhere
     expect(dp.doubles!.includes(NaN)).toBe(false)
     expect(dp.blobs!.includes('null')).toBe(false)
   })

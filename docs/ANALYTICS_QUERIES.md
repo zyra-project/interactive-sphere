@@ -252,7 +252,7 @@ Position | Started | Ended
 `blob7` | `mode` | `mode`
 `double1` | `client_offset_ms` | `client_offset_ms`
 `double2` | `entry_load_ms` | `duration_ms`
-`double3` | — | `median_fps` (nullable)
+`double3` | — | `mean_fps` (nullable; arithmetic mean over the whole session)
 
 ### `vr_placement` (Tier A)
 
@@ -505,7 +505,11 @@ GROUP BY hour, gpu_bucket
 ORDER BY hour
 ```
 
-### VR session funnel + median fps
+### VR session funnel + mean FPS at session end
+
+> `vr_session_ended.mean_fps` is the arithmetic mean of FPS over
+> the whole session. Use it for end-of-session comparisons; for
+> in-session medians, query `perf_sample` instead.
 
 ```sql
 SELECT
@@ -513,7 +517,7 @@ SELECT
   blob7 AS mode,
   count() AS sessions,
   avg(double2) AS avg_entry_load_ms,
-  quantile(0.50)(double3) AS median_fps_at_exit
+  quantile(0.50)(double3) AS p50_session_mean_fps
 FROM terraviz_events
 WHERE blob1 = 'vr_session_ended'
   AND blob2 = 'production'

@@ -91,6 +91,34 @@ describe('privacyUI — open / close', () => {
     closePrivacyUI()
     expect(focusSpy).toHaveBeenCalled()
   })
+
+  it('traps Tab + Shift-Tab focus inside the dialog', () => {
+    openPrivacyUI()
+    const panel = document.getElementById('privacy-ui-panel')!
+    // Use the same query the trap uses, but skip the offsetParent
+    // filter — happy-dom doesn't compute layout, so the production
+    // filter would zero everything out in this environment. The
+    // trap's own selector is what we exercise here.
+    // Same selector the trap uses, so first/last match its view.
+    const focusables = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    )
+    expect(focusables.length).toBeGreaterThan(1)
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+
+    // Tab from the last focusable should cycle back to the first.
+    last.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    expect(document.activeElement).toBe(first)
+
+    // Shift-Tab from the first should cycle to the last.
+    first.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }))
+    expect(document.activeElement).toBe(last)
+  })
 })
 
 describe('privacyUI — tier selection', () => {

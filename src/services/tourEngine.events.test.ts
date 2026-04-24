@@ -119,6 +119,21 @@ describe('TourEngine — telemetry events', () => {
     }
   })
 
+  it('reports task_dwell_ms = 0 for the first task', async () => {
+    // Without the explicit `index === 0` guard, the first task's
+    // dwell would be the small interval between play() setting
+    // taskStartedAt and the run loop reaching task 0 — typically a
+    // few ms in tests, more under load. Dashboards expect 0.
+    const engine = new TourEngine(SAMPLE_TOUR, noopCallbacks(), { meta: META })
+    await engine.play()
+    const taskFires = __peek().filter((e) => e.event_type === 'tour_task_fired')
+    const firstTask = taskFires.find(
+      (e) => e.event_type === 'tour_task_fired' && e.task_index === 0,
+    )
+    if (!firstTask || firstTask.event_type !== 'tour_task_fired') throw new Error('unreachable')
+    expect(firstTask.task_dwell_ms).toBe(0)
+  })
+
   it('emits tour_paused with reason=user on pause()', async () => {
     const engine = new TourEngine(SAMPLE_TOUR, noopCallbacks(), { meta: META })
     void engine.play()

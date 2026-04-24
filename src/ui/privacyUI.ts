@@ -165,10 +165,53 @@ function wireEvents(): void {
       if (ev.key === 'Escape') {
         ev.stopPropagation()
         closePrivacyUI()
+      } else if (ev.key === 'Tab') {
+        trapFocus(ev)
       }
     },
     { signal },
   )
+}
+
+/** Return focusable descendants of the modal panel, skipping
+ * disabled controls. Doesn't bother filtering by computed style —
+ * the modal is binary open/closed and contains no nested hidden
+ * subtrees, so every matching element in the panel is visible
+ * whenever the panel is. */
+function getFocusableInPanel(): HTMLElement[] {
+  const panel = document.getElementById('privacy-ui-panel')
+  if (!panel) return []
+  return Array.from(
+    panel.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  )
+}
+
+/** Cycle Tab / Shift-Tab between the first and last focusable
+ * elements inside the modal so keyboard focus can't escape to the
+ * underlying page while the dialog is open. Required by
+ * `aria-modal="true"`. */
+function trapFocus(ev: KeyboardEvent): void {
+  const focusables = getFocusableInPanel()
+  if (focusables.length === 0) return
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  const active = document.activeElement as HTMLElement | null
+  const panel = document.getElementById('privacy-ui-panel')
+  const withinPanel = !!(active && panel?.contains(active))
+
+  if (ev.shiftKey) {
+    if (!withinPanel || active === first) {
+      ev.preventDefault()
+      last.focus()
+    }
+  } else {
+    if (!withinPanel || active === last) {
+      ev.preventDefault()
+      first.focus()
+    }
+  }
 }
 
 /** Persist the new tier, apply buffer consequences, announce. */

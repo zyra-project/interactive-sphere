@@ -426,17 +426,26 @@ export class TourEngine {
 
   /** Emit `tour_task_fired` for the task we're about to run, with
    * the dwell time spent on the previous task. The first task's
-   * `task_dwell_ms` is 0 by definition. Resets the per-task clock. */
+   * `task_dwell_ms` is 0 by definition — the user hasn't dwelled
+   * on anything yet — and dashboards rely on that invariant. Note
+   * `startedEmitted` flips to true *before* the run loop reaches
+   * task 0, so we can't gate on it; key off `task_index === 0`
+   * instead. Resets the per-task clock. */
   private emitTaskFired(task: TourTaskDef): void {
     const now = Date.now()
-    const dwell = this.taskStartedAt > 0 ? Math.max(0, now - this.taskStartedAt) : 0
+    const isFirstTask = this.index === 0
+    const dwell = isFirstTask
+      ? 0
+      : this.taskStartedAt > 0
+        ? Math.max(0, now - this.taskStartedAt)
+        : 0
     this.taskStartedAt = now
     emit({
       event_type: 'tour_task_fired',
       tour_id: this.meta?.tourId ?? 'unknown',
       task_type: identifyTask(task)[0],
       task_index: this.index,
-      task_dwell_ms: this.startedEmitted ? dwell : 0,
+      task_dwell_ms: dwell,
     })
   }
 

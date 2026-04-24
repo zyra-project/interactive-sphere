@@ -1478,8 +1478,8 @@ class InteractiveSphere {
         this.announce('Exited VR')
         // Resume the 2D perf sampler now that VR has handed the
         // GPU back. The sampler stayed paused for the duration of
-        // the immersive session — VR has its own median-FPS
-        // metric on `vr_session_ended.median_fps`.
+        // the immersive session — VR has its own end-of-session
+        // FPS metric on `vr_session_ended.mean_fps`.
         if (TELEMETRY_BUILD_ENABLED) resumeForVrExit()
       },
     })

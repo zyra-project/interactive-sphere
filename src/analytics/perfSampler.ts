@@ -4,9 +4,9 @@
  * Measures inter-frame deltas via `requestAnimationFrame`, computes
  * a rolling 10-second median FPS + 95th-percentile frame time, and
  * emits one `perf_sample` event per active minute. VR/AR sessions
- * report their own median FPS via `vr_session_ended.median_fps` —
- * this sampler pauses while VR is running so the two surfaces don't
- * double-count.
+ * report their own end-of-session arithmetic mean via
+ * `vr_session_ended.mean_fps` — this sampler pauses while VR is
+ * running so the two surfaces don't double-count.
  *
  * Tab-hidden discipline: the sampler stops sampling and stops the
  * minute timer while `document.hidden` is true. rAF is naturally
@@ -109,8 +109,8 @@ export function stopPerfSampler(): void {
 }
 
 /** Pause sampling because a VR/AR session has taken over the GPU.
- * The plan: VR has its own median-FPS metric on
- * `vr_session_ended.median_fps`; this sampler stays out of the way
+ * The plan: VR has its own end-of-session FPS metric on
+ * `vr_session_ended.mean_fps`; this sampler stays out of the way
  * so the two metrics describe disjoint surfaces. Resumed via
  * `resumeForVrExit()`. */
 export function pauseForVrEntry(): void {
