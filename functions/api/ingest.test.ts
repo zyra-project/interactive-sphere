@@ -6,6 +6,8 @@ import {
   toDataPoint,
   environmentOf,
   countryOf,
+  isInternalRequest,
+  CF_ACCESS_HEADERS,
   __resetRateLimitState,
   MAX_BODY_BYTES,
   RATE_LIMIT_PER_IP,
@@ -179,26 +181,72 @@ describe('countryOf', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
+// isInternalRequest
+// ─────────────────────────────────────────────────────────────────────
+
+function fakeRequest(headers: Record<string, string>): Request {
+  const h = new Headers(headers)
+  return { headers: h } as unknown as Request
+}
+
+describe('isInternalRequest', () => {
+  it('returns true when Cf-Access-Authenticated-User-Email is present', () => {
+    const req = fakeRequest({
+      'Cf-Access-Authenticated-User-Email': 'alice@example.com',
+    })
+    expect(isInternalRequest(req)).toBe(true)
+  })
+
+  it('returns true when Cf-Access-Jwt-Assertion is present', () => {
+    const req = fakeRequest({
+      'Cf-Access-Jwt-Assertion': 'eyJhbGciOiJSUzI1NiJ9.payload.signature',
+    })
+    expect(isInternalRequest(req)).toBe(true)
+  })
+
+  it('returns false when no Cloudflare Access header is present', () => {
+    const req = fakeRequest({})
+    expect(isInternalRequest(req)).toBe(false)
+  })
+
+  it('returns false when the header is present but empty', () => {
+    const req = fakeRequest({ 'Cf-Access-Authenticated-User-Email': '   ' })
+    expect(isInternalRequest(req)).toBe(false)
+  })
+
+  it('exposes both header names in CF_ACCESS_HEADERS', () => {
+    expect(CF_ACCESS_HEADERS).toContain('cf-access-authenticated-user-email')
+    expect(CF_ACCESS_HEADERS).toContain('cf-access-jwt-assertion')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
 // toDataPoint
 // ─────────────────────────────────────────────────────────────────────
 
 describe('toDataPoint', () => {
-  it('always puts event_type / environment / country in blobs 1–3', () => {
-    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'US')
+  it('always puts event_type / environment / country / internal in blobs 1–4', () => {
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'US', false)
     expect(dp.blobs![0]).toBe('session_start')
     expect(dp.blobs![1]).toBe('production')
     expect(dp.blobs![2]).toBe('US')
+    expect(dp.blobs![3]).toBe('false')
+  })
+
+  it('encodes internal=true in blob 4', () => {
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'US', true)
+    expect(dp.blobs![3]).toBe('true')
   })
 
   it('puts the session_id in indexes', () => {
-    const dp = toDataPoint(sessionStart(), 'abc-123', 'production', 'US')
+    const dp = toDataPoint(sessionStart(), 'abc-123', 'production', 'US', false)
     expect(dp.indexes).toEqual(['abc-123'])
   })
 
   it('separates string and number fields into blobs and doubles', () => {
-    const dp = toDataPoint(layerLoaded('X'), 'sess', 'production', 'DE')
-    // Strings: layer_id, layer_source, slot_index, trigger (plus event_type + environment + country)
-    expect(dp.blobs!.length).toBeGreaterThanOrEqual(7)
+    const dp = toDataPoint(layerLoaded('X'), 'sess', 'production', 'DE', false)
+    // Strings: layer_id, layer_source, slot_index, trigger (plus event_type + environment + country + internal)
+    expect(dp.blobs!.length).toBeGreaterThanOrEqual(8)
     expect(dp.blobs!).toContain('X')
     expect(dp.blobs!).toContain('network')
     // Numbers: load_ms (and possibly client_offset_ms if stamped, though
@@ -206,13 +254,16 @@ describe('toDataPoint', () => {
     expect(dp.doubles!).toContain(1234)
   })
 
-  it('serializes booleans as "true" / "false" strings into blobs', () => {
+  it('serializes event-level booleans as "true" / "false" strings into blobs', () => {
     const event = {
       ...sessionStart(),
       resumed: true,
     }
-    const dp = toDataPoint(event, 'sess', 'production', 'US')
-    expect(dp.blobs!).toContain('true')
+    const dp = toDataPoint(event, 'sess', 'production', 'US', false)
+    // Both the server-stamped internal blob and the event's resumed
+    // field should appear; the event field lands at blob 5+ after
+    // alphabetical ordering.
+    expect(dp.blobs!.filter((b) => b === 'true').length).toBeGreaterThanOrEqual(1)
   })
 
   it('skips null and undefined fields entirely', () => {
@@ -223,25 +274,26 @@ describe('toDataPoint', () => {
       duration_ms: 5000,
       median_fps: null,
     } as unknown as TelemetryEvent
-    const dp = toDataPoint(event, 'sess', 'production', 'US')
+    const dp = toDataPoint(event, 'sess', 'production', 'US', false)
     // null median_fps should not appear anywhere
     expect(dp.doubles!.includes(NaN)).toBe(false)
     expect(dp.blobs!.includes('null')).toBe(false)
   })
 
-  it('orders per-event string fields alphabetically after the three server blobs', () => {
+  it('orders per-event string fields alphabetically after the four server blobs', () => {
     // app_version comes before the other alphabetically-ordered
-    // fields, but sits in blob4 because blobs 1–3 are the server-
-    // stamped event_type / environment / country.
-    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'JP')
+    // fields, but sits in blob5 because blobs 1–4 are the server-
+    // stamped event_type / environment / country / internal.
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'JP', false)
     expect(dp.blobs![0]).toBe('session_start')
     expect(dp.blobs![1]).toBe('production')
     expect(dp.blobs![2]).toBe('JP')
-    expect(dp.blobs![3]).toBe('0.2.3') // app_version
+    expect(dp.blobs![3]).toBe('false')
+    expect(dp.blobs![4]).toBe('0.2.3') // app_version
   })
 
   it('accepts XX for unknown country', () => {
-    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'XX')
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'XX', false)
     expect(dp.blobs![2]).toBe('XX')
   })
 })
@@ -322,6 +374,46 @@ describe('onRequestPost — happy path', () => {
     })
     await onRequestPost(ctx)
     expect(ae.datapoints[0].blobs![2]).toBe('XX')
+  })
+
+  it('stamps internal=true on every datapoint when Cloudflare Access header is present', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([sessionStart(), layerLoaded('A')]),
+      ip: '10.0.0.10',
+      headers: { 'Cf-Access-Authenticated-User-Email': 'alice@example.com' },
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    await onRequestPost(ctx)
+    expect(ae.datapoints).toHaveLength(2)
+    for (const dp of ae.datapoints) {
+      expect(dp.blobs![3]).toBe('true')
+    }
+  })
+
+  it('defaults internal=false when no Access header is present', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([sessionStart()]),
+      ip: '10.0.0.11',
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    await onRequestPost(ctx)
+    expect(ae.datapoints[0].blobs![3]).toBe('false')
+  })
+
+  it('stamps internal=true when the JWT assertion header is present', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([sessionStart()]),
+      ip: '10.0.0.12',
+      headers: {
+        'Cf-Access-Jwt-Assertion': 'eyJhbGciOiJSUzI1NiJ9.payload.signature',
+      },
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    await onRequestPost(ctx)
+    expect(ae.datapoints[0].blobs![3]).toBe('true')
   })
 
   it('accepts a request without the ANALYTICS binding and returns 204', async () => {

@@ -480,8 +480,9 @@ where individual sessions start to stand out.
 | `viewport_class` | 5 | `window.innerWidth` bucket | Same as today — xs/sm/md/lg/xl |
 | `aspect_class` | 6 | `innerWidth / innerHeight` bucket | Portrait phone / landscape tablet / ultrawide desktop signal for 2D layout decisions |
 | `screen_class` | 5 | `screen.width` bucket | What physical displays do users own (vs the browser viewport). Drives "is anyone actually on 4K?" |
-| `build_channel` | 3 | Vite `__BUILD_CHANNEL__` define | `'public'` / `'internal'` / `'canary'`. Lets internal staff builds be filtered out of public dashboards without IP-based allowlists |
+| `build_channel` | 3 | Vite `__BUILD_CHANNEL__` define | `'public'` / `'internal'` / `'canary'`. Marks bundles that are *meaningfully different* — an internal-only build with dev tools, a canary build staged to 5% of users. Not the right signal for "Alice testing on prod today" (that's `internal` below) |
 | `country` | ~250 | Server-side `CF-IPCountry` on `/api/ingest` | Country-level heatmaps and latency segmentation. The raw IP is read only by the rate limiter; `country` is the only derived signal written to storage |
+| `internal` | 2 | Server-side presence of Cloudflare Access identity headers | Per-request staff classification. Identity-based (works for WFH / mobile / VPN) and requires no CI/CD plumbing — just a Cloudflare Access policy that optionally attaches an SSO identity to staff requests. The email is read only to check presence; never stored |
 
 Total realistic combinations across these fields: ~30–40 common
 clusters. At 100k sessions/month, no single tuple identifies an
@@ -535,6 +536,24 @@ Rationale for *not* expanding the set:
   all use the same pattern); ~250 buckets each shared by millions
   of people is not identifying except in a handful of micro-states.
   Clients cannot influence this field.
+- **Internal-traffic tagging.** The Pages Function stamps a fourth
+  server-owned blob — `internal` (`'true'` / `'false'`) — based
+  on whether the request carries a Cloudflare Access identity
+  header. When staff sign in through Cloudflare Access (a Zero
+  Trust SSO layer configured in the dashboard), the edge attaches
+  `Cf-Access-Authenticated-User-Email` / `Cf-Access-Jwt-Assertion`
+  to subsequent requests from their browser. The ingest function
+  checks **only for the presence** of either header and derives
+  the boolean. The authenticated email is never read into
+  analytics storage — only the `internal` flag leaves the function.
+  This lets staff dogfood sessions be filtered out of public
+  dashboards with zero CI/CD overhead (no separate internal
+  build) and zero IP-based maintenance (works for WFH, mobile,
+  VPN — identity-based, not network-based). Mixed-mode Access
+  policies (public traffic passes through, staff traffic gets the
+  header) are the standard configuration. Blob layout is now
+  `blobs[0..3] = event_type / environment / country / internal`;
+  event-specific fields start at `blobs[4]` in alphabetical order.
 
 ### Client — `src/analytics/`
 

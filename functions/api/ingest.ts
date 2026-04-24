@@ -211,6 +211,31 @@ export function countryOf(cfCountry: string | null): string {
   return trimmed
 }
 
+/** Names of the headers Cloudflare Access attaches to a signed-in
+ * staff request. Exported so tests can reference them by name
+ * instead of hard-coding strings. `cf-access-authenticated-user-
+ * email` is the plaintext identity header, `cf-access-jwt-
+ * assertion` is the signed JWT — either indicates a verified
+ * staff session at the edge. Cloudflare strips these headers
+ * from unauthenticated requests, so presence-alone is safe. */
+export const CF_ACCESS_HEADERS = [
+  'cf-access-authenticated-user-email',
+  'cf-access-jwt-assertion',
+] as const
+
+/** True when the request carries a Cloudflare Access identity.
+ * Intentionally presence-only — we never read the email value
+ * into analytics storage. The boolean derivation runs in the
+ * Pages Function where the headers are trusted (Cloudflare's
+ * edge guarantees unforgeable delivery). */
+export function isInternalRequest(request: Request): boolean {
+  for (const name of CF_ACCESS_HEADERS) {
+    const value = request.headers.get(name)
+    if (value && value.trim().length > 0) return true
+  }
+  return false
+}
+
 // --- Kill switch ---
 
 async function isKillSwitchOn(env: Env): Promise<boolean> {
@@ -234,6 +259,8 @@ async function isKillSwitchOn(env: Env): Promise<boolean> {
  *   blob1 = `event_type`
  *   blob2 = `environment`
  *   blob3 = `country` (2-letter ISO, or `'XX'` when unknown)
+ *   blob4 = `internal` (`'true'` / `'false'` — Cloudflare Access
+ *           staff identity present on the request)
  * Subsequent blobs and doubles are the event's own string / number
  * fields in alphabetical order. Query patterns that rely on blob
  * positions live in docs/ANALYTICS_QUERIES.md. */
@@ -242,8 +269,14 @@ export function toDataPoint(
   sessionId: string,
   environment: string,
   country: string,
+  internal: boolean,
 ): AnalyticsEngineDataPoint {
-  const blobs: string[] = [event.event_type, environment, country]
+  const blobs: string[] = [
+    event.event_type,
+    environment,
+    country,
+    internal ? 'true' : 'false',
+  ]
   const doubles: number[] = []
 
   const record = event as unknown as Record<string, unknown>
@@ -363,11 +396,20 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   // header is the only geo-derived signal we store. Absent / Tor
   // requests map to `'XX'` so dashboards don't show a synthetic value.
   const country = countryOf(request.headers.get('CF-IPCountry'))
+  // Presence-only check for Cloudflare Access identity. When an
+  // Access policy sits in front of /api/ingest (mixed-mode — public
+  // traffic passes through, staff traffic carries the SSO header),
+  // this derives a `true`/`false` tag without reading the email.
+  // The email and JWT are trusted only because Cloudflare's edge
+  // strips forged versions before they hit the function.
+  const internal = isInternalRequest(request)
   const ae = context.env.ANALYTICS
   if (ae) {
     for (const event of body.events) {
       try {
-        ae.writeDataPoint(toDataPoint(event, body.session_id, environment, country))
+        ae.writeDataPoint(
+          toDataPoint(event, body.session_id, environment, country, internal),
+        )
       } catch {
         // One bad datapoint should not fail the whole batch.
       }

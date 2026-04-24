@@ -63,7 +63,12 @@ Small, anonymous events about the health of the app:
   written to analytics storage), and which build of the app you
   ran (public, internal-staff, or canary — so internal dogfood
   sessions can be excluded from public dashboards without us
-  needing to know your network address)
+  needing to know your network address), and a `true`/`false`
+  flag indicating whether the request carried a valid internal-
+  staff single-sign-on header (set by Cloudflare's edge when a
+  Zyra-Project staff member is signed in via our internal auth
+  layer; the authenticated email itself is **never** stored —
+  only the boolean)
 - That a data layer was loaded — which layer, whether it came from the
   network or a local cache, how long it took
 - That a data layer was unloaded — which layer, how long you viewed it
