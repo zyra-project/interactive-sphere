@@ -82,6 +82,14 @@ export interface ViewportManagerCallbacks {
    * "the current dataset" (info panel, playback controls, URL, etc.).
    */
   onPrimaryChange?(newIndex: number, oldIndex: number): void
+  /**
+   * Telemetry-only — return the dataset id currently loaded in
+   * the given slot (or null when the panel shows the default
+   * Earth). Forwarded into each MapRenderer at init so
+   * `camera_settled` events can carry `layer_id`. Optional;
+   * absent → MapRenderer reports null layer_id.
+   */
+  getLayerIdForSlot?(slot: number): string | null
 }
 
 /** One panel in the grid. */
@@ -398,7 +406,10 @@ export class ViewportManager {
 
     const renderer = new MapRenderer()
     const canvasId = index === 0 ? 'globe-canvas' : `globe-canvas-${index}`
-    renderer.init(container, { canvasId, slotIndex: index })
+    const getLayerId = this.callbacks.getLayerIdForSlot
+      ? () => this.callbacks.getLayerIdForSlot!(index)
+      : undefined
+    renderer.init(container, { canvasId, slotIndex: index, getLayerId })
 
     // Primary-indicator pill: shown on every panel, numbered 1-based.
     // Click on a non-primary pill promotes that panel to primary. The

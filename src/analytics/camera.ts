@@ -35,6 +35,9 @@ interface CameraSettledParams {
   zoom: number
   bearing: number
   pitch: number
+  /** Optional dataset id loaded in the slot at the moment the
+   * camera settled. Forwarded verbatim to the event. */
+  layer_id?: string | null
 }
 
 // Rolling-window sample buffer. Timestamps only; entries older than
@@ -93,6 +96,7 @@ export function emitCameraSettled(params: CameraSettledParams): boolean {
     zoom: round(params.zoom, 2),
     bearing: Math.round(params.bearing),
     pitch: Math.round(params.pitch),
+    layer_id: params.layer_id ?? null,
   })
   return true
 }

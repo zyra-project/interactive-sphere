@@ -171,7 +171,7 @@ Heatmaps of "where did people look on Earth" + "what did they click."
 
 | Event | Tier | `blobs[]` | `doubles[]` | Notes |
 |---|---|---|---|---|
-| `camera_settled` | A | `event_type`, `slot_index`, `projection` (`globe`/`mercator`/`vr`/`ar`) | `center_lat`, `center_lon`, `zoom`, `bearing`, `pitch` | Fire on MapLibre `moveend` for the 2D globe and on VR/AR interaction settle (end of drag / pinch / flick-inertia / thumbstick release) for the immersive view. One event per settle; no mid-flight sampling. In VR/AR, `center_lat`/`center_lon` is the lat/lon of the point on the globe surface under the user's forward gaze ray; `zoom` is derived from the view-to-globe scale; `bearing`/`pitch` describe the head-to-globe orientation. The `projection` field separates 2D vs immersive signal when aggregating |
+| `camera_settled` | A | `event_type`, `slot_index`, `projection` (`globe`/`mercator`/`vr`/`ar`), `layer_id` (nullable) | `center_lat`, `center_lon`, `zoom`, `bearing`, `pitch` | Fire on MapLibre `moveend` for the 2D globe and on VR/AR interaction settle (end of drag / pinch / flick-inertia / thumbstick release) for the immersive view. One event per settle; no mid-flight sampling. In VR/AR, `center_lat`/`center_lon` is the lat/lon of the point on the globe surface under the user's forward gaze ray; `zoom` is derived from the view-to-globe scale; `bearing`/`pitch` describe the head-to-globe orientation. The `projection` field separates 2D vs immersive signal when aggregating; `layer_id` (null when the panel shows the default Earth) lets dashboards split heatmaps by dataset without a session-scoped join against `layer_loaded` |
 | `map_click` | A | `event_type`, `slot_index`, `hit_kind` (`surface`/`marker`/`feature`/`region`), `hit_id` (marker id, nullable) | `lat`, `lon`, `zoom` | Captures attention foci. `lat`/`lon` are rounded to 3 decimals (~110 m) by the client to cap cardinality |
 | `viewport_focus` | A | `event_type`, `slot_index`, `layout` (`1globe`/`2globes`/`4globes`) | — | When the user promotes a panel in multi-globe layout. Cheap focus signal |
 
@@ -218,8 +218,8 @@ without storing free text. The full text never leaves the client.
 
 | Event | Tier | `blobs[]` | `doubles[]` |
 |---|---|---|---|
-| `vr_session_started` | A | `event_type`, `mode` (`ar`/`vr`), `device_class` (`quest`/`quest-pro`/`vision-pro`/`pcvr`/`unknown`) | `entry_load_ms` |
-| `vr_session_ended` | A | `event_type`, `mode`, `exit_reason` (`user`/`error`/`session_lost`) | `duration_ms`, `median_fps` (nullable) |
+| `vr_session_started` | A | `event_type`, `mode` (`ar`/`vr`), `device_class` (`quest`/`quest-pro`/`vision-pro`/`pcvr`/`unknown`), `layer_id` (nullable — dataset loaded at entry) | `entry_load_ms` |
+| `vr_session_ended` | A | `event_type`, `mode`, `exit_reason` (`user`/`error`/`session_lost`), `layer_id` (nullable — dataset loaded at exit; may differ from `vr_session_started.layer_id` when the user loaded something different mid-session) | `duration_ms`, `median_fps` (nullable) |
 | `vr_placement` | A | `event_type`, `layer_id` (nullable), `persisted` (`true`/`false`) | — |
 | `vr_interaction` | B | `event_type`, `gesture` (`drag`/`pinch`/`thumbstick_zoom`/`flick_spin`/`hud_tap`) | `magnitude` (rotation deg or zoom factor) |
 

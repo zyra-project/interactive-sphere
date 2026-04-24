@@ -762,6 +762,11 @@ export interface CameraSettledEvent extends TelemetryEventBase {
   zoom: number
   bearing: number
   pitch: number
+  /** Dataset currently loaded in the slot at the moment the camera
+   * settled. Null when the panel is showing the default Earth.
+   * Lets dashboards split spatial-attention heatmaps by dataset
+   * without a session-scoped join against `layer_loaded`. */
+  layer_id?: string | null
 }
 
 export interface MapClickEvent extends TelemetryEventBase {
@@ -855,6 +860,11 @@ export interface VrSessionStartedEvent extends TelemetryEventBase {
   mode: VrMode
   device_class: string
   entry_load_ms: number
+  /** Dataset loaded in the primary panel at the moment the user
+   * entered VR. Null when entering with the default Earth view.
+   * Snapshot — a load that happens later in the session is
+   * captured separately by the next `layer_loaded` event. */
+  layer_id?: string | null
 }
 
 export interface VrSessionEndedEvent extends TelemetryEventBase {
@@ -863,6 +873,11 @@ export interface VrSessionEndedEvent extends TelemetryEventBase {
   exit_reason: VrExitReason
   duration_ms: number
   median_fps: number | null
+  /** Dataset loaded in the primary panel at the moment the session
+   * ended. May differ from `vr_session_started.layer_id` if the
+   * user loaded a different dataset mid-session. Null when the
+   * session ended on the default Earth view. */
+  layer_id?: string | null
 }
 
 export interface VrPlacementEvent extends TelemetryEventBase {

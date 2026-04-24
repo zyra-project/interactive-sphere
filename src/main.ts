@@ -204,6 +204,7 @@ class InteractiveSphere {
       this.viewports.init(mapGrid, initialLayout, {
         onLayoutChange: (newCount, oldCount) => this.onViewportLayoutChange(newCount, oldCount),
         onPrimaryChange: (newIdx, oldIdx) => this.onViewportPrimaryChange(newIdx, oldIdx),
+        getLayerIdForSlot: (slot) => this.panelStates[slot]?.dataset?.id ?? null,
       })
       // Parallel per-panel dataset state, one entry per viewport.
       this.panelStates = Array.from({ length: this.viewports.getPanelCount() }, createPanelState)

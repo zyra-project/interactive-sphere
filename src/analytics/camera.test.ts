@@ -68,6 +68,40 @@ describe('emitCameraSettled — payload shape', () => {
     expect(e.zoom).toBe(4.12)
     expect(e.bearing).toBe(46)
     expect(e.pitch).toBe(12)
+    // layer_id defaults to null when caller doesn't supply one.
+    expect(e.layer_id).toBeNull()
+  })
+
+  it('forwards a supplied layer_id verbatim', () => {
+    emitCameraSettled({
+      slot_index: '0',
+      projection: 'globe',
+      center_lat: 0,
+      center_lon: 0,
+      zoom: 1,
+      bearing: 0,
+      pitch: 0,
+      layer_id: 'INTERNAL_SOS_42',
+    })
+    const ev = __peek()[0]
+    if (ev.event_type !== 'camera_settled') throw new Error('unreachable')
+    expect(ev.layer_id).toBe('INTERNAL_SOS_42')
+  })
+
+  it('coerces an explicit undefined layer_id to null', () => {
+    emitCameraSettled({
+      slot_index: '0',
+      projection: 'vr',
+      center_lat: 0,
+      center_lon: 0,
+      zoom: 1,
+      bearing: 0,
+      pitch: 0,
+      layer_id: undefined,
+    })
+    const ev = __peek()[0]
+    if (ev.event_type !== 'camera_settled') throw new Error('unreachable')
+    expect(ev.layer_id).toBeNull()
   })
 
   it.each(['globe', 'mercator', 'vr', 'ar'] as const)(

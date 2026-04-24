@@ -319,6 +319,13 @@ export class MapRenderer implements GlobeRenderer {
    * can separate primary vs secondary-panel activity. Defaults to 0
    * for single-viewport flows. */
   private slotIndex: number = 0
+  /** Telemetry-only — returns the dataset id currently loaded in
+   * this renderer's slot. Forwarded into `camera_settled` so
+   * dashboards can split spatial-attention heatmaps by dataset
+   * without a session-scoped join. Null when no dataset is loaded
+   * (panel shows the default Earth). Caller-provided so MapRenderer
+   * doesn't need to know about main.ts's panel-state model. */
+  private getLayerId: (() => string | null) | null = null
 
   /**
    * Initialize the MapLibre map inside the given container element.
@@ -334,10 +341,18 @@ export class MapRenderer implements GlobeRenderer {
    * Defaults to `'globe-canvas'` for single-viewport backward compat;
    * ViewportManager passes unique IDs per panel to avoid DOM collisions.
    */
-  init(container: HTMLElement, options?: { canvasId?: string; slotIndex?: number }): void {
+  init(
+    container: HTMLElement,
+    options?: {
+      canvasId?: string
+      slotIndex?: number
+      getLayerId?: () => string | null
+    },
+  ): void {
     this.container = container
     this.canvasId = options?.canvasId ?? 'globe-canvas'
     this.slotIndex = options?.slotIndex ?? 0
+    this.getLayerId = options?.getLayerId ?? null
 
     // Inject dark popup styles (idempotent — skips if already present)
     if (!document.getElementById('sos-popup-style')) {
@@ -405,6 +420,7 @@ export class MapRenderer implements GlobeRenderer {
         zoom: this.map.getZoom(),
         bearing: this.map.getBearing(),
         pitch: this.map.getPitch(),
+        layer_id: this.getLayerId?.() ?? null,
       })
     })
 

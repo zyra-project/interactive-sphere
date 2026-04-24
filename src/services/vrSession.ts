@@ -486,7 +486,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
 
   // The session is bound; emit `vr_session_started` now so
   // entry_load_ms reflects the user-perceived "tap → in-VR" latency
-  // including the Three.js chunk load + setSession round-trip.
+  // including the Three.js chunk load + setSession round-trip. The
+  // layer_id snapshot is the dataset loaded at entry time; if the
+  // user loads a different dataset mid-session the
+  // `vr_session_ended` event captures the post-change value.
   sessionTelemetry.sessionStartedAtWall = Date.now()
   emit({
     event_type: 'vr_session_started',
@@ -495,6 +498,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       typeof navigator !== 'undefined' ? navigator.userAgent : '',
     ),
     entry_load_ms: Math.max(0, sessionTelemetry.sessionStartedAtWall - entryStartedAtWall),
+    layer_id: ctx.getDatasetId(),
   })
 
   // Lazy-load the controller-model addon alongside Three.js. The
@@ -837,6 +841,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       emitCameraSettled({
         slot_index: '0',
         projection: vrProjection,
+        layer_id: ctx.getDatasetId(),
         ...state,
       })
     },
@@ -1276,6 +1281,10 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
         exit_reason: sessionTelemetry.exitReason,
         duration_ms: durationMs,
         median_fps: medianFps,
+        // Snapshot of the loaded dataset at end-of-session. May
+        // differ from `vr_session_started.layer_id` when the user
+        // loaded something different while in VR.
+        layer_id: ctx.getDatasetId(),
       })
     }
 
