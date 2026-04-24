@@ -52,6 +52,10 @@ interface CaptureState {
   originalConsoleWarn: typeof console.warn | null
   windowErrorHandler: EventListener | null
   rejectionHandler: EventListener | null
+  /** Tauri event-listener detacher returned by `listen()`. Set on
+   * desktop / mobile when the panic-hook listener installs; null on
+   * web and on environments where the lazy import fails. */
+  tauriUnlisten: (() => void) | null
   /** Per-signature total occurrence count. */
   sigCounts: Map<string, number>
   /** Emissions so far, keyed by `${tier}|${sig}` where tier is 'A' or 'B'. */
@@ -68,6 +72,7 @@ function createState(): CaptureState {
     originalConsoleWarn: null,
     windowErrorHandler: null,
     rejectionHandler: null,
+    tauriUnlisten: null,
     sigCounts: new Map(),
     sigEmissions: new Map(),
     tierATotal: 0,
@@ -136,6 +141,60 @@ export function install(): void {
       reportError('console', stringifyArgs(args), 'console_warn')
     }
   }
+
+  // Tauri native panic listener. Lazy-imported behind the existing
+  // __TAURI__ sentinel so web builds never touch
+  // @tauri-apps/api/event. The Rust side (src-tauri/src/lib.rs)
+  // installs a panic hook that emits `native_panic` payloads;
+  // forwarding them through reportError gives them a proper
+  // `category=native_panic` + `source=tauri_panic` envelope and
+  // runs them through the same sanitizer + dedupe pipeline.
+  attachTauriPanicListener()
+}
+
+function attachTauriPanicListener(): void {
+  const win = typeof window !== 'undefined'
+    ? (window as unknown as { __TAURI__?: unknown })
+    : null
+  if (!win || !win.__TAURI__) return
+  void import('@tauri-apps/api/event').then((mod) => {
+    // Re-check inside the async callback — uninstall() may have run
+    // between import start and resolution, in which case attaching
+    // would leak a listener.
+    if (!state.installed) return
+    void mod
+      .listen<NativePanicPayload>('native_panic', (event) => {
+        const payload = event.payload
+        const message = payload?.location
+          ? `${payload.message} (${payload.location})`
+          : payload?.message ?? '<unknown native panic>'
+        reportError('native_panic', message, 'tauri_panic')
+      })
+      .then((unlisten) => {
+        // Stash for uninstall(). If install was torn down between
+        // listen() resolving and us getting here, fire the unlisten
+        // right away.
+        if (!state.installed) {
+          unlisten()
+          return
+        }
+        state.tauriUnlisten = unlisten
+      })
+      .catch(() => {
+        // Tauri event API not available (web build masquerading as
+        // Tauri, plugin missing) — silently no-op.
+      })
+  }).catch(() => {
+    // Lazy import failed (extremely locked-down environment) —
+    // silently no-op. The Rust default hook still logs to stderr
+    // / Tauri log, so panics aren't silent at the OS level.
+  })
+}
+
+/** Shape mirrors `NativePanicPayload` in src-tauri/src/lib.rs. */
+interface NativePanicPayload {
+  message: string
+  location: string | null
 }
 
 /** Remove global handlers and restore the original console. */
@@ -157,6 +216,10 @@ export function uninstall(): void {
   state.originalConsoleError = null
   state.originalConsoleWarn = null
   state.windowErrorHandler = null
+  if (state.tauriUnlisten) {
+    state.tauriUnlisten()
+    state.tauriUnlisten = null
+  }
   state.rejectionHandler = null
 }
 

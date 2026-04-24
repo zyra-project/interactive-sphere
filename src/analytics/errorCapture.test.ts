@@ -470,3 +470,94 @@ describe('install / uninstall', () => {
     expect(console.error).toBe(before)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Tauri native panic listener (Commit 10)
+// ---------------------------------------------------------------------------
+
+// Stub @tauri-apps/api/event so install() can attach a listener
+// without needing the real Tauri runtime. Captured `listenCallback`
+// lets the test invoke the listener as if Rust had emitted a
+// `native_panic` event.
+let listenCallback: ((event: { payload: unknown }) => void) | null = null
+let unlistenSpy = vi.fn()
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async (_eventName: string, cb: (event: { payload: unknown }) => void) => {
+    listenCallback = cb
+    return unlistenSpy
+  }),
+}))
+
+describe('tauri native_panic listener', () => {
+  beforeEach(() => {
+    resetAll()
+    listenCallback = null
+    unlistenSpy = vi.fn()
+    // Pretend we're in Tauri so attachTauriPanicListener proceeds.
+    ;(window as unknown as { __TAURI__?: unknown }).__TAURI__ = { ipc: {} }
+  })
+
+  afterEach(() => {
+    uninstall()
+    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__
+  })
+
+  it('emits an error event with category=native_panic + source=tauri_panic when a panic event arrives', async () => {
+    install()
+    // Yield to the lazy import + listen() attach.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(listenCallback).not.toBeNull()
+
+    listenCallback!({
+      payload: {
+        message: 'forced panic for testing',
+        location: 'src-tauri/src/lib.rs:42',
+      },
+    })
+
+    const drained = flush()
+    const errs = drained.filter(
+      (e): e is TelemetryErrorEvent => e.event_type === 'error',
+    )
+    expect(errs).toHaveLength(1)
+    expect(errs[0].category).toBe('native_panic')
+    expect(errs[0].source).toBe('tauri_panic')
+    expect(errs[0].message_class.length).toBeGreaterThan(0)
+  })
+
+  it('handles a panic payload with no location field', async () => {
+    install()
+    await new Promise((r) => setTimeout(r, 0))
+    listenCallback!({ payload: { message: 'panic without location', location: null } })
+
+    const errs = flush().filter((e) => e.event_type === 'error')
+    expect(errs).toHaveLength(1)
+  })
+
+  it('falls back to a placeholder message when the payload is malformed', async () => {
+    install()
+    await new Promise((r) => setTimeout(r, 0))
+    listenCallback!({ payload: null })
+
+    const errs = flush().filter((e) => e.event_type === 'error')
+    expect(errs).toHaveLength(1)
+    if (errs[0].event_type !== 'error') throw new Error('unreachable')
+    expect(errs[0].message_class).toContain('unknown native panic')
+  })
+
+  it('does not attach a listener when __TAURI__ is absent', async () => {
+    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__
+    install()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(listenCallback).toBeNull()
+  })
+
+  it('uninstall fires the unlisten detacher', async () => {
+    install()
+    await new Promise((r) => setTimeout(r, 0))
+    // Yield once more so the .then() that stashes the unlistener runs.
+    await new Promise((r) => setTimeout(r, 0))
+    uninstall()
+    expect(unlistenSpy).toHaveBeenCalledTimes(1)
+  })
+})
