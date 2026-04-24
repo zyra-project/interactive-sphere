@@ -80,29 +80,43 @@ export function startPerfSampler(): void {
         () => {
           if (document.visibilityState === 'hidden') {
             stopFrameLoop()
+            stopMinuteTimer()
           } else if (state.running && !state.externallyPaused) {
             startFrameLoop()
+            startMinuteTimer()
           }
         },
         { signal: state.visibilityAbort.signal },
       )
     }
+    // Tab is hidden right now — register the listener and bail.
+    // The visibility handler will start both the rAF loop and the
+    // minute timer when the tab becomes visible. Without bailing
+    // here, the minute timer would tick during hidden periods,
+    // muddying the "active minute" definition.
     if (document.visibilityState === 'hidden') return
   }
   startFrameLoop()
-  if (!state.emitTimer && typeof setInterval !== 'undefined') {
-    state.emitTimer = setInterval(emitSample, EMIT_INTERVAL_MS)
-  }
+  startMinuteTimer()
+}
+
+function startMinuteTimer(): void {
+  if (state.emitTimer) return
+  if (typeof setInterval === 'undefined') return
+  state.emitTimer = setInterval(emitSample, EMIT_INTERVAL_MS)
+}
+
+function stopMinuteTimer(): void {
+  if (state.emitTimer === null) return
+  clearInterval(state.emitTimer)
+  state.emitTimer = null
 }
 
 /** Stop sampling. Drops any pending samples without emitting. */
 export function stopPerfSampler(): void {
   state.running = false
   stopFrameLoop()
-  if (state.emitTimer !== null) {
-    clearInterval(state.emitTimer)
-    state.emitTimer = null
-  }
+  stopMinuteTimer()
   state.visibilityAbort?.abort()
   state.visibilityAbort = null
   state.samples = []

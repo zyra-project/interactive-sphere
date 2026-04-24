@@ -16,23 +16,33 @@
 
 const HASH_LENGTH_HEX = 12
 
+const PLACEHOLDER = '0'.repeat(HASH_LENGTH_HEX)
+
 /**
  * Hash a free-text string for analytics. Returns 12 hex characters
  * of the lowercase-trimmed SHA-256.
  *
- * Falls back to a 12-char placeholder of zeros if `crypto.subtle` is
- * unavailable (e.g. insecure context, ancient browser). The fallback
- * is intentional: we'd rather log "unknown" than crash the call site.
+ * Returns the zero placeholder (`'000000000000'`) for any failure
+ * mode — `crypto.subtle` missing (insecure context, ancient browser),
+ * the digest call rejecting (restricted contexts, browser quirks),
+ * or `TextEncoder` throwing. Callers commonly chain
+ * `.then(emit)` without a `.catch`, so the contract is "always
+ * resolves, never rejects" — we'd rather emit "unknown" than crash
+ * the call site or surface an unhandled-rejection warning.
  */
 export async function hashQuery(input: string): Promise<string> {
-  const normalized = input.trim().toLowerCase()
   if (typeof crypto === 'undefined' || !crypto.subtle) {
-    return '0'.repeat(HASH_LENGTH_HEX)
+    return PLACEHOLDER
   }
-  const bytes = new TextEncoder().encode(normalized)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  const hex = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-  return hex.slice(0, HASH_LENGTH_HEX)
+  try {
+    const normalized = input.trim().toLowerCase()
+    const bytes = new TextEncoder().encode(normalized)
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    const hex = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+    return hex.slice(0, HASH_LENGTH_HEX)
+  } catch {
+    return PLACEHOLDER
+  }
 }

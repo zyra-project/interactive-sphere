@@ -108,4 +108,58 @@ describe('perfSampler — lifecycle', () => {
       visSpy.mockRestore()
     }
   })
+
+  it('starts the minute timer once the tab becomes visible (start-while-hidden path)', () => {
+    vi.useFakeTimers()
+    const visSpy = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockReturnValue('hidden')
+    try {
+      startPerfSampler()
+      // Hidden — emit timer must not be ticking, so a synthetic
+      // batch of samples + timer advance yields no emission via
+      // the interval (only the explicit __emitSampleNowForTests
+      // path can drive an emit while hidden).
+      for (let i = 0; i < 15; i++) __feedFrameForTests(16)
+      vi.advanceTimersByTime(60_000)
+      expect(__peek().filter((e) => e.event_type === 'perf_sample')).toHaveLength(0)
+
+      // Tab returns — visibility handler should start both the rAF
+      // loop and the minute timer.
+      visSpy.mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      // Feed enough samples so the next interval tick emits.
+      for (let i = 0; i < 15; i++) __feedFrameForTests(16)
+      vi.advanceTimersByTime(60_000)
+      expect(
+        __peek().filter((e) => e.event_type === 'perf_sample').length,
+      ).toBeGreaterThanOrEqual(1)
+    } finally {
+      visSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the minute timer while the tab is hidden', () => {
+    vi.useFakeTimers()
+    const visSpy = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockReturnValue('visible')
+    try {
+      startPerfSampler()
+      for (let i = 0; i < 15; i++) __feedFrameForTests(16)
+      // Tab hides — the visibility handler must clear the minute
+      // timer so a hidden tab can't drift the "active minute"
+      // semantics.
+      visSpy.mockReturnValue('hidden')
+      document.dispatchEvent(new Event('visibilitychange'))
+      const before = __peek().filter((e) => e.event_type === 'perf_sample').length
+      vi.advanceTimersByTime(60_000)
+      const after = __peek().filter((e) => e.event_type === 'perf_sample').length
+      expect(after).toBe(before)
+    } finally {
+      visSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
 })

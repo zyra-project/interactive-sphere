@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { escapeHtml, escapeAttr, showBrowseUI, hideBrowseUI, type BrowseCallbacks } from './browseUI'
+import { escapeHtml, escapeAttr, showBrowseUI, hideBrowseUI, notifyBrowseOpened, type BrowseCallbacks } from './browseUI'
 import type { Dataset } from '../types'
 import { resetForTests, __peek } from '../analytics/emitter'
 import { setTier } from '../analytics/config'
@@ -238,6 +238,43 @@ describe('showBrowseUI', () => {
 
     const searchEl = document.getElementById('browse-search') as HTMLInputElement
     expect(searchEl.placeholder).toBe('Search 3 datasets\u2026')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// notifyBrowseOpened \u2014 re-open path helper
+// ---------------------------------------------------------------------------
+describe('notifyBrowseOpened', () => {
+  beforeEach(() => {
+    setupBrowseDOM()
+    localStorage.clear()
+    resetForTests()
+    setTier('research')
+  })
+
+  it('emits browse_opened with the supplied source', () => {
+    notifyBrowseOpened('orbit')
+    const evs = __peek().filter((e) => e.event_type === 'browse_opened')
+    expect(evs).toHaveLength(1)
+    const e = evs[0]
+    if (e.event_type !== 'browse_opened') throw new Error('unreachable')
+    expect(e.source).toBe('orbit')
+  })
+
+  it('starts a dwell handle and is idempotent if already running', () => {
+    // First call starts the handle. Second call is a no-op for
+    // the handle but still emits browse_opened \u2014 the caller is
+    // responsible for gating on real transitions.
+    notifyBrowseOpened('tools')
+    notifyBrowseOpened('tools')
+    const dwells = __peek().filter((e) => e.event_type === 'dwell')
+    // No dwell event yet (we haven't stopped). The handle should
+    // still be the same one \u2014 dwell on stop should fire exactly
+    // once when we eventually call hideBrowseUI.
+    expect(dwells).toHaveLength(0)
+    hideBrowseUI()
+    const dwellsAfter = __peek().filter((e) => e.event_type === 'dwell')
+    expect(dwellsAfter).toHaveLength(1)
   })
 })
 

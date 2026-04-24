@@ -59,6 +59,26 @@ export interface BrowseCallbacks {
  * Render and display the dataset browse overlay with category filters,
  * search, sort controls, and dataset cards.
  */
+/**
+ * Notify analytics that the browse overlay just transitioned from
+ * hidden / collapsed to visible. Caller is responsible for deciding
+ * whether the transition actually happened — this just emits the
+ * event and (re)starts the dwell handle if it isn't already running.
+ *
+ * Exported so the main app's "re-open from collapsed" path
+ * (`openBrowsePanel` in main.ts, which skips `showBrowseUI` to
+ * avoid duplicating event listeners) can still book-keep telemetry
+ * cleanly.
+ */
+export function notifyBrowseOpened(
+  source: 'tools' | 'orbit' | 'shortcut' = 'tools',
+): void {
+  emit({ event_type: 'browse_opened', source })
+  if (!browseDwellHandle) {
+    browseDwellHandle = startDwell('browse')
+  }
+}
+
 export function showBrowseUI(
   datasets: Dataset[],
   callbacks: BrowseCallbacks,
@@ -71,10 +91,7 @@ export function showBrowseUI(
   document.body.classList.add('browse-open')
   closeDownloadPanel()
   if (wasHidden) {
-    emit({ event_type: 'browse_opened', source })
-    if (!browseDwellHandle) {
-      browseDwellHandle = startDwell('browse')
-    }
+    notifyBrowseOpened(source)
   }
 
   // Wire the in-header help trigger once (idempotent)

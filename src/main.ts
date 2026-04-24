@@ -19,7 +19,7 @@ import { logger } from './utils/logger'
 import type { AppState, VideoTextureHandle, TourFile, Dataset } from './types'
 
 // Extracted modules
-import { showBrowseUI, hideBrowseUI, collapseBrowseUI } from './ui/browseUI'
+import { showBrowseUI, hideBrowseUI, collapseBrowseUI, notifyBrowseOpened } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
 import { updateMapControlsPosition } from './ui/mapControlsUI'
 import { initToolsMenu, syncToolsMenuState, syncToolsMenuLayout, pulseBrowseButton } from './ui/toolsMenuUI'
@@ -1120,9 +1120,19 @@ class InteractiveSphere {
     // Already rendered — either collapsed or fully visible. Remove
     // the collapsed class either way and ensure `browse-open` is
     // set so other UI can react.
+    const wasCollapsed = overlay.classList.contains('collapsed')
+    const wasHidden = overlay.classList.contains('hidden')
     overlay.classList.remove('collapsed')
     overlay.classList.remove('hidden')
     document.body.classList.add('browse-open')
+    // Re-opening from collapsed (or hidden, in pathological cases
+    // where showBrowseUI ran but the overlay got hidden externally)
+    // is conceptually a fresh open — emit browse_opened and
+    // restart the dwell handle. The collapseBrowseUI path stops
+    // dwell, so this pairs with that.
+    if (wasCollapsed || wasHidden) {
+      notifyBrowseOpened('tools')
+    }
   }
 
   /** Detect WebGL support. If unavailable, display troubleshooting instructions and return false. */
