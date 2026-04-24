@@ -1322,6 +1322,7 @@ class InteractiveSphere {
       // the panel-slot version with the current primary index.
       getDatasetTexture: () => getPanelTexture(this.viewports.getPrimaryIndex()),
       getDatasetTitle: () => this.appState.currentDataset?.title ?? null,
+      getDatasetId: () => this.appState.currentDataset?.id ?? null,
       getDatasetTimeLabel: () => {
         // Compute the label fresh from video.currentTime every call.
         //

@@ -65,6 +65,11 @@ export interface VrSessionContext {
   getDatasetTexture(): VrDatasetTexture | null
   /** Dataset title for the HUD (primary panel). null/empty → "No dataset loaded". */
   getDatasetTitle(): string | null
+  /** Dataset id for the primary panel — used by analytics events
+   * fired from inside VR (e.g. `vr_placement.layer_id`). Null when
+   * no dataset is loaded. Telemetry-only: the HUD itself uses
+   * `getDatasetTitle()` for human display. */
+  getDatasetId(): string | null
   /**
    * Formatted time-label string for the current primary dataset —
    * mirrors the 2D `#time-label` overlay (e.g. `"2023-06-15"` or
@@ -940,19 +945,14 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
         }
         emit({
           event_type: 'vr_placement',
-          // layer_id intentionally null — VR placement is about
-          // anchoring the globe to a real surface, not about the
-          // dataset shown on it. The currently-loaded layer is
-          // already covered by the most-recent layer_loaded event
-          // in the same session, joinable via session_id.
-          layer_id: null,
+          layer_id: ctx.getDatasetId(),
           persisted,
         })
       }).catch(err => {
         logger.warn('[VR] Failed to create placement anchor:', err)
         emit({
           event_type: 'vr_placement',
-          layer_id: null,
+          layer_id: ctx.getDatasetId(),
           persisted: false,
         })
       })
