@@ -28,6 +28,12 @@ import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from '
 import { initHelpUI, setActiveDataset as setHelpActiveDataset } from './ui/helpUI'
 import { showDisclosureBannerIfNeeded } from './ui/disclosureBanner'
 import {
+  createFetchTransport,
+  setTransport,
+  TELEMETRY_BUILD_ENABLED,
+  TELEMETRY_CONSOLE_MODE,
+} from './analytics'
+import {
   createPlaybackState, startPlaybackLoop, stopPlaybackLoop,
   togglePlayPause, rewind, fastForward, stepFrame, onScrub,
   updatePlayButton, toggleCaptions, resetPlaybackState, initPlaybackPositioning,
@@ -201,6 +207,12 @@ class InteractiveSphere {
       // First-session privacy disclosure. No-ops on every launch
       // after the user dismisses it.
       showDisclosureBannerIfNeeded()
+      // Telemetry transport — skipped entirely when the compile-time
+      // flag is off (telemetry-free builds) and when console mode
+      // is on (dev convenience: events log locally, no POSTs).
+      if (TELEMETRY_BUILD_ENABLED && !TELEMETRY_CONSOLE_MODE) {
+        setTransport(createFetchTransport())
+      }
       logger.info('[App] Using MapLibre renderer (layout: %s)', initialLayout)
 
       // Wire up lat/lng display (bind to primary; secondary panels don't

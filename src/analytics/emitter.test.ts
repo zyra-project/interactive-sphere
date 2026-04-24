@@ -3,15 +3,22 @@ import type { LayerLoadedEvent, DwellEvent, FeedbackEvent } from '../types'
 import {
   emit,
   flush,
+  flushOnUnload,
+  setTransport,
   size,
   getSessionId,
   tierGate,
   applyTierChange,
   resetForTests,
   __peek,
+  __awaitInflight,
+  __transportState,
   BATCH_SIZE,
   BATCH_INTERVAL_MS,
+  BACKOFF_STEPS_MS,
 } from './emitter'
+import type { Transport } from './transport'
+import { PERSISTED_QUEUE_KEY, __setPersistOverrideForTests } from './transport'
 import { setTier } from './config'
 
 // --- Fixtures ---
@@ -331,5 +338,286 @@ describe('emitter — session ID', () => {
     for (const v of values) {
       expect(v).not.toContain(getSessionId())
     }
+  })
+})
+
+// ---------------------------------------------------------------
+// Commit 6 — transport dispatch, backoff, cooldown, pagehide
+// ---------------------------------------------------------------
+
+type SendMock = ReturnType<
+  typeof vi.fn<(sessionId: string, events: readonly unknown[]) => void>
+>
+type BeaconMock = ReturnType<
+  typeof vi.fn<(sessionId: string, events: readonly unknown[]) => boolean>
+>
+
+type MockTransport = Transport & {
+  sendMock: SendMock
+  beaconMock: BeaconMock
+  sendResults: Array<{
+    status: number | null
+    ok: boolean
+    retryable: boolean
+    permanent: boolean
+  }>
+}
+
+function makeTransport(): MockTransport {
+  const sendMock: SendMock = vi.fn()
+  const beaconMock: BeaconMock = vi.fn(() => true)
+  const t: MockTransport = {
+    sendMock,
+    beaconMock,
+    sendResults: [],
+    endpoint: '/mock/ingest',
+    async send(sessionId, events) {
+      sendMock(sessionId, events)
+      const next = t.sendResults.shift() ?? {
+        status: 204, ok: true, retryable: false, permanent: false,
+      }
+      return next
+    },
+    sendBeacon(sessionId, events) {
+      return beaconMock(sessionId, events)
+    },
+  }
+  return t
+}
+
+describe('emitter — transport dispatch', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    resetForTests()
+    setTier('essential')
+    __setPersistOverrideForTests(false)
+  })
+
+  afterEach(() => {
+    __setPersistOverrideForTests(null)
+    resetForTests()
+  })
+
+  it('hands off flushed events to the transport', async () => {
+    const t = makeTransport()
+    setTransport(t)
+    emit(layerLoaded('A'))
+    emit(layerLoaded('B'))
+    flush()
+    await __awaitInflight()
+    expect(t.sendMock).toHaveBeenCalledTimes(1)
+    const [, sent] = t.sendMock.mock.calls[0]
+    expect(sent).toHaveLength(2)
+  })
+
+  it('clears the queue on 204 and resets the backoff index', async () => {
+    const t = makeTransport()
+    setTransport(t)
+    emit(layerLoaded('A'))
+    flush()
+    await __awaitInflight()
+    expect(size()).toBe(0)
+    expect(__transportState().backoffIndex).toBe(0)
+    expect(__transportState().cooledDown).toBe(false)
+  })
+
+  it('cools down the session on 410 and drops the batch', async () => {
+    const t = makeTransport()
+    t.sendResults.push({ status: 410, ok: false, retryable: false, permanent: true })
+    setTransport(t)
+    emit(layerLoaded('A'))
+    emit(layerLoaded('B'))
+    flush()
+    await __awaitInflight()
+
+    expect(__transportState().cooledDown).toBe(true)
+    // Subsequent flushes are no-ops — no more POSTs happen.
+    emit(layerLoaded('C'))
+    flush()
+    await __awaitInflight()
+    expect(t.sendMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-queues and steps backoff on a 503', async () => {
+    const t = makeTransport()
+    t.sendResults.push({ status: 503, ok: false, retryable: true, permanent: false })
+    setTransport(t)
+
+    emit(layerLoaded('A'))
+    emit(layerLoaded('B'))
+    flush()
+    await __awaitInflight()
+
+    expect(size()).toBe(2)
+    expect(__transportState().backoffIndex).toBe(1)
+    expect(__transportState().nextSendAllowedAt).toBeGreaterThan(Date.now())
+  })
+
+  it('re-queues on a network error (null status)', async () => {
+    const t = makeTransport()
+    t.sendResults.push({ status: null, ok: false, retryable: true, permanent: false })
+    setTransport(t)
+
+    emit(layerLoaded('A'))
+    flush()
+    await __awaitInflight()
+
+    expect(size()).toBe(1)
+    expect(__transportState().backoffIndex).toBe(1)
+  })
+
+  it('escalates backoff on repeated 5xx and clamps at the last step', async () => {
+    // Use a monotonically-advancing fake clock so the pre-flight
+    // backoff gate lets every retry through.
+    let now = 1_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      const t = makeTransport()
+      const attempts = BACKOFF_STEPS_MS.length + 3
+      for (let i = 0; i < attempts; i++) {
+        t.sendResults.push({
+          status: 503, ok: false, retryable: true, permanent: false,
+        })
+      }
+      setTransport(t)
+
+      for (let i = 0; i < attempts; i++) {
+        emit(layerLoaded(`ID_${i}`))
+        flush()
+        await __awaitInflight()
+        // Advance past the just-set backoff window so the NEXT flush
+        // is allowed through the pre-flight gate.
+        now = __transportState().nextSendAllowedAt + 1
+      }
+
+      expect(__transportState().backoffIndex).toBe(BACKOFF_STEPS_MS.length - 1)
+      expect(t.sendMock.mock.calls.length).toBeGreaterThanOrEqual(
+        BACKOFF_STEPS_MS.length,
+      )
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('drops the batch on a non-retryable 4xx without cooldown', async () => {
+    const t = makeTransport()
+    t.sendResults.push({ status: 400, ok: false, retryable: false, permanent: false })
+    setTransport(t)
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    emit(layerLoaded('A'))
+    flush()
+    await __awaitInflight()
+    warnSpy.mockRestore()
+
+    expect(size()).toBe(0)
+    expect(__transportState().cooledDown).toBe(false)
+    expect(__transportState().backoffIndex).toBe(0)
+  })
+
+  it('re-queues without calling the server when within a backoff window', async () => {
+    const t = makeTransport()
+    // Step 1: a 503 pushes us into backoff.
+    t.sendResults.push({ status: 503, ok: false, retryable: true, permanent: false })
+    setTransport(t)
+    emit(layerLoaded('A'))
+    flush()
+    await __awaitInflight()
+    expect(t.sendMock).toHaveBeenCalledTimes(1)
+    expect(size()).toBe(1)
+
+    // Step 2: calling flush again before nextSendAllowedAt should NOT
+    // hit the server — the dispatch loop's pre-flight gate re-queues.
+    flush()
+    await __awaitInflight()
+    expect(t.sendMock).toHaveBeenCalledTimes(1)
+    expect(size()).toBe(1)
+  })
+
+  it('hydrates a persisted queue when the transport is wired', () => {
+    __setPersistOverrideForTests(true)
+    localStorage.setItem(
+      PERSISTED_QUEUE_KEY,
+      JSON.stringify([layerLoaded('PERSISTED_A'), layerLoaded('PERSISTED_B')]),
+    )
+
+    const t = makeTransport()
+    setTransport(t)
+
+    expect(size()).toBe(2)
+  })
+})
+
+describe('emitter — flushOnUnload / pagehide', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    resetForTests()
+    setTier('essential')
+    __setPersistOverrideForTests(false)
+  })
+
+  afterEach(() => {
+    __setPersistOverrideForTests(null)
+    resetForTests()
+  })
+
+  it('fires a single beacon for pending events on unload', () => {
+    const t = makeTransport()
+    setTransport(t)
+
+    emit(layerLoaded('A'))
+    emit(layerLoaded('B'))
+    expect(size()).toBe(2)
+
+    flushOnUnload()
+
+    expect(t.beaconMock).toHaveBeenCalledTimes(1)
+    expect(size()).toBe(0)
+  })
+
+  it('persists the queue when the browser rejects the beacon (Tauri)', () => {
+    __setPersistOverrideForTests(true)
+    const t = makeTransport()
+    const rejectedBeacon: BeaconMock = vi.fn(() => false)
+    t.beaconMock = rejectedBeacon
+    t.sendBeacon = (sid, ev) => rejectedBeacon(sid, ev)
+    setTransport(t)
+
+    emit(layerLoaded('A'))
+    flushOnUnload()
+
+    // Events re-queued for the next launch, and persisted.
+    expect(size()).toBe(1)
+    expect(localStorage.getItem(PERSISTED_QUEUE_KEY)).not.toBeNull()
+  })
+
+  it('is a no-op on unload when the session is cooled down', () => {
+    const t = makeTransport()
+    t.sendResults.push({ status: 410, ok: false, retryable: false, permanent: true })
+    setTransport(t)
+    emit(layerLoaded('A'))
+    flush()
+
+    // After the 410 cooldown takes effect, flushOnUnload must not
+    // fire a beacon for any later events.
+    return __awaitInflight().then(() => {
+      expect(__transportState().cooledDown).toBe(true)
+      emit(layerLoaded('B'))
+      flushOnUnload()
+      expect(t.beaconMock).not.toHaveBeenCalled()
+    })
+  })
+
+  it('wires a pagehide listener on setTransport', () => {
+    const t = makeTransport()
+    setTransport(t)
+
+    emit(layerLoaded('A'))
+    expect(size()).toBe(1)
+
+    window.dispatchEvent(new Event('pagehide'))
+
+    expect(t.beaconMock).toHaveBeenCalledTimes(1)
+    expect(size()).toBe(0)
   })
 })

@@ -7,13 +7,26 @@
 export {
   emit,
   flush,
+  flushOnUnload,
   size,
   getSessionId,
   tierGate,
   applyTierChange,
+  setTransport,
   BATCH_SIZE,
   BATCH_INTERVAL_MS,
+  BACKOFF_STEPS_MS,
 } from './emitter'
+
+export {
+  createFetchTransport,
+  classifyResponse,
+  DEFAULT_ENDPOINT,
+  PERSISTED_QUEUE_KEY,
+  type Transport,
+  type SendResult,
+  type TransportOptions,
+} from './transport'
 
 export {
   loadConfig,
