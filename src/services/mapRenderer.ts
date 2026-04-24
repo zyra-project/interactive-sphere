@@ -15,7 +15,7 @@ import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
 import { isMobile } from '../utils/deviceCapability'
 import { preloadLowZoomTiles } from './tilePreloader'
-import { emitCameraSettled, emit } from '../analytics'
+import { emitCameraSettled, emit, reportError } from '../analytics'
 
 // --- Tauri desktop: route tiles through Rust cache via IPC ---
 const IS_TAURI = !!(window as any).__TAURI__
@@ -50,7 +50,8 @@ if (IS_TAURI) {
       }
       return { data: bytes.buffer }
     } catch (err) {
-      logger.error('[Tiles] IPC error for', tilePath, err)
+      logger.warn('[Tiles] IPC error for', tilePath, err)
+      reportError('tile', err)
       throw err
     }
   })

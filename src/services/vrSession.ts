@@ -33,7 +33,21 @@ import {
 } from '../utils/vrPersistence'
 import { getBordersVisible, getGazeFollowOverlays } from '../utils/viewPreferences'
 import { logger } from '../utils/logger'
-import { emitCameraSettled } from '../analytics'
+import { emit, emitCameraSettled } from '../analytics'
+import type { VrExitReason } from '../types'
+
+/** Coarse device classifier for `vr_session_started.device_class`.
+ * Substring match on the UA — only the bucket leaves this function;
+ * the raw UA is never emitted. Order matters: more-specific
+ * variants come first so `Quest Pro` doesn't fall through to the
+ * generic `Quest` branch. */
+function classifyXrDevice(ua: string): string {
+  if (/Quest\s*Pro/i.test(ua)) return 'quest-pro'
+  if (/Quest/i.test(ua)) return 'quest'
+  if (/Vision/i.test(ua)) return 'vision-pro'
+  if (/Windows|Mac OS X|Macintosh|X11|Linux/i.test(ua)) return 'pcvr'
+  return 'unknown'
+}
 
 /**
  * Contract the hosting app must provide. Pull-based: the session
@@ -374,6 +388,21 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     throw new Error('WebXR is not available in this browser')
   }
 
+  // Wall-clock anchor for `vr_session_started.entry_load_ms` and the
+  // matching `vr_session_ended.duration_ms`. Captured before the
+  // Three.js chunk load so a slow first-time fetch shows up in the
+  // entry-load metric.
+  const entryStartedAtWall = Date.now()
+  const sessionTelemetry: {
+    sessionStartedAtWall: number
+    frames: number
+    exitReason: VrExitReason
+  } = {
+    sessionStartedAtWall: 0,
+    frames: 0,
+    exitReason: 'user',
+  }
+
   const THREE_ = await loadThree()
   const isAr = mode === 'ar'
   const sessionMode = isAr ? 'immersive-ar' : 'immersive-vr'
@@ -443,11 +472,25 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   try {
     await renderer.xr.setSession(session as unknown as XRSession)
   } catch (err) {
+    sessionTelemetry.exitReason = 'error'
     await session.end().catch(() => { /* already gone */ })
     canvas.remove()
     renderer.dispose()
     throw err instanceof Error ? err : new Error(String(err))
   }
+
+  // The session is bound; emit `vr_session_started` now so
+  // entry_load_ms reflects the user-perceived "tap → in-VR" latency
+  // including the Three.js chunk load + setSession round-trip.
+  sessionTelemetry.sessionStartedAtWall = Date.now()
+  emit({
+    event_type: 'vr_session_started',
+    mode,
+    device_class: classifyXrDevice(
+      typeof navigator !== 'undefined' ? navigator.userAgent : '',
+    ),
+    entry_load_ms: Math.max(0, sessionTelemetry.sessionStartedAtWall - entryStartedAtWall),
+  })
 
   // Lazy-load the controller-model addon alongside Three.js. The
   // factory fetches per-controller glTF models from a CDN at runtime
@@ -884,16 +927,34 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
         // browsers may not. Non-fatal if it throws — the anchor
         // still tracks within this session.
         const requestFn = anchor.requestPersistentHandle
-        if (!requestFn) return
-        try {
-          const handle = await requestFn.call(anchor)
-          savePersistedAnchorHandle(handle)
-          logger.info('[VR] Saved persistent placement anchor')
-        } catch (err) {
-          logger.debug('[VR] Anchor persistent handle not available:', err)
+        let persisted = false
+        if (requestFn) {
+          try {
+            const handle = await requestFn.call(anchor)
+            savePersistedAnchorHandle(handle)
+            persisted = true
+            logger.info('[VR] Saved persistent placement anchor')
+          } catch (err) {
+            logger.debug('[VR] Anchor persistent handle not available:', err)
+          }
         }
+        emit({
+          event_type: 'vr_placement',
+          // layer_id intentionally null — VR placement is about
+          // anchoring the globe to a real surface, not about the
+          // dataset shown on it. The currently-loaded layer is
+          // already covered by the most-recent layer_loaded event
+          // in the same session, joinable via session_id.
+          layer_id: null,
+          persisted,
+        })
       }).catch(err => {
         logger.warn('[VR] Failed to create placement anchor:', err)
+        emit({
+          event_type: 'vr_placement',
+          layer_id: null,
+          persisted: false,
+        })
       })
     },
     onExit: () => {
@@ -984,6 +1045,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     lastTime = now
 
     if (!active) return
+    sessionTelemetry.frames++
 
     // Spatial placement: per-frame hit-test against the room. Only
     // does work while in Place mode; cheap when idle.
@@ -1198,6 +1260,25 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // --- Teardown ---
   session.addEventListener('end', () => {
     logger.info('[VR] Session ended, disposing resources')
+
+    // Telemetry: emit `vr_session_ended` once per session, before
+    // any disposal happens so frame counters / timestamps still
+    // exist. Median FPS = total frames / wall-clock duration; null
+    // when the session was too short for a meaningful sample.
+    if (sessionTelemetry.sessionStartedAtWall > 0) {
+      const durationMs = Math.max(0, Date.now() - sessionTelemetry.sessionStartedAtWall)
+      const medianFps = durationMs >= 1000
+        ? Math.round((sessionTelemetry.frames * 1000) / durationMs)
+        : null
+      emit({
+        event_type: 'vr_session_ended',
+        mode,
+        exit_reason: sessionTelemetry.exitReason,
+        duration_ms: durationMs,
+        median_fps: medianFps,
+      })
+    }
+
     if (!active) return
     const a = active
     active = null

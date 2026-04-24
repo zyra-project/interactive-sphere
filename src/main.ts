@@ -31,7 +31,10 @@ import {
   createFetchTransport,
   emit,
   initSession,
+  pauseForVrEntry,
+  resumeForVrExit,
   setTransport,
+  startPerfSampler,
   TELEMETRY_BUILD_ENABLED,
   TELEMETRY_CONSOLE_MODE,
 } from './analytics'
@@ -96,6 +99,18 @@ interface PanelState {
 
 function createPanelState(): PanelState {
   return { dataset: null, hlsService: null, videoTexture: null, image: null, loadedAt: null }
+}
+
+/** Map a dataset-load trigger to the analytics tour-source enum.
+ * `tour_started.source` accepts `'browse' | 'orbit' | 'deeplink'`;
+ * URL/deep-link loads collapse to `'deeplink'`, defaults / chained
+ * loads collapse to `'browse'`. */
+function triggerToTourSource(
+  trigger: import('./types').LoadTrigger,
+): 'browse' | 'orbit' | 'deeplink' {
+  if (trigger === 'orbit') return 'orbit'
+  if (trigger === 'url') return 'deeplink'
+  return 'browse'
 }
 
 class InteractiveSphere {
@@ -467,7 +482,11 @@ class InteractiveSphere {
     try {
       if (dataset.format === 'tour/json') {
         this.tourIsStandalone = true
-        await this.startTour(dataset.dataLink, gen)
+        await this.startTour(dataset.dataLink, gen, null, {
+          tourId: dataset.id,
+          tourTitle: dataset.title,
+          source: triggerToTourSource(trigger),
+        })
         return
       } else if (dataService.isImageDataset(dataset)) {
         const img = await loadImageDataset(dataset, targetRenderer, this.appState, this.isMobile, loaderCallbacks)
@@ -686,6 +705,7 @@ class InteractiveSphere {
     dataLink: string,
     gen: number,
     anchorSlot: number | null = null,
+    meta?: { tourId: string; tourTitle: string; source: 'browse' | 'orbit' | 'deeplink' },
   ): Promise<void> {
     // Stop any previous tour
     this.stopTour()
@@ -734,7 +754,7 @@ class InteractiveSphere {
           return filename
         }
       },
-    }, { anchorSlot })
+    }, { anchorSlot, meta })
 
     showTourControls(this.tourEngine, () => this.stopTour())
     this.showPlaybackControls(false)
@@ -1454,6 +1474,11 @@ class InteractiveSphere {
 
       onSessionEnd: () => {
         this.announce('Exited VR')
+        // Resume the 2D perf sampler now that VR has handed the
+        // GPU back. The sampler stayed paused for the duration of
+        // the immersive session — VR has its own median-FPS
+        // metric on `vr_session_ended.median_fps`.
+        if (TELEMETRY_BUILD_ENABLED) resumeForVrExit()
       },
     })
   }
@@ -2316,6 +2341,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // or compile flag) the emit() calls inside no-op.
   if (TELEMETRY_BUILD_ENABLED) {
     void initSession()
+    startPerfSampler()
   }
 
   // Non-blocking update check after app is ready

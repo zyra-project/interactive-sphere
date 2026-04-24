@@ -54,3 +54,10 @@ export {
   canEmitCameraSettled,
   CAMERA_SETTLED_MAX_PER_MINUTE,
 } from './camera'
+
+export {
+  startPerfSampler,
+  stopPerfSampler,
+  pauseForVrEntry,
+  resumeForVrExit,
+} from './perfSampler'
