@@ -28,6 +28,7 @@ import {
   savePersistedAnchorHandle,
 } from '../utils/vrPersistence'
 import { logger } from '../utils/logger'
+import { emitCameraSettled } from '../analytics'
 
 /**
  * Contract the hosting app must provide. Pull-based: the session
@@ -488,6 +489,65 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // XRControllerModelFactory was imported earlier (before scene
   // construction) so the loading-scene fade-out timing stays
   // predictable — see the comment at that import.
+  const vrProjection: 'vr' | 'ar' = isAr ? 'ar' : 'vr'
+
+  /** Compute the lat/lon under the camera's central forward ray
+   * where it hits the globe, along with the current scale-derived
+   * zoom and head-to-globe orientation. Returns null when the ray
+   * misses the sphere (e.g. user looking away from the globe).
+   * Kept inline so `scene.globe`, `camera`, and `THREE_` stay in
+   * scope without threading them through another helper file. */
+  function captureVrCameraState(): {
+    center_lat: number
+    center_lon: number
+    zoom: number
+    bearing: number
+    pitch: number
+  } | null {
+    const headOrigin = new THREE_.Vector3()
+    const headDir = new THREE_.Vector3(0, 0, -1)
+    camera.getWorldPosition(headOrigin)
+    camera.getWorldDirection(headDir)
+    const ray = new THREE_.Ray(headOrigin, headDir)
+    const sphereCenter = new THREE_.Vector3()
+    scene.globe.getWorldPosition(sphereCenter)
+    const radius = scene.globe.scale.x
+    const sphere = new THREE_.Sphere(sphereCenter, radius)
+    const hit = new THREE_.Vector3()
+    if (!ray.intersectSphere(sphere, hit)) return null
+    // Translate the hit into the globe's local frame, then undo
+    // the globe's rotation so the vector represents the Earth-
+    // fixed point under the user's gaze.
+    const local = hit.clone().sub(sphereCenter).divideScalar(radius)
+    const inverse = scene.globe.quaternion.clone().invert()
+    local.applyQuaternion(inverse)
+    // Spherical coords on a unit sphere. lat = asin(y), lon =
+    // atan2(x, -z) — matches MapLibre's +X east, +Y up, +Z south
+    // convention used by photorealEarth.ts.
+    const lat = (Math.asin(local.y) * 180) / Math.PI
+    const lon = (Math.atan2(local.x, -local.z) * 180) / Math.PI
+    // Derive a MapLibre-comparable zoom from the head-to-globe
+    // distance. A neutral view (scale 1, viewing distance ≈ 3m)
+    // maps to zoom 2 to echo the photo-realistic default. Clamped
+    // to MapLibre's typical 0-20 range for dashboard parity.
+    const viewDistance = headOrigin.distanceTo(sphereCenter)
+    const approxZoom = Math.log2(Math.max(0.1, radius / Math.max(0.1, viewDistance))) + 4
+    const zoom = Math.max(0, Math.min(20, approxZoom))
+    // Decompose globe rotation into bearing (yaw) + pitch. Y-axis
+    // euler in world space represents how far the user has spun
+    // the globe; X-axis represents tilt.
+    const euler = new THREE_.Euler().setFromQuaternion(scene.globe.quaternion, 'YXZ')
+    const bearing = (euler.y * 180) / Math.PI
+    const pitch = (euler.x * 180) / Math.PI
+    return {
+      center_lat: lat,
+      center_lon: lon,
+      zoom,
+      bearing: ((bearing % 360) + 360) % 360,
+      pitch,
+    }
+  }
+
   const interaction = createVrInteraction(THREE_, XRControllerModelFactory, {
     scene: scene.scene,
     globe: scene.globe,
@@ -499,6 +559,15 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     browse,
     placement,
     renderer,
+    onCameraSettled: () => {
+      const state = captureVrCameraState()
+      if (!state) return
+      emitCameraSettled({
+        slot_index: '0',
+        projection: vrProjection,
+        ...state,
+      })
+    },
     onBrowseAction: (action) => {
       if (action.kind === 'close') {
         browse.setVisible(false)

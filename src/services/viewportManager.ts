@@ -398,7 +398,7 @@ export class ViewportManager {
 
     const renderer = new MapRenderer()
     const canvasId = index === 0 ? 'globe-canvas' : `globe-canvas-${index}`
-    renderer.init(container, { canvasId })
+    renderer.init(container, { canvasId, slotIndex: index })
 
     // Primary-indicator pill: shown on every panel, numbered 1-based.
     // Click on a non-primary pill promotes that panel to primary. The

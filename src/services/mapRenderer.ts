@@ -15,6 +15,7 @@ import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
 import { isMobile } from '../utils/deviceCapability'
 import { preloadLowZoomTiles } from './tilePreloader'
+import { emitCameraSettled, emit } from '../analytics'
 
 // --- Tauri desktop: route tiles through Rust cache via IPC ---
 const IS_TAURI = !!(window as any).__TAURI__
@@ -312,6 +313,11 @@ export class MapRenderer implements GlobeRenderer {
   private earthLayer: EarthTileLayerControl | null = null
   private pendingTexture: HTMLCanvasElement | HTMLImageElement | null = null
   private pendingVideo: HTMLVideoElement | null = null
+  /** 0-based slot index for this renderer within its ViewportManager.
+   * Reported on `camera_settled` / `map_click` so downstream queries
+   * can separate primary vs secondary-panel activity. Defaults to 0
+   * for single-viewport flows. */
+  private slotIndex: number = 0
 
   /**
    * Initialize the MapLibre map inside the given container element.
@@ -327,9 +333,10 @@ export class MapRenderer implements GlobeRenderer {
    * Defaults to `'globe-canvas'` for single-viewport backward compat;
    * ViewportManager passes unique IDs per panel to avoid DOM collisions.
    */
-  init(container: HTMLElement, options?: { canvasId?: string }): void {
+  init(container: HTMLElement, options?: { canvasId?: string; slotIndex?: number }): void {
     this.container = container
     this.canvasId = options?.canvasId ?? 'globe-canvas'
+    this.slotIndex = options?.slotIndex ?? 0
 
     // Inject dark popup styles (idempotent — skips if already present)
     if (!document.getElementById('sos-popup-style')) {
@@ -380,6 +387,48 @@ export class MapRenderer implements GlobeRenderer {
       })
     }
     this.map.on('dblclick', resetView)
+
+    // Emit `camera_settled` after every user-driven move ends.
+    // MapLibre fires `moveend` on every drag release, wheel stop,
+    // and `flyTo` completion — good enough for "user parked the
+    // camera here". The shared throttle in analytics/camera.ts
+    // caps the emit rate to ≤ 30/min per session across 2D + VR.
+    this.map.on('moveend', () => {
+      if (!this.map) return
+      const center = this.map.getCenter()
+      emitCameraSettled({
+        slot_index: String(this.slotIndex),
+        projection: 'globe',
+        center_lat: center.lat,
+        center_lon: center.lng,
+        zoom: this.map.getZoom(),
+        bearing: this.map.getBearing(),
+        pitch: this.map.getPitch(),
+      })
+    })
+
+    // Emit `map_click` on every single-click (not double-click,
+    // which resets the view). Classification for now is simply
+    // "surface" — marker / region hit-tests land in later commits
+    // once dataset overlays expose layer ids.
+    this.map.on('click', (e) => {
+      // Query rendered features at the click point. The global
+      // `click` event doesn't attach a features array — pull it
+      // via queryRenderedFeatures. MapLibre returns layer-ordered
+      // hits; the top-most is the visible one.
+      const features = this.map?.queryRenderedFeatures(e.point) ?? []
+      const top = features[0]
+      const hitKind: 'surface' | 'marker' | 'feature' | 'region' = top ? 'feature' : 'surface'
+      emit({
+        event_type: 'map_click',
+        slot_index: String(this.slotIndex),
+        hit_kind: hitKind,
+        hit_id: top?.id != null ? String(top.id) : null,
+        lat: Math.round(e.lngLat.lat * 1000) / 1000,
+        lon: Math.round(e.lngLat.lng * 1000) / 1000,
+        zoom: Math.round(this.map!.getZoom() * 100) / 100,
+      })
+    })
 
     // Double-tap detection for touch (dblclick doesn't fire on touch devices)
     let lastTap = 0

@@ -48,3 +48,9 @@ export {
 } from './errorCapture'
 
 export { initSession, emitSessionEnd } from './session'
+
+export {
+  emitCameraSettled,
+  canEmitCameraSettled,
+  CAMERA_SETTLED_MAX_PER_MINUTE,
+} from './camera'

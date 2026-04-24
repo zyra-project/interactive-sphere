@@ -136,6 +136,15 @@ export interface VrInteractionContext {
   onPlaceConfirm: () => void
   /** Fired when the user squeezes the grip — caller ends the session. */
   onExit: () => void
+  /**
+   * Fired when globe manipulation settles: trigger-drag release
+   * (to idle, not inertia), two-hand pinch release, flick-inertia
+   * decay stop, or thumbstick-zoom release. Caller computes the
+   * gaze-to-globe lat/lon and emits `camera_settled` with
+   * `projection='vr'|'ar'`. The per-session throttle in
+   * `analytics/camera.ts` rate-limits the emit across 2D + VR.
+   */
+  onCameraSettled?: () => void
 }
 
 export interface VrInteractionHandle {
@@ -638,6 +647,11 @@ export function createVrInteraction(
         }
       } else {
         rotationMode = { kind: 'idle' }
+        // Transitioned straight from rotating to idle — the user let
+        // go without enough velocity for inertia. That's a settle.
+        // Inertia → idle settles are emitted from the per-frame
+        // update loop instead (when velocity decays below threshold).
+        if (wasRotating) ctx.onCameraSettled?.()
       }
     }
   }
@@ -934,6 +948,9 @@ export function createVrInteraction(
     const speed = mode.velocity.length()
     if (speed < MIN_INERTIA_SPEED) {
       rotationMode = { kind: 'idle' }
+      // Flick-inertia has decayed to a stop — the globe is now
+      // settled at wherever the spin left it.
+      ctx.onCameraSettled?.()
       return
     }
     const angle = speed * deltaSeconds
@@ -1101,11 +1118,22 @@ export function createVrInteraction(
       const next = ctx.globe.scale.x * factor
       const clamped = Math.max(MIN_GLOBE_SCALE, Math.min(MAX_GLOBE_SCALE, next))
       ctx.globe.scale.setScalar(clamped)
+      wasZoomingThumbstick = true
+    } else if (wasZoomingThumbstick) {
+      // Thumbstick was pushing zoom last frame and returned to
+      // neutral this frame — the user let go and the globe scale
+      // is now settled.
+      wasZoomingThumbstick = false
+      ctx.onCameraSettled?.()
     }
     if (scrollAxis !== 0) {
       ctx.browse.scroll(scrollAxis * BROWSE_SCROLL_SPEED * deltaSeconds)
     }
   }
+  /** Edge-triggered flag for thumbstick-zoom settle. Set true while
+   * zoom axis is non-zero; flipping back to false fires one
+   * `onCameraSettled` callback. */
+  let wasZoomingThumbstick = false
 
   return {
     update(deltaSeconds) {
