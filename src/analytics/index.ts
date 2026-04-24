@@ -63,3 +63,5 @@ export {
   pauseForVrEntry,
   resumeForVrExit,
 } from './perfSampler'
+
+export { hashQuery } from './hash'

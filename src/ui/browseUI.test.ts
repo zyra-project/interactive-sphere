@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { escapeHtml, escapeAttr, showBrowseUI, hideBrowseUI, type BrowseCallbacks } from './browseUI'
 import type { Dataset } from '../types'
+import { resetForTests, __peek } from '../analytics/emitter'
+import { setTier } from '../analytics/config'
+import { hashQuery } from '../analytics/hash'
 
 // Mock dataService — used only for isVideoDataset check in card rendering
 vi.mock('../services/dataService', () => ({
@@ -235,6 +238,100 @@ describe('showBrowseUI', () => {
 
     const searchEl = document.getElementById('browse-search') as HTMLInputElement
     expect(searchEl.placeholder).toBe('Search 3 datasets\u2026')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// browse_search Tier B emit
+// ---------------------------------------------------------------------------
+async function flushMicrotasks(): Promise<void> {
+  // The browse_search emit pipeline is `setTimeout → hashQuery() → emit`.
+  // hashQuery() awaits `crypto.subtle.digest`, which in happy-dom can
+  // schedule its resolution on a separate task queue rather than a pure
+  // microtask. Yield a few macro-tasks (with real timers) so the digest
+  // promise resolves before the test asserts.
+  vi.useRealTimers()
+  for (let i = 0; i < 5; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  vi.useFakeTimers()
+}
+
+describe('showBrowseUI — browse_search emit', () => {
+  beforeEach(() => {
+    setupBrowseDOM()
+    localStorage.clear()
+    resetForTests()
+    setTier('research')
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function fireSearch(query: string): void {
+    const input = document.getElementById('browse-search') as HTMLInputElement
+    input.value = query
+    input.dispatchEvent(new Event('input'))
+  }
+
+  it('emits a debounced browse_search event with the hashed query', async () => {
+    showBrowseUI([makeDataset({ id: 'a', title: 'Hurricane Stats' })], makeCallbacks())
+    fireSearch('hurricane')
+    // Debounce window not yet elapsed — no emit.
+    expect(__peek().filter((e) => e.event_type === 'browse_search')).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(500)
+    await flushMicrotasks()
+    const evs = __peek().filter((e) => e.event_type === 'browse_search')
+    expect(evs).toHaveLength(1)
+    const e = evs[0]
+    if (e.event_type !== 'browse_search') throw new Error('unreachable')
+    const expected = await hashQuery('hurricane')
+    expect(e.query_hash).toBe(expected)
+    expect(e.query_length).toBe('hurricane'.length)
+    expect(e.result_count_bucket).toBe('1-10')
+  })
+
+  it('coalesces a burst of keystrokes into a single emit', async () => {
+    showBrowseUI([makeDataset()], makeCallbacks())
+    fireSearch('h')
+    fireSearch('hu')
+    fireSearch('hur')
+    fireSearch('hurr')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushMicrotasks()
+    const evs = __peek().filter((e) => e.event_type === 'browse_search')
+    expect(evs).toHaveLength(1)
+    const e = evs[0]
+    if (e.event_type !== 'browse_search') throw new Error('unreachable')
+    expect(e.query_hash).toBe(await hashQuery('hurr'))
+  })
+
+  it('does not emit for the empty string', async () => {
+    showBrowseUI([makeDataset()], makeCallbacks())
+    fireSearch('')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await flushMicrotasks()
+    expect(__peek().filter((e) => e.event_type === 'browse_search')).toHaveLength(0)
+  })
+
+  it('clearing the box drops a pending emit', async () => {
+    showBrowseUI([makeDataset()], makeCallbacks())
+    fireSearch('hurricane')
+    document.getElementById('browse-search-clear')!.dispatchEvent(new Event('click'))
+    await vi.advanceTimersByTimeAsync(1_000)
+    await flushMicrotasks()
+    expect(__peek().filter((e) => e.event_type === 'browse_search')).toHaveLength(0)
+  })
+
+  it('is tier-gated — Essential drops the event', async () => {
+    setTier('essential')
+    showBrowseUI([makeDataset()], makeCallbacks())
+    fireSearch('hurricane')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushMicrotasks()
+    expect(__peek().filter((e) => e.event_type === 'browse_search')).toHaveLength(0)
   })
 })
 

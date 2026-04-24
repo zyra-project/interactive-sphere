@@ -13,7 +13,7 @@ import {
 import { closeDownloadPanel } from './downloadUI'
 import { toggleHelp } from './helpUI'
 import { escapeHtml, escapeAttr } from './domUtils'
-import { emit, startDwell, type DwellHandle } from '../analytics'
+import { emit, startDwell, hashQuery, type DwellHandle } from '../analytics'
 
 /** Tier B dwell handle for the browse overlay — non-null while the
  * overlay is visible. Started on showBrowseUI when the overlay
@@ -40,6 +40,12 @@ const CARD_DESCRIPTION_MAX_LENGTH = 120
 const MAX_CARD_CATEGORIES = 3
 const MAX_CARD_KEYWORDS = 12
 const SEARCH_FOCUS_DELAY_MS = 200
+/** Debounce window between the last keystroke and the
+ * `browse_search` Tier B emit. 400 ms feels right for a search-as-you
+ * type box: long enough that `"hurricane"` is one event instead of
+ * nine, short enough that the event lands while the user is still
+ * looking at the results. */
+const BROWSE_SEARCH_DEBOUNCE_MS = 400
 
 /** Callbacks the browse UI uses to communicate with the main app. */
 export interface BrowseCallbacks {
@@ -196,11 +202,36 @@ export function showBrowseUI(
   const updateSearchClear = () => {
     searchClear?.classList.toggle('hidden', !searchInput?.value)
   }
+  /** Token guards against the async hash() call resolving for an
+   * older keystroke after the user has typed more characters. Each
+   * scheduled emit captures the current token; the emit is dropped
+   * if the token has moved on. */
+  let searchEmitToken = 0
+  let searchEmitTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleSearchEmit = (raw: string) => {
+    if (searchEmitTimer != null) clearTimeout(searchEmitTimer)
+    if (raw.length === 0) return
+    const token = ++searchEmitToken
+    searchEmitTimer = setTimeout(() => {
+      searchEmitTimer = null
+      const cardCount = document.querySelectorAll('#browse-grid .browse-card').length
+      void hashQuery(raw).then((query_hash) => {
+        if (token !== searchEmitToken) return
+        emit({
+          event_type: 'browse_search',
+          query_hash,
+          query_length: raw.length,
+          result_count_bucket: bucketResultCount(cardCount),
+        })
+      })
+    }, BROWSE_SEARCH_DEBOUNCE_MS)
+  }
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       searchQuery = searchInput.value.trim().toLowerCase()
       updateSearchClear()
       renderCards()
+      scheduleSearchEmit(searchQuery)
     })
     if (!callbacks.isMobile) {
       setTimeout(() => searchInput.focus(), SEARCH_FOCUS_DELAY_MS)
@@ -213,6 +244,11 @@ export function showBrowseUI(
       updateSearchClear()
       searchInput.focus()
       renderCards()
+      // Clearing is not a search — drop any pending emit so an
+      // in-flight debounce can't fire after the box is empty.
+      if (searchEmitTimer != null) clearTimeout(searchEmitTimer)
+      searchEmitTimer = null
+      searchEmitToken++
     })
   }
 
