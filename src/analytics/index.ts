@@ -10,6 +10,7 @@ export {
   size,
   getSessionId,
   tierGate,
+  applyTierChange,
   BATCH_SIZE,
   BATCH_INTERVAL_MS,
 } from './emitter'

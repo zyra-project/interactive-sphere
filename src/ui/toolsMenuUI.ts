@@ -38,6 +38,7 @@
 
 import type { ViewportManager, ViewLayout } from '../services/viewportManager'
 import { updateMapControlsPosition } from './mapControlsUI'
+import { openPrivacyUI } from './privacyUI'
 
 /**
  * Runtime Tauri-shell detection — matches the same `__TAURI__`
@@ -166,6 +167,13 @@ export function initToolsMenu(
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Meet Orbit&nbsp;&rarr;</span>
         </a>`}
+      </section>
+      <section class="tools-menu-section" aria-label="Privacy">
+        <h4 class="tools-menu-section-title">Privacy</h4>
+        <button type="button" class="tools-menu-item" id="tools-menu-privacy">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Privacy settings&hellip;</span>
+        </button>
       </section>
     </div>
   `
@@ -328,6 +336,13 @@ export function initToolsMenu(
   orbitSettingsBtn.addEventListener('click', () => {
     closePopover()
     onOpenOrbitSettings?.()
+  })
+
+  const privacyBtn = document.getElementById('tools-menu-privacy') as HTMLButtonElement | null
+  privacyBtn?.addEventListener('click', () => {
+    closePopover()
+    openPrivacyUI(privacyBtn)
+    announce?.('Privacy settings opened')
   })
 
   // --- Layout picker (dev flag only) ---

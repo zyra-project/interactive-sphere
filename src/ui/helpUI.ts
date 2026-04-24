@@ -122,7 +122,8 @@ function renderGuideHtml(): string {
     </section>
     <section class="help-guide-section">
       <h3>Privacy</h3>
-      <p>Feedback submissions store the text you type plus your browser's user agent and the current page URL. Attaching a screenshot is optional and opt-in. We do not collect analytics or tracking cookies.</p>
+      <p>The app reports anonymous usage events &mdash; which layers load, how long they're viewed, whether anything errored. There is no account, no tracking cookie, and no third-party analytics service. Feedback you submit is stored with your browser's user agent and the page URL; attaching a screenshot is opt-in.</p>
+      <p>You can switch between Essential, Research, and Off under <strong>Tools &rarr; Privacy</strong>; the change takes effect immediately. <a href="/privacy" target="_blank" rel="noopener">Read the full privacy policy &rarr;</a></p>
     </section>
   `
 }

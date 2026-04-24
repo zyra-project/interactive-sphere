@@ -26,6 +26,7 @@ import { initToolsMenu, syncToolsMenuState, syncToolsMenuLayout, pulseBrowseButt
 import { initChatUI, openChat, openChatSettings, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from './utils/viewPreferences'
 import { initHelpUI, setActiveDataset as setHelpActiveDataset } from './ui/helpUI'
+import { showDisclosureBannerIfNeeded } from './ui/disclosureBanner'
 import {
   createPlaybackState, startPlaybackLoop, stopPlaybackLoop,
   togglePlayPause, rewind, fastForward, stepFrame, onScrub,
@@ -197,6 +198,9 @@ class InteractiveSphere {
       })
       initDownloadUI().catch(err => logger.warn('[App] Download UI init failed:', err))
       initHelpUI()
+      // First-session privacy disclosure. No-ops on every launch
+      // after the user dismisses it.
+      showDisclosureBannerIfNeeded()
       logger.info('[App] Using MapLibre renderer (layout: %s)', initialLayout)
 
       // Wire up lat/lng display (bind to primary; secondary panels don't

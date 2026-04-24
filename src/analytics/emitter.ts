@@ -13,7 +13,7 @@
  * commits.
  */
 
-import { TIER_B_EVENT_TYPES, type TelemetryEvent } from '../types'
+import { TIER_B_EVENT_TYPES, type TelemetryEvent, type TelemetryTier } from '../types'
 import {
   TELEMETRY_BUILD_ENABLED,
   TELEMETRY_CONSOLE_MODE,
@@ -137,6 +137,32 @@ export function resetForTests(): void {
 /** Test helper: peek without draining. */
 export function __peek(): readonly TelemetryEvent[] {
   return state.queue
+}
+
+/** Apply the runtime consequences of a tier change to the in-memory
+ * queue. `setTier()` in config.ts handles persistence; this handles
+ * the buffer:
+ *   - `off`  → drop every queued event (consent withdrawn)
+ *   - `essential` → strip Tier B events that were queued while in
+ *     research (stops research data from leaking after the user
+ *     steps down a tier)
+ *   - `research` → no-op (essential → research can only add new
+ *     events; nothing queued needs removing)
+ * Call sites should call this alongside `setTier` — the privacy UI
+ * does. Keeping it a separate function keeps config.ts free of
+ * emitter state references. */
+export function applyTierChange(newTier: TelemetryTier): void {
+  if (newTier === 'off') {
+    state.queue = []
+    if (state.flushTimer !== null) {
+      clearTimeout(state.flushTimer)
+      state.flushTimer = null
+    }
+    return
+  }
+  if (newTier === 'essential') {
+    state.queue = state.queue.filter((e) => !TIER_B_SET.has(e.event_type))
+  }
 }
 
 function currentOffset(): number {

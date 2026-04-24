@@ -6,6 +6,7 @@ import {
   size,
   getSessionId,
   tierGate,
+  applyTierChange,
   resetForTests,
   __peek,
   BATCH_SIZE,
@@ -163,6 +164,96 @@ describe('emitter — client_offset_ms stamping', () => {
     const events = __peek()
     const [a, b] = events
     expect(b?.client_offset_ms).toBeGreaterThanOrEqual(a?.client_offset_ms ?? 0)
+  })
+})
+
+describe('emitter — applyTierChange (Commit 5)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    resetForTests()
+  })
+
+  it('drops every queued event when switching to Off', () => {
+    setTier('research')
+    emit(layerLoaded('A'))
+    emit(dwell())
+    emit(feedback())
+    expect(size()).toBe(3)
+
+    // User flips Tools → Privacy to Off. Queue must be emptied so
+    // events captured under consent are not flushed post-consent.
+    setTier('off')
+    applyTierChange('off')
+    expect(size()).toBe(0)
+
+    // Subsequent emits no-op (tier gate handles this separately).
+    emit(layerLoaded('B'))
+    expect(size()).toBe(0)
+  })
+
+  it('strips queued Tier B events on Research → Essential', () => {
+    setTier('research')
+    emit(layerLoaded('A')) // Tier A — should survive
+    emit(dwell()) // Tier B — should be stripped
+    emit(feedback()) // Tier A — should survive
+    expect(size()).toBe(3)
+
+    setTier('essential')
+    applyTierChange('essential')
+
+    const remaining = __peek().map((e) => e.event_type)
+    expect(remaining).toEqual(['layer_loaded', 'feedback'])
+  })
+
+  it('keeps the queue intact on Essential → Research', () => {
+    setTier('essential')
+    emit(layerLoaded('A'))
+    emit(feedback())
+    expect(size()).toBe(2)
+
+    setTier('research')
+    applyTierChange('research')
+
+    expect(size()).toBe(2)
+  })
+
+  it('does not backfill previously-dropped events after Off → On', () => {
+    setTier('essential')
+    emit(layerLoaded('A'))
+    emit(feedback())
+
+    setTier('off')
+    applyTierChange('off')
+    expect(size()).toBe(0)
+
+    setTier('essential')
+    applyTierChange('essential')
+    // Switching back on must not resurrect the dropped events.
+    expect(size()).toBe(0)
+
+    emit(layerLoaded('B'))
+    expect(size()).toBe(1)
+  })
+
+  it('clears the scheduled flush timer when switching to Off', () => {
+    vi.useFakeTimers()
+    try {
+      setTier('essential')
+      emit(layerLoaded('A'))
+      expect(size()).toBe(1)
+
+      setTier('off')
+      applyTierChange('off')
+      expect(size()).toBe(0)
+
+      // If applyTierChange forgot to clear the timer, a delayed flush
+      // would still try to run — we're just asserting the queue stays
+      // empty through the interval.
+      vi.advanceTimersByTime(BATCH_INTERVAL_MS * 2)
+      expect(size()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
