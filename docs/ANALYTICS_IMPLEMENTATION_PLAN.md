@@ -1023,9 +1023,12 @@ Building this without a fast feedback loop is painful. Must-haves:
 - **Lint rule: no direct `console.error` / `console.warn` in
   `src/analytics/errorCapture.ts`.** That file uses saved original
   references only
-- **CI check: PRIVACY.md ↔ public/privacy.html parity** (when the
-  page lands in the impl PR). Strip markdown formatting, compare
-  normalized text, fail on drift
+- **CI check: `public/privacy.html` is up to date.** `npm run
+  check:privacy-page` regenerates the HTML from `docs/PRIVACY.md`
+  and fails the build if the committed file differs. Same guarantee
+  as the original hand-maintained parity check but enforced from
+  the single source — no possibility of drift between two hand-
+  edited files
 - **CI check: every new event in the `TelemetryEvent` union has a
   matching wiring-table row in this doc.** Annotation comment on the
   union type → doc-linter that enforces the row exists
@@ -1141,11 +1144,20 @@ Pages at `/privacy.html` and at the clean `/privacy` URL.
   script dependencies. If the main app's JS bundle is broken, the
   privacy page still loads. This is a legal deliverable; it must not
   depend on the rest of the app working
-- **Content is canonical in HTML.** The HTML is the ship artifact.
-  `docs/PRIVACY.md` is the review-friendly mirror for GitHub and for
-  diff-in-PR workflows. The implementation PR is responsible for
-  keeping them in sync; a short CI lint (text equality after stripping
-  markdown syntax) can enforce it
+- **Markdown is canonical; HTML is generated.** `docs/PRIVACY.md`
+  is the single source of truth. `public/privacy.html` is produced
+  from it by `scripts/build-privacy-page.ts` — a small Node script
+  that renders the Markdown through `marked`, wraps the result in
+  the HTML shell (inline CSS, strict CSP, print stylesheet,
+  skip-link, Back link, footer), and writes the output. The script
+  runs automatically from `predev` / `prebuild` npm hooks, and a
+  `check:privacy-page` mode fails CI if the committed HTML is
+  stale. The generator strips
+  `<!-- internal-only -->…<!-- /internal-only -->` blocks so the
+  Markdown can carry draft notes and cross-references to this plan
+  without leaking them onto the public page. Keeping the HTML
+  checked in lets reviewers diff the rendered output in PRs; the
+  stale-file check stops that HTML from drifting from the Markdown
 - **Visual consistency with the app.** Inline the design tokens from
   `src/styles/tokens.css` so the page uses the same dark palette
   (`--color-bg`, `--color-text`, `--color-accent`). No backdrop blur —
@@ -1250,7 +1262,9 @@ The implementation PR (separate, follows plan approval) delivers:
 - `public/site.webmanifest` — shortcut entry
 - In-app link wiring in `helpUI.ts`, `privacyUI.ts`, `browseUI.ts`
 - Emitter URL-gate so the policy page emits zero events
-- CI check enforcing `docs/PRIVACY.md` ↔ `public/privacy.html` parity
+- Generator: `scripts/build-privacy-page.ts` renders
+  `public/privacy.html` from `docs/PRIVACY.md`; `npm run
+  check:privacy-page` fails CI on stale HTML
 
 ### Needs before release
 
@@ -1372,7 +1386,8 @@ strategy for the overall PR can be decided at merge time.
 - New: `public/privacy.html` — static page, inline CSS matching design tokens, print stylesheet, tight CSP, `lang="en"`, skip-link, semantic sectioning, no scripts. Served at `/privacy` via Cloudflare Pages' built-in clean-URL resolution — same mechanism as `/orbit`. **Do not** add an explicit `_redirects` rule; it creates a redirect loop because Pages auto-strips `.html` with a 301
 - Modified: `public/site.webmanifest` — `shortcuts` entry pointing at `/privacy`
 - Emitter URL-gate: `src/analytics/emitter.ts` no-ops if `location.pathname === '/privacy'` or `/privacy.html`
-- CI: markdown-to-text parity check between `docs/PRIVACY.md` and `public/privacy.html`
+- CI: `npm run check:privacy-page` fails the build if the
+  committed HTML is stale relative to the Markdown source
 - Acceptance: `/privacy` renders, passes axe-core accessibility lint, `curl -I /privacy` returns 200 on a Pages preview deploy, the page itself fires zero events
 - Regression surface: the SPA fallback — verify other non-existent routes still serve `index.html`
 
@@ -1488,7 +1503,9 @@ Track as follow-up issues, build on separate branches:
 - [ ] `npm run build` produces a bundle that passes an axe-core scan of `/privacy`
 - [ ] Preview deploy shows `environment=preview` events in AE
 - [ ] Production deploy shows zero events until KV kill switch is flipped off
-- [ ] `docs/PRIVACY.md` and `public/privacy.html` pass the parity check
+- [ ] `npm run check:privacy-page` exits 0 (committed
+      `public/privacy.html` matches a fresh generation from
+      `docs/PRIVACY.md`)
 - [ ] `CLAUDE.md` module map updated
 - [ ] One synthetic heartbeat round-trip succeeds end-to-end
 

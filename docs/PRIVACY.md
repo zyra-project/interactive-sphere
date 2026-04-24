@@ -1,10 +1,14 @@
 # Privacy Policy — Terraviz
 
+<!-- internal-only -->
 **Draft for review.** This document is the canonical source for the
-privacy policy that ships at [`/privacy`](https://terraviz.pages.dev/privacy)
-(rendered from `public/privacy.html`). Needs legal review before
-release. See [`ANALYTICS_IMPLEMENTATION_PLAN.md`](ANALYTICS_IMPLEMENTATION_PLAN.md)
+privacy policy that ships at [`/privacy`](https://terraviz.pages.dev/privacy).
+`public/privacy.html` is generated from this file by
+`scripts/build-privacy-page.ts` — edit the Markdown, not the HTML.
+Needs legal review before release. See
+[`ANALYTICS_IMPLEMENTATION_PLAN.md`](ANALYTICS_IMPLEMENTATION_PLAN.md)
 for the technical design this policy describes.
+<!-- /internal-only -->
 
 Last updated: **draft**
 
