@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/public/api/spec/dashboard.json",
+  "title": "Terraviz — Research (Tier B)",
+  "uid": "terraviz-research",
+  "tags": ["terraviz", "analytics", "tier-b", "research"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "custom",
+        "label": "Environment",
+        "query": "production,preview,local",
+        "current": { "text": "production", "value": "production" }
+      },
+      {
+        "name": "DS_INFINITY",
+        "type": "datasource",
+        "query": "yesoreyeram-infinity-datasource",
+        "label": "Data source"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About this dashboard",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Tier B / research mode only.** These panels surface data captured when a user has explicitly opted into Research mode under Tools → Privacy. Empty panels in a fresh deployment are expected — the call sites for `dwell` / `orbit_*` / `browse_search` / `vr_interaction` land in Commits 12 and 13. `tour_question_answered` is already wired (Commit 9.5).\n\nSee `docs/ANALYTICS_QUERIES.md` for the full set of Tier B query patterns."
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Tour quiz — worst-answered questions",
+      "description": "Author-set question_id, ordered by lowest correctness rate. Helps tour authors see where learners struggle.",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 10 },
+      "datasource": "${DS_INFINITY}",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT blob6 AS tour_id, blob5 AS question_id, count() AS attempts, sum(if(blob7 = 'true', 1, 0)) / count() AS correctness_rate, avg(double5) AS avg_response_ms FROM terraviz_events WHERE blob1 = 'tour_question_answered' AND blob2 = '$environment' AND blob4 = 'false' AND timestamp > $__from GROUP BY tour_id, question_id HAVING attempts > 5 ORDER BY correctness_rate ASC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Browse search — top hashed queries",
+      "description": "SHA-256 prefix of search queries (12 hex chars). The same query always hashes the same way; we never see the words.",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 10 },
+      "datasource": "${DS_INFINITY}",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT blob5 AS query_hash, count() AS searches, avg(double2) AS avg_result_count FROM terraviz_events WHERE blob1 = 'browse_search' AND blob2 = '$environment' AND blob4 = 'false' AND timestamp > $__from GROUP BY query_hash ORDER BY searches DESC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Panel dwell time distribution",
+      "description": "How long users dwell on each panel (chat, info, browse, tools, individual datasets) — p50 + p95.",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 10 },
+      "datasource": "${DS_INFINITY}",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT blob5 AS view_target, quantile(0.50)(double2) AS p50_ms, quantile(0.95)(double2) AS p95_ms, count() AS samples FROM terraviz_events WHERE blob1 = 'dwell' AND blob2 = '$environment' AND blob4 = 'false' AND timestamp > $__from GROUP BY view_target ORDER BY samples DESC"
+        }
+      ]
+    }
+  ]
+}

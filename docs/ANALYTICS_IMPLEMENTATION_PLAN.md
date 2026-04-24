@@ -1469,10 +1469,39 @@ strategy for the overall PR can be decided at merge time.
 
 **Commit 11: Product-health + spatial-attention dashboards.**
 
-- New: `docs/ANALYTICS_QUERIES.md` — SQL patterns for AE SQL API, example queries, schema reference
-- New: `grafana/` directory with checked-in dashboard JSON (two dashboards)
-- Acceptance: dashboards render live production data; queries filter `environment='production'` by default with a variable switch to preview
-- Regression surface: the AE SQL API is eventually-consistent; dashboards need refresh intervals ≥ 60 s
+- New: `docs/ANALYTICS_QUERIES.md` — comprehensive schema reference
+  (blob/double position table per event type), boilerplate
+  filters, sample SQL for every Product-Health and
+  Spatial-Attention question the dashboards answer, plus a
+  Tier-B research section.
+- New: `grafana/README.md` — Infinity-plugin data source setup
+  pointed at Cloudflare's AE SQL HTTP endpoint (auth via
+  Cloudflare API token with Account Analytics → Read scope),
+  variable conventions (`$environment`, `$internal`, `$country`),
+  refresh / sampling / schema-drift maintenance notes.
+- New: `grafana/dashboards/product-health.json` — sessions per
+  day, platform × OS, layer-load p95 per dataset, source mix,
+  errors per session + by category, 2D map FPS over time,
+  VR-session funnel, tour completion rates, country breakdown.
+  All Tier A.
+- New: `grafana/dashboards/spatial-attention.json` —
+  `camera_settled` + `map_click` heatmaps, projection split
+  (2D vs VR/AR), per-dataset attention bins, top viewed
+  regions across both surfaces.
+- New: `grafana/dashboards/research.json` — placeholder Tier B
+  dashboard with the `tour_question_answered` worst-answered
+  panel wired up; remaining panels (`dwell`, `browse_search`,
+  `orbit_*`) light up after Commits 12–13 ship the call sites.
+- Acceptance: dashboards render live production data; queries
+  filter `environment='production'` by default with a variable
+  switch to preview, plus an `internal=false` default that
+  excludes staff dogfood.
+- Regression surface: the AE SQL API is eventually-consistent;
+  dashboards need refresh intervals ≥ 60 s. Dashboard JSON ships
+  as importable starter templates — polish (panel layout, colour
+  ramps, geo-map tile servers) is expected to be done in-Grafana
+  after import; export and re-commit the polished JSON so the
+  repo stays the source of truth.
 
 ### Phase 6 — Tier B call sites (opt-in research mode starts flowing)
 
