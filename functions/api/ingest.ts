@@ -196,6 +196,21 @@ export function environmentOf(env: Env): 'production' | 'preview' | 'local' {
   return env.CF_PAGES_BRANCH === 'main' ? 'production' : 'preview'
 }
 
+/** Normalize Cloudflare's `CF-IPCountry` header to a 2-letter ISO
+ * code, or `'XX'` when absent / malformed. Cloudflare uses the
+ * pseudo-code `'T1'` for Tor / unknown network origins; we map
+ * that to `'XX'` too so dashboards don't show it as a real country.
+ * This is the only geo-derived signal written to storage; the
+ * raw IP is read by the rate limiter and discarded. */
+export function countryOf(cfCountry: string | null): string {
+  if (!cfCountry) return 'XX'
+  const trimmed = cfCountry.trim().toUpperCase()
+  if (trimmed.length !== 2) return 'XX'
+  if (!/^[A-Z]{2}$/.test(trimmed)) return 'XX'
+  if (trimmed === 'T1' || trimmed === 'XX') return 'XX'
+  return trimmed
+}
+
 // --- Kill switch ---
 
 async function isKillSwitchOn(env: Env): Promise<boolean> {
@@ -214,17 +229,21 @@ async function isKillSwitchOn(env: Env): Promise<boolean> {
 // --- AE payload conversion ---
 
 /** Convert a typed event into the positional `blobs` / `doubles` /
- * `indexes` shape Analytics Engine expects. `blob1` is always
- * `event_type`; `blob2` is always `environment`; subsequent blobs
- * and doubles are the event's own string / number fields in
- * alphabetical order. Query patterns that rely on blob positions
- * live in docs/ANALYTICS_QUERIES.md. */
+ * `indexes` shape Analytics Engine expects. Server-stamped blobs
+ * come first so their positions are stable across event types:
+ *   blob1 = `event_type`
+ *   blob2 = `environment`
+ *   blob3 = `country` (2-letter ISO, or `'XX'` when unknown)
+ * Subsequent blobs and doubles are the event's own string / number
+ * fields in alphabetical order. Query patterns that rely on blob
+ * positions live in docs/ANALYTICS_QUERIES.md. */
 export function toDataPoint(
   event: TelemetryEvent,
   sessionId: string,
   environment: string,
+  country: string,
 ): AnalyticsEngineDataPoint {
-  const blobs: string[] = [event.event_type, environment]
+  const blobs: string[] = [event.event_type, environment, country]
   const doubles: number[] = []
 
   const record = event as unknown as Record<string, unknown>
@@ -339,11 +358,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   // without the binding configured), accept and discard — the
   // 204 response lets the client's success path run unchanged.
   const environment = environmentOf(context.env)
+  // `CF-IPCountry` is set by Cloudflare's edge from the connecting
+  // IP's GeoIP lookup. Never reading the raw IP for analytics; this
+  // header is the only geo-derived signal we store. Absent / Tor
+  // requests map to `'XX'` so dashboards don't show a synthetic value.
+  const country = countryOf(request.headers.get('CF-IPCountry'))
   const ae = context.env.ANALYTICS
   if (ae) {
     for (const event of body.events) {
       try {
-        ae.writeDataPoint(toDataPoint(event, body.session_id, environment))
+        ae.writeDataPoint(toDataPoint(event, body.session_id, environment, country))
       } catch {
         // One bad datapoint should not fail the whole batch.
       }

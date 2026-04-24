@@ -5,6 +5,7 @@ import {
   onRequestOptions,
   toDataPoint,
   environmentOf,
+  countryOf,
   __resetRateLimitState,
   MAX_BODY_BYTES,
   RATE_LIMIT_PER_IP,
@@ -102,8 +103,12 @@ function sessionStart(): SessionStartEvent {
     event_type: 'session_start',
     app_version: '0.2.3',
     platform: 'web',
+    os: 'mac',
     locale: 'en-US',
     viewport_class: 'lg',
+    aspect_class: 'wide',
+    screen_class: '1080p',
+    build_channel: 'public',
     vr_capable: 'none',
     schema_version: '1.0',
   }
@@ -144,25 +149,56 @@ describe('environmentOf', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
+// countryOf
+// ─────────────────────────────────────────────────────────────────────
+
+describe('countryOf', () => {
+  it('returns the upper-cased 2-letter code', () => {
+    expect(countryOf('US')).toBe('US')
+    expect(countryOf('de')).toBe('DE')
+    expect(countryOf(' jp ')).toBe('JP')
+  })
+
+  it('returns XX for null / empty / wrong length', () => {
+    expect(countryOf(null)).toBe('XX')
+    expect(countryOf('')).toBe('XX')
+    expect(countryOf('U')).toBe('XX')
+    expect(countryOf('USA')).toBe('XX')
+  })
+
+  it('returns XX for non-alpha codes', () => {
+    expect(countryOf('12')).toBe('XX')
+    expect(countryOf('!!')).toBe('XX')
+  })
+
+  it('normalizes Cloudflare Tor / unknown pseudo-codes to XX', () => {
+    expect(countryOf('T1')).toBe('XX')
+    expect(countryOf('t1')).toBe('XX')
+    expect(countryOf('XX')).toBe('XX')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
 // toDataPoint
 // ─────────────────────────────────────────────────────────────────────
 
 describe('toDataPoint', () => {
-  it('always puts event_type in blob1 and environment in blob2', () => {
-    const dp = toDataPoint(sessionStart(), 'sess', 'production')
+  it('always puts event_type / environment / country in blobs 1–3', () => {
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'US')
     expect(dp.blobs![0]).toBe('session_start')
     expect(dp.blobs![1]).toBe('production')
+    expect(dp.blobs![2]).toBe('US')
   })
 
   it('puts the session_id in indexes', () => {
-    const dp = toDataPoint(sessionStart(), 'abc-123', 'production')
+    const dp = toDataPoint(sessionStart(), 'abc-123', 'production', 'US')
     expect(dp.indexes).toEqual(['abc-123'])
   })
 
   it('separates string and number fields into blobs and doubles', () => {
-    const dp = toDataPoint(layerLoaded('X'), 'sess', 'production')
-    // Strings: layer_id, layer_source, slot_index, trigger (plus event_type + environment)
-    expect(dp.blobs!.length).toBeGreaterThanOrEqual(6)
+    const dp = toDataPoint(layerLoaded('X'), 'sess', 'production', 'DE')
+    // Strings: layer_id, layer_source, slot_index, trigger (plus event_type + environment + country)
+    expect(dp.blobs!.length).toBeGreaterThanOrEqual(7)
     expect(dp.blobs!).toContain('X')
     expect(dp.blobs!).toContain('network')
     // Numbers: load_ms (and possibly client_offset_ms if stamped, though
@@ -175,7 +211,7 @@ describe('toDataPoint', () => {
       ...sessionStart(),
       resumed: true,
     }
-    const dp = toDataPoint(event, 'sess', 'production')
+    const dp = toDataPoint(event, 'sess', 'production', 'US')
     expect(dp.blobs!).toContain('true')
   })
 
@@ -187,20 +223,26 @@ describe('toDataPoint', () => {
       duration_ms: 5000,
       median_fps: null,
     } as unknown as TelemetryEvent
-    const dp = toDataPoint(event, 'sess', 'production')
+    const dp = toDataPoint(event, 'sess', 'production', 'US')
     // null median_fps should not appear anywhere
     expect(dp.doubles!.includes(NaN)).toBe(false)
     expect(dp.blobs!.includes('null')).toBe(false)
   })
 
-  it('orders per-event string fields alphabetically after event_type + environment', () => {
-    // app_version comes before locale alphabetically, both come before
-    // platform/schema_version/viewport_class/vr_capable. Verify the
-    // first few positions.
-    const dp = toDataPoint(sessionStart(), 'sess', 'production')
-    // blob3 = app_version, blob4 = locale, etc.
-    expect(dp.blobs![2]).toBe('0.2.3') // app_version
-    expect(dp.blobs![3]).toBe('en-US') // locale
+  it('orders per-event string fields alphabetically after the three server blobs', () => {
+    // app_version comes before the other alphabetically-ordered
+    // fields, but sits in blob4 because blobs 1–3 are the server-
+    // stamped event_type / environment / country.
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'JP')
+    expect(dp.blobs![0]).toBe('session_start')
+    expect(dp.blobs![1]).toBe('production')
+    expect(dp.blobs![2]).toBe('JP')
+    expect(dp.blobs![3]).toBe('0.2.3') // app_version
+  })
+
+  it('accepts XX for unknown country', () => {
+    const dp = toDataPoint(sessionStart(), 'sess', 'production', 'XX')
+    expect(dp.blobs![2]).toBe('XX')
   })
 })
 
@@ -242,6 +284,44 @@ describe('onRequestPost — happy path', () => {
     })
     await onRequestPost(ctx)
     expect(ae.datapoints[0].blobs![1]).toBe('production')
+  })
+
+  it('injects the country tag from CF-IPCountry on every datapoint', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([sessionStart(), layerLoaded('A')]),
+      ip: '10.0.0.7',
+      headers: { 'CF-IPCountry': 'DE' },
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    await onRequestPost(ctx)
+    expect(ae.datapoints).toHaveLength(2)
+    for (const dp of ae.datapoints) {
+      expect(dp.blobs![2]).toBe('DE')
+    }
+  })
+
+  it('defaults country to XX when CF-IPCountry is missing', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([sessionStart()]),
+      ip: '10.0.0.8',
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    await onRequestPost(ctx)
+    expect(ae.datapoints[0].blobs![2]).toBe('XX')
+  })
+
+  it('normalizes Tor origin (T1) to XX', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([sessionStart()]),
+      ip: '10.0.0.9',
+      headers: { 'CF-IPCountry': 'T1' },
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    await onRequestPost(ctx)
+    expect(ae.datapoints[0].blobs![2]).toBe('XX')
   })
 
   it('accepts a request without the ANALYTICS binding and returns 204', async () => {

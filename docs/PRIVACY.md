@@ -51,8 +51,19 @@ and change it — under **Tools → Privacy**.
 
 Small, anonymous events about the health of the app:
 
-- That the app started — with the app version, platform (web or
-  desktop), screen-size bucket, and your browser's language setting
+- That the app started — with the app version, platform bucket
+  (web / desktop / mobile), operating-system family only (macOS,
+  Windows, Linux, iOS, or Android — never the version), your
+  browser's language setting, three **bucketed** screen signals
+  (browser viewport size class, aspect-ratio class, and physical-
+  display class — never your exact resolution), whether your
+  device supports VR or AR, the country your request came from as
+  a 2-letter code (derived by our Cloudflare edge from your IP
+  address and attached server-side; the IP itself is never
+  written to analytics storage), and which build of the app you
+  ran (public, internal-staff, or canary — so internal dogfood
+  sessions can be excluded from public dashboards without us
+  needing to know your network address)
 - That a data layer was loaded — which layer, whether it came from the
   network or a local cache, how long it took
 - That a data layer was unloaded — which layer, how long you viewed it
@@ -141,10 +152,19 @@ covered in sections 4 and 5:
   and repeat frequencies but never the words
 - **Your precise location.** We do not request geolocation permission.
   The map coordinates we record are the camera's view on the globe —
-  which is wherever you navigated to, not where you are
+  which is wherever you navigated to, not where you are. We do
+  record a 2-letter country code derived by our Cloudflare edge
+  from your IP address (so we can tell if a build is broken in
+  one country, for example), but never city, region, latitude,
+  longitude, ASN, or IP itself
 - **Tracking cookies, advertising identifiers, or fingerprinting
   signals.** The app does not use cookies for analytics. A single
-  cookie-free session ID lives in memory for the duration of the app
+  cookie-free session ID lives in memory for the duration of the
+  app. We also do not collect your exact screen resolution, device
+  pixel ratio, browser version, installed fonts or plugins, time
+  zone, or user-agent string — these are the classic fingerprinting
+  signals, and our environment data is bucketed specifically to
+  avoid them
 - **Page URLs from outside the app, referrer chains, or anything about
   other sites you visit**
 - **Your IP address in the event stream.** Our server sees your IP

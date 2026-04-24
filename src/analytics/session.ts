@@ -16,15 +16,20 @@ import {
   isWebXRAvailable,
 } from '../utils/vrCapability'
 import type {
+  AspectClass,
+  BuildChannel,
+  OsFamily,
   Platform,
+  ScreenClass,
   SessionEndEvent,
   SessionStartEvent,
   ViewportClass,
   VrCapability,
 } from '../types'
 
-// __APP_VERSION__ is injected by Vite (vite.config.ts define block).
+// Vite-injected defines — see vite.config.ts.
 declare const __APP_VERSION__: string
+declare const __BUILD_CHANNEL__: string
 
 let started = false
 let sessionEnded = false
@@ -45,13 +50,18 @@ export async function initSession(): Promise<void> {
   started = true
 
   const vrCapable = await detectVrCapability()
+  const os = detectOs()
 
   const event: SessionStartEvent = {
     event_type: 'session_start',
     app_version: appVersion(),
-    platform: detectPlatform(),
+    platform: detectPlatform(os),
+    os,
     locale: detectLocale(),
     viewport_class: classifyViewport(),
+    aspect_class: classifyAspect(),
+    screen_class: classifyScreen(),
+    build_channel: detectBuildChannel(),
     vr_capable: vrCapable,
     schema_version: TELEMETRY_SCHEMA_VERSION,
   }
@@ -118,11 +128,54 @@ function appVersion(): string {
   }
 }
 
-function detectPlatform(): Platform {
+/** Shell type. Tauri mobile vs Tauri desktop is distinguished by
+ * the already-detected OS family so we only consult the UA once. */
+function detectPlatform(os: OsFamily): Platform {
   const win = typeof window !== 'undefined'
     ? (window as unknown as { __TAURI__?: unknown })
     : null
-  return win && !!win.__TAURI__ ? 'desktop' : 'web'
+  const isTauri = !!win?.__TAURI__
+  if (!isTauri) return 'web'
+  if (os === 'ios' || os === 'android') return 'mobile'
+  return 'desktop'
+}
+
+/** OS family. Uses the structured `navigator.userAgentData.platform`
+ * when available (modern Chromium — gives a clean string like
+ * `"macOS"` with zero parsing), with a UA substring fallback for
+ * every other engine. Only the bucket leaves this function; the
+ * raw UA string is never emitted. */
+function detectOs(): OsFamily {
+  if (typeof navigator === 'undefined') return 'unknown'
+  const uaData = (navigator as Navigator & {
+    userAgentData?: { platform?: string }
+  }).userAgentData
+  const structured = uaData?.platform
+  if (structured) {
+    const s = structured.toLowerCase()
+    if (s === 'macos' || s === 'mac os' || s === 'mac os x') return 'mac'
+    if (s === 'windows') return 'windows'
+    if (s === 'linux') return 'linux'
+    if (s === 'ios') return 'ios'
+    if (s === 'android') return 'android'
+  }
+  const ua = navigator.userAgent ?? ''
+  // Order matters — iPadOS 13+ masquerades as Mac in the UA unless
+  // you check `maxTouchPoints`. Check iOS first via Apple touch
+  // signals, then the rest by substring.
+  if (/iPad|iPhone|iPod/.test(ua)) return 'ios'
+  if (
+    ua.includes('Macintosh') &&
+    typeof navigator.maxTouchPoints === 'number' &&
+    navigator.maxTouchPoints > 1
+  ) {
+    return 'ios' // iPad masquerading as Mac
+  }
+  if (/Android/i.test(ua)) return 'android'
+  if (/Windows/i.test(ua)) return 'windows'
+  if (/Mac OS X|Macintosh/i.test(ua)) return 'mac'
+  if (/Linux|X11/i.test(ua)) return 'linux'
+  return 'unknown'
 }
 
 function detectLocale(): string {
@@ -130,9 +183,7 @@ function detectLocale(): string {
   return navigator.language || 'unknown'
 }
 
-/** Map the largest viewport dimension into a Tailwind-style bucket.
- * Tracks the larger side so a phone rotated to landscape still
- * reports as a phone. */
+/** Browser-viewport width bucket. Unchanged shape from Commit 7. */
 function classifyViewport(): ViewportClass {
   if (typeof window === 'undefined') return 'md'
   const w = window.innerWidth || 1024
@@ -141,6 +192,50 @@ function classifyViewport(): ViewportClass {
   if (w < 1280) return 'md'
   if (w < 1920) return 'lg'
   return 'xl'
+}
+
+/** Aspect-ratio bucket derived from the *viewport* (not the
+ * physical display) — layout decisions care about the area the
+ * app actually gets. Coarse on purpose; see the plan's
+ * "Session-start enrichment" section for the cardinality math. */
+function classifyAspect(): AspectClass {
+  if (typeof window === 'undefined') return 'landscape'
+  const w = window.innerWidth || 1024
+  const h = window.innerHeight || 768
+  if (h === 0) return 'landscape'
+  const ratio = w / h
+  if (ratio < 0.6) return 'portrait-tall'
+  if (ratio < 0.95) return 'portrait'
+  if (ratio < 1.1) return 'square'
+  if (ratio < 1.8) return 'landscape'
+  if (ratio < 2.2) return 'wide'
+  return 'ultrawide'
+}
+
+/** Physical-display bucket — separate from viewport because a user
+ * on a 4K monitor may resize the window to 1080p. `screen.width`
+ * reflects the display, not the browser chrome. */
+function classifyScreen(): ScreenClass {
+  if (typeof screen === 'undefined') return '1080p'
+  const w = screen.width || 1920
+  if (w < 768) return 'mobile'
+  if (w < 1366) return 'tablet'
+  if (w < 2048) return '1080p'
+  if (w < 2880) return '2k'
+  return '4k+'
+}
+
+/** Build audience — baked into the bundle at build time via the
+ * `__BUILD_CHANNEL__` Vite define. Validated at runtime so an
+ * unexpected value can't slip through. */
+function detectBuildChannel(): BuildChannel {
+  try {
+    const v = typeof __BUILD_CHANNEL__ === 'string' ? __BUILD_CHANNEL__ : ''
+    if (v === 'internal' || v === 'canary' || v === 'public') return v
+  } catch {
+    // define absent (e.g. running under vitest without vite) — fall through
+  }
+  return 'public'
 }
 
 async function detectVrCapability(): Promise<VrCapability> {

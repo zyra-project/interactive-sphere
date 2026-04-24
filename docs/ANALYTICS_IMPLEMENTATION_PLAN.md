@@ -149,7 +149,7 @@ the client validate against the same shape.
 
 | Event | Tier | `blobs[]` (strings) | `doubles[]` (numbers) | `indexes[]` |
 |---|---|---|---|---|
-| `session_start` | A | `event_type`, `app_version`, `platform` (`web`/`desktop`), `locale`, `viewport_class` (`xs`/`sm`/`md`/`lg`/`xl`), `vr_capable` (`none`/`vr`/`ar`/`both`) | — | `session_id` |
+| `session_start` | A | `event_type`, `app_version`, `platform` (`web`/`desktop`/`mobile`), `os` (`mac`/`windows`/`linux`/`ios`/`android`/`unknown`), `locale`, `viewport_class` (`xs`/`sm`/`md`/`lg`/`xl`), `aspect_class` (`portrait-tall`/`portrait`/`square`/`landscape`/`wide`/`ultrawide`), `screen_class` (`mobile`/`tablet`/`1080p`/`2k`/`4k+`), `build_channel` (`public`/`internal`/`canary`), `vr_capable` (`none`/`vr`/`ar`/`both`), `country` (server-stamped 2-letter ISO) | — | `session_id` |
 | `session_end` | A | `event_type`, `exit_reason` (`pagehide`/`visibilitychange`/`clean`) | `duration_ms`, `event_count` | `session_id` |
 | `layer_loaded` | A | `event_type`, `layer_id`, `layer_source` (`network`/`cache`/`hls`/`image`), `slot_index`, `trigger` (`browse`/`orbit`/`tour`/`url`/`default`) | `load_ms` | `session_id` |
 | `layer_unloaded` | A | `event_type`, `layer_id`, `slot_index`, `reason` (`replaced`/`home`/`tour`/`manual`) | `dwell_ms` | `session_id` |
@@ -452,6 +452,53 @@ the code and confirm none of these leave the client:
   gaze/center point to 3 decimals (~110 m). VR bearing/pitch are
   snapped to the nearest degree so head-pose micro-movements don't
   uniquely fingerprint a session
+- **Raw screen dimensions and browser user-agent strings** — the
+  `session_start` event collects only low-cardinality buckets
+  (`platform`, `os`, `viewport_class`, `aspect_class`,
+  `screen_class`). Exact `screen.width×screen.height`,
+  `devicePixelRatio`, `navigator.userAgent`, and `Intl.*` signals
+  are never transmitted. OS is recorded as a family (`mac`,
+  `windows`, `linux`, `ios`, `android`); OS version is never read
+- **City-level or finer geolocation** — the ingest endpoint stamps
+  a 2-letter country code from Cloudflare's edge
+  (`CF-IPCountry`) on the server side and discards the IP. No
+  `CF-IPCity`, `CF-IPLatitude`, `CF-IPLongitude`, timezone, or
+  ASN reads. No `navigator.geolocation` call anywhere in the app
+
+#### Session-start enrichment — industry-standard low-cardinality signal
+
+`session_start` carries a small set of environment fields that
+every mainstream product-analytics tool collects. Ours are all
+pre-bucketed so no field is a fingerprinting signal in its own
+right and the combined entropy stays below the ~10-bit threshold
+where individual sessions start to stand out.
+
+| Field | Cardinality | Source | Purpose |
+|---|---|---|---|
+| `platform` | 3 | `window.__TAURI__` + `@tauri-apps/plugin-os.platform()` | Shell type — `'web'` / `'desktop'` / `'mobile'`. Drives "how many users are on the Tauri mobile app vs the web" |
+| `os` | 6 | `navigator.userAgentData.platform` (web), `@tauri-apps/plugin-os.type()` (Tauri), or UA substring fallback | OS family only. No version. Drives "do we need Windows-specific work" |
+| `viewport_class` | 5 | `window.innerWidth` bucket | Same as today — xs/sm/md/lg/xl |
+| `aspect_class` | 6 | `innerWidth / innerHeight` bucket | Portrait phone / landscape tablet / ultrawide desktop signal for 2D layout decisions |
+| `screen_class` | 5 | `screen.width` bucket | What physical displays do users own (vs the browser viewport). Drives "is anyone actually on 4K?" |
+| `build_channel` | 3 | Vite `__BUILD_CHANNEL__` define | `'public'` / `'internal'` / `'canary'`. Lets internal staff builds be filtered out of public dashboards without IP-based allowlists |
+| `country` | ~250 | Server-side `CF-IPCountry` on `/api/ingest` | Country-level heatmaps and latency segmentation. The raw IP is read only by the rate limiter; `country` is the only derived signal written to storage |
+
+Total realistic combinations across these fields: ~30–40 common
+clusters. At 100k sessions/month, no single tuple identifies an
+individual. The session ID rotates per launch, so even if a rare
+cluster *were* small, sessions can't be linked across launches.
+
+Rationale for *not* expanding the set:
+- `devicePixelRatio`, `screen.colorDepth`, exact screen
+  dimensions, exact browser version — all primarily
+  fingerprinting signal with rare product value
+- `timezone` (via `Intl.DateTimeFormat`) — useful for time-of-day
+  analysis but `country` covers the business case at lower risk
+- `referrer`, `navigator.connection.effectiveType`, font list,
+  installed plugins — out of scope entirely
+- City-level geo — Cloudflare can supply `CF-IPCity` but the
+  privacy cost is real; country is the industry standard for
+  privacy-first analytics
 
 #### Design notes
 
@@ -478,6 +525,16 @@ the code and confirm none of these leave the client:
   Pages environment serving the request. Clients never send this
   field; the server is the source of truth. Dashboards filter on
   `environment = 'production'` by default.
+- **Country tagging.** The Pages Function also injects a `country`
+  blob — a 2-letter ISO code (`'US'`, `'DE'`, `'JP'`, …) — from
+  Cloudflare's edge `CF-IPCountry` header. When the header is
+  absent the blob is `'XX'` (unknown). The raw IP is read by the
+  rate limiter inside the same function and is **never** passed to
+  `writeDataPoint()`. Country-level geotagging is the industry
+  standard for privacy-first analytics (Plausible, Fathom, Umami
+  all use the same pattern); ~250 buckets each shared by millions
+  of people is not identifying except in a handful of micro-states.
+  Clients cannot influence this field.
 
 ### Client — `src/analytics/`
 
@@ -515,7 +572,7 @@ event in Tier B silently drops if the user is on Tier A.
 
 | Event | Tier | File | Site |
 |---|---|---|---|
-| `session_start` | A | `src/main.ts` | After `await app.initialize()` in the `DOMContentLoaded` handler (~line 2049) |
+| `session_start` | A | `src/main.ts` → `src/analytics/session.ts` | After `await app.initialize()` in the `DOMContentLoaded` handler. All environment detectors (platform, os, aspect/screen class, build_channel, vr_capable) live in `session.ts`; `country` is server-stamped from `CF-IPCountry` and never present on the client event |
 | `session_end` | A | `src/analytics/emitter.ts` | On `pagehide` / `beforeunload`; flush synchronously via `navigator.sendBeacon` |
 | `layer_loaded` | A | `src/services/datasetLoader.ts` | `loadImageDataset` on `Image.onload`; `loadVideoDataset` on HLS `canplay`. Measure `load_ms` from function entry. `trigger` passed in from the caller (browse / orbit / tour / url / default) |
 | `layer_unloaded` | A | `src/services/datasetLoader.ts` + `src/main.ts` | Fire when a slot replaces its dataset or `goHome()` runs. Pair with the stored load timestamp for `dwell_ms` |
@@ -1241,7 +1298,9 @@ The implementation PR (separate, follows plan approval) delivers:
 - `src/ui/toolsMenuUI.ts` — Privacy entry in the Tools popover
 - `wrangler.toml` — Analytics Engine binding
 - `vite.config.ts` — `VITE_TELEMETRY_ENABLED` define + `__APP_VERSION__`
-  constant if not already present
+  constant if not already present + `__BUILD_CHANNEL__` define
+  (`'public'` / `'internal'` / `'canary'`, defaulted to `'public'`
+  unless `VITE_BUILD_CHANNEL` is set at build time)
 - `CLAUDE.md` — module-map rows for `src/analytics/*` +
   `src/ui/privacyUI.ts`
 

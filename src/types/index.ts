@@ -597,8 +597,23 @@ export type TierBEventType = (typeof TIER_B_EVENT_TYPES)[number]
 
 // --- Shared enums ---
 
-export type Platform = 'web' | 'desktop'
+export type Platform = 'web' | 'desktop' | 'mobile'
+export type OsFamily = 'mac' | 'windows' | 'linux' | 'ios' | 'android' | 'unknown'
 export type ViewportClass = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+/** Aspect-ratio bucket derived from `window.innerWidth / window.innerHeight`.
+ * Low cardinality on purpose — exact dimensions would be a
+ * fingerprinting signal. See docs/ANALYTICS_IMPLEMENTATION_PLAN.md
+ * "Privacy posture". */
+export type AspectClass = 'portrait-tall' | 'portrait' | 'square' | 'landscape' | 'wide' | 'ultrawide'
+/** Physical-display bucket derived from `screen.width` — independent
+ * from the browser viewport (which is captured by `viewport_class`). */
+export type ScreenClass = 'mobile' | 'tablet' | '1080p' | '2k' | '4k+'
+/** Build lineage. Server-stamped `environment` (`production` /
+ * `preview` / `local`) indicates *where* the app ran; `build_channel`
+ * indicates *which audience* the bundle was shipped for. An internal
+ * staff build deployed to production still reports
+ * `environment='production'` but `build_channel='internal'`. */
+export type BuildChannel = 'public' | 'internal' | 'canary'
 export type VrCapability = 'none' | 'vr' | 'ar' | 'both'
 export type LayerSource = 'network' | 'cache' | 'hls' | 'image'
 export type LoadTrigger = 'browse' | 'orbit' | 'tour' | 'url' | 'default'
@@ -634,9 +649,26 @@ export interface TelemetryEventBase {
 export interface SessionStartEvent extends TelemetryEventBase {
   event_type: 'session_start'
   app_version: string
+  /** Shell type — `'web'` in a browser tab, `'desktop'` in the
+   * Tauri desktop app, `'mobile'` in the Tauri iOS/Android app. */
   platform: Platform
+  /** OS family — never version. Bucketed to six values to avoid
+   * fingerprinting. */
+  os: OsFamily
   locale: string
+  /** Browser viewport bucket (innerWidth-derived). */
   viewport_class: ViewportClass
+  /** Browser viewport aspect ratio bucket. Captures orientation
+   * alongside shape — portrait phone vs ultrawide monitor etc. */
+  aspect_class: AspectClass
+  /** Physical-display bucket (screen.width-derived). Independent
+   * from viewport because a user on a 4K monitor may resize the
+   * browser to a 1080p window. */
+  screen_class: ScreenClass
+  /** Build audience — `'public'` unless the bundle was produced
+   * with `VITE_BUILD_CHANNEL=internal` (staff dogfood) or
+   * `VITE_BUILD_CHANNEL=canary` (staged rollout). */
+  build_channel: BuildChannel
   vr_capable: VrCapability
   schema_version: string
   /** True when this is a re-start after the user switched telemetry
