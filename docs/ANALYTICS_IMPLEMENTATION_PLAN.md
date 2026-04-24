@@ -1,12 +1,12 @@
 # Analytics Implementation Plan
 
-Telemetry for Interactive Sphere — a structured event stream that answers
+Telemetry for Terraviz — a structured event stream that answers
 basic product questions (what layers are loaded, how long users dwell,
 what Orbit interactions look like) and that Zyra can later ingest as a
 first-class data source.
 
 **Status: draft for review.** Tracking issue:
-[#43](https://github.com/zyra-project/interactive-sphere/issues/43).
+[#43](https://github.com/zyra-project/terraviz/issues/43).
 Scope is Phase 1 (Workers Analytics Engine + a minimal Pages Function)
 with a sketch of Phase 2 (Pipelines → R2 / Iceberg → Zyra).
 
@@ -50,7 +50,7 @@ The app is a Cloudflare Pages project with Pages Functions under
 feedback, and a Workers AI binding. `wrangler.toml` is a Pages config,
 not a standalone-Worker config.
 
-The issue proposes a separate Worker at `analytics.interactive-sphere.*`.
+The issue proposes a separate Worker at `analytics.terraviz.*`.
 That works, but it adds a deploy target, a domain decision, and a second
 CI path. **Phase 1 recommendation: land the ingest endpoint as a Pages
 Function** (`functions/api/ingest.ts`) alongside the existing feedback
@@ -114,7 +114,7 @@ telemetry (e.g., a federal-delivery build where infosec says no).
 > browser's user agent and the current page URL. Attaching a
 > screenshot is optional and opt-in.
 >
-> **Anonymous usage data.** Interactive Sphere reports a small set of
+> **Anonymous usage data.** Terraviz reports a small set of
 > anonymous events — app starts, which data layers are loaded, and
 > whether feedback was submitted — so we can tell which builds are
 > healthy and which layers people reach for. Events carry a
@@ -346,7 +346,7 @@ consent prompt. Proposed flow:
 
 1. A fatal error fires (top-level uncaught, WebGL context loss, HLS
    terminal error, or a user-surfaced *"something broke"* dialog)
-2. A modal appears: **"Interactive Sphere ran into a problem. Send a
+2. A modal appears: **"Terraviz ran into a problem. Send a
    crash report?"** with three buttons: *Send*, *Don't send*, *Send
    with details* (optional textarea, "what were you doing?")
 3. On *Send*: collects the classified event (what Tier A already
@@ -669,7 +669,7 @@ schema above. Pages Function responsibilities:
 ```toml
 [[analytics_engine_datasets]]
 binding = "ANALYTICS"
-dataset = "interactive_sphere_events"
+dataset = "terraviz_events"
 ```
 
 ### Queries + dashboards
@@ -828,7 +828,7 @@ These were Blockers. All resolved:
 
 - **First-launch UX — unified across web and desktop.** Tier defaults
   to `essential`. A persistent disclosure banner appears on first
-  session and does not dismiss automatically: *"Interactive Sphere
+  session and does not dismiss automatically: *"Terraviz
   reports anonymous usage data. [Learn more](/privacy) · [Settings](#privacy)
   · [OK]"*. Banner is the same copy on web and desktop. No first-run
   modal on desktop — the install event is not held to a higher
@@ -945,8 +945,8 @@ event-forging surface and a DoS target.
 Required controls:
 
 - **Origin allowlist.** Pages Function checks `Origin` / `Referer`
-  against a short list (`interactive-sphere.pages.dev`,
-  `*.interactive-sphere.*` custom domains, `tauri://localhost` for
+  against a short list (`terraviz.pages.dev`,
+  `*.terraviz.*` custom domains, `tauri://localhost` for
   desktop). Rejects with 403 otherwise. Not a strong forgery
   defense — anyone can spoof — but it stops casual drive-by forging
 - **Per-IP + per-session rate limits.** Already in the plan; confirm
@@ -979,7 +979,7 @@ Building this without a fast feedback loop is painful. Must-haves:
   in `npm run dev`, off in `npm run build`. Lets anyone add an emit
   call and see it fire without any backend wiring
 - **Dev dataset.** A second AE dataset name (e.g.
-  `interactive_sphere_events_dev`) bound in `wrangler.toml` under a
+  `terraviz_events_dev`) bound in `wrangler.toml` under a
   separate env, selected when `CF_PAGES_BRANCH !== 'main'`. Preview
   deploys write to dev; main writes to prod. Standard Cloudflare
   pattern
@@ -1057,7 +1057,7 @@ Building this without a fast feedback loop is painful. Must-haves:
 #### Ownership and on-call
 
 - **Schema ownership.** Who approves `TelemetryEvent` changes? Default:
-  Interactive Sphere maintainers + one Zyra contact for Phase 2
+  Terraviz maintainers + one Zyra contact for Phase 2
   compatibility. Document in `docs/ANALYTICS.md`
 - **Pipeline on-call.** Who gets the heartbeat alarm? Defer until
   we have a real user of the stream, which is post-Phase-2

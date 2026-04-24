@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'none'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
   <meta name="robots" content="index, follow" />
   <meta name="color-scheme" content="dark light" />
-  <title>Privacy Policy — Interactive Sphere</title>
+  <title>Privacy Policy — Terraviz</title>
   <link rel="icon" href="/favicon.ico" sizes="48x48" />
   <style>
     :root {
@@ -176,14 +176,14 @@
   <a href="#main" class="skip-link">Skip to main content</a>
   <div class="page">
     <header class="site-header">
-      <h1>Privacy Policy &mdash; Interactive Sphere</h1>
+      <h1>Privacy Policy &mdash; Terraviz</h1>
       <p class="meta">Last updated: <strong>draft</strong></p>
-      <a href="/" class="back-link">&larr; Back to Interactive Sphere</a>
+      <a href="/" class="back-link">&larr; Back to Terraviz</a>
     </header>
     <main id="main" tabindex="-1">
       <section aria-labelledby="summary">
         <h2 id="summary">Summary &mdash; in plain language</h2>
-        <p>Interactive Sphere is a NOAA Science On a Sphere viewer. We want to make it better without spying on you. This page explains exactly what the app records, what it never records, and how you turn everything off.</p>
+        <p>Terraviz is a NOAA Science On a Sphere viewer. We want to make it better without spying on you. This page explains exactly what the app records, what it never records, and how you turn everything off.</p>
         <ul>
           <li>We <strong>do not</strong> use cookies for tracking.</li>
           <li>We <strong>do not</strong> use third-party analytics services.</li>
@@ -198,7 +198,7 @@
 
       <section aria-labelledby="s1">
         <h2 id="s1">1. Who runs this</h2>
-        <p>Interactive Sphere is developed by <a href="https://github.com/zyra-project">Zyra Project</a>. Source code: <a href="https://github.com/zyra-project/interactive-sphere">github.com/zyra-project/interactive-sphere</a>.</p>
+        <p>Terraviz is developed by <a href="https://github.com/zyra-project">Zyra Project</a>. Source code: <a href="https://github.com/zyra-project/terraviz">github.com/zyra-project/terraviz</a>.</p>
         <p>Contact for privacy questions: <em>[TBD &mdash; populate before release]</em>.</p>
       </section>
 
@@ -211,7 +211,7 @@
         <h3>Mode 1 &mdash; Essential (on by default)</h3>
         <p>Small, anonymous events about the health of the app:</p>
         <ul>
-          <li>That the app started &mdash; with the app version, platform (web or desktop), screen-size bucket, and your browser&rsquo;s language setting</li>
+          <li>That the app started &mdash; with the app version, platform bucket (web / desktop / mobile), operating-system family only (macOS, Windows, Linux, iOS, or Android &mdash; never the version), your browser&rsquo;s language setting, three <strong>bucketed</strong> screen signals (browser viewport size class, aspect-ratio class, and physical-display class &mdash; never your exact resolution), whether your device supports VR or AR, the country your request came from as a 2-letter code (derived by our Cloudflare edge from your IP address and attached server-side; the IP itself is never written to analytics storage), and which build of the app you ran (public, internal-staff, or canary &mdash; so internal dogfood sessions can be excluded from public dashboards without us needing to know your network address), and a <code>true</code>/<code>false</code> flag indicating whether the request carried a valid internal-staff single-sign-on header (set by Cloudflare&rsquo;s edge when a Zyra-Project staff member is signed in via our internal auth layer; the authenticated email itself is <strong>never</strong> stored &mdash; only the boolean)</li>
           <li>That a data layer was loaded &mdash; which layer, whether it came from the network or a local cache, how long it took</li>
           <li>That a data layer was unloaded &mdash; which layer, how long you viewed it</li>
           <li>Where on the globe the camera settled &mdash; the map&rsquo;s center latitude, longitude, zoom, and bearing after you stop panning. Coordinates are rounded to roughly 100 metres</li>
@@ -250,14 +250,14 @@
           <li><strong>Your identity.</strong> No login, no account, no email address collected automatically</li>
           <li><strong>The text of your Orbit conversations</strong> &mdash; not in telemetry. (Conversations <em>do</em> leave your device &mdash; they are sent to an AI provider to generate responses, and rating a response explicitly submits that conversation for feedback. See sections 4 and 5 for the full picture)</li>
           <li><strong>The text of browse searches.</strong> We hash your query client-side before it leaves your device, so telemetry sees typing patterns and repeat frequencies but never the words</li>
-          <li><strong>Your precise location.</strong> We do not request geolocation permission. The map coordinates we record are the camera&rsquo;s view on the globe &mdash; which is wherever you navigated to, not where you are</li>
-          <li><strong>Tracking cookies, advertising identifiers, or fingerprinting signals.</strong> The app does not use cookies for analytics. A single cookie-free session ID lives in memory for the duration of the app</li>
+          <li><strong>Your precise location.</strong> We do not request geolocation permission. The map coordinates we record are the camera&rsquo;s view on the globe &mdash; which is wherever you navigated to, not where you are. We do record a 2-letter country code derived by our Cloudflare edge from your IP address (so we can tell if a build is broken in one country, for example), but never city, region, latitude, longitude, ASN, or IP itself</li>
+          <li><strong>Tracking cookies, advertising identifiers, or fingerprinting signals.</strong> The app does not use cookies for analytics. A single cookie-free session ID lives in memory for the duration of the app. We also do not collect your exact screen resolution, device pixel ratio, browser version, installed fonts or plugins, time zone, or user-agent string &mdash; these are the classic fingerprinting signals, and our environment data is bucketed specifically to avoid them</li>
           <li><strong>Page URLs from outside the app, referrer chains, or anything about other sites you visit</strong></li>
           <li><strong>Your IP address in the event stream.</strong> Our server sees your IP briefly to rate-limit abuse, then discards it &mdash; it is never written into analytics storage</li>
         </ul>
 
         <h3>Crash reports (separate, per-crash consent)</h3>
-        <p>If Interactive Sphere crashes in a way you notice &mdash; the globe goes blank, the app freezes, or a failure dialog appears &mdash; we may ask you if you want to send a crash report for <em>that specific crash</em>. This is a one-time prompt, per crash. Nothing is sent unless you tap <em>Send</em>.</p>
+        <p>If Terraviz crashes in a way you notice &mdash; the globe goes blank, the app freezes, or a failure dialog appears &mdash; we may ask you if you want to send a crash report for <em>that specific crash</em>. This is a one-time prompt, per crash. Nothing is sent unless you tap <em>Send</em>.</p>
         <p>If you do send a crash report, it includes:</p>
         <ul>
           <li>The classified error information described above</li>
@@ -278,7 +278,7 @@
         <h3>Where your messages go</h3>
         <ul>
           <li><strong>By default</strong>, messages go to a Cloudflare Workers AI model, via a small proxy service we run on Cloudflare. Workers AI is Cloudflare&rsquo;s own hosted-models offering; messages are processed only to generate the reply and are not used to train Cloudflare&rsquo;s models. Cloudflare&rsquo;s published policy applies in addition to this one</li>
-          <li><strong>If you configure a different provider</strong> under Orbit settings (for example, OpenAI, Ollama running on your own computer, or a self-hosted endpoint), messages go directly to that provider. Our proxy is not involved, and their privacy policy governs what happens to those messages. Interactive Sphere has no visibility into the contents</li>
+          <li><strong>If you configure a different provider</strong> under Orbit settings (for example, OpenAI, Ollama running on your own computer, or a self-hosted endpoint), messages go directly to that provider. Our proxy is not involved, and their privacy policy governs what happens to those messages. Terraviz has no visibility into the contents</li>
           <li><strong>We do not keep a copy</strong> of your Orbit messages on our servers. Our proxy forwards the request, streams back the response, and holds nothing</li>
           <li><strong>Your chat history stays on your device</strong>, in your browser&rsquo;s localStorage (or in the desktop app&rsquo;s local storage). Clearing the chat clears the history</li>
         </ul>
@@ -294,7 +294,7 @@
 
       <section aria-labelledby="s5">
         <h2 id="s5">5. Feedback submissions</h2>
-        <p>Interactive Sphere has two feedback surfaces, and both store the content you submit so we can read, triage, and act on it. Storing your feedback text is the whole point of feedback &mdash; this section exists so you know exactly what each surface captures.</p>
+        <p>Terraviz has two feedback surfaces, and both store the content you submit so we can read, triage, and act on it. Storing your feedback text is the whole point of feedback &mdash; this section exists so you know exactly what each surface captures.</p>
 
         <h3>General feedback (Help &rarr; Feedback)</h3>
         <p>When you submit a bug report, feature request, or other feedback through the Help panel, we store:</p>
@@ -387,7 +387,7 @@
 
       <section aria-labelledby="s9">
         <h2 id="s9">9. Children&rsquo;s privacy</h2>
-        <p>Interactive Sphere is an educational tool and is used in classrooms. We collect no personal information from any user, regardless of age. Essential-mode analytics contain no information that could identify a child (or anyone else) individually. Research mode, Orbit ratings, and feedback submissions are opt-in actions requiring explicit user input, and school administrators deploying the app should consider whether their policies permit them. The Orbit AI docent sends messages to a third-party AI provider to generate replies; school administrators should evaluate that too.</p>
+        <p>Terraviz is an educational tool and is used in classrooms. We collect no personal information from any user, regardless of age. Essential-mode analytics contain no information that could identify a child (or anyone else) individually. Research mode, Orbit ratings, and feedback submissions are opt-in actions requiring explicit user input, and school administrators deploying the app should consider whether their policies permit them. The Orbit AI docent sends messages to a third-party AI provider to generate replies; school administrators should evaluate that too.</p>
       </section>
 
       <hr />
@@ -415,7 +415,7 @@
     </main>
     <footer class="site-footer">
       <p>
-        Source: <a href="https://github.com/zyra-project/interactive-sphere">github.com/zyra-project/interactive-sphere</a>.
+        Source: <a href="https://github.com/zyra-project/terraviz">github.com/zyra-project/terraviz</a>.
         This page intentionally ships no scripts and no third-party assets.
       </p>
     </footer>

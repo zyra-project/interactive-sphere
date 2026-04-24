@@ -2,7 +2,7 @@
 # The AI binding gives Pages Functions access to Workers AI models
 # at no extra cost on the free tier (~10k requests/day).
 
-name = "interactive-sphere"
+name = "terraviz"
 compatibility_date = "2024-12-01"
 
 [ai]
@@ -21,7 +21,7 @@ migrations_dir = "migrations"
 # with the dashboards in Commit 11).
 [[analytics_engine_datasets]]
 binding = "ANALYTICS"
-dataset = "interactive_sphere_events"
+dataset = "terraviz_events"
 
 # KV namespace for the runtime telemetry kill switch. The ingest
 # endpoint reads the key `telemetry_enabled` on every request; when

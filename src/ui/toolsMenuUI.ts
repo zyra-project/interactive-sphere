@@ -40,6 +40,7 @@ import type { ViewportManager, ViewLayout } from '../services/viewportManager'
 import { updateMapControlsPosition } from './mapControlsUI'
 import { openPrivacyUI } from './privacyUI'
 import { emit } from '../analytics'
+import { setBordersVisible } from '../utils/viewPreferences'
 
 /** Fire a `settings_changed` event for a toggle/action in the Tools
  * popover. `key` is the logical name (labels / borders / etc.) and
@@ -280,6 +281,10 @@ export function initToolsMenu(
   bordersBtn.addEventListener('click', () => {
     const next = !bordersBtn.classList.contains('active')
     for (const r of viewports.getAll()) r.toggleBoundaries?.(next)
+    // Mirror to the shared preference so VR's per-frame poll picks
+    // the same state up on its next frame. 2D-only sessions never
+    // hit that getter, so the cost is just a localStorage write.
+    setBordersVisible(next)
     setButtonState(bordersBtn, next)
     emitSetting('borders', next ? 'on' : 'off')
     announce?.(next ? 'Borders on' : 'Borders off')
@@ -343,7 +348,7 @@ export function initToolsMenu(
     const { shareDataset, buildDatasetShareUrl } = await import('../services/shareService')
     const shared = await shareDataset({
       title: dataset.title,
-      text: `Check out "${dataset.title}" on Interactive Sphere`,
+      text: `Check out "${dataset.title}" on Terraviz`,
       url: buildDatasetShareUrl(dataset.id),
     })
     if (shared) announce?.('Dataset shared')

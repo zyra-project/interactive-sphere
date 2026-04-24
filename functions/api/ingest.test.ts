@@ -79,7 +79,7 @@ function makeCtx(opts: CtxOpts = {}): Parameters<typeof onRequestPost>[0] {
 
   const fakeRequest = {
     method: opts.method ?? 'POST',
-    url: opts.url ?? 'https://interactive-sphere.pages.dev/api/ingest',
+    url: opts.url ?? 'https://terraviz.pages.dev/api/ingest',
     headers: {
       get: (name: string) => headers.get(name.toLowerCase()) ?? null,
       has: (name: string) => headers.has(name.toLowerCase()),
@@ -441,8 +441,8 @@ describe('onRequestPost — happy path', () => {
   it('accepts same-origin requests regardless of the allowlist', async () => {
     const ae = makeAE()
     const ctx = makeCtx({
-      url: 'https://interactive-sphere.pages.dev/api/ingest',
-      origin: 'https://interactive-sphere.pages.dev',
+      url: 'https://terraviz.pages.dev/api/ingest',
+      origin: 'https://terraviz.pages.dev',
       body: body([sessionStart()]),
       ip: '10.0.0.5',
       env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
@@ -455,7 +455,7 @@ describe('onRequestPost — happy path', () => {
     const ae = makeAE()
     const ctx = makeCtx({
       url: 'https://main.example.pages.dev/api/ingest',
-      origin: 'https://preview-abc.interactive-sphere.pages.dev',
+      origin: 'https://preview-abc.terraviz.pages.dev',
       body: body([sessionStart()]),
       ip: '10.0.0.6',
       env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
