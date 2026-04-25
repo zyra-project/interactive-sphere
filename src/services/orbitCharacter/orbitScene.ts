@@ -747,17 +747,43 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
     // never opt into stencil (eye field, body, bezel, glass dome,
     // sub-spheres, trails, backlight, target marker / halo) are
     // skipped because the predicate doesn't match.
+    //
+    // Belt + suspenders: also force `stencilFunc = AlwaysStencilFunc`
+    // on every material we touch, in case Three.js's WebXR render
+    // path leaves a stale stencil-test state from an adjacent draw
+    // call. With Always + write-off the test cannot discard a
+    // fragment regardless of buffer contents.
     scene.traverse((obj) => {
       const disposable = obj as THREE.Object3D & {
         material?: THREE.Material | THREE.Material[]
       }
       const m = disposable.material
+      const disable = (mat: THREE.Material): void => {
+        if (!mat.stencilWrite) return
+        mat.stencilWrite = false
+        mat.stencilFunc = THREE.AlwaysStencilFunc
+      }
       if (Array.isArray(m)) {
-        for (const mat of m) if (mat.stencilWrite) mat.stencilWrite = false
-      } else if (m && m.stencilWrite) {
-        m.stencilWrite = false
+        for (const mat of m) disable(mat)
+      } else if (m) {
+        disable(m)
       }
     })
+
+    // The lid spherical cap is sized to be CLIPPED by the stencil
+    // mask — its parked-open rotation tucks "well back" but still
+    // sweeps the dome through the socket plane, relying on the
+    // stencil to hide everything outside the socket silhouette.
+    // Without that clip the lid's full geometry covers the pupil
+    // stack from any non-axial viewpoint and we just see body-vinyl
+    // skin where the eyes should be. Hide them outright in embedded
+    // mode — the avatar loses blinks but the face is legible. A
+    // shader-based clip on the lid is the proper follow-up; tracked
+    // in the Phase 4 polish list.
+    for (const rig of eyeRigs) {
+      rig.upperLid.visible = false
+      rig.lowerLid.visible = false
+    }
   }
 
   return {
