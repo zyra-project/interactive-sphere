@@ -753,21 +753,37 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
     // path leaves a stale stencil-test state from an adjacent draw
     // call. With Always + write-off the test cannot discard a
     // fragment regardless of buffer contents.
+    let disabledCount = 0
+    const disabledNames: string[] = []
     scene.traverse((obj) => {
       const disposable = obj as THREE.Object3D & {
         material?: THREE.Material | THREE.Material[]
+        name?: string
       }
       const m = disposable.material
       const disable = (mat: THREE.Material): void => {
         if (!mat.stencilWrite) return
         mat.stencilWrite = false
         mat.stencilFunc = THREE.AlwaysStencilFunc
+        mat.needsUpdate = true
+        disabledCount++
+        disabledNames.push(`${obj.type}${disposable.name ? `:${disposable.name}` : ''} (${mat.type})`)
       }
       if (Array.isArray(m)) {
         for (const mat of m) disable(mat)
       } else if (m) {
         disable(m)
       }
+    })
+    // Diagnostic — look for this in Meta Browser DevTools when verifying
+    // the embedded-mode workaround is taking effect on a tester's Quest.
+    // Should report ≥ 9 disabled materials (2 socket masks + 2 lids +
+    // 5 pupil-group + 2 catchlights = 11 total, with shared materials
+    // counted once across their visits).
+    // eslint-disable-next-line no-console
+    console.info('[OrbitAvatar] disableStencilClip pass', {
+      disabledCount,
+      sample: disabledNames.slice(0, 6),
     })
 
     // The lid spherical cap is sized to be CLIPPED by the stencil
