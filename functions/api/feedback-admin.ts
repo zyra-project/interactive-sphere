@@ -59,8 +59,20 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   const url = new URL(context.request.url)
   const action = url.searchParams.get('action')
 
-  if (action) {
+  // Treat the param as "present" the moment it appears in the URL,
+  // even if blank — so `?action=` 400s rather than silently rendering
+  // the dashboard HTML the caller didn't ask for.
+  if (action !== null) {
     return handleAction(context, action, url)
+  }
+
+  // Defense-in-depth: the HTML page only ships from inside an Access
+  // gate in production, but if the destination is ever removed or the
+  // policy misconfigures, fail closed instead of exposing the admin
+  // shell. Same auth surface as the data actions so behaviour is
+  // uniform — Access in prod, bearer token in `wrangler dev`.
+  if (!authenticate(context.request, context.env.FEEDBACK_ADMIN_TOKEN)) {
+    return jsonError('Unauthorized', 401)
   }
 
   const baseUrl = url.origin
