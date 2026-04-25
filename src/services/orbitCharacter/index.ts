@@ -49,6 +49,7 @@ export type {
   OrbitAvatarNodeOptions,
   OrbitAvatarUpdateContext,
 } from './orbitAvatarNode'
+export { ORBIT_LAYER } from './orbitScene'
 export type { BuildSceneMode } from './orbitScene'
 
 export const PALETTE_KEYS: PaletteKey[] = ['cyan', 'green', 'amber', 'violet']

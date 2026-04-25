@@ -1195,10 +1195,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     }
 
     // Scene-level per-frame sync (e.g. ground shadow scale matching
-    // globe zoom). Cheap and always runs even when the loading
+    // globe zoom, plus the orbit avatar's idle revolution and per-
+    // frame state). Cheap and always runs even when the loading
     // scene is still up so the shadow is correct the moment the
-    // globe becomes visible.
-    active.scene.update()
+    // globe becomes visible. The avatar reads `delta` for its idle-
+    // orbit phase + animation tick and `active.camera` for gaze /
+    // proximity NDC math + `ORBIT_LAYER` enable.
+    active.scene.update(delta, active.camera)
 
     // Tour overlay pose resolution — world-anchored overlays track
     // the globe, gaze-follow overlays lerp toward a camera-local

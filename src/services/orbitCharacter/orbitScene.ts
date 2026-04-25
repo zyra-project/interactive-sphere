@@ -232,7 +232,14 @@ const RIGHT_EYE_STENCIL_REF = 2
  * Earth's meshes + lights stay on the default layer 0.
  * Cross-layer light/mesh interaction is then impossible.
  */
-const ORBIT_LAYER = 1
+/**
+ * Three.js layer index used to isolate every Orbit-owned mesh +
+ * light from the rest of the host scene's lights and meshes. Hosts
+ * embedding {@link OrbitAvatarNode} MUST enable this layer on their
+ * camera (and on each sub-camera if the camera is an `ArrayCamera`,
+ * e.g. WebXR's per-eye rig) — otherwise the avatar won't render.
+ */
+export const ORBIT_LAYER = 1
 const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 1.20        // oversized; stencil clips overflow
 const LID_MESH_Y_OFFSET = -LID_RADIUS * 0.35           // dome center near pivot axis
 const UPPER_LID_PIVOT_Y = +EYE_PAIR_DISC_RADIUS * 0.55 // inside socket, not at the rim
