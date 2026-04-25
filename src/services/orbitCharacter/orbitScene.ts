@@ -232,7 +232,14 @@ const RIGHT_EYE_STENCIL_REF = 2
  * Earth's meshes + lights stay on the default layer 0.
  * Cross-layer light/mesh interaction is then impossible.
  */
-const ORBIT_LAYER = 1
+/**
+ * Three.js layer index used to isolate every Orbit-owned mesh +
+ * light from the rest of the host scene's lights and meshes. Hosts
+ * embedding {@link OrbitAvatarNode} MUST enable this layer on their
+ * camera (and on each sub-camera if the camera is an `ArrayCamera`,
+ * e.g. WebXR's per-eye rig) — otherwise the avatar won't render.
+ */
+export const ORBIT_LAYER = 1
 const LID_RADIUS = EYE_PAIR_DISC_RADIUS * 1.20        // oversized; stencil clips overflow
 const LID_MESH_Y_OFFSET = -LID_RADIUS * 0.35           // dome center near pivot axis
 const UPPER_LID_PIVOT_Y = +EYE_PAIR_DISC_RADIUS * 0.55 // inside socket, not at the rim
@@ -360,8 +367,21 @@ export interface EyeRig {
 }
 
 export interface OrbitSceneHandles {
-  scene: THREE.Scene
-  camera: THREE.PerspectiveCamera
+  /**
+   * Container for all character objects — a {@link THREE.Scene} in
+   * standalone mode (the `/orbit` page) or a {@link THREE.Group} in
+   * embedded mode (mounted into a host scene by VR / 2D companion via
+   * {@link OrbitAvatarNode}). Scene-only methods (background, fog,
+   * environment) are touched by `buildScene` standalone branch only;
+   * everything else (`add` / `remove` / `traverse`) works on both.
+   */
+  scene: THREE.Object3D
+  /**
+   * Internal camera, present only in standalone mode. Embedded mode
+   * relies on the host's camera passed via {@link UpdateInput.camera}
+   * each frame.
+   */
+  camera: THREE.PerspectiveCamera | null
   head: THREE.Group
   body: THREE.Mesh
   bodyBundle: BodyMaterialBundle
@@ -422,8 +442,12 @@ export interface OrbitSceneHandles {
    * Photoreal Earth stack — diffuse + night lights + atmosphere +
    * clouds + sun, shared with the VR view. Rebuilt on scale-preset
    * change (new radius + position) via {@link applyPreset}.
+   *
+   * Present in standalone mode; `null` in embedded mode (the host
+   * supplies its own globe and feeds the avatar a sun direction via
+   * {@link UpdateInput.sunDir}).
    */
-  earth: PhotorealEarthHandle
+  earth: PhotorealEarthHandle | null
   targetMarker: THREE.Mesh
   targetHalo: THREE.Mesh
   targetMat: THREE.MeshBasicMaterial
@@ -431,10 +455,46 @@ export interface OrbitSceneHandles {
   appliedPreset: ScaleKey
 }
 
+/**
+ * Construction modes for {@link buildScene}.
+ *
+ * - `'standalone'` (default) — used by the `/orbit` page. Builds a
+ *   self-contained {@link THREE.Scene} with sky background, internal
+ *   {@link THREE.PerspectiveCamera} framed per scale preset, and the
+ *   photoreal Earth stack as a sibling of the character.
+ *
+ * - `'embedded'` — used by {@link OrbitAvatarNode} when mounting the
+ *   character into a host scene (VR, future 2D companion). The handle's
+ *   `scene` field becomes a {@link THREE.Group} (no background, no
+ *   camera, no Earth) that the host parents into its own scene graph.
+ *   The host supplies its own camera and sun direction per frame via
+ *   {@link UpdateInput.camera} + {@link UpdateInput.sunDir}.
+ */
+export type BuildSceneMode = 'standalone' | 'embedded'
+
 export interface BuildSceneOptions {
   palette?: PaletteKey
   pixelRatio?: number
   scalePreset?: ScaleKey
+  mode?: BuildSceneMode
+  /**
+   * When true, every eye material has its stencil test/write disabled
+   * after construction so the eye stack renders without depending on
+   * a working stencil buffer. The standalone /orbit page leaves this
+   * off — its renderer requests `stencil: true` and the test passes
+   * everywhere the stencil mask wrote a per-eye stencilRef. Embedded
+   * hosts that can't rely on a stencil attachment (Quest's WebXR
+   * baseLayer didn't honour our `stencil: true` request in testing —
+   * see commits b21d023 + the follow-up that added this flag) flip it
+   * on and accept a small visible artifact: the lid spherical cap is
+   * 20% wider than the socket disc, so a sliver of lid can poke past
+   * the bezel torus at extreme blink angles. The bezel hides most of
+   * it; the alternative — invisible inner-eye stack — is much worse.
+   * Pupil-group materials (iris / pupil field / stars / catchlights)
+   * are positioned tightly inside the socket and have no visible
+   * difference with stencil disabled.
+   */
+  disableStencilClip?: boolean
 }
 
 export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
@@ -442,15 +502,28 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   const pixelRatio = options.pixelRatio ?? (typeof window !== 'undefined' ? window.devicePixelRatio : 1)
   const initialPreset = options.scalePreset ?? 'close'
   const initial = SCALE_PRESETS[initialPreset]
-  const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x060810)
+  const mode: BuildSceneMode = options.mode ?? 'standalone'
+  // Container is a Scene in standalone mode (so we can set background +
+  // attach Earth as a sibling) and a Group in embedded mode (so the
+  // host can parent the avatar into its own Scene without dragging in
+  // a duplicate background or fog). Both are Object3D, so .add /
+  // .remove / .traverse work identically below.
+  const scene: THREE.Object3D = mode === 'standalone' ? new THREE.Scene() : new THREE.Group()
+  if (mode === 'standalone') {
+    (scene as THREE.Scene).background = new THREE.Color(0x060810)
+  }
 
   // Camera framed per preset — close keeps the intimate tabletop feel;
   // far presets pull back so both Orbit and Earth fit on a 2D screen.
-  // In VR these camera moves drop (Quest handles framing natively).
-  const camera = new THREE.PerspectiveCamera(initial.fov, 1, 0.05, 40)
-  camera.position.fromArray(initial.cameraPos)
-  camera.lookAt(new THREE.Vector3().fromArray(initial.cameraTarget))
+  // Embedded mode skips this — the host (VR / 2D companion) supplies
+  // its own camera per frame via `UpdateInput.camera`.
+  const camera: THREE.PerspectiveCamera | null = mode === 'standalone'
+    ? new THREE.PerspectiveCamera(initial.fov, 1, 0.05, 40)
+    : null
+  if (camera) {
+    camera.position.fromArray(initial.cameraPos)
+    camera.lookAt(new THREE.Vector3().fromArray(initial.cameraTarget))
+  }
 
   // Vinyl redesign: the body + sub-spheres use MeshStandardMaterial
   // which needs scene lighting. Two lights:
@@ -536,8 +609,9 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   body.receiveShadow = true
   head.add(body)
 
+  const skipStencilClip = options.disableStencilClip === true
   const eyeBundle = createEyeFieldMaterial(palette)
-  const pupilMaterials = createPupilMaterials(palette)
+  const pupilMaterials = createPupilMaterials(palette, skipStencilClip)
   // Bezel material + lid geometry are shared across both eyes — one
   // allocation, two instances. Held on the handles so dispose walks
   // them once via the scene traversal.
@@ -554,8 +628,8 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   // the body, plus stencil flags keyed to that eye's stencilRef. Held
   // on the handles so palette propagation updates both along with the
   // body + subs.
-  const lidBundleLeft = createLidMaterial(palette, LEFT_EYE_STENCIL_REF)
-  const lidBundleRight = createLidMaterial(palette, RIGHT_EYE_STENCIL_REF)
+  const lidBundleLeft = createLidMaterial(palette, LEFT_EYE_STENCIL_REF, skipStencilClip)
+  const lidBundleRight = createLidMaterial(palette, RIGHT_EYE_STENCIL_REF, skipStencilClip)
 
   // Sparkle-cluster star geometries — one 5-point for the cluster
   // center, one 4-point for each flanking sparkle. Built per-scene
@@ -575,12 +649,12 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   const eyeLeft = buildPairedEye(
     head, eyeBundle, pupilMaterials, lidBundleLeft.material, bezelMaterial, lidGeometry,
     glassDomeBundle.material, fivePointStarGeometry, fourPointStarGeometry,
-    -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, LEFT_EYE_STENCIL_REF,
+    -EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, LEFT_EYE_STENCIL_REF, skipStencilClip,
   )
   const eyeRight = buildPairedEye(
     head, eyeBundle, pupilMaterials, lidBundleRight.material, bezelMaterial, lidGeometry,
     glassDomeBundle.material, fivePointStarGeometry, fourPointStarGeometry,
-    +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, RIGHT_EYE_STENCIL_REF,
+    +EYE_PAIR_OFFSET_X, EYE_PAIR_OFFSET_Y, RIGHT_EYE_STENCIL_REF, skipStencilClip,
   )
 
   const eyeRigs: EyeRig[] = [eyeLeft, eyeRight]
@@ -615,8 +689,14 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   // from the preset; ground shadow omitted (multiple presets at
   // different positions, a single shadow plane doesn't help).
   // Rebuilt on preset change (see applyPreset).
-  const earth = buildEarth(initial)
-  earth.addTo(scene)
+  //
+  // Embedded mode skips Earth entirely — the host already has a globe
+  // (VR's primary photoreal globe; the 2D companion's host-rendered
+  // map). The host feeds the avatar a sun direction per frame via
+  // `UpdateInput.sunDir` so body / sub-shadow shading still tracks
+  // the real subsolar point.
+  const earth: PhotorealEarthHandle | null = mode === 'standalone' ? buildEarth(initial) : null
+  earth?.addTo(scene)
 
   // Target marker + halo (visible during POINTING / PRESENTING).
   const targetMat = new THREE.MeshBasicMaterial({
@@ -640,7 +720,13 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   // subjects. Cross-layer light-to-mesh interaction is then
   // impossible: Earth isn't double-lit by Orbit's warm key, and
   // Orbit isn't cross-tinted by Earth's pure-white sun.
-  camera.layers.enable(ORBIT_LAYER)
+  // Embedded mode: the host's camera doesn't have ORBIT_LAYER enabled
+  // yet — the host (e.g. vrSession.ts) opts in by calling
+  // `camera.layers.enable(ORBIT_LAYER)` once after mounting the avatar.
+  // Lights and meshes still go on ORBIT_LAYER below so cross-layer
+  // light pollution between the avatar and the host's Earth is
+  // impossible regardless of who sets up the camera.
+  camera?.layers.enable(ORBIT_LAYER)
   ambientLight.layers.set(ORBIT_LAYER)
   keyLight.layers.set(ORBIT_LAYER)
   // `head` is also the keyLight target, and carries all the face
@@ -653,6 +739,23 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   for (const sub of subSpheres) sub.layers.set(ORBIT_LAYER)
   targetMarker.layers.set(ORBIT_LAYER)
   targetHalo.layers.set(ORBIT_LAYER)
+
+  if (skipStencilClip) {
+    // Stencil-free materials don't clip the lid spherical cap — its
+    // parked-open rotation sweeps the dome through the socket plane
+    // and the oversized geometry would cover the pupil stack
+    // otherwise. Replace the stencil clip with a fragment-shader
+    // discard against the socket silhouette: each lid fragment gets
+    // transformed into its eye group's local XY plane and discarded
+    // when it falls outside `EYE_PAIR_DISC_RADIUS`. Per-mesh
+    // `onBeforeRender` refreshes the lid → eye-group transform each
+    // frame so the clip tracks blink rotations correctly. Blinks
+    // survive on hosts where the stencil buffer doesn't (Quest WebXR).
+    for (const rig of eyeRigs) {
+      attachLidSocketClip(rig.upperLid, rig.upperLidPivot, EYE_PAIR_DISC_RADIUS)
+      attachLidSocketClip(rig.lowerLid, rig.lowerLidPivot, EYE_PAIR_DISC_RADIUS)
+    }
+  }
 
   return {
     scene, camera, head, body, bodyBundle,
@@ -673,6 +776,111 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
  * trace visibly different ellipses); `twist` rotates within that
  * plane so the two subs aren't phase-synced at t=0.
  */
+
+/**
+ * Wires a fragment-shader socket clip onto a lid mesh so the lid's
+ * spherical cap geometry — which is intentionally oversized so it can
+ * cover the full iris during a blink — gets discarded outside the
+ * socket silhouette without relying on the GPU's stencil buffer.
+ * Used in `disableStencilClip` mode (Quest's WebXR baseLayer didn't
+ * honour `stencil: true` in testing); the standalone `/orbit` page
+ * keeps using stencil clipping where it works.
+ *
+ * Two pieces:
+ *
+ *   1. The lid's MeshStandardMaterial gets its `onBeforeCompile`
+ *      wrapped (the body-vinyl gradient stays first; we layer on top)
+ *      to add `uLidToEyeGroup` (mat4) + `uSocketRadius` (float)
+ *      uniforms and a fragment-side `discard` against the eye-group
+ *      local XY distance from origin.
+ *   2. Each lid mesh's `onBeforeRender` recomposes
+ *      `pivot.matrix * lid.matrix` into the shared material's
+ *      uniform right before that mesh's draw — same uniform across
+ *      both lids of an eye, but Three.js's render path uploads
+ *      uniforms after `onBeforeRender` and before each draw, so the
+ *      per-mesh write takes effect for that mesh's draw.
+ */
+function attachLidSocketClip(
+  lid: THREE.Mesh,
+  pivot: THREE.Object3D,
+  socketRadius: number,
+): void {
+  const mat = lid.material as THREE.MeshStandardMaterial
+  type LidClipUniforms = {
+    uLidToEyeGroup: { value: THREE.Matrix4 }
+    uSocketRadius: { value: number }
+  }
+  const userData = mat.userData as { orbitLidClipUniforms?: LidClipUniforms }
+  let uniforms = userData.orbitLidClipUniforms
+  if (!uniforms) {
+    const fresh: LidClipUniforms = {
+      uLidToEyeGroup: { value: new THREE.Matrix4() },
+      uSocketRadius: { value: socketRadius },
+    }
+    uniforms = fresh
+    userData.orbitLidClipUniforms = fresh
+
+    const prevOnBeforeCompile = mat.onBeforeCompile
+    mat.onBeforeCompile = (shader, renderer) => {
+      // Preserve the body-vinyl gradient + procedural-noise patches
+      // that `createBodyMaterial` already installed.
+      if (prevOnBeforeCompile) prevOnBeforeCompile.call(mat, shader, renderer)
+      // Bind our uniforms last so chained patches can't shadow them.
+      shader.uniforms.uLidToEyeGroup = fresh.uLidToEyeGroup
+      shader.uniforms.uSocketRadius = fresh.uSocketRadius
+
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+           uniform mat4 uLidToEyeGroup;
+           varying vec2 vOrbitSocketXY;`,
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+           {
+             vec4 orbitEgLocal = uLidToEyeGroup * vec4(position, 1.0);
+             vOrbitSocketXY = orbitEgLocal.xy;
+           }`,
+        )
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+           uniform float uSocketRadius;
+           varying vec2 vOrbitSocketXY;`,
+        )
+        .replace(
+          'void main() {',
+          `void main() {
+           if (length(vOrbitSocketXY) > uSocketRadius) discard;`,
+        )
+    }
+    // Tag the program-cache key so Three.js doesn't reuse a non-clipped
+    // compile of this material from another instance.
+    const prevCacheKey = mat.customProgramCacheKey?.bind(mat)
+    mat.customProgramCacheKey = () =>
+      `${prevCacheKey ? prevCacheKey() : ''}|orbitLidSocketClip`
+    mat.needsUpdate = true
+  }
+
+  // Per-mesh transform writer. Composes pivot.matrix × lid.matrix into
+  // the shared material's uniform right before the draw call. The
+  // matrix multiply runs once per lid per frame; cheap. A single
+  // scratch Matrix4 captured in the closure avoids per-frame
+  // allocations.
+  const scratch = new THREE.Matrix4()
+  const captured = uniforms
+  lid.onBeforeRender = () => {
+    pivot.updateMatrix()
+    lid.updateMatrix()
+    scratch.multiplyMatrices(pivot.matrix, lid.matrix)
+    captured.uLidToEyeGroup.value.copy(scratch)
+  }
+}
+
 function makeOrbitBasis(tilt: number, twist: number): { u: THREE.Vector3; v: THREE.Vector3 } {
   // Base basis: X-Z plane. Tilt rotates it around Z. Twist spins
   // around the plane's normal so t=0 positions differ per sub.
@@ -721,6 +929,10 @@ function buildPairedEye(
   offsetX: number,
   offsetY: number,
   stencilRef: number,
+  /** Skip stencil writes on the socket mask + stencil clip on the per-eye
+   *  catchlight. Mirrors the pupil-group skip flag — see
+   *  `createPupilMaterials`. */
+  skipStencilClip = false,
 ): EyeRig {
   const group = new THREE.Group()
   group.position.set(offsetX, offsetY, 0)
@@ -734,7 +946,7 @@ function buildPairedEye(
   // this pass to run ahead of the lid passes within the same frame.
   const socketMask = new THREE.Mesh(
     new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS, 48),
-    createSocketMaskMaterial(stencilRef),
+    createSocketMaskMaterial(stencilRef, skipStencilClip),
   )
   socketMask.position.z = SOCKET_Z_DISC
   socketMask.renderOrder = -2
@@ -839,7 +1051,7 @@ function buildPairedEye(
   // both eyes — consistent with a single off-screen light source.
   const catchPrimary = new THREE.Mesh(
     new THREE.CircleGeometry(CATCHLIGHT_PRIMARY_RADIUS, CATCHLIGHT_PRIMARY_SEGMENTS),
-    createCatchlightMaterial(CATCHLIGHT_PRIMARY_OPACITY),
+    createCatchlightMaterial(CATCHLIGHT_PRIMARY_OPACITY, skipStencilClip),
   )
   catchPrimary.position.set(
     CATCHLIGHT_PRIMARY_OFFSET_X,
@@ -969,14 +1181,24 @@ function buildEarth(preset: ScalePreset): PhotorealEarthHandle {
  */
 export function applyPreset(handles: OrbitSceneHandles, preset: ScaleKey): void {
   const pp = SCALE_PRESETS[preset]
-  handles.earth.removeFrom(handles.scene)
-  handles.earth.dispose()
-  handles.earth = buildEarth(pp)
-  handles.earth.addTo(handles.scene)
-  handles.camera.position.fromArray(pp.cameraPos)
-  handles.camera.lookAt(new THREE.Vector3().fromArray(pp.cameraTarget))
-  handles.camera.fov = computeEffectiveFov(pp.fov, handles.camera.aspect)
-  handles.camera.updateProjectionMatrix()
+  // Embedded mode never owns an Earth or camera — the host frames the
+  // shot and renders its own globe — so the preset swap reduces to
+  // "remember the new key." Flight math (`flyToEarth` / `flyHome`) and
+  // feature targeting (`featureOf` / `parkingOf`) still consult the
+  // preset in `updateCharacter`, so the value matters even when there's
+  // no internal Earth to rebuild.
+  if (handles.earth) {
+    handles.earth.removeFrom(handles.scene)
+    handles.earth.dispose()
+    handles.earth = buildEarth(pp)
+    handles.earth.addTo(handles.scene)
+  }
+  if (handles.camera) {
+    handles.camera.position.fromArray(pp.cameraPos)
+    handles.camera.lookAt(new THREE.Vector3().fromArray(pp.cameraTarget))
+    handles.camera.fov = computeEffectiveFov(pp.fov, handles.camera.aspect)
+    handles.camera.updateProjectionMatrix()
+  }
   handles.appliedPreset = preset
 }
 
@@ -1155,7 +1377,34 @@ export interface UpdateInput {
    * `OrbitController` tracking `pointermove` timestamps.
    */
   cursorActivityTime: number
+  /**
+   * Camera used for proximity NDC projection (gaze + recoil response).
+   * Standalone callers omit this and `updateCharacter` falls back to
+   * `handles.camera`. Embedded callers (VR, 2D companion) MUST pass
+   * the host's camera each frame — `handles.camera` is null in
+   * embedded mode.
+   */
+  camera?: THREE.Camera
+  /**
+   * World-space unit vector pointing toward the sun. Drives the
+   * key-light position and the eye-dome streak direction. Standalone
+   * callers omit this and `updateCharacter` reads from
+   * `handles.earth.sunDir` (which is updated outside this call —
+   * see {@link OrbitController.animate}). Embedded callers MUST pass
+   * a sun direction; `handles.earth` is null in embedded mode.
+   */
+  sunDir?: THREE.Vector3
 }
+
+/**
+ * Fallback sun direction used when neither `input.sunDir` nor
+ * `handles.earth.sunDir` is available — points roughly toward the
+ * upper-right so body shading still reads, even before the host has
+ * computed a real subsolar direction. Should never actually be hit
+ * in production; the well-formed call paths always supply one or
+ * the other.
+ */
+const _defaultSunDir = new THREE.Vector3(0.36, 0.59, 0.72).normalize()
 
 /**
  * Sub-sphere orbit-speed ceiling under reduced motion. 0.5 matches
@@ -1250,21 +1499,36 @@ export function updateCharacter(
   // PROXIMITY_FAR. Everything here respects reducedMotion — the
   // tracking stays on (non-vestibular), but startle / recoil are
   // suppressed.
-  _tmpHeadNdc.copy(handles.head.position).project(handles.camera)
-  // NDC X and Y are not isotropic in pixel space when aspect != 1 —
-  // a horizontal 1.0-wide NDC span covers `aspect × viewportHeight`
-  // pixels while vertical covers `viewportHeight`. Multiply the
-  // horizontal delta by aspect before the Euclidean distance so
-  // PROXIMITY_* thresholds correspond to the same on-screen
-  // distance at any canvas shape.
-  const proximityAspect = handles.camera.aspect > 0 ? handles.camera.aspect : 1
-  const ndcDx = (_tmpHeadNdc.x - mouseX) * proximityAspect
-  const ndcDy = _tmpHeadNdc.y - mouseY
-  const ndcDist = Math.sqrt(ndcDx * ndcDx + ndcDy * ndcDy)
-  const rawProximity = sat(
-    1 - (ndcDist - PROXIMITY_BODY) / (PROXIMITY_FAR - PROXIMITY_BODY)
-  )
-  anim.userProximity = lerp(anim.userProximity, rawProximity, 0.10)
+  // Resolve the active camera once: input takes precedence (embedded
+  // mode passes the host's camera every frame); standalone falls back
+  // to `handles.camera`. If neither is present we skip the proximity /
+  // recoil block entirely — gaze + jitter still run further down, the
+  // character just won't react to the cursor's on-screen position.
+  const activeCamera = (input.camera ?? handles.camera) ?? null
+  if (activeCamera) {
+    _tmpHeadNdc.copy(handles.head.position).project(activeCamera)
+    // NDC X and Y are not isotropic in pixel space when aspect != 1 —
+    // a horizontal 1.0-wide NDC span covers `aspect × viewportHeight`
+    // pixels while vertical covers `viewportHeight`. Multiply the
+    // horizontal delta by aspect before the Euclidean distance so
+    // PROXIMITY_* thresholds correspond to the same on-screen
+    // distance at any canvas shape. PerspectiveCamera carries
+    // `aspect` as a known number; ArrayCamera (XR) does not, so
+    // narrow before reading and fall back to 1 otherwise.
+    const camAspect = (activeCamera as THREE.PerspectiveCamera).aspect
+    const proximityAspect = (typeof camAspect === 'number' && camAspect > 0) ? camAspect : 1
+    const ndcDx = (_tmpHeadNdc.x - mouseX) * proximityAspect
+    const ndcDy = _tmpHeadNdc.y - mouseY
+    const ndcDist = Math.sqrt(ndcDx * ndcDx + ndcDy * ndcDy)
+    const rawProximity = sat(
+      1 - (ndcDist - PROXIMITY_BODY) / (PROXIMITY_FAR - PROXIMITY_BODY)
+    )
+    anim.userProximity = lerp(anim.userProximity, rawProximity, 0.10)
+  }
+  // Gaze bias and recoil read `anim.userProximity` / `anim.gazeBias`
+  // — both eased state, so they keep working even when no camera was
+  // available this frame (proximity stays at its previous value, or
+  // 0 from the initial AnimationState; recoil naturally idles at 0).
 
   // Gaze bias — full strength for the first ACTIVITY_FULL seconds
   // after a cursor move, decaying to 0 over the next ACTIVITY_FADE.
@@ -1350,12 +1614,6 @@ export function updateCharacter(
   }
   handles.bodyBundle.uniforms.uTime.value = time
 
-  // Photoreal Earth drives its own sun direction + atmosphere/
-  // shadow follow each frame. It's cheap (no per-frame allocations
-  // after the initial setup) and the day/night terminator needs
-  // frame-accurate world-space sun direction to stay aligned.
-  handles.earth.update()
-
   // Sun-driven lighting for Orbit. The Earth's handle exposes its
   // live subsolar unit vector via `sunDir`; feed that into:
   //
@@ -1372,8 +1630,12 @@ export function updateCharacter(
   //
   // Both Orbit and Earth read the SAME sun direction, so the whole
   // scene is lit coherently: body shading, sub shadows, eye glints,
-  // Earth terminator — all aligned.
-  const sun = handles.earth.sunDir
+  // Earth terminator — all aligned. Resolution order: explicit input
+  // (embedded mode — host's globe drives the avatar) → handles.earth
+  // (standalone mode — internal photoreal Earth) → static fallback
+  // (defensive; the well-formed call paths always supply one or the
+  // other).
+  const sun = input.sunDir ?? handles.earth?.sunDir ?? _defaultSunDir
   // Place the key light at `head + sunDir * 0.5`. The 0.5 offset
   // keeps the light within the shadow camera's tight frustum
   // (near 0.10, far 1.20 from the light's own position), and

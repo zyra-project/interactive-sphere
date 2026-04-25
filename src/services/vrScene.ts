@@ -35,6 +35,7 @@ import {
   type VrDatasetTexture,
 } from './photorealEarth'
 import { createVrBorders, type VrBordersHandle } from './vrBorders'
+import { OrbitAvatarNode, ORBIT_LAYER } from './orbitCharacter'
 
 export type { VrDatasetTexture } from './photorealEarth'
 
@@ -57,6 +58,19 @@ export const MAX_GLOBE_SCALE = 2.5
  *  the 4K/8K tier will push those hard. Capped defensively; the
  *  2D viewportManager typically drives 1/2/4. */
 const MAX_PANELS = 4
+
+/**
+ * Avatar idle-orbit parameters around the primary globe (Phase 4
+ * commit 4 of `docs/VR_INVESTIGATION_PLAN.md`). Reasonable starting
+ * tuning for a 0.5 m globe at z = -1.5 m; expect a tweak pass after
+ * the on-Quest validation pause the plan calls for. The orbit
+ * radius is expressed as a multiple of `GLOBE_RADIUS` and scales
+ * with the globe's transform, so pinch-zoom and AR re-anchor keep
+ * the avatar visually consistent.
+ */
+const AVATAR_ORBIT_RADIUS_FACTOR = 1.4   // × GLOBE_RADIUS = 0.7 m at scale 1
+const AVATAR_ORBIT_PERIOD_SECONDS = 30   // one full revolution
+const AVATAR_ORBIT_TILT_RADIANS = 0.26   // ≈ 15° lift above the horizontal plane
 
 export interface VrSceneHandle {
   /** The Three.js scene — attach/detach objects (controllers, HUD) here. */
@@ -108,12 +122,27 @@ export interface VrSceneHandle {
    */
   setBordersVisible(visible: boolean): void
   /**
-   * Per-frame update — delegates to the photoreal Earth handle for
-   * sun direction + atmosphere/shadow sync, then propagates the
-   * primary's position/rotation/scale to every secondary globe so
-   * the arc stays locked.
+   * Orbit avatar — the docent character mounted into the VR scene.
+   * Phase 4 commit 4 ships an idle orbit around the primary globe;
+   * later commits add summon / present / docent-driven state, all
+   * via the same `OrbitAvatarNode` API exposed here.
    */
-  update(): void
+  readonly avatar: OrbitAvatarNode
+  /**
+   * Per-frame update — delegates to the photoreal Earth handle for
+   * sun direction + atmosphere/shadow sync, propagates the primary's
+   * position/rotation/scale to every secondary globe so the arc
+   * stays locked, and drives the orbit avatar's idle revolution and
+   * per-frame state.
+   *
+   * Camera is forwarded to the avatar so its gaze NDC math (and
+   * future flight + summon code) can react to where the headset is
+   * actually pointing. Each frame also enables `ORBIT_LAYER` on the
+   * camera (and its sub-cameras when WebXR uses an `ArrayCamera`),
+   * which keeps the avatar visible without requiring the host to
+   * remember to flip the layer at session start.
+   */
+  update(dt: number, camera: THREE.Camera): void
   /** Release every GPU resource. Safe to call multiple times. */
   dispose(): void
 }
@@ -210,6 +239,34 @@ export function createVrScene(
   // already does the same, so the pattern is consistent.
   const primaryBorders = createVrBorders(THREE_, GLOBE_RADIUS)
   scene.add(primaryBorders.mesh)
+
+  // Orbit avatar — the docent character. Built in embedded mode so
+  // it owns no renderer / camera / Earth, just a Group of meshes
+  // and lights mounted as a child of the VR scene. The avatar's
+  // position is rewritten each frame in update() to walk an idle
+  // orbit around the primary globe; pinch-zoom and AR re-anchor
+  // both flow through globe.position + globe.scale, so the avatar
+  // tracks them automatically. ORBIT_LAYER bookkeeping lives in
+  // update() too — the avatar's lights and meshes already sit on
+  // that layer, the camera enable is per-frame.
+  //
+  // disableStencilClip is on for VR: Quest's WebXR baseLayer didn't
+  // honour `stencil: true` in testing, so the eye-rig stencil clip
+  // (socket mask + lid + pupil-group test) ended up rendering as a
+  // blank socket with only the bezel + glass-dome glint visible.
+  // Disabling the clip restores the eye stack at the cost of a
+  // small lid-edge artifact that the bezel torus largely hides.
+  const avatar = new OrbitAvatarNode({
+    palette: 'cyan',
+    scalePreset: 'close',
+    disableStencilClip: true,
+  })
+  scene.add(avatar.group)
+  /** Phase accumulator for the idle orbit — independent of the
+   *  avatar's internal `time` (which the controller rebases hourly)
+   *  so the orbit doesn't snap when the rebase fires. Wraps modulo
+   *  the orbit period below. */
+  let avatarOrbitTime = 0
 
   /**
    * Session-level borders visibility, applied to the primary and
@@ -340,6 +397,11 @@ export function createVrScene(
    * unanchored VR. Centering is follow-up polish.
    */
   const syncSecondaryPositionsScratch = new THREE_.Vector3()
+  // Scratch vector for the avatar's per-frame face-the-user lookAt.
+  // Allocated once and reused — the WebXR render loop is hot, and a
+  // Vector3 allocation per frame is the kind of GC-thrash worth
+  // avoiding in a render loop targeting Quest's mobile GPU.
+  const _avatarLookCamera = new THREE_.Vector3()
   function syncSecondaryPositions(): void {
     if (secondaries.length === 0) return
     const total = 1 + secondaries.length
@@ -495,7 +557,9 @@ export function createVrScene(
       for (const sg of secondaries) sg.borders.setVisible(visible)
     },
 
-    update() {
+    avatar,
+
+    update(dt, camera) {
       // Factory handles: sun direction refresh (throttled), atmosphere
       // / cloud / shadow follow, sun sprite position, sun light
       // position. All of it tracks `globe.position` + `globe.scale`
@@ -532,12 +596,72 @@ export function createVrScene(
         sg.borders.setQuaternion(globe.quaternion)
         sg.borders.setScale(s)
       }
+
+      // Avatar idle orbit. Phase advances by clamped dt (matching the
+      // controller's own clamp) so a paused tab or dropped XR frame
+      // doesn't fast-forward the avatar across the orbit. Position
+      // is computed from globe.position + a tilted ellipse, so
+      // pinch-zoom (globe.scale) and AR re-anchor (globe.position)
+      // both feed in automatically.
+      const orbitDt = Math.min(Math.max(dt, 0), 0.05)
+      avatarOrbitTime = (avatarOrbitTime + orbitDt) % AVATAR_ORBIT_PERIOD_SECONDS
+      const orbitPhase = (avatarOrbitTime / AVATAR_ORBIT_PERIOD_SECONDS) * Math.PI * 2
+      const orbitRadius = GLOBE_RADIUS * AVATAR_ORBIT_RADIUS_FACTOR * globe.scale.x
+      const tiltCos = Math.cos(AVATAR_ORBIT_TILT_RADIANS)
+      const tiltSin = Math.sin(AVATAR_ORBIT_TILT_RADIANS)
+      const cosPhase = Math.cos(orbitPhase)
+      const sinPhase = Math.sin(orbitPhase)
+      avatar.group.position.set(
+        globe.position.x + cosPhase * orbitRadius,
+        globe.position.y + sinPhase * orbitRadius * tiltSin,
+        globe.position.z + sinPhase * orbitRadius * tiltCos,
+      )
+      // Face the user, not the globe. The avatar's "front" (where the
+      // eyes face) is its local +Z axis — the standalone /orbit page
+      // parks the camera at +Z so the face reads correctly. For
+      // Object3D (non-camera, non-light), Three.js's lookAt aims the
+      // object's +Z at the target (the source flips the eye/target
+      // arguments to Matrix4.lookAt — see three/src/core/Object3D.js).
+      // So a direct lookAt(camera world position) is correct: an
+      // earlier "mirror through the avatar" attempt assumed the
+      // camera convention (-Z faces target) and ended up rotating
+      // Orbit 180° away from the user. Keeping the face turned
+      // toward the user during idle keeps Orbit legible from any
+      // orbit phase; turning toward the globe is reserved for
+      // PRESENTING (later commit), where the gaze-at-target is
+      // intentional and accompanied by a beckon / point gesture.
+      camera.getWorldPosition(_avatarLookCamera)
+      avatar.group.lookAt(_avatarLookCamera)
+
+      // Camera layer enable — idempotent (single bitwise OR per
+      // frame). Done in update() so the host doesn't have to
+      // remember to flip the layer at session start, and so it
+      // tolerates a future code path that reuses the renderer for a
+      // different camera between frames. WebXR uses an `ArrayCamera`
+      // with per-eye sub-cameras; layer culling runs against each
+      // sub-camera, so we propagate to those too.
+      camera.layers.enable(ORBIT_LAYER)
+      const subCameras = (camera as THREE.Camera & { cameras?: THREE.Camera[] }).cameras
+      if (subCameras) {
+        for (const sub of subCameras) sub.layers.enable(ORBIT_LAYER)
+      }
+
+      avatar.update(orbitDt, {
+        camera,
+        sunDir: earth.sunDir,
+      })
     },
 
     dispose() {
       unsubscribeDiffuse()
       earth.removeFrom(scene)
       earth.dispose()
+      // Avatar — pull the group out of our scene first (mirrors the
+      // PhotorealEarthHandle.removeFrom contract above), then dispose
+      // its embedded handles so the trail / material / geometry
+      // resources are freed.
+      scene.remove(avatar.group)
+      avatar.dispose()
       scene.remove(primaryBorders.mesh)
       primaryBorders.dispose()
       // Dispose all secondary globes and clear the shared
