@@ -125,19 +125,26 @@ export function stopPerfSampler(): void {
 /** Pause sampling because a VR/AR session has taken over the GPU.
  * The plan: VR has its own end-of-session FPS metric on
  * `vr_session_ended.mean_fps`; this sampler stays out of the way
- * so the two metrics describe disjoint surfaces. Resumed via
- * `resumeForVrExit()`. */
+ * so the two metrics describe disjoint surfaces. Stops both the
+ * rAF loop and the per-minute emit timer — the timer alone could
+ * still fire shortly after VR entry and emit a spurious sample
+ * built from pre-VR frames still inside the 10-second rolling
+ * window. Resumed via `resumeForVrExit()`. */
 export function pauseForVrEntry(): void {
   state.externallyPaused = true
   stopFrameLoop()
+  stopMinuteTimer()
 }
 
 /** Resume sampling after a VR/AR session ends. No-op if the sampler
- * was never started. */
+ * was never started. Restarts the rAF loop and the per-minute emit
+ * timer, both gated on the tab being visible. Stale samples from
+ * before VR entry are aged out by `pruneSamples` on the next emit. */
 export function resumeForVrExit(): void {
   state.externallyPaused = false
   if (state.running && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) {
     startFrameLoop()
+    startMinuteTimer()
   }
 }
 

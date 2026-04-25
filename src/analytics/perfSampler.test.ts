@@ -78,6 +78,40 @@ describe('perfSampler — VR pause/resume', () => {
     resumeForVrExit()
     expect(true).toBe(true)
   })
+
+  it('pauseForVrEntry also stops the per-minute emit timer', () => {
+    vi.useFakeTimers()
+    try {
+      startPerfSampler()
+      // Pre-VR samples in the rolling window. Without stopping the
+      // emit timer, a tick within ~10s of VR entry could emit a
+      // stale sample.
+      for (let i = 0; i < 15; i++) __feedFrameForTests(16)
+      pauseForVrEntry()
+      const before = __peek().filter((e) => e.event_type === 'perf_sample').length
+      vi.advanceTimersByTime(60_000)
+      const after = __peek().filter((e) => e.event_type === 'perf_sample').length
+      expect(after).toBe(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resumeForVrExit restarts the per-minute emit timer', () => {
+    vi.useFakeTimers()
+    try {
+      startPerfSampler()
+      pauseForVrEntry()
+      resumeForVrExit()
+      // Fresh post-VR samples + a minute tick should produce one emit.
+      for (let i = 0; i < 15; i++) __feedFrameForTests(16)
+      vi.advanceTimersByTime(60_000)
+      const evs = __peek().filter((e) => e.event_type === 'perf_sample')
+      expect(evs.length).toBeGreaterThanOrEqual(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('perfSampler — lifecycle', () => {
