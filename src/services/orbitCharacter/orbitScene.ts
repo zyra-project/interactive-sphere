@@ -477,6 +477,24 @@ export interface BuildSceneOptions {
   pixelRatio?: number
   scalePreset?: ScaleKey
   mode?: BuildSceneMode
+  /**
+   * When true, every eye material has its stencil test/write disabled
+   * after construction so the eye stack renders without depending on
+   * a working stencil buffer. The standalone /orbit page leaves this
+   * off — its renderer requests `stencil: true` and the test passes
+   * everywhere the stencil mask wrote a per-eye stencilRef. Embedded
+   * hosts that can't rely on a stencil attachment (Quest's WebXR
+   * baseLayer didn't honour our `stencil: true` request in testing —
+   * see commits b21d023 + the follow-up that added this flag) flip it
+   * on and accept a small visible artifact: the lid spherical cap is
+   * 20% wider than the socket disc, so a sliver of lid can poke past
+   * the bezel torus at extreme blink angles. The bezel hides most of
+   * it; the alternative — invisible inner-eye stack — is much worse.
+   * Pupil-group materials (iris / pupil field / stars / catchlights)
+   * are positioned tightly inside the socket and have no visible
+   * difference with stencil disabled.
+   */
+  disableStencilClip?: boolean
 }
 
 export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
@@ -720,6 +738,27 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
   for (const sub of subSpheres) sub.layers.set(ORBIT_LAYER)
   targetMarker.layers.set(ORBIT_LAYER)
   targetHalo.layers.set(ORBIT_LAYER)
+
+  if (options.disableStencilClip) {
+    // Walk the container looking for any material with stencilWrite
+    // enabled and turn it off. Hits the socket mask (now a dead
+    // pass — `colorWrite: false` keeps it invisible), the lid
+    // materials, and the five pupil-group materials. Materials that
+    // never opt into stencil (eye field, body, bezel, glass dome,
+    // sub-spheres, trails, backlight, target marker / halo) are
+    // skipped because the predicate doesn't match.
+    scene.traverse((obj) => {
+      const disposable = obj as THREE.Object3D & {
+        material?: THREE.Material | THREE.Material[]
+      }
+      const m = disposable.material
+      if (Array.isArray(m)) {
+        for (const mat of m) if (mat.stencilWrite) mat.stencilWrite = false
+      } else if (m && m.stencilWrite) {
+        m.stencilWrite = false
+      }
+    })
+  }
 
   return {
     scene, camera, head, body, bodyBundle,

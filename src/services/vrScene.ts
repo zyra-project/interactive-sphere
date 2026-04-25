@@ -249,9 +249,17 @@ export function createVrScene(
   // tracks them automatically. ORBIT_LAYER bookkeeping lives in
   // update() too — the avatar's lights and meshes already sit on
   // that layer, the camera enable is per-frame.
+  //
+  // disableStencilClip is on for VR: Quest's WebXR baseLayer didn't
+  // honour `stencil: true` in testing, so the eye-rig stencil clip
+  // (socket mask + lid + pupil-group test) ended up rendering as a
+  // blank socket with only the bezel + glass-dome glint visible.
+  // Disabling the clip restores the eye stack at the cost of a
+  // small lid-edge artifact that the bezel torus largely hides.
   const avatar = new OrbitAvatarNode({
     palette: 'cyan',
     scalePreset: 'close',
+    disableStencilClip: true,
   })
   scene.add(avatar.group)
   /** Phase accumulator for the idle orbit — independent of the

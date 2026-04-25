@@ -450,6 +450,20 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   renderer.setSize(window.innerWidth, window.innerHeight)
   renderer.xr.enabled = true
 
+  // Log the actual context attributes the GL driver gave us back —
+  // some Quest browser builds don't honour `stencil: true` even when
+  // requested, and the avatar's eye rig uses a stencil clip. Logged
+  // as info so a tester can verify in Meta Browser DevTools whether
+  // the avatar's `disableStencilClip` workaround is actually needed
+  // on this hardware.
+  const glAttrs = renderer.getContext().getContextAttributes()
+  logger.info('[vrSession] WebGL context attributes', {
+    stencil: glAttrs?.stencil ?? null,
+    depth: glAttrs?.depth ?? null,
+    alpha: glAttrs?.alpha ?? null,
+    antialias: glAttrs?.antialias ?? null,
+  })
+
   // Camera: a default perspective is fine — Three.js' XR layer
   // overrides projection / view matrices from the XR views, so
   // these values are only used for inline rendering (which we skip).

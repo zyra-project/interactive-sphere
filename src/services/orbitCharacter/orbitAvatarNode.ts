@@ -91,6 +91,15 @@ export interface OrbitAvatarNodeOptions {
    * commit 3 / 4b) can announce changes without polling.
    */
   onStateChange?: (state: StateKey) => void
+  /**
+   * Forwarded to {@link BuildSceneOptions.disableStencilClip}. Set
+   * to true when the host renderer can't be relied on to allocate a
+   * stencil buffer (Quest WebXR didn't honour `stencil: true` in
+   * testing). Trades a small lid-edge artifact for a visible eye
+   * stack instead of a blank socket. See `BuildSceneOptions` for the
+   * full trade-off rationale.
+   */
+  disableStencilClip?: boolean
 }
 
 /**
@@ -182,6 +191,7 @@ export class OrbitAvatarNode {
       pixelRatio,
       scalePreset: this.scalePreset,
       mode: 'embedded',
+      disableStencilClip: options.disableStencilClip,
     })
     // In embedded mode `buildScene` returns a Group as `scene`. Hand
     // that out as `group` for the host to parent — same Object3D, just
