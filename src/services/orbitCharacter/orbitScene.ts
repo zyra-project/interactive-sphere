@@ -756,57 +756,66 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       attachLidSocketClip(rig.lowerLid, rig.lowerLidPivot, EYE_PAIR_DISC_RADIUS)
     }
 
-    // DIAGNOSTIC (Phase 4 commit 4 on-Quest debugging): add an
-    // unmissable bright-red opaque circle to each eye's pupilGroup at
-    // the iris position. If this is visible on Quest, the pupilGroup
-    // is being rendered correctly and the existing iris/pupil/star
-    // materials have some other reason for not showing (transparency
-    // sort, color, opacity, depth). If it's NOT visible, the entire
-    // pupilGroup is being culled or hidden for a reason upstream of
-    // any material setting. Either answer narrows the search by an
-    // order of magnitude. Marked here so it can be ripped out cleanly
-    // once the eye render is solved.
+    // DIAGNOSTIC (Phase 4 commit 4 on-Quest debugging): bright-red
+    // discs in each eye plus marker spheres at every level of the
+    // hierarchy so we can localize the bug.
     //
-    // Update: the user's first on-Quest test of this diag (commit
-    // 0a4ae2a) reported seeing the red ONLY through occluders (the
-    // Earth, sub-spheres) and not when looking at Orbit's face
-    // directly. That's the depthTest:false behaviour working when an
-    // occluder writes depth — but it implies the diag is being
-    // frustum-culled (or otherwise dropped) when clear-LOS,
-    // contradicting renderOrder + depthTest:false expectations.
-    // Set `frustumCulled = false` on the diag as a defensive
-    // override; also add a second diag mounted at scene root so we
-    // can tell whether the issue is specific to nesting under
-    // pupilGroup vs. a global rendering problem.
-    const diagMat = new THREE.MeshBasicMaterial({
-      color: 0xff0033,
-      depthTest: false,
-      depthWrite: false,
-    })
-    for (const rig of eyeRigs) {
-      const diag = new THREE.Mesh(
-        new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS * 0.7, 32),
-        diagMat,
-      )
-      diag.position.z = SOCKET_Z_BEZEL + 0.0001 // in front of the bezel — can't be hidden
-      diag.renderOrder = 100                   // drawn after everything in the eye stack
-      diag.layers.set(ORBIT_LAYER)
-      diag.frustumCulled = false                // never let camera-frustum cull drop it
-      rig.pupilGroup.add(diag)
-    }
-    // Cross-reference diag mounted on the scene container (avatar
-    // group root). Bright magenta sphere positioned a bit above the
-    // head so it doesn't overlap the body silhouette in screen space.
-    // If THIS is visible but the eye-socket diags aren't, the issue
-    // is specific to how the eye sub-tree's transforms interact with
-    // the WebXR render path.
-    const sceneDiag = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 16, 12),
+    // Tester reports: scene-root magenta sphere is visible, the
+    // pupilGroup-mounted red disc is NOT visible without an occluder
+    // between camera and disc — but it IS visible through occluders
+    // (Earth, sub-spheres). frustumCulled = false didn't change that,
+    // ruling out frustum-culling.
+    //
+    // New theory: the working pattern in this codebase for "always
+    // visible regardless of depth" is `transparent: true +
+    // depthTest: false + renderOrder` (vrHud, vrInteraction's ray
+    // sprite). The previous diag used opaque (transparent: false).
+    // Maybe Three.js's WebXR multiview path treats the opaque sort
+    // bucket differently from the transparent one for renderOrder.
+    // Switch to the proven transparent pattern.
+    //
+    // Also drop spheres at head + eye_group levels of the hierarchy
+    // so we can see where the visibility breaks. Each colour codes
+    // its level: green = head, yellow = eye_group, red = pupilGroup.
+    // Whichever is the deepest visible level tells us where the
+    // transform / state break begins.
+    const makeDiagMat = (color: number) =>
       new THREE.MeshBasicMaterial({
-        color: 0xff00ff,
+        color,
+        transparent: true,
+        opacity: 1.0,
         depthTest: false,
         depthWrite: false,
-      }),
+      })
+    const headDiag = new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), makeDiagMat(0x33ff33))
+    headDiag.position.set(0, 0.04, 0.06)
+    headDiag.renderOrder = 100
+    headDiag.layers.set(ORBIT_LAYER)
+    headDiag.frustumCulled = false
+    head.add(headDiag)
+    for (const rig of eyeRigs) {
+      const eyeDiag = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), makeDiagMat(0xffff00))
+      eyeDiag.position.set(0, 0, 0.05)
+      eyeDiag.renderOrder = 100
+      eyeDiag.layers.set(ORBIT_LAYER)
+      eyeDiag.frustumCulled = false
+      rig.group.add(eyeDiag)
+
+      const pupilDiag = new THREE.Mesh(
+        new THREE.CircleGeometry(EYE_PAIR_DISC_RADIUS * 0.7, 32),
+        makeDiagMat(0xff0033),
+      )
+      pupilDiag.position.z = SOCKET_Z_BEZEL + 0.0001
+      pupilDiag.renderOrder = 100
+      pupilDiag.layers.set(ORBIT_LAYER)
+      pupilDiag.frustumCulled = false
+      rig.pupilGroup.add(pupilDiag)
+    }
+    // Cross-reference diag mounted on the scene container (avatar
+    // group root) — already known visible from outcome-2 testing.
+    const sceneDiag = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 16, 12),
+      makeDiagMat(0xff00ff),
     )
     sceneDiag.position.set(0, 0.18, 0)
     sceneDiag.renderOrder = 100
