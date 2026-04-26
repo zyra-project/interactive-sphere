@@ -1940,8 +1940,15 @@ export function updateCharacter(
   // fading. Each eye has its own catchlight material instance, so
   // the write iterates the rigs.
   for (const rig of handles.eyeRigs) {
+    // The catchlight is a ShaderMaterial in standalone mode — uniforms
+    // drive the per-frame shimmer + blink-fade. In embedded mode
+    // (`disableStencilClip`) it gets replaced with a fresh
+    // MeshBasicMaterial that has no `.uniforms`, so we have to guard
+    // the access. Same goes for the pupilField + iris materials below.
     const catchMat = rig.catchPrimary.material as THREE.ShaderMaterial
-    catchMat.uniforms.uOpacity.value = CATCHLIGHT_PRIMARY_OPACITY * sat(pupilVis)
+    if (catchMat.uniforms?.uOpacity) {
+      catchMat.uniforms.uOpacity.value = CATCHLIGHT_PRIMARY_OPACITY * sat(pupilVis)
+    }
   }
 
   // ── Eye gaze (flight-aware, then state-specific) ─────────────────
