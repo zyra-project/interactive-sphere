@@ -885,6 +885,15 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       //     frame; if the world-bounding-sphere check excludes the
       //     lid from WebXR's per-eye visible set, frustumCulled
       //     overrides it.
+      //
+      // Pink AND DoubleSide AND frustumCulled false STILL invisible
+      // on Quest. The lid mesh is being dropped at a deeper level.
+      // Final diag: parent a fresh sphere mesh DIRECTLY to head at
+      // the lid pivot's eye-group-local position — same geometry,
+      // same material, but bypassing the upperLidPivot transform
+      // chain and the eye_group's Y-scale. If it renders, the
+      // pivot-rotation transform is the culprit; if not, sphere
+      // geometry itself has an issue here.
       const lidDiag = new THREE.MeshBasicMaterial({
         color: 0xff66cc,
         side: THREE.DoubleSide,
@@ -893,6 +902,21 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       rig.lowerLid.material = lidDiag
       rig.upperLid.frustumCulled = false
       rig.lowerLid.frustumCulled = false
+
+      // Bypass-pivot test mesh — same SphereGeometry as the lid,
+      // bright cyan to differentiate from the lid magenta. Parented
+      // directly to head, positioned at the eye_group origin offset
+      // plus the lid pivot's local Z.
+      const bypass = new THREE.Mesh(
+        new THREE.SphereGeometry(LID_RADIUS, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.42),
+        new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide }),
+      )
+      const offsetX = rig.group.position.x // ±EYE_PAIR_OFFSET_X
+      bypass.position.set(offsetX, EYE_PAIR_DISC_RADIUS * 0.55, BODY_RADIUS + 0.0030)
+      bypass.frustumCulled = false
+      bypass.renderOrder = 1
+      bypass.layers.set(ORBIT_LAYER)
+      head.add(bypass)
     }
   }
 
