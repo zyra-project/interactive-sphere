@@ -917,6 +917,23 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       bypass.renderOrder = 1
       bypass.layers.set(ORBIT_LAYER)
       head.add(bypass)
+
+      // The bypass-pivot cyan domes render but the real magenta lids
+      // don't — confirms the transform chain head → eye_group →
+      // pivot → lid is breaking the lid in WebXR. Top suspect: the
+      // eye_group's non-uniform Y-scale (1, 1.18, 1) combined with
+      // the pivot's -π/2 rotation around X. Non-uniform parent scale
+      // is documented as unsafe with various Three.js operations
+      // (`Object3D.lookAt` explicitly warns about it). With the
+      // pivot rotated 90° around X, the Y-scale gets composed with
+      // the rotated Z axis, producing a non-orthonormal matrix that
+      // may be triggering a render-path edge case on Quest's WebGL.
+      //
+      // Test: drop the non-uniform scale on the eye_group in
+      // embedded mode. Costs the eye-shape Y stretch (eyes look
+      // slightly less neotenous, more circular) but rules in/out
+      // the scale-rotation interaction.
+      rig.group.scale.set(1, 1, 1)
     }
   }
 
