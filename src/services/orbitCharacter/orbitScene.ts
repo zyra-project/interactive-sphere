@@ -905,40 +905,38 @@ function attachLidSocketClip(
     const prevOnBeforeCompile = mat.onBeforeCompile
     mat.onBeforeCompile = (shader, renderer) => {
       // Preserve the body-vinyl gradient + procedural-noise patches
-      // that `createBodyMaterial` already installed.
+      // that `createBodyMaterial` already installed. Those replace
+      // `#include <common>` and `#include <begin_vertex>` in the
+      // vertex shader and `#include <common>` + the diffuseColor
+      // assignment in the fragment shader, so by the time we run
+      // those `#include` tokens are GONE from the source. Anchor
+      // our patches on `void main() {` instead — universal,
+      // unmodified by the body's onBeforeCompile, and giving us
+      // a place to add uniform/varying declarations + leading
+      // statements at the same time.
       if (prevOnBeforeCompile) prevOnBeforeCompile.call(mat, shader, renderer)
       // Bind our uniforms last so chained patches can't shadow them.
       shader.uniforms.uLidToEyeGroup = fresh.uLidToEyeGroup
       shader.uniforms.uSocketRadius = fresh.uSocketRadius
 
-      shader.vertexShader = shader.vertexShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-           uniform mat4 uLidToEyeGroup;
-           varying vec2 vOrbitSocketXY;`,
-        )
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
+      shader.vertexShader = shader.vertexShader.replace(
+        'void main() {',
+        `uniform mat4 uLidToEyeGroup;
+         varying vec2 vOrbitSocketXY;
+         void main() {
            {
              vec4 orbitEgLocal = uLidToEyeGroup * vec4(position, 1.0);
              vOrbitSocketXY = orbitEgLocal.xy;
            }`,
-        )
+      )
 
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-           uniform float uSocketRadius;
-           varying vec2 vOrbitSocketXY;`,
-        )
-        .replace(
-          'void main() {',
-          `void main() {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'void main() {',
+        `uniform float uSocketRadius;
+         varying vec2 vOrbitSocketXY;
+         void main() {
            if (length(vOrbitSocketXY) > uSocketRadius) discard;`,
-        )
+      )
     }
     // Tag the program-cache key so Three.js doesn't reuse a non-clipped
     // compile of this material from another instance.
