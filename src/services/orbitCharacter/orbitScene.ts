@@ -755,6 +755,41 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       attachLidSocketClip(rig.upperLid, rig.upperLidPivot, EYE_PAIR_DISC_RADIUS)
       attachLidSocketClip(rig.lowerLid, rig.lowerLidPivot, EYE_PAIR_DISC_RADIUS)
     }
+
+    // Pupil-group meshes need extra hand-holding in embedded mode
+    // (Quest WebXR). On-Quest A/B testing showed a synthetic disc
+    // mounted in pupilGroup with `transparent + depthTest:false +
+    // renderOrder:100 + frustumCulled:false` rendered correctly,
+    // while the real iris/pupil/star/catchlight meshes — same
+    // pupilGroup, same general position — did not. The previous
+    // commit applied `depthTest:false` to the materials; this layer
+    // adds the two remaining differences from the working diag:
+    //
+    //   - frustumCulled = false: defensive against the per-frame
+    //     pupilGroup.position writes (gaze tracking) producing a
+    //     bounding-sphere recompute that excludes the mesh from
+    //     WebXR's per-eye visible set. The standalone path doesn't
+    //     hit this; the embedded path apparently does.
+    //   - renderOrder = 50: pushes pupil-group draws past the
+    //     bezel + glass dome (renderOrder 2) so they paint over
+    //     anything the eye stack drew first. 50 < 100 keeps a
+    //     headroom for any future effect that needs to layer over
+    //     the iris.
+    //
+    // Each mesh keeps its own renderOrder write so future polish
+    // (e.g. bumping the catchlight above the pupil dot) stays a
+    // single-line change.
+    for (const rig of eyeRigs) {
+      const pupilMeshes: THREE.Mesh[] = [
+        rig.irisGlow, rig.iris, rig.pupilField,
+        ...rig.stars,
+        rig.pupilDot, rig.catchPrimary,
+      ]
+      for (const mesh of pupilMeshes) {
+        mesh.frustumCulled = false
+        mesh.renderOrder = 50
+      }
+    }
   }
 
   return {
