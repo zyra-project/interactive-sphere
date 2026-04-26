@@ -766,6 +766,18 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
     // any material setting. Either answer narrows the search by an
     // order of magnitude. Marked here so it can be ripped out cleanly
     // once the eye render is solved.
+    //
+    // Update: the user's first on-Quest test of this diag (commit
+    // 0a4ae2a) reported seeing the red ONLY through occluders (the
+    // Earth, sub-spheres) and not when looking at Orbit's face
+    // directly. That's the depthTest:false behaviour working when an
+    // occluder writes depth — but it implies the diag is being
+    // frustum-culled (or otherwise dropped) when clear-LOS,
+    // contradicting renderOrder + depthTest:false expectations.
+    // Set `frustumCulled = false` on the diag as a defensive
+    // override; also add a second diag mounted at scene root so we
+    // can tell whether the issue is specific to nesting under
+    // pupilGroup vs. a global rendering problem.
     const diagMat = new THREE.MeshBasicMaterial({
       color: 0xff0033,
       depthTest: false,
@@ -779,8 +791,28 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       diag.position.z = SOCKET_Z_BEZEL + 0.0001 // in front of the bezel — can't be hidden
       diag.renderOrder = 100                   // drawn after everything in the eye stack
       diag.layers.set(ORBIT_LAYER)
+      diag.frustumCulled = false                // never let camera-frustum cull drop it
       rig.pupilGroup.add(diag)
     }
+    // Cross-reference diag mounted on the scene container (avatar
+    // group root). Bright magenta sphere positioned a bit above the
+    // head so it doesn't overlap the body silhouette in screen space.
+    // If THIS is visible but the eye-socket diags aren't, the issue
+    // is specific to how the eye sub-tree's transforms interact with
+    // the WebXR render path.
+    const sceneDiag = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 16, 12),
+      new THREE.MeshBasicMaterial({
+        color: 0xff00ff,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    )
+    sceneDiag.position.set(0, 0.18, 0)
+    sceneDiag.renderOrder = 100
+    sceneDiag.layers.set(ORBIT_LAYER)
+    sceneDiag.frustumCulled = false
+    scene.add(sceneDiag)
   }
 
   return {
