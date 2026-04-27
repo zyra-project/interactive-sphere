@@ -138,6 +138,112 @@ aggressively.
 
 ---
 
+## P1 — Educational value: are people learning?
+
+**Audience:** NOAA / SOS partners and educators (the mission
+question), product team (validates the docent + tour
+investments). For partners specifically, this is arguably **P0**:
+engagement and adoption are necessary but not sufficient if no
+learning happens.
+
+We can't measure long-term retention or attitudinal change
+without breaking the session-scoped privacy posture (no
+cross-session identity tracking, session id rotates per launch).
+What we *can* measure are **within-session learning signals**:
+did behavior or quiz performance change between the start and
+end of a single visit?
+
+### What's already measurable today
+
+| Question | Sample |
+|---|---|
+| Within-session pre/post — same `question_id` answered correctly more often the second time? | `WITH q AS (SELECT index1 AS session_id, blob5 AS question_id, blob6 AS tour_id, blob7 AS was_correct, timestamp, row_number() OVER (PARTITION BY index1, blob5 ORDER BY timestamp) AS attempt_n FROM terraviz_events WHERE blob1='tour_question_answered') SELECT question_id, tour_id, sum(if(attempt_n=1 AND was_correct='true',1,0))/sum(if(attempt_n=1,1,0)) AS pre_correct, sum(if(attempt_n=2 AND was_correct='true',1,0))/sum(if(attempt_n=2,1,0)) AS post_correct FROM q GROUP BY question_id, tour_id HAVING sum(if(attempt_n=2,1,0)) > 5` |
+| Time-to-correct (learning curve within a session) | `SELECT blob5 AS question_id, attempt_n, avg(double5) AS avg_response_ms, sum(if(blob7='true',1,0))/count() AS correct_rate FROM (SELECT *, row_number() OVER (PARTITION BY index1, blob5 ORDER BY timestamp) AS attempt_n FROM terraviz_events WHERE blob1='tour_question_answered') GROUP BY question_id, attempt_n ORDER BY question_id, attempt_n` |
+| Active vs passive — clicks per camera-settle | `SELECT index1, count_if(blob1='map_click') AS clicks, count_if(blob1='camera_settled') AS settles, count_if(blob1='map_click') / nullif(count_if(blob1='camera_settled'),0) AS click_per_settle FROM terraviz_events WHERE blob1 IN ('map_click','camera_settled') GROUP BY index1`. Higher click-per-settle indicates investigative behavior (probing features) rather than scenic viewing. |
+| Concept breadth × depth — "productive sessions" | `SELECT index1, count(DISTINCT blob5) AS distinct_datasets, sum(double2) AS total_dwell_ms FROM terraviz_events WHERE blob1='layer_unloaded' GROUP BY index1`. Sessions with both ≥3 distinct datasets and ≥5 min total dwell are candidates for "deep learning sessions". |
+| Tour completion → independent exploration funnel | CTE: distinct sessions that fired `tour_ended` with `blob5='completed'`, joined to subsequent `layer_loaded` events with `blob8='manual'` (not tour-triggered). A high conversion rate suggests the tour primed curiosity that survived past the scripted experience. |
+| Orbit-then-load — does asking the docent precede a dataset load? | CTE on `index1`: pairs of `orbit_interaction(message_sent)` followed within N minutes by `layer_loaded`. The `orbit_load_followed` event already captures the deliberate version (clicked-suggestion); this query catches the looser "user asked, then explored on their own" pattern. |
+| Orbit turn depth — multi-turn conversations are dialogue, not single-shot lookup | `SELECT quantile(0.5)(turns), quantile(0.95)(turns) FROM (SELECT index1, count() AS turns FROM terraviz_events WHERE blob1='orbit_turn' AND blob8='user' GROUP BY index1)` |
+| Reading-level fit | `SELECT blob7 AS reading_level, sum(if(blob5='length',1,0))/count() AS truncate_rate, avg(double2) AS avg_content_length FROM terraviz_events WHERE blob1='orbit_turn' AND blob8='assistant' GROUP BY reading_level`. If `kid` reading level has a high `length` finish rate but low post-turn `layer_loaded`, the responses may be too long for the audience. |
+
+**Authoring convention to enable pre/post:** the existing
+`tour_question_answered` schema already supports within-session
+delta — tour authors just need to **place the same
+`question_id` near the start and end of a tour**. That makes
+the first sample query above actually meaningful. Worth
+documenting in the tour-authoring guide as a recommended
+pattern.
+
+### What would unlock more — small additions
+
+These are bounded changes that significantly extend the learning
+measurement surface:
+
+- **`confidence_check` event** — a 1–5 self-rated picker that
+  appears at the start and end of a tour with the same prompt
+  ("How comfortable are you with hurricane formation?"). Compare
+  pre/post per `tour_id`. Tier A (it's a deliberate user
+  interaction, not passive observation). Schema would mirror
+  `feedback` with a `confidence: 1|2|3|4|5` and a
+  `prompt_id: string`.
+- **Concept tags on dataset metadata** (no new events) — tag
+  each dataset with one or more learning concepts (`hurricane`,
+  `sea-ice`, `aerosols`, `ocean-currents`). Then dashboards can
+  ask: "did the user explore a coherent concept cluster (depth
+  on hurricanes) or scatter randomly (one of everything)?"
+  Concentration is a learning signal; scatter might be casual
+  browsing. Lives in `dataService.ts` enriched metadata, no
+  schema change.
+- **End-of-session "what did you learn" prompt** — reuse the
+  existing `feedback` event with a new `context: 'session_end'`
+  + `kind: 'free_text'` value. The free text lives in the
+  feedback DB (not AE), so no schema change there either; it's
+  a UI prompt + a routing tweak.
+- **Pre/post designation on tour tasks** — add an optional
+  `pre_post: 'pre' | 'post'` field to `tour_task_fired` so
+  dashboards can identify the learning-design intent without
+  having to infer it from question position. Backwards
+  compatible if we make the field always present (`'none'` /
+  empty for tasks not part of a pre/post pair).
+
+### What's out of scope for the privacy posture
+
+- **Long-term retention** — the canonical educational research
+  question ("did they remember a week later?") requires linking
+  sessions across visits. Terraviz's session id rotates per
+  launch by design (see [`PRIVACY.md`](PRIVACY.md)), so this
+  isn't measurable without a deliberate, opt-in account flow.
+  Worth noting as a tradeoff: stronger privacy, weaker
+  longitudinal learning research.
+- **Demographics / classroom context** — would help interpret
+  results but conflicts with the
+  no-User-Agent-no-IP-no-account stance.
+
+### Sample dashboard layout
+
+A new "Learning Signals" dashboard would naturally have:
+
+1. Pre/post correctness delta per `question_id` (P1)
+2. Time-to-correct curve per `question_id` (P1)
+3. Productive-session rate (% of sessions hitting breadth+depth
+   threshold) trend over time (P1)
+4. Tour → independent-exploration conversion rate (P2)
+5. Orbit-precedes-load funnel (P2)
+6. Multi-turn rate distribution (P2)
+7. *(after instrumentation)* Confidence pre/post per tour (P1)
+
+**Action:** the no-code-change wins are (a) document the "same
+`question_id` at start and end" tour-authoring convention,
+(b) ship the "Learning Signals" dashboard with the existing
+queries above, and (c) add a Hidden Gems / productive-sessions
+stat panel. The instrumentation additions
+(`confidence_check`, `pre_post` discriminator, concept tags) are
+each ~half-day pieces of work and unlock substantially better
+analysis — sequence them after the no-code dashboard reveals
+which signals are worth investing more in.
+
+---
+
 ## P1 — Orbit value validation: does the LLM docent earn its keep?
 
 **Audience:** product team. Orbit is the most expensive feature
@@ -289,30 +395,50 @@ If we did nothing else for the next sprint:
 1. **Engagement Funnel dashboard** (P0 / P1) — visit → load →
    multi-load → tour → Orbit. Single canonical "are users
    actually engaging" view.
-2. **Orbit cost panel** ($ per assisted-load) on the existing
+2. **Learning Signals dashboard** (P1, partner-facing) — the
+   no-code-change panels listed in the Educational Value
+   section. Highest payoff per hour of work because the data
+   already exists.
+3. **Orbit cost panel** ($ per assisted-load) on the existing
    research dashboard.
-3. **Web Analytics enabled** if not already, then a single panel
+4. **Web Analytics enabled** if not already, then a single panel
    embedding pageviews × engaged sessions to see the conversion
    gap.
-4. **Deploy annotations** on the errors timeseries.
-5. **Feedback digest job** — weekly free-text export to email.
+5. **Deploy annotations** on the errors timeseries.
+6. **Feedback digest job** — weekly free-text export to email.
+7. **Tour-authoring guide update** — document the
+   "same `question_id` at start and end" pre/post convention
+   so the pre/post-delta query starts returning data.
 
-Items 1–3 are 30–60 min each in Grafana. Item 4 is a small
-Cloudflare webhook → Grafana annotation API. Item 5 needs
+Items 1–4 are 30–60 min each in Grafana. Item 5 is a small
+Cloudflare webhook → Grafana annotation API. Item 6 needs
 whatever the feedback DB exposes (D1 query → Worker cron → email
-API).
+API). Item 7 is a doc-only change.
 
 ## Open questions for review
 
-- Are there audiences this doc misses? (Funders? Press?
-  Educators?)
+- Are there audiences this doc misses? Funders and press are
+  candidates that aren't currently surfaced. Educators are now
+  called out under "Educational value" — is the framing right,
+  or would educators want different signals (e.g.
+  classroom-cohort filtering, which would conflict with the
+  privacy posture)?
 - Are the priority assignments right — would partners flip the
-  order of "content performance" and "adoption"?
+  order of "content performance" and "adoption", or promote
+  "Educational value" to P0 outright? The P1 designation is the
+  product-team default; partners reading this might disagree.
 - Is there a privacy concern with any of the JOIN patterns
-  proposed (`session_start.country` × `camera_settled` lat/lon)?
-  All fields are already collected and the joins happen in
-  Grafana, but the resulting view can be more identifying than
-  either input.
+  proposed (`session_start.country` × `camera_settled` lat/lon,
+  or any of the within-session learning-signal CTEs)? All
+  fields are already collected and the joins happen in Grafana,
+  but the resulting view can be more identifying than either
+  input.
 - Should Tier B (research-mode) opt-in rate become a
   user-visible stat ("X % of users help us improve Terraviz")
   or stay internal?
+- For the proposed `confidence_check` event (Educational Value
+  section): Tier A (essential, per-feature) or Tier B (research
+  mode only)? It's a deliberate user interaction tied to a
+  specific UI element, which argues for Tier A — but it's
+  arguably more useful for research than for product
+  operations, which argues for Tier B.
