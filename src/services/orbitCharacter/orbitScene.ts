@@ -903,60 +903,61 @@ export function buildScene(options: BuildSceneOptions = {}): OrbitSceneHandles {
       rig.upperLid.frustumCulled = false
       rig.lowerLid.frustumCulled = false
 
-      // Bypass-pivot test mesh — same SphereGeometry as the lid,
-      // bright cyan to differentiate from the lid magenta. Parented
-      // directly to head, positioned at the eye_group origin offset
-      // plus the lid pivot's local Z.
-      const bypass = new THREE.Mesh(
-        new THREE.SphereGeometry(LID_RADIUS, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.42),
-        new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide }),
-      )
-      const offsetX = rig.group.position.x // ±EYE_PAIR_OFFSET_X
-      bypass.position.set(offsetX, EYE_PAIR_DISC_RADIUS * 0.55, BODY_RADIUS + 0.0030)
-      bypass.frustumCulled = false
-      bypass.renderOrder = 1
-      bypass.layers.set(ORBIT_LAYER)
-      head.add(bypass)
-
-      // The bypass-pivot cyan domes render but the real magenta lids
-      // don't — confirms the transform chain head → eye_group →
-      // pivot → lid is breaking the lid in WebXR. Top suspect: the
-      // eye_group's non-uniform Y-scale (1, 1.18, 1) combined with
-      // the pivot's -π/2 rotation around X. Non-uniform parent scale
-      // is documented as unsafe with various Three.js operations
-      // (`Object3D.lookAt` explicitly warns about it). With the
-      // pivot rotated 90° around X, the Y-scale gets composed with
-      // the rotated Z axis, producing a non-orthonormal matrix that
-      // may be triggering a render-path edge case on Quest's WebGL.
+      // Lid mesh reparenting (Quest WebXR workaround). Diagnostic
+      // chain (a06ec50 → e70bec3 → 1f44c32) localised the bug:
+      // SphereGeometry partial-cap renders fine when parented
+      // directly to `head`, but disappears when parented through
+      // `eye_group → upperLidPivot` — even after the eye_group's
+      // non-uniform Y-scale is flattened. Something specific to
+      // that hierarchy depth + the pivot's -π/2 rotation breaks
+      // the lid mesh in Quest's WebGL render path.
       //
-      // Test: drop the non-uniform scale on the eye_group in
-      // embedded mode. Costs the eye-shape Y stretch (eyes look
-      // slightly less neotenous, more circular) but rules in/out
-      // the scale-rotation interaction.
-      rig.group.scale.set(1, 1, 1)
-
-      // e70bec3 didn't fix lids — uniform-scale eye_group still
-      // doesn't render the lid through the pivot chain. Final
-      // diagnostic: reparent the lid mesh DIRECTLY to head, at the
-      // cyan bypass position with identity rotation. If this
-      // renders, the upperLidPivot itself (rotation, hierarchy
-      // depth, or some other property of being a child of pivot)
-      // is the cause. Loses the blink animation entirely for this
-      // diag — tracked as Phase 4 polish.
-      const lidPos = new THREE.Vector3(0, EYE_PAIR_DISC_RADIUS * 0.55, BODY_RADIUS + 0.0030)
-      lidPos.x += rig.group.position.x // ±EYE_PAIR_OFFSET_X
-      const reparent = (lid: THREE.Mesh) => {
+      // Workaround: reparent the lid meshes directly to `head` and
+      // compute their head-local position + rotation each frame
+      // from the would-be pivot transform via `onBeforeRender`.
+      // updateCharacter keeps writing `upperLidPivot.rotation.x`
+      // unchanged — the orphaned pivot acts purely as a state
+      // holder for the per-frame angle. The lid's pose, with the
+      // animation applied, is composed via:
+      //
+      //   lid.position = pivotPos_in_head_local
+      //                + rotateX(angle)( (0, LID_MESH_Y_OFFSET, 0) )
+      //   lid.rotation.x = angle
+      //
+      // where pivotPos_in_head_local accounts for the eye_group's
+      // translation (offsetX, offsetY) and the pivot's local Y
+      // offset within the eye_group. Result: blinks animate
+      // correctly with no visible difference from the standalone
+      // pivot-driven path, except the lid renders.
+      const palette_obj = PALETTES[palette]
+      const lidMatFresh = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(palette_obj.warm),
+        side: THREE.DoubleSide,
+      })
+      const offsetX = rig.group.position.x // ±EYE_PAIR_OFFSET_X
+      const offsetY = rig.group.position.y // EYE_PAIR_OFFSET_Y
+      const reparent = (lid: THREE.Mesh, pivot: THREE.Object3D, pivotY: number) => {
+        lid.material = lidMatFresh
         lid.removeFromParent()
         head.add(lid)
-        lid.position.copy(lidPos)
-        lid.quaternion.identity()
-        lid.scale.set(1, 1, 1)
+        lid.frustumCulled = false
         lid.castShadow = false
         lid.receiveShadow = false
         lid.layers.set(ORBIT_LAYER)
+        lid.onBeforeRender = () => {
+          const angle = pivot.rotation.x
+          const cosA = Math.cos(angle)
+          const sinA = Math.sin(angle)
+          lid.position.set(
+            offsetX,
+            offsetY + pivotY + LID_MESH_Y_OFFSET * cosA,
+            LID_PIVOT_Z + LID_MESH_Y_OFFSET * sinA,
+          )
+          lid.rotation.set(angle, 0, 0)
+        }
       }
-      reparent(rig.upperLid)
-      reparent(rig.lowerLid)
+      reparent(rig.upperLid, rig.upperLidPivot, UPPER_LID_PIVOT_Y)
+      reparent(rig.lowerLid, rig.lowerLidPivot, LOWER_LID_PIVOT_Y)
     }
   }
 
