@@ -260,7 +260,7 @@ Position | Started | Ended
 `blob7` | `mode` | `mode`
 `double1` | `client_offset_ms` | `client_offset_ms`
 `double2` | `entry_load_ms` | `duration_ms`
-`double3` | — | `mean_fps` (nullable; arithmetic mean over the whole session)
+`double3` | — | `mean_fps` (`0` when the session was too short for a meaningful sample; arithmetic mean over the whole session)
 
 ### `vr_placement` (Tier A)
 
@@ -279,7 +279,7 @@ Position | Started | Ended
 | `double1` | `client_offset_ms` |
 | `double2` | `fps_median_10s` |
 | `double3` | `frame_time_p95_ms` |
-| `double4` | `jsheap_mb` (nullable) |
+| `double4` | `jsheap_mb` (`0` on non-Chromium engines where `performance.memory` is unavailable; filter `double4 > 0` to scope to supported browsers) |
 
 ### `error` (Tier A) / `error_detail` (Tier B)
 
@@ -328,9 +328,10 @@ alphabetical layout. Per-event positions:
 
 #### `orbit_interaction`
 
-> Nullable `duration_ms` / `input_tokens` / `output_tokens` shift
-> later doubles forward when omitted. Filter nullables in queries
-> rather than positionally indexing past them.
+> `duration_ms` / `input_tokens` / `output_tokens` use `0` as the
+> "not measured / not reported" sentinel — positions are always
+> populated. Filter `> 0` in queries to scope to interactions that
+> actually carry timing or billable token counts.
 
 | Position | Field |
 |---|---|
@@ -786,8 +787,9 @@ ORDER BY occurrences DESC
 
 ### Orbit response timing per model
 
-> `duration_ms` is nullable on `orbit_interaction`; filter early so
-> the average doesn't include skipped rows.
+> `duration_ms` carries `0` on `orbit_interaction` rows that have
+> no measurable timing (e.g. synchronous `action_executed`).
+> Filter `double2 > 0` so the average doesn't include those.
 
 ```sql
 SELECT

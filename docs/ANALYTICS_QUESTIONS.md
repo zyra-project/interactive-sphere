@@ -153,7 +153,7 @@ assisted exploration.
 | Orbit adoption — what fraction of sessions open chat? | `count(DISTINCT index1) WHERE blob1='orbit_interaction'` ÷ total `session_start` |
 | Orbit follow-through — did they load what was suggested? | Already have it (research Panel 7) |
 | Quality red flags (corrections) | Already have it (research Panel 8) |
-| Tokens per session | `SELECT sum(double4 + double5) AS tokens FROM terraviz_events WHERE blob1='orbit_turn' AND double4 > 0 GROUP BY index1` (filter `double4 > 0` excludes the "not reported" sentinel) |
+| Tokens per session | `SELECT sum(double4 + double5) AS tokens FROM terraviz_events WHERE blob1='orbit_turn' AND double4 > 0 GROUP BY index1` — **note:** `llmProvider` does not yet surface `usage` data from the SSE stream, so `input_tokens` / `output_tokens` are currently always `0`. Plumbing those through is a small follow-up that would make this query (and the "$ per assisted-load" panel below) actually return data. |
 | Model comparison — finish_reason mix | Already have it (research Panel 10) |
 | `length` truncation rate per model — token budget regressions | `SELECT blob6 AS model, sum(if(blob5='length',1,0))/count() AS truncate_rate FROM terraviz_events WHERE blob1='orbit_turn' GROUP BY model` |
 
