@@ -1578,6 +1578,166 @@ not painting the codebase into a Cloudflare-only corner.
 
 ---
 
+## Free-tier viability
+
+The plan as written assumes a few Cloudflare services that are not
+on the free plan, and several that are free-but-tight. A
+self-hoster on the free plan can take Phase 1 all the way to
+production without paying anything; later phases force a paid
+tier in specific, predictable places. This section spells out
+exactly where the cliffs are so the choice is informed.
+
+### What is not free at all
+
+| Service | Free? | Plan uses it for | Minimum cost |
+|---|---|---|---|
+| **Cloudflare Stream** | No. **No free tier, no trial, no sandbox.** | Vimeo replacement (Phase 2). | $5 / 1000 min stored, billed up in 1000-min increments + $1 / 1000 min delivered. Storing 1 minute = $5/mo. |
+| **Cloudflare Images** | No. | Image variants (Phase 2 optional). | $5/mo minimum. Skippable — encode variants at upload to R2 instead. |
+| **Queues** | No — requires Workers Paid. | Federation sync, transcode polling (Phase 4). | Bundled in Workers Paid ($5/mo). |
+| **Durable Objects** | No — requires Workers Paid. | Per-peer sync coordinator (Phase 4 nice-to-have). | Bundled in Workers Paid ($5/mo). |
+| **Workers Paid plan** | No (it is the paid plan). | Prerequisite for Queues / DOs / Stream and raises every quota below. | $5/mo. |
+
+### Free-tier limits to watch
+
+| Service | Free quota | Concern |
+|---|---|---|
+| **Pages Functions** | 100k requests/day | The catalog API is the hot path. Without KV-snapshot caching, every browse-page load pierces this within the day. With KV caching, a small deployment fits comfortably. |
+| **D1** | 5M row reads/day, 100k writes/day, 5 GB | A single `SELECT * FROM datasets WHERE visibility='public'` returning 600 rows costs 600 reads. KV snapshot caching is **not optional** if you want to stay free — it is how the math works. |
+| **R2** | 10 GB storage, 1M Class A ops/mo (writes), 10M Class B ops/mo (reads), **zero egress** | Generous for metadata, thumbnails, sphere-thumbs, tour JSON, captions. Tight for video originals — one 4K video is several GB. The zero-egress rule is the unique-to-CF win and the reason the plan keeps `r2-hls:` as a first-class `data_ref`. |
+| **KV** | 100k reads/day, 1k writes/day, 1k deletes/day, 1 GB, 25 MB / value | Plenty for the catalog snapshot pattern (one read per request, one write per publish). The 1k writes/day is the trap — never cache something that changes on every request. |
+| **Workers AI** | ~10k neurons/day | Already shared with Orbit chat. Adding ML enrichment to publish flow (auto-keywords, abstract summarisation) competes with the docent's budget. Measure before adding. |
+| **Cloudflare Access** | First 50 seats free, then $3/seat/mo | Fine for staff publishing in Phase 3. Phase 6 community publishers should arrive via OIDC instead, not as Access seats. |
+| **Analytics Engine** | 10M datapoints/mo write | Already in use for telemetry. New catalog/publisher events add to the same bucket — verify there is room. |
+| **Vectorize** (semantic search, optional) | 30M queried dims/mo, 5M stored | Comfortable for ~600 datasets with 768-dim embeddings. |
+| **Cron Triggers** | 3 per Worker on free, more on paid | Phase 4 federation can run on cron alone (one trigger iterating peers). Beyond ~20 peers a per-peer cron stops fitting. |
+
+### The Stream gotcha, specifically
+
+Stream is the single largest cost surprise in the plan and warrants
+its own callout:
+
+- No free tier. No trial. No sandbox. Pricing the moment a video
+  exists.
+- Storage is billed in 1000-minute increments rounded up — storing
+  *one minute* is $5/mo, storing *1001 minutes* is $10/mo.
+- Delivery is $1 per 1000 minutes streamed; small-audience
+  deployments pay pennies, public-traffic deployments can climb.
+- Workers Paid ($5/mo) is a prerequisite for enabling Stream at all.
+- **Realistic minimum entry cost: ~$10/mo** ($5 Workers Paid +
+  $5 Stream) regardless of how little video is involved.
+
+For the SOS catalog (~600 datasets averaging ~5 min each = ~3000
+min), storage runs ~$15/mo before any delivery — modest, but
+non-zero.
+
+#### Testing without paying for Stream
+
+The plan was already designed so the entire catalog / manifest /
+federation pipeline can be validated without ever provisioning
+Stream:
+
+1. **Stay on `vimeo:` refs through Phase 2.** The cutover bridge
+   is exactly this case — keep the existing Vimeo proxy as the
+   asset backend while D1, the manifest endpoint, federation, and
+   the publisher portal land. Stream becomes a *later* asset-host
+   choice, not a Phase 2 prerequisite.
+2. **Self-host HLS in R2.** Encode locally with ffmpeg, upload the
+   `.m3u8` + `.ts` segments to R2, register the asset as
+   `r2-hls:<key>`. Free up to 10 GB. Doubles as the "beyond 4K"
+   path the plan already requires.
+3. **Use a third-party trial as a `data_ref` scheme.** Mux's free
+   tier (100 hours encoding / 100 GB streaming for new accounts),
+   Bunny Stream's startup credits, etc. — fit behind the same
+   `videoService` interface in the portability section. Useful for
+   side-by-side cost comparison.
+4. **One-month one-video integration test.** When the integration
+   itself needs validating (signed playback, HDR rendition
+   selection, packed-alpha pipeline), provision Stream for one
+   month with one representative video. ~$10 total.
+
+The data model already namespaces `data_ref` schemes
+(`vimeo:` / `r2-hls:` / `stream:` / `tiles:` / `url:`) so a node
+can mix backends per-dataset. There is no "Stream cutover" gate; a
+node can serve a permanent mix.
+
+### Phase-by-phase cost reality
+
+| Phase | Free-tier viable? | What forces a paid step |
+|---|---|---|
+| **1 — Catalog backbone** | Yes, fully. | Nothing. D1 + KV + Pages Functions all sit inside free quotas with KV-snapshot caching. |
+| **2 — Asset hosting** | Conditional. R2 free up to 10 GB. **Stream costs from minute one.** Cloudflare Images costs from minute one (skippable). | Stream usage. Mitigation: keep `vimeo:` refs and add `r2-hls:` for any new uploads — Stream becomes opt-in per dataset. |
+| **3 — Publisher portal** | Yes. | Nothing — Access is free for the first 50 seats, which covers staff publishing comfortably. |
+| **4 — Federation** | Yes with caveat. | Queues + DOs both require Workers Paid ($5/mo). **Workaround:** pull-only federation via a Cron Trigger iterating peers, with cursor in KV. Works for ≤ ~20 peers; revisit when peer count outgrows it. |
+| **5 — Per-dataset auth** | Yes. | Nothing extra. Signed URLs are a feature of services already in use (Stream / R2). |
+| **6 — Community publishing & portability** | Conditional. | Access seats become a real cost beyond 50 users. Mitigation: bring-your-own OIDC (self-hosted Keycloak, Clerk's free tier, Auth0's free tier). |
+
+### Practical recommendations
+
+1. **Pay the $5/mo for Workers Paid the day Phase 1 ships, even
+   though Phase 1 doesn't strictly need it.** The free Pages
+   Functions limit (100k req/day) is the first quota that bites,
+   and Workers Paid also raises D1 row-read limits, KV write
+   limits, and unlocks Queues / DOs / Stream for later phases. $5
+   is cheaper than the engineering cost of designing around
+   every free-tier wall.
+
+2. **Defer Stream as long as possible.** The plan's `vimeo:`
+   `data_ref` cutover bridge is specifically designed so a node
+   can validate the entire backend without provisioning Stream.
+   A self-hosted reference deployment can ride the existing
+   Vimeo proxy indefinitely and still be a fully-functional
+   federation peer — Stream is an asset-host choice, not a
+   protocol requirement.
+
+3. **Skip Cloudflare Images unless HDR variants are essential.**
+   The image-variants pipeline can run entirely on R2 by
+   encoding the variants at upload time (ffmpeg / sharp in a CI
+   job, or a one-off Worker action) instead of resizing on
+   demand. Cloudflare Images is convenience, not necessity.
+
+4. **Federation cron-only path until peer count justifies
+   Queues.** A single Cron Trigger every 15 minutes that loops
+   `federation_peers` and does a sync per peer fits inside free
+   Workers up to roughly 20 peers (each peer's sync needs to
+   complete inside the Cron CPU budget). Promote to Queues when
+   the cron run starts overrunning.
+
+5. **R2 storage triage.** Reserve R2 for metadata, sphere-thumbs,
+   flat thumbnails, legends, captions, tour JSON, and the
+   delivery tier of image datasets. *Original*-quality video
+   does not have to live in R2 if it lives in Stream (or a
+   third-party host). With this discipline the 10 GB free tier
+   is comfortable for hundreds of datasets.
+
+6. **Watch the D1 row-read budget like a hawk.** A misconfigured
+   route that reads `datasets` on every request will burn 5M/day
+   well before users notice anything is wrong. The KV snapshot
+   pattern (one D1 read per publish, then served from KV until
+   invalidated) is the load-bearing assumption. Add a Grafana
+   panel for `d1_reads_per_minute` early; do not wait for the
+   bill.
+
+7. **Don't run Workers AI for catalog enrichment.** Auto-keywords
+   and abstract summarisation are tempting but eat into Orbit's
+   ~10k neurons/day. If publisher-side ML helpers add real
+   value, gate them behind an explicit "Enhance with AI" button
+   so the cost is per-publish, not per-request.
+
+8. **Treat the `$10/mo Stream test` as a budgeted experiment, not
+   ongoing infrastructure.** Provision Stream for one month with
+   a single representative video to validate signed playback,
+   HDR rendition selection, and the packed-alpha pipeline; then
+   turn it off until there is a dataset that justifies it
+   permanently. The data model accommodates the on/off pattern.
+
+The cumulative result: **a self-hosted Terraviz node can run
+Phases 1, 3, 4, 5 entirely on Workers Paid ($5/mo) with no
+Stream, no Cloudflare Images, and no Access seats over 50.**
+Phase 2 is where money starts mattering, and only when the node
+has its own video assets to host.
+
+---
+
 ## Phasing
 
 Each phase ships independently and leaves the app in a working
@@ -1707,7 +1867,8 @@ becomes a tracking issue.
 
 | Risk | Mitigation |
 |---|---|
-| Stream costs scale with catalog size in ways Vimeo's static link did not. | Phase 2 backfill estimates total minutes before commit; budget review gates the cutover. Public deployment can keep `vimeo:` refs as long as needed. |
+| Stream costs scale with catalog size in ways Vimeo's static link did not. | Phase 2 backfill estimates total minutes before commit; budget review gates the cutover. Public deployment can keep `vimeo:` refs as long as needed. See "Free-tier viability." |
+| Self-hoster on the free plan hits an unexpected paywall partway through implementation. | The "Free-tier viability" section enumerates every paid-only service and quota the plan touches, with mitigations per phase. Phase 1 is fully free; later phases force Workers Paid ($5/mo) at known points. |
 | D1 catalog query latency at full SOS scale (~600 datasets) | Hot path served from KV snapshot; D1 only on cache miss. KV invalidation on publish. Benchmarked in Phase 1 with the seeded catalog. |
 | Federation cursor drift between peers running different versions | `schema_version` field on every payload; subscribers refuse unknown versions; well-known doc advertises supported range. |
 | A pending peer DOS-es the handshake endpoint | Bootstrap secret is one-time and short-lived; per-IP rate limit on handshake; pending state doesn't grant feed access. |
@@ -1781,6 +1942,18 @@ These need answers before Phase 1 starts coding.
     *replacement* for multi-globe (one globe, N stacked layers)
     or an *additional* mode (still N globes, but each can stack)?
     The renderer change is simpler if it's the latter.
+13. **Where does the $5/mo Workers Paid baseline sit in the
+    self-hosting story?** `docs/SELF_HOSTING.md` currently reads
+    as a "free-plan-friendly" guide. Either it stays that way and
+    flags the Workers-Paid jump as a Phase-4 prerequisite, or it
+    quietly assumes Workers Paid throughout and the free path
+    becomes a separate "minimal viable node" appendix. The
+    "Free-tier viability" section above implies the latter; the
+    self-hosting doc should pick one and stick to it.
+14. **Cron-only federation peer ceiling.** "≤ ~20 peers" is a
+    rough estimate based on Cron Trigger CPU budgets; needs
+    measurement against a realistic peer mix before being
+    documented as a hard limit.
 
 ---
 
