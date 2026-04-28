@@ -99,6 +99,82 @@ go through these deliberately.
 
 ---
 
+## Glossary
+
+Terms used throughout this plan and the companion docs. Most of
+these are defined in detail in their respective sections; this
+list is the one-line "what does that word mean" reference.
+
+- **`asset_proxy_policy`** — per-peer setting on
+  `federation_peers` controlling how this node serves federated
+  asset bytes to its desktop users
+  (`metadata_only` / `proxy_lazy` / `proxy_cached` / `mirror_eager`).
+  See "Offline (Tauri) compatibility" → "Federated datasets" in
+  [`CATALOG_ASSETS_PIPELINE.md`](CATALOG_ASSETS_PIPELINE.md).
+- **Catalog** — the metadata about all datasets and tours
+  managed by a node, plus the merged metadata from federated
+  peers.
+- **Catalog row** — a single dataset or tour record; the unit
+  of publication, signing, and federation.
+- **`content_digest`** — `"sha256:<hex>"` claim on a catalog
+  row that consumers verify against the asset bytes. The
+  integrity primitive.
+- **`data_ref`** — internal reference scheme for asset bytes:
+  `stream:<uid>` | `r2:<key>` | `vimeo:<id>` (legacy) | `url:<url>` (legacy) | `peer:<node_id>/<dataset_id>`.
+- **Federated mirror** — a copy of a peer's catalog row stored
+  in this node's `federated_datasets` table.
+- **Federation** — node-to-node catalog sharing per the
+  protocol in
+  [`CATALOG_FEDERATION_PROTOCOL.md`](CATALOG_FEDERATION_PROTOCOL.md).
+- **Manifest** — the response from
+  `GET /api/v1/datasets/{id}/manifest`; resolves a `data_ref`
+  to a playable URL with integrity claims attached.
+- **Node** — one Cloudflare Pages deployment running the
+  catalog backend. Every Terraviz instance is a node.
+- **`node_id`** — ULID identifying a node. Stable across
+  redeploys; rotates only via explicit operator action.
+- **Peer** — a federated node this node has handshaken with.
+  "Peer" and "node" mean the same thing, viewed from
+  different ends of a subscription.
+- **Publisher** — a person, service, or account authorized to
+  write to this node's catalog. Phase 1a is staff-only;
+  Phase 6 adds community publishers via OIDC.
+- **Publisher API** — endpoints under `/api/v1/publish/**`,
+  Cloudflare Access-protected.
+- **Rendition** — a specific encoding of a video asset (H.264
+  1080p, HEVC 4K, AV1 packed-alpha, etc.). One asset, many
+  renditions; the manifest endpoint picks per request.
+- **`schema_version`** — content-shape version of a catalog
+  row, distinct from URL prefix (`/api/v1/`) and federation
+  `protocol_version`. See "Versioning & deprecation" in API
+  surface.
+- **`search_datasets`** — LLM-callable tool for catalog
+  discovery via vector similarity. Backed by Vectorize. See
+  "Docent integration".
+- **Service token** — Cloudflare Access machine credential
+  used by the CLI for non-browser publishing.
+- **SOS** — Science On a Sphere, the existing public catalog
+  the seed importer pulls from.
+- **Subscriber** — a node that has subscribed to receive
+  catalog updates from a peer. Inverse of "publisher" in the
+  federation context.
+- **Tombstone** — a row representing a retracted or hard-deleted
+  dataset; carried in federation feeds so subscribers can
+  evict their mirrors. See "Failure modes the protocol has
+  to survive" in
+  [`CATALOG_FEDERATION_PROTOCOL.md`](CATALOG_FEDERATION_PROTOCOL.md).
+- **Tour** — a sequence of camera moves, dataset loads, and
+  overlays played back by `tourEngine.ts`.
+- **Vectorize** — Cloudflare's managed vector database; used
+  for the docent search index from Phase 1b onward.
+- **Well-known doc** — `/.well-known/terraviz.json`, the
+  per-node discovery document advertising identity, public
+  key, supported endpoints, and federation policy.
+- **Workers AI** — Cloudflare's managed inference platform;
+  used for the docent embedding model `bge-base-en-v1.5`.
+
+---
+
 ## Architecture overview
 
 A Terraviz **node** is one Cloudflare Pages deployment plus the
