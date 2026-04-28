@@ -324,6 +324,136 @@ below as a worked example.
   with a seeded ~600-dataset DB; verifies p95 latency budget
   before merging changes that touch the hot path.
 
+### Federation contract test — worked example
+
+The bullet above promises a contract test that "spins up two
+Wranglers, peers them, asserts state matches a golden snapshot."
+What that actually looks like in practice:
+
+```ts
+// federation/contract.test.ts
+import { describe, it, beforeAll, afterAll, expect } from 'vitest'
+import { spawnNode, peerNodes, signFixture } from './harness'
+
+describe('federation contract — protocol v1, schema v1', () => {
+  let publisher, subscriber
+
+  beforeAll(async () => {
+    publisher  = await spawnNode({ port: 8801 })
+    subscriber = await spawnNode({ port: 8802 })
+
+    // Seed publisher with deterministic fixtures.
+    await publisher.exec(
+      'INSERT INTO datasets (id, slug, ...) VALUES (?, ?, ...)',
+      signFixture.dataset_one,
+    )
+
+    // Handshake.
+    await peerNodes(publisher, subscriber, {
+      protocol_version: 1,
+      schema_versions:  [1],
+    })
+
+    // Trigger a sync.
+    await subscriber.invoke('cron:federation-sync')
+  })
+
+  afterAll(async () => {
+    await publisher.stop()
+    await subscriber.stop()
+  })
+
+  it('subscriber mirrors the publisher\'s public datasets', async () => {
+    const { datasets } = await subscriber.fetch('/api/v1/catalog').json()
+    expect(datasets).toMatchSnapshot('catalog-after-sync')
+  })
+
+  it('subscriber surfaces tombstones for retracted rows', async () => {
+    await publisher.invoke('retractDataset', { id: signFixture.dataset_one.id })
+    await subscriber.invoke('cron:federation-sync')
+
+    const { tombstones } = await subscriber
+      .fetch('/api/v1/federation/feed?cursor=' + lastCursor)
+      .json()
+    expect(tombstones).toContainEqual(
+      expect.objectContaining({ id: signFixture.dataset_one.id })
+    )
+  })
+
+  it('rejects a mirror whose content_digest does not match the bytes', async () => {
+    // Drives the integrity-failure path described in
+    // CATALOG_ASSETS_PIPELINE.md → "Federation: peers verifying
+    // mirrored bytes". Asserts a federation_integrity_failure
+    // event is emitted and the mirror is not stored.
+  })
+})
+```
+
+The harness (`federation/harness.ts`) is a small wrapper around
+Wrangler's `unstable_dev` testing API that hides the boilerplate
+of starting a Miniflare instance, applying migrations to its
+in-memory D1, and giving you `.fetch()` / `.exec()` / `.invoke()`
+helpers. Each `describe` block runs against fresh state;
+per-test isolation falls out of the in-memory D1.
+
+#### Adding a new protocol field
+
+A change like "add a `content_digest` field to the federation
+feed payload" is the canonical scenario this test catches. The
+PR-shaped flow:
+
+1. **Schema bump.** Add a migration that introduces
+   `content_digest TEXT` on `datasets`; update
+   [`CATALOG_DATA_MODEL.md`](CATALOG_DATA_MODEL.md) in the same
+   commit.
+2. **Feed serializer change.** Update the federation feed
+   handler to emit the field on outbound payloads. Bump
+   `schema_version` if the field is required; leave it at the
+   current version if absence means "not verified" (the legacy
+   path described in
+   [`CATALOG_ASSETS_PIPELINE.md`](CATALOG_ASSETS_PIPELINE.md)).
+3. **Update the support matrix.** The contract test
+   parameterises over `(protocol_version, schema_version)`
+   combinations. Add a new entry to the matrix in
+   `federation/contract.support-matrix.ts`:
+   ```ts
+   export const SUPPORTED = [
+     { protocol: 1, schema: 1 },
+     { protocol: 1, schema: 2 },  // ← new row
+   ]
+   ```
+   The test runs every entry; CI fails if any combination
+   breaks.
+4. **Positive test.** Show that with both nodes on
+   `(protocol: 1, schema: 2)` the digest field round-trips and
+   the subscriber stores it.
+5. **Negative test.** Show that with the publisher on
+   `(protocol: 1, schema: 2)` and the subscriber on
+   `(protocol: 1, schema: 1)`, the subscriber gracefully ignores
+   the unknown field — it should not error, should still ingest
+   the rest of the row, and should log a `schema_version_skew`
+   event so an operator can notice the drift.
+
+A change that violates one of these invariants — a required
+field a v1 subscriber cannot tolerate, a serialization shape
+that breaks parsers, a schema version that wasn't bumped — fails
+the contract test on the negative case before merge. That is the
+test's job, and it does it cheaply because the harness boots two
+Miniflare instances in under a second.
+
+#### What the contract test deliberately doesn't cover
+
+- **Real Cloudflare behaviour.** Miniflare emulates D1 / KV / R2
+  / Queues but not Stream and not the production edge cache.
+  Stream-touching paths use `MOCK_STREAM`; edge-cache behaviour
+  is exercised at the preview-deploy level.
+- **Long-tail latency.** The harness is in-memory and
+  sub-second; it doesn't tell you whether sync at 600-dataset
+  scale stays inside the p95 budget. That is the load test's
+  job.
+- **Auth.** The handshake mocks Access; real-world Access
+  integration is exercised in the e2e Playwright suite, not here.
+
 ## CI/CD
 
 - **Per-PR.** Lint, type-check, unit + integration, build the
