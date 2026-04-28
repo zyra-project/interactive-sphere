@@ -166,6 +166,127 @@ minutes. The frontend reads it from a `?preview=...` query param,
 calls `/api/v1/publish/datasets/{id}` (rather than the public route)
 to fetch the draft, and renders normally.
 
+## Publisher identity & roles
+
+The publisher portal lives behind Cloudflare Access (Phase 3) and
+later behind an OIDC provider as well (Phase 6). Both authentication
+paths produce a `publisher_id` that is bound to every write through
+the publisher API. The `publishers` table is the local mirror of
+that identity; rows are JIT-provisioned on first login.
+
+### Phase 3 — staff-only
+
+In Phase 3 the only publishers are staff (administrators of the
+deploying node):
+
+- Cloudflare Access protects `/publish/**` and `/api/v1/publish/**`.
+- On first login, the API handler reads the Access JWT, finds an
+  existing `publishers` row by email, or creates one with
+  `role='staff'` and `status='active'`.
+- `affiliation` defaults to the deploying organisation's name (a
+  Wrangler env var) and is editable in the portal's profile page.
+- Every staff publisher can publish, edit any draft (including
+  ones authored by other staff), and retract any dataset the
+  deploying node owns. Equivalent to "every Access user is admin."
+
+This is enough for the public reference deploy and any single-org
+institutional deploy. It deliberately does not solve multi-publisher
+coordination; that is Phase 6.
+
+### Phase 6 — community publishers and finer roles
+
+Phase 6 introduces external publishers (researchers, partner orgs,
+citizen-science contributors) and the role granularity needed to
+give them a useful but bounded portal:
+
+- An OIDC provider (configurable per-deploy; sensible defaults for
+  ORCID, GitHub, Google) issues identity claims that the publisher
+  API exchanges for a session.
+- The `publishers.role` column carries one of:
+  - `staff` — full administrative authority over the deploying
+    node's catalog.
+  - `community` — can author their own datasets; can edit / retract
+    only datasets they own or have been explicitly invited to.
+  - `readonly` — sees the portal but cannot write. Used for
+    auditors and reviewers in the review-queue flow.
+- A new `org_id` column (nullable in Phase 3, populated for
+  community publishers from Phase 6 onward) groups publishers
+  into institutional units. Cross-org isolation is the default —
+  a community publisher cannot see drafts authored by anyone in
+  a different org.
+
+### Capability matrix
+
+The matrix below is the source of truth for the publisher API's
+authorization checks. Phase 3 collapses to the `staff` column.
+
+| Action | staff | community (own) | community (invited) | readonly |
+|---|---|---|---|---|
+| Create dataset draft | ✓ | ✓ | — | — |
+| Edit own draft | ✓ | ✓ | n/a | — |
+| Edit someone else's draft | ✓ | — | ✓ | — |
+| Submit draft for review | ✓ | ✓ | ✓ | — |
+| Approve a submitted draft | ✓ | — | — | ✓ if assigned |
+| Publish (transition `published_at` → now) | ✓ | ✓ if no review queue | ✓ if no review queue | — |
+| Retract a published dataset | ✓ | ✓ if owner | — | — |
+| Hard-delete a dataset | ✓ admin only | — | — | — |
+| Issue a read-side `dataset_grant` | ✓ | ✓ if owner | — | — |
+| Manage federation peers | ✓ admin only | — | — | — |
+| View audit log for a dataset | ✓ | ✓ if owner | ✓ | — |
+| View audit log node-wide | ✓ admin only | — | — | — |
+
+The "admin" sub-role within `staff` is a flag on the publisher row
+(`is_admin INTEGER NOT NULL DEFAULT 0`); only admins can manage
+peers, hard-delete, or read the node-wide audit log. The first
+staff row created on a fresh deploy is auto-promoted to admin.
+
+## Cross-publisher collaboration
+
+Phase 6 adds the ability for a publisher to invite others —
+including from a different org — to edit a specific draft. This is
+distinct from the *read-side* `dataset_grants` table described in
+the main backend plan: those control who can *view* a published
+dataset; the table introduced here controls who can *write* a
+draft or published row.
+
+A new `dataset_collaborators` table holds the write-side grants:
+
+```sql
+CREATE TABLE dataset_collaborators (
+  dataset_id   TEXT NOT NULL,
+  publisher_id TEXT NOT NULL,
+  permission   TEXT NOT NULL,             -- editor | reviewer
+  invited_by   TEXT NOT NULL,             -- publishers.id
+  invited_at   TEXT NOT NULL,
+  accepted_at  TEXT,                      -- null until invitee accepts
+  revoked_at   TEXT,
+  PRIMARY KEY (dataset_id, publisher_id),
+  FOREIGN KEY (dataset_id)   REFERENCES datasets(id) ON DELETE CASCADE,
+  FOREIGN KEY (publisher_id) REFERENCES publishers(id),
+  FOREIGN KEY (invited_by)   REFERENCES publishers(id)
+);
+```
+
+Lifecycle:
+
+- **Invite.** Owner clicks "Invite collaborator" in the dataset
+  page; enters an email (community publisher already in the
+  publishers table) or generates an invite link (signed token,
+  10-day expiry, exchangeable for an OIDC login + JIT publisher
+  provision).
+- **Accept.** Invitee logs in, sees a "shared with you" banner;
+  clicking accepts and stamps `accepted_at`. Until then the row
+  exists but the invitee has no rights.
+- **Revoke.** Owner or any admin clicks "Revoke"; `revoked_at` is
+  stamped. Server-side checks read
+  `accepted_at IS NOT NULL AND revoked_at IS NULL`.
+
+The owner can demote themselves to editor (handing ownership to
+another collaborator) but cannot leave a dataset with no owner.
+The capability matrix above applies — invited editors get the
+"community (invited)" column, invited reviewers get a subset
+limited to read + comment + approve.
+
 ## Other tools that round out the experience
 
 The user asked what else makes Terraviz "complete." From the gaps
