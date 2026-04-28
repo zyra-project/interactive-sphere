@@ -43,6 +43,14 @@ CREATE TABLE datasets (
   organization       TEXT,
   format             TEXT NOT NULL,           -- video/mp4, image/png, tour/json, ...
   data_ref           TEXT NOT NULL,           -- internal handle: stream:<uid>, r2:<key>, url:<url>
+
+  -- Asset integrity. Multi-hash format ("sha256:<hex>"); null for
+  -- legacy `vimeo:` and `url:` refs until backfilled. See
+  -- "Asset integrity & verification" in CATALOG_ASSETS_PIPELINE.md.
+  content_digest     TEXT,                    -- digest of the delivered asset (master HLS playlist for video, file bytes for image, canonical JSON for tour)
+  source_digest      TEXT,                    -- pre-transcode source hash; for Stream-backed video, otherwise == content_digest
+  auxiliary_digests  TEXT,                    -- JSON: { "thumbnail": "sha256:<hex>", "sphere_thumbnail": "sha256:<hex>", "legend": "sha256:<hex>", "caption": "sha256:<hex>" }
+
   thumbnail_ref           TEXT,                -- flat 16:9 / 4:3 card image
   sphere_thumbnail_ref    TEXT,                -- 2:1 equirectangular for mini-globe rendering
   sphere_thumbnail_ref_lg TEXT,                -- optional 1024x512 for hero use
@@ -147,6 +155,7 @@ CREATE TABLE dataset_renditions (
   bitrate_kbps   INTEGER,
   ref            TEXT NOT NULL,               -- stream:<uid>/profile or r2-hls:<key>
   mime_type      TEXT NOT NULL,
+  content_digest TEXT,                         -- "sha256:<hex>" of the rendition's master playlist or asset; computed at first manifest serve and cached. See CATALOG_ASSETS_PIPELINE.md "Asset integrity & verification".
   created_at     TEXT NOT NULL,
   PRIMARY KEY (dataset_id, rendition_id),
   FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE
