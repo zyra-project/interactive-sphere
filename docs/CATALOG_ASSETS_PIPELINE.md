@@ -788,3 +788,95 @@ implementation pattern is "write to a temporary R2 key, finalize
 to the canonical content-addressed key only on successful
 digest match." Failed mid-streams leave a temporary key that a
 nightly cron purges.
+
+### Peer-proxy endpoint specification
+
+The `/api/v1/peer-proxy/...` route ties this all together. URL
+shape and behaviour are:
+
+```
+GET /api/v1/peer-proxy/{peer_id}/{dataset_id}/{rendition_id?}
+```
+
+Path params:
+
+- **`peer_id`** — ULID of the peer that owns the dataset.
+  Validated against `federation_peers`; a peer with
+  `status != 'active'` returns `404`.
+- **`dataset_id`** — ULID of the dataset. Validated against the
+  local `federated_datasets` mirror; an unknown id returns `404`
+  even if the peer is known (avoids leaking peer-side existence).
+- **`rendition_id`** (optional) — ULID of a specific rendition
+  for video datasets. Omit for the default rendition (master HLS
+  playlist or the canonical image). Image datasets ignore this.
+
+Query params:
+
+- **`format`** (optional) — `hls` | `mp4` | `image` | `caption` |
+  `legend` | `thumbnail`. Defaults to the dataset's primary
+  format. Used to disambiguate auxiliary asset requests.
+- **`expires_at`** (optional) — UNIX seconds; if present, the
+  proxy refuses requests after this time. Used by the manifest
+  endpoint to bind a proxy URL to a manifest's TTL.
+
+Headers:
+
+- **`Range`** (optional, supported end-to-end) — forwarded to the
+  upstream peer or to local R2. Honored byte-range responses
+  (`206 Partial Content`) flow back to the desktop unchanged.
+- **`Authorization`** — required. The desktop's local-node
+  session credential (Access cookie or, for the Tauri app, the
+  same authenticated session it uses for `/api/v1/datasets/`).
+  Foreign-peer credentials are not accepted here.
+
+Response:
+
+- **`200 OK`** with the asset bytes (full body) — the common
+  steady-state path for a `proxy_cached` cache hit or a
+  `mirror_eager` deploy.
+- **`206 Partial Content`** with byte-range bytes — when a
+  `Range` header is present and the underlying source supports
+  it (R2 always does; the peer's response is forwarded
+  unchanged).
+- **`302 Found`** to a direct R2 signed URL — emitted when the
+  asset is fully cached and the operator's policy permits a
+  redirect (the cheapest path; the desktop follows the redirect
+  on its own). The redirect target's TTL matches the
+  `expires_at` query param if present.
+- **`403 Forbidden`** with body `{ error: "policy_excluded",
+  asset_proxy_policy: "metadata_only" }` — the operator has
+  configured this peer as `metadata_only`. The desktop UI
+  surfaces the message explaining federation-as-discovery-only
+  for this peer.
+- **`404 Not Found`** — peer or dataset unknown to this node.
+- **`409 Conflict`** with body `{ error: "digest_mismatch",
+  expected: "sha256:...", actual: "sha256:..." }` — the bytes
+  the peer returned didn't match the locally-stored
+  `content_digest`. The download is aborted; the local mirror
+  is not written. A `federation_integrity_failure` audit event
+  is also emitted (see "Asset integrity & verification" above).
+- **`502 Bad Gateway`** — the peer is unreachable or returned
+  an error. The desktop retries with backoff; the cache write
+  is not committed.
+- **`503 Service Unavailable`** with `Retry-After` header —
+  rate-limited (the operator's per-peer download budget is
+  exhausted). Desktop respects the header.
+
+Caching headers on the proxy response:
+
+- **`200`/`206`** carry `Cache-Control: private, max-age=<ttl>`
+  where `<ttl>` is the manifest expiry (5 minutes by default).
+- **`302`** carries `Cache-Control: private, max-age=300` so the
+  desktop's HTTP cache reuses the redirect for the manifest TTL
+  rather than re-asking the proxy on every byte range.
+- Public CDN caching is deliberately disabled — the proxy is a
+  per-user authenticated path.
+
+Behaviour summary by `asset_proxy_policy`:
+
+| Policy | First request | Subsequent requests |
+|---|---|---|
+| `metadata_only` | `403` immediately | `403` |
+| `proxy_lazy` | `200`/`206`, streamed from peer; nothing cached | `200`/`206`, streamed from peer (every time) |
+| `proxy_cached` | `200`/`206`, streamed from peer + verified + cached to local R2 | `302` to a direct R2 URL (cheap) |
+| `mirror_eager` | `302` to a direct R2 URL (cron pre-mirrored on sync) | `302` to a direct R2 URL |
