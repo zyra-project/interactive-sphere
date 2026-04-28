@@ -342,6 +342,87 @@ matrix the federation contract test exercises). A CLI talking
 to an incompatible node fails fast with a clear message rather
 than producing surprising results.
 
+### Code signing and verification
+
+A CLI that publishes datasets on a schedule from an unattended
+runner is a real attack surface — a substituted binary is
+indistinguishable from the real one until it starts ex-filtrating
+service tokens. The plan treats signing as required, not
+optional.
+
+#### Standalone binaries
+
+Per-platform binaries built and signed in the project's GitHub
+Actions release workflow:
+
+- **macOS** — Apple Developer ID Application certificate. The
+  signing identity (`Developer ID Application: Zyra Project`) is
+  enrolled with Apple via the org's developer account; the
+  certificate itself lives in 1Password and is exported into the
+  CI runner's keychain at signing time as a base64 secret. After
+  signing, the binary is **notarized** through `notarytool`
+  against an Apple-issued app-specific password also stored as a
+  CI secret. The released zip embeds the staple ticket so the
+  binary launches without an internet round-trip on first run.
+- **Windows** — Authenticode signing using a code-signing
+  certificate (EV CSC preferred for SmartScreen reputation).
+  Same custody model: cert in 1Password, exported into CI as a
+  PFX-blob secret, applied via `signtool` with timestamping
+  against DigiCert's TSA so signatures remain valid past
+  certificate expiry.
+- **Linux** — Detached **GPG** signature distributed alongside
+  each binary (`terraviz-linux-x64.tar.gz` +
+  `terraviz-linux-x64.tar.gz.asc`). The signing key is an
+  Ed25519 GPG key pinned by long-form fingerprint in the project
+  README and the well-known directory listing. No central CA
+  involvement; users verify with `gpg --verify`.
+
+#### npm package
+
+The `@zyra/terraviz-cli` npm package is signed via npm's
+**Sigstore-backed package signing** (`npm publish --provenance`),
+which produces a transparency-log attestation tied to the
+GitHub Actions workflow that built the package. Consumers
+verify with `npm audit signatures` or by checking the
+provenance attestation against the public Sigstore log. No
+separate signing key custody — the trust root is the GitHub
+Actions OIDC token and the public Sigstore TUF tree.
+
+#### Key custody and rotation
+
+- **macOS / Windows certificates** rotate on the issuer's
+  schedule (typically annually). A 30-day overlap window where
+  the new cert signs new releases while the old cert's
+  notarisation / timestamps keep prior releases valid is the
+  norm; users running an older binary don't break when the cert
+  rotates.
+- **Linux GPG key** rotates on a 3-year schedule. New keys are
+  cross-signed by the previous key, and the project README
+  pins both the current and previous fingerprint so a user
+  upgrading from a 4-year-old binary still sees a continuous
+  chain of trust.
+- **All signing material** is stored in 1Password under the
+  Zyra project vault with quarterly access audits. CI runners
+  receive material as ephemeral secrets; nothing persists on
+  the runner past the job's lifetime.
+
+#### How a downstream user verifies
+
+The release page hosts a `SHA256SUMS` file alongside each
+artifact, signed by the same GPG key as the Linux binaries.
+A scripted install (`curl | sh` style) fetches both, verifies
+the signature on the sums file, then verifies each artifact
+against its sum. The walkthrough lives in
+`docs/SELF_HOSTING.md` so the same instructions cover both
+"install the CLI for personal use" and "install the CLI on a
+fleet of CI runners."
+
+For self-hosters forking the project, the signing infrastructure
+is documented but not transferred — a fork that wants signed
+releases sets up its own certs, GPG key, and npm package
+namespace. The plan's signing model is not opinionated about
+who runs Zyra-derived deployments.
+
 ## Publisher identity & roles
 
 The publisher portal lives behind Cloudflare Access (Phase 3) and
