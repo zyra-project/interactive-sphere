@@ -1536,14 +1536,32 @@ restricted dataset:
 2. Check that the caller is permitted (publisher of record, granted
    peer, or holder of a preview token).
 3. Mint a short-lived URL:
-   - Stream: signed JWT with 5-minute TTL, fresh per request.
-   - R2: presigned GET with 5-minute TTL.
-4. Return the URL plus expiry so the frontend can refresh before it
-   expires (rare in practice; typical playback completes inside the
-   window).
+   - **Stream:** programmatically-signed JWT with `exp = now + 5m`
+     and `nbf = now − 30s`. The 30-second `nbf` (not-before) claim
+     absorbs minor client clock skew so a client whose clock is a
+     few seconds fast doesn't get a token Stream rejects as
+     "issued in the future." We deliberately do **not** use Stream's
+     auto-issued `/token` endpoint, which defaults to a 1-hour TTL
+     and is too long-lived for restricted content.
+   - **R2:** presigned GET with `exp = now + 5m`.
+
+   Both URLs are minted fresh per manifest request; the manifest
+   endpoint itself is not cached for restricted content.
+4. Return the URL plus expiry so the frontend can refresh before
+   it expires (rare in practice; typical playback completes
+   inside the window).
 
 The manifest never returns a long-lived public URL for restricted
 content. The frontend re-fetches the manifest on session resume.
+
+The 5-minute TTL was researched against Cloudflare's docs: there
+is no documented hard minimum below this for programmatic
+JWT-signed Stream tokens, so the value is policy rather than
+platform-imposed. If the clock-skew warning shows up in the
+production-debugging playbook (see
+[`CATALOG_BACKEND_DEVELOPMENT.md`](CATALOG_BACKEND_DEVELOPMENT.md))
+more than once a quarter, widen the `nbf` window before
+shortening the `exp` window.
 
 ### Audit trail
 
@@ -2354,24 +2372,18 @@ anyone who wants to see the path the decisions took.
    assumes a flat catalog; including federated items expands the
    prompt. Cap by relevance, rotate per turn, or expose a
    per-peer "include in docent" toggle?
-4. **Cloudflare Stream's signed URL TTL minimum.** 5 minutes is
-   the assumed value used throughout this plan and the
-   production-debugging playbook in
-   [`CATALOG_BACKEND_DEVELOPMENT.md`](CATALOG_BACKEND_DEVELOPMENT.md);
-   verify against Stream documentation and adjust manifest cache
-   headers accordingly.
-5. **Out-of-Stream encoding host.** Beyond-4K HLS and
+4. **Out-of-Stream encoding host.** Beyond-4K HLS and
    packed-alpha variants need an encoder Stream won't run for
    us. Options: GitHub Actions ffmpeg job, a long-running
    self-hosted runner, or a separate Worker calling out to a
    transcoding API (Mux / Coconut / Bitmovin). The data model is
    the same in every case; the operator burden differs a lot.
-6. **Default codec ladder per dataset.** Always emit
+5. **Default codec ladder per dataset.** Always emit
    H.264 + HEVC + AV1, or only H.264 by default and let the
    publisher opt into the heavier codecs? Storage cost vs.
    playback quality tradeoff; needs a number from a few
    representative datasets before deciding.
-7. **Layer compositor scope.** Transparent video makes single-
+6. **Layer compositor scope.** Transparent video makes single-
    globe layering feasible, but the multi-globe layout already
    solves "compare two datasets." Is layered compositing a
    *replacement* for multi-globe (one globe, N stacked layers)
