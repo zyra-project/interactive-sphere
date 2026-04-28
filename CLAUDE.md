@@ -6,6 +6,33 @@
 
 ---
 
+## Working in this repo
+
+The general "one logical change per turn, committed before the
+next" rule from `~/.claude/CLAUDE.md` applies here especially:
+
+- The `docs/CATALOG_*` plan documents are sprawling (the main plan
+  alone exceeds 2000 lines, plus five companion docs). Editing
+  them via `Write` is unsafe — always use `Edit` for additions,
+  reserve `Write` for new files.
+- When adding sections to the catalog plan, commit each section
+  before starting the next. The split into `CATALOG_BACKEND_PLAN`,
+  `CATALOG_DATA_MODEL`, `CATALOG_FEDERATION_PROTOCOL`,
+  `CATALOG_ASSETS_PIPELINE`, `CATALOG_PUBLISHING_TOOLS`, and
+  `CATALOG_BACKEND_DEVELOPMENT` exists specifically to keep edits
+  bounded.
+- For multi-section work in the catalog plan, use TodoWrite. A
+  failed chunk should not lose previous chunks' work.
+- The catalog plan files cross-reference each other; when adding
+  a section that another doc points at, update the cross-link in
+  the same commit.
+- Many of the existing `docs/*_PLAN.md` files follow a consistent
+  voice: substantive prose, "Status: draft for review" markers,
+  named phases, explicit non-goals, tables for comparisons,
+  honest tradeoffs. New plan content should match.
+
+---
+
 ## Codebase Overview
 
 TypeScript SPA built with Vite and MapLibre GL JS. Deployed on Cloudflare Pages (web) and packaged as a native desktop app with Tauri v2 (Windows, macOS, Linux). No runtime framework — vanilla TS with a few focused libraries (MapLibre GL JS, HLS.js).
