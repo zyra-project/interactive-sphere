@@ -2410,34 +2410,23 @@ in the course of writing this plan have been removed; the git
 history under `docs/CATALOG_*` captures the resolutions for
 anyone who wants to see the path the decisions took.
 
-1. **Desktop offline caching of federated datasets.** The
-   asset-pipeline mirror flow defines how a federation peer
-   verifies and stores mirrored bytes; the desktop app's existing
-   download manager doesn't yet have a story for downloading
-   federated content. Should the desktop app proxy through the
-   local node, download directly from the peer, or refuse to
-   download federated content entirely? Each option has different
-   integrity-verification implications (the local-node proxy
-   inherits the integrity flow for free; direct-from-peer means
-   the desktop app must implement
-   `content_digest` verification itself).
-2. **Where does Orbit (the LLM docent) sit relative to
+1. **Where does Orbit (the LLM docent) sit relative to
    federated catalogs?** The system prompt builder currently
    assumes a flat catalog; including federated items expands the
    prompt. Cap by relevance, rotate per turn, or expose a
    per-peer "include in docent" toggle?
-3. **Out-of-Stream encoding host.** Beyond-4K HLS and
+2. **Out-of-Stream encoding host.** Beyond-4K HLS and
    packed-alpha variants need an encoder Stream won't run for
    us. Options: GitHub Actions ffmpeg job, a long-running
    self-hosted runner, or a separate Worker calling out to a
    transcoding API (Mux / Coconut / Bitmovin). The data model is
    the same in every case; the operator burden differs a lot.
-4. **Default codec ladder per dataset.** Always emit
+3. **Default codec ladder per dataset.** Always emit
    H.264 + HEVC + AV1, or only H.264 by default and let the
    publisher opt into the heavier codecs? Storage cost vs.
    playback quality tradeoff; needs a number from a few
    representative datasets before deciding.
-5. **Layer compositor scope.** Transparent video makes single-
+4. **Layer compositor scope.** Transparent video makes single-
    globe layering feasible, but the multi-globe layout already
    solves "compare two datasets." Is layered compositing a
    *replacement* for multi-globe (one globe, N stacked layers)

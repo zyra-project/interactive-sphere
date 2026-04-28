@@ -219,6 +219,11 @@ CREATE TABLE federation_peers (
   status             TEXT NOT NULL,           -- pending | active | paused | blocked
   policy             TEXT NOT NULL DEFAULT 'mirror_public',
                                               -- mirror_public | mirror_granted | mirror_all
+                                              -- Catalog-side: which of the peer's datasets we mirror metadata for.
+  asset_proxy_policy TEXT NOT NULL DEFAULT 'proxy_cached',
+                                              -- metadata_only | proxy_lazy | proxy_cached | mirror_eager
+                                              -- Asset-side: how desktop downloads of this peer's content are served.
+                                              -- See "Offline (Tauri) compatibility" → "Federated datasets" in CATALOG_ASSETS_PIPELINE.md.
   sync_interval_minutes INTEGER NOT NULL DEFAULT 15,
                                               -- subscriber-controlled pull cadence; see "Sync protocol" in CATALOG_FEDERATION_PROTOCOL.md
   last_sync_at       TEXT,
