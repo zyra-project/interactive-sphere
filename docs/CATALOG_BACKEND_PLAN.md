@@ -572,7 +572,7 @@ side-by-side rather than mutate `/v1/` once peers start consuming it.
 | `GET /api/v1/tours` | Tour list (id, title, description, dataset refs). |
 | `GET /api/v1/tours/{id}` | Tour JSON, inlined or via signed R2 URL. |
 | `GET /api/v1/tours/{id}/assets/{key}` | Tour overlay assets (images, audio) — proxied/signed from R2. |
-| `GET /api/v1/search?q=...` | Optional. Full-text against title/abstract/keywords. Phase 1 uses D1 LIKE; Phase 4 swaps in Vectorize for semantic search. |
+| `GET /api/v1/search?q=...` | Public full-text search against title / abstract / keywords. Phase 1a uses D1 LIKE; Phase 1b swaps in Vectorize semantic search behind the same URL once the embedding pipeline lands (see "Docent integration"). The docent's `search_datasets` LLM tool is a separate, server-internal call site against the same Vectorize index — not exposed under this URL. |
 | `GET /.well-known/terraviz.json` | Service discovery. Returns node identity, public key, supported `/v1/` endpoints, federation policy. |
 
 `Dataset` on the wire is the existing TypeScript shape plus a small
@@ -608,35 +608,56 @@ rejected. Replay protection via a small rolling KV nonce window.
 
 | Method & path | Purpose |
 |---|---|
-| `POST /api/v1/federation/handshake` | Subscriber-initiated. Body: `{ base_url, display_name, public_key }`. Response: `{ subscription_id, status: "pending"\|"active", node_identity }`. Auto-active when peer is on an allow-list; otherwise sits at "pending" for an admin to approve. |
+| `POST /api/v1/federation/handshake` | Subscriber-initiated. Body: `{ base_url, display_name, public_key, webhook_url? }`. Response: `{ subscription_id, status: "pending"\|"active", node_identity }`. Auto-active when peer is on an allow-list; otherwise sits at "pending" for an admin to approve. The optional `webhook_url` registers an inbound nudge endpoint on the subscriber so the publisher can POST change events instead of waiting for the next pull (see "Sync protocol" in `CATALOG_FEDERATION_PROTOCOL.md`). |
 | `GET  /api/v1/federation/feed` | Authenticated catalog read. Same shape as `/api/v1/catalog?since=...` but filtered to what the calling peer is allowed to see (public + grants applicable to that peer). Response is signed. |
 | `GET  /api/v1/federation/feed/datasets/{id}` | Single signed dataset. |
 | `GET  /api/v1/federation/feed/manifest/{dataset_id}` | Signed playback URL for the calling peer. May be a Stream signed token, an R2 presigned URL, or a redirect. |
 | `POST /api/v1/federation/webhook` | Optional push. Peer announces "I changed; please pull soon." Receiver enqueues a pull, returns 202. |
 | `DELETE /api/v1/federation/subscription` | Either side can tear down a subscription. |
+| `GET    /api/v1/peer-proxy/{peer_id}/{dataset_id}/{rendition?}` | Phase 1b. Asset-byte proxy for federated downloads from this node's desktop users (see "Offline (Tauri) compatibility" → "Federated datasets" in `CATALOG_ASSETS_PIPELINE.md`). Streams bytes from the peer (proxy_lazy) or from local R2 cache (proxy_cached after first hit, mirror_eager always); honors HTTP `Range`; verifies `content_digest` while caching. Authenticated as the desktop's local-node user, not as a foreign peer. |
+| `GET    /api/v1/directory` | Phase 4. Optional federation directory advertisement — exposes the well-known doc + a curated peer list operators have opted into for discovery (see "Peer discovery" in `CATALOG_FEDERATION_PROTOCOL.md`). Cacheable, anonymous. |
 
 ### Publisher API (authenticated)
 
-Cloudflare Access-protected (Phase 1 staff-only). Same Access policy
-the existing `/api/feedback-admin` route uses. Phase 3 adds OIDC for
-community publishers.
+Cloudflare Access-protected. Phase 1a is staff-only with both
+browser-cookie and service-token auth supported; Phase 6 adds
+OIDC for community publishers (see "Publisher identity & roles"
+in `CATALOG_PUBLISHING_TOOLS.md`). Phase column tags the
+milestone in which each endpoint becomes available.
 
-| Method & path | Purpose |
-|---|---|
-| `GET    /api/v1/publish/me` | Returns the calling publisher's profile + role. |
-| `POST   /api/v1/publish/datasets` | Create dataset. Body validated against a JSON schema; returns `{ id, slug, upload_targets }`. |
-| `PUT    /api/v1/publish/datasets/{id}` | Edit metadata. Idempotent. |
-| `POST   /api/v1/publish/datasets/{id}/publish` | Flip from draft to public. Stamps `published_at`, invalidates KV catalog snapshot, fans out federation webhooks. |
-| `POST   /api/v1/publish/datasets/{id}/retract` | Soft delete. Stamps `retracted_at`; row stays for the audit trail and so subscribers see a tombstone. |
-| `POST   /api/v1/publish/datasets/{id}/asset` | Initiate an asset upload. Returns either a Stream direct-upload URL (video) or an R2 presigned PUT (everything else). Body declares `kind` (data \| thumbnail \| legend \| caption). |
-| `POST   /api/v1/publish/datasets/{id}/asset/{upload_id}/complete` | Finalizes the upload, runs validation, swaps `data_ref` (or `thumbnail_ref`, etc.). |
-| `POST   /api/v1/publish/tours` | Create tour. |
-| `PUT    /api/v1/publish/tours/{id}` | Edit. |
-| `POST   /api/v1/publish/tours/{id}/preview` | Returns a short-lived signed URL that loads the SPA in preview mode against this draft. |
-| `POST   /api/v1/publish/grants` | Phase 3. Add a per-dataset grant. |
-| `DELETE /api/v1/publish/grants/{id}` | Revoke grant. |
-| `GET    /api/v1/publish/peers` | List subscribed peers (outbound + inbound). |
-| `POST   /api/v1/publish/peers/{id}/approve` | Approve a pending inbound subscription. |
+| Method & path | Phase | Purpose |
+|---|---|---|
+| `GET    /api/v1/publish/me` | 1a | Returns the calling publisher's profile + role. |
+| `GET    /api/v1/publish/datasets` | 1a | List drafts + published datasets visible to the caller (own datasets for community publishers; org-scoped for staff). Supports `?status=draft|published|retracted` and pagination. |
+| `GET    /api/v1/publish/datasets/{id}` | 1a | Single dataset full body (draft or published). The CLI's `terraviz get` reads from here. |
+| `POST   /api/v1/publish/datasets` | 1a | Create dataset. Body validated against the JSON schema in `CATALOG_PUBLISHING_TOOLS.md` → "Validation rules"; returns `{ id, slug, upload_targets }`. |
+| `PUT    /api/v1/publish/datasets/{id}` | 1a | Edit metadata. Idempotent. |
+| `POST   /api/v1/publish/datasets/{id}/publish` | 1a | Flip from draft to published. Stamps `published_at`, invalidates KV catalog snapshot, fans out federation webhooks. |
+| `POST   /api/v1/publish/datasets/{id}/retract` | 1a | Soft delete. Stamps `retracted_at`; row stays as a tombstone for the audit trail and federation. |
+| `POST   /api/v1/publish/datasets/{id}/preview` | 1a | Mints a short-lived signed token that lets the SPA load this draft against the live globe. The CLI's `terraviz preview` returns the URL the operator can share. |
+| `POST   /api/v1/publish/datasets/{id}/asset` | 1b | Initiate an asset upload. Returns either a Stream direct-upload URL (video) or an R2 presigned PUT (everything else). Body declares `kind` (data \| thumbnail \| legend \| caption \| sphere_thumbnail). |
+| `POST   /api/v1/publish/datasets/{id}/asset/{upload_id}/complete` | 1b | Finalizes the upload, verifies `content_digest` (see "Asset integrity & verification" in `CATALOG_ASSETS_PIPELINE.md`), swaps `data_ref` (or the relevant auxiliary ref). |
+| `GET    /api/v1/publish/datasets/{id}/audit` | 3 | Per-dataset history view backing the publisher portal's audit panel; ULID-cursor paginated. Visible to dataset owner + collaborators + staff. |
+| `POST   /api/v1/publish/datasets/{id}/submit` | 6 | Community publisher submits a draft for review (review-queue mode). Stamps `submitted_at`. |
+| `POST   /api/v1/publish/datasets/{id}/approve` | 6 | Reviewer approves a submitted draft. Stamps `approved_at`. |
+| `POST   /api/v1/publish/datasets/{id}/reject` | 6 | Reviewer rejects a submitted draft. Stamps `rejected_at`, captures `rejected_reason`, resets to draft. |
+| `DELETE /api/v1/publish/datasets/{id}` | 6 | Hard delete. Admin-only. Writes a `deleted_datasets` stub row with the reason; emits a permanent federation tombstone. Used for legal / safety takedowns. |
+| `POST   /api/v1/publish/tours` | 1a | Create tour. |
+| `PUT    /api/v1/publish/tours/{id}` | 1a | Edit. |
+| `POST   /api/v1/publish/tours/{id}/preview` | 1a | Returns a short-lived signed URL that loads the SPA in preview mode against this draft. |
+| `GET    /api/v1/publish/featured` | 1b | List the operator's curated featured-datasets (the source for the docent's `list_featured_datasets` tool). |
+| `POST   /api/v1/publish/featured` | 1b | Add a dataset to the featured list. Body: `{ dataset_id, position }`. |
+| `PUT    /api/v1/publish/featured/{dataset_id}` | 1b | Update position. |
+| `DELETE /api/v1/publish/featured/{dataset_id}` | 1b | Remove from featured. |
+| `POST   /api/v1/publish/grants` | 5 | Add a per-dataset read-side grant. |
+| `DELETE /api/v1/publish/grants/{id}` | 5 | Revoke grant. |
+| `GET    /api/v1/publish/collaborators` | 6 | List write-side `dataset_collaborators` for a dataset. |
+| `POST   /api/v1/publish/collaborators` | 6 | Invite a publisher (or generate an invite link) to edit a draft. |
+| `DELETE /api/v1/publish/collaborators/{dataset_id}/{publisher_id}` | 6 | Revoke a collaborator. |
+| `GET    /api/v1/publish/peers` | 4 | List subscribed peers (outbound + inbound). |
+| `POST   /api/v1/publish/peers/{id}/approve` | 4 | Approve a pending inbound subscription. |
+| `POST   /api/v1/publish/peers/{id}/rotate-secret` | 4 | Rotate the per-peer HMAC `shared_secret` (see "Threat model & secrets management"). The new secret is returned once in the response and never again retrievable. |
+| `GET    /api/v1/publish/audit` | 6 | Node-wide reverse-chronological audit feed, admin-only. |
 
 ### Versioning & deprecation
 
