@@ -75,3 +75,22 @@ dataset = "terraviz_events"
 [[kv_namespaces]]
 binding = "TELEMETRY_KILL_SWITCH"
 id = "9c022b1295314939b76a28769fef6195"
+
+# KV namespace for the catalog read API's hot-path snapshot cache.
+# `functions/api/v1/catalog.ts` lazily renders the public catalog
+# response and caches it under a single key keyed by ETag. Cache is
+# invalidated on every publish / retract (wired in Commit F).
+# Without this snapshot, `/api/v1/catalog` would issue ~5 D1 queries
+# per browse-page load and burn the 5 M-row-reads/day free-tier
+# budget — see "Free-tier viability" in CATALOG_BACKEND_PLAN.md.
+#
+# Binding name only; the namespace ID is a placeholder and must be
+# replaced with the operator's real namespace before deploy. Local
+# Wrangler doesn't validate the ID — it provisions an in-memory KV
+# under `.wrangler/state/v3/kv/<id>/` regardless. Pages reads the
+# binding from the dashboard, not this file: wire it under
+# Settings → Bindings → KV → variable name CATALOG_KV → namespace
+# created via `wrangler kv namespace create CATALOG_KV`.
+[[kv_namespaces]]
+binding = "CATALOG_KV"
+id = "00000000000000000000000000000000"
