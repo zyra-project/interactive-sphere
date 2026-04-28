@@ -121,6 +121,15 @@ at handshake — a peer that rotates its key has to either advertise
 the new key in the well-known doc with a grace overlap or the
 subscriber has to re-handshake.
 
+The signature only protects the catalog row; verifying that the
+*bytes* a subscriber later mirrors actually match what the row
+claims is a separate concern, handled by content digests
+described in
+[`CATALOG_ASSETS_PIPELINE.md`](CATALOG_ASSETS_PIPELINE.md) →
+"Asset integrity & verification". Every signed row carries a
+`content_digest` claim that subscribers verify once at the
+mirror-cache boundary.
+
 ## Merging into the browse UI
 
 `browseUI.ts` today renders `state.datasets`. With federation, the

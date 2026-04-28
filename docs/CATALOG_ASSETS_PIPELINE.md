@@ -453,6 +453,216 @@ under `tours/{id}/overlays/`.
 | Retracted | R2 path stays; Stream video stays; row marked retracted | After 90-day grace, a cron deletes assets and sets `data_ref` to `null` (catalog row remains as a tombstone for federation). |
 | Federated mirror | Not stored locally — only metadata | Naturally expires via `expires_at`; refreshed by sync. |
 
+## Asset integrity & verification
+
+The federation contract is "the signed catalog row tells you what
+bytes to expect." Without a way to verify that the bytes you
+actually fetched match the bytes the publisher claimed, the
+signature only protects metadata — a compromised origin bucket
+or a tampering intermediate can swap the asset and the signature
+still validates. This section closes that gap.
+
+The threat model has three plausible attackers:
+
+- **Origin operator's bucket compromise.** R2 credentials leak;
+  bytes get swapped while the catalog row is unchanged.
+- **In-transit substitution.** A misconfigured CDN, a
+  man-in-the-middle, or a poisoned cache returns wrong bytes for
+  a correct URL.
+- **Federation-mirror drift.** A peer fetches our asset to mirror
+  it, the mirror's storage is later corrupted (intentionally or
+  not), and downstream subscribers fetch the corrupted copy.
+
+The defense is content-addressed storage plus a `content_digest`
+claim in the signed catalog row, verified once at the boundary
+where bytes enter a cache.
+
+### Content digests
+
+Every dataset row carries a `content_digest` for the canonical
+asset, and every rendition in the manifest response carries its
+own. The format is multi-hash so the algorithm can be replaced
+without a schema migration:
+
+```
+content_digest TEXT  -- "sha256:9f86d081884c..."
+```
+
+`sha-256` is the only algorithm Phase 1 emits. Verifiers reject
+unknown algorithms rather than ignoring the prefix, so a future
+upgrade to `sha3-256` or `blake3` is an opt-in per-publisher
+decision, not a silent acceptance.
+
+The digest covers the *delivered bytes* — for an HLS rendition
+that's the master playlist; for a raw image it's the image file;
+for a tour JSON it's the canonicalized JSON (same canonicalization
+as the federation signature uses, so the digest is stable across
+whitespace differences).
+
+### R2 assets: content-addressed keys
+
+Public R2 assets live at content-addressed paths:
+
+```
+datasets/{id}/by-digest/sha256/{hex}/asset.{ext}
+datasets/{id}/by-digest/sha256/{hex}/legend.{ext}
+```
+
+The `{hex}` is the same value the row's `content_digest` carries.
+This makes the path itself a verifiable claim — any consumer can
+recompute the hash, compare it to the path component, and refuse
+on mismatch.
+
+Two consequences fall out for free:
+
+- **Cache lifetime is forever.** A content-addressed key can never
+  point at different bytes, so `Cache-Control: public, max-age=31536000, immutable`
+  is correct. Cloudflare's edge cache and the browser cache both
+  treat immutable URLs as long-term cacheable; the URL is the
+  cache key, and the URL contains the digest.
+- **Revisions don't invalidate caches.** When a publisher uploads
+  a new version of an asset, the new bytes get a new digest →
+  new path. The old path is still valid (it still points at the
+  old bytes); the dataset row's `data_ref` and `content_digest`
+  swap to the new pair atomically. Federation peers see a new
+  digest in the next sync and fetch the new bytes; the old bytes
+  age out via lifecycle rules, not invalidation.
+
+Backwards-compatible aliases live alongside for any external
+caller still pinned to the old `datasets/{id}/asset.png` shape:
+the alias is a 302 to the content-addressed URL. The publisher
+portal's upload UI shows both URLs and recommends the addressed
+one for any new integration.
+
+### Stream assets: bridging the model
+
+Cloudflare Stream's `uid` is opaque — Stream picks it, and we can't
+make it content-addressable at the URL level. The plan still
+preserves byte-level integrity by hashing at two ends:
+
+- **Source-of-truth hash.** The publisher's browser hashes the
+  uploaded source file before the Stream direct-upload completes
+  and POSTs the digest to the asset-complete handler. The handler
+  cross-checks against Stream's reported `size` / `duration`
+  metadata (sanity, not strict equivalence) and stores the source
+  digest on the row as `source_digest`.
+- **Rendition digests cached on first serve.** The first time the
+  manifest endpoint resolves a Stream playback URL for a given
+  rendition, it streams the master playlist through a hasher and
+  caches the digest in KV keyed by `(stream_uid, rendition_id)`.
+  Subsequent manifest responses include the cached digest. A
+  rendition whose digest changes on re-fetch is logged as a Stream
+  anomaly and the dataset is flagged for publisher review.
+
+For HDR, packed-alpha, and >4K renditions encoded out-of-Stream
+and served from R2, the normal content-addressed flow applies —
+those paths are never opaque.
+
+### Manifest response, integrity-extended
+
+Every URL the manifest endpoint returns is paired with a digest:
+
+```jsonc
+{
+  "kind": "video",
+  "intrinsic": { ... },
+  "renditions": [
+    { "codec": "h264", "url": "...", "content_digest": "sha256:..." },
+    { "codec": "hevc", "url": "...", "content_digest": "sha256:..." }
+  ],
+  "captions": [
+    { "lang": "en", "url": "...", "content_digest": "sha256:..." }
+  ],
+  "thumbnail": { "url": "...", "content_digest": "sha256:..." },
+  "sphere_thumbnail": { "url": "...", "content_digest": "sha256:..." },
+  "download_url": "...",
+  "download_digest": "sha256:..."
+}
+```
+
+The frontend uses the digest for two things: the Tauri download
+manager verifies after a complete download (cheap, the bytes are
+already on disk) and the federation mirror flow verifies before
+caching (mandatory). The webview playback path does not verify
+during playback — per-segment hashing is too expensive in JS and
+browsers don't do it natively. Trust there falls back on
+TLS + the immutable URL.
+
+### Publisher portal: upload verification
+
+The publisher portal hashes uploads in the browser before sending,
+shows the digest in the UI for confirmation, and POSTs the same
+digest with the asset-complete request:
+
+```
+POST /api/v1/publish/datasets/{id}/asset/complete
+{
+  "stream_uid": "...",                 // for video uploads
+  "r2_key":     "...",                 // for image / VTT / etc.
+  "claimed_digest": "sha256:9f86..."
+}
+```
+
+The handler computes its own digest server-side (R2 supports
+`sha256` checksum on PUT; Stream returns the source size for
+sanity) and compares. Mismatch returns a 409 with the two values
+in the response so the UI can show "your browser computed X, the
+server computed Y, please re-upload." The dataset row is not
+updated until the digests agree.
+
+This catches the boring case (corrupted upload, partial network
+write) at the moment when re-trying is cheap, before any
+downstream consumer has cached anything.
+
+### Federation: peers verifying mirrored bytes
+
+A subscriber that pulls our catalog now has, for each dataset:
+
+- A signed row claiming `content_digest = sha256:...`
+- A `data_ref` pointing at our R2 (or `peer:` indirection)
+
+Mirror flow:
+
+1. Peer fetches the bytes via the manifest endpoint or directly
+   from the content-addressed R2 path.
+2. Peer hashes the bytes once.
+3. On match: store under the peer's own content-addressed path,
+   keyed by the same digest. Subsequent serves are immutable.
+4. On mismatch: reject the mirror, emit a `federation_integrity_failure`
+   event with `(peer_id, dataset_id, expected_digest, actual_digest)`,
+   and surface in the subscriber operator's portal. The mirror is
+   not retried automatically — it requires operator review because
+   a digest mismatch is either a publisher error worth knowing
+   about or a real attack.
+
+Trust is transitive but bounded: the peer trusts the publisher's
+signed catalog row; the row claims a digest; the bytes either
+hash to that digest or they don't. There's no honor system.
+
+### Limits and non-goals
+
+- **No per-segment HLS verification at playback.** Hashing each
+  segment in JS as it arrives would dominate the playback CPU
+  budget on mobile. The model is "verify once at cache boundary,
+  trust the cache" — the same bargain Subresource Integrity
+  makes for static assets.
+- **No protection against the publisher uploading wrong bytes
+  in the first place.** Integrity says "the bytes match what was
+  claimed," not "the claim is correct." Publishing-policy
+  controls — draft preview, review queues, the staff-only bulk
+  import path — handle the upstream concern.
+- **No non-repudiation beyond the catalog signature.** The
+  digest is a hash, not a signature on the bytes themselves.
+  Anyone with publisher credentials can produce a valid
+  `(bytes, digest)` pair. The catalog row's Ed25519 signature
+  is what binds them to the publishing node's identity.
+- **No retroactive integrity for `vimeo:` or `url:` legacy refs.**
+  Legacy `data_ref` schemes have `content_digest = NULL`. The
+  manifest response stamps `integrity: "unverified"` on those
+  responses so the frontend can decide whether to surface a
+  warning. The Phase-2 backfill that pulls Vimeo sources into
+  Stream is also where digests get computed for the first time.
+
 ## Offline (Tauri) compatibility
 
 `download_manager.rs` already negotiates direct downloads. The
