@@ -317,3 +317,147 @@ existing transcode/upload finalization step — no separate publisher
 action required. A "regenerate sphere thumbnail" button in the
 publisher portal handles the rare case where the auto-pick frame
 is unrepresentative (mid-fade, all-black, etc.).
+
+### Storage & serving
+
+Lives at a predictable R2 key alongside the flat thumbnail:
+
+```
+datasets/{id}/sphere-thumbnail.webp
+datasets/{id}/sphere-thumbnail.jpg
+datasets/{id}/sphere-thumbnail-1024.webp   (optional larger)
+```
+
+Public-visibility datasets serve through R2's public URL +
+Cloudflare cache (long-TTL, immutable filename via content hash on
+upload — the row stores the full key). Restricted datasets serve
+via a presigned URL from the manifest endpoint, same pattern as
+the rest of the asset stack.
+
+### Catalog response
+
+A new field on `Dataset` on the wire:
+
+```jsonc
+{
+  "thumbnailLink": ".../thumbnail.jpg",          // existing flat
+  "sphereThumbnailLink": ".../sphere-thumbnail.webp",
+  "sphereThumbnailLinkLarge": null               // present only if generated
+}
+```
+
+The flat `thumbnailLink` stays the default for any caller that
+doesn't ask for the spherical one, so existing federation peers
+running an older client see no change.
+
+### Frontend rendering
+
+A `MiniSphere` component lives in `src/ui/miniSphere.ts`, built on
+the existing photoreal-Earth factory in
+`src/services/photorealEarth.ts` but stripped to:
+
+- One sphere geometry (shared instance across all mini-spheres on
+  a page).
+- One material per sphere with the equirectangular thumb as a
+  texture.
+- Optional auto-rotate (`y` axis, slow constant rate).
+- Optional pointer-driven rotate while the cursor is over the card.
+- No atmosphere, no clouds, no day/night shader, no sun.
+
+Three.js is already lazy-loaded for VR; the same chunk powers
+mini-spheres. The chunk is loaded the first time a view that
+contains mini-spheres is rendered — browse cards, network graph,
+or tour ribbon — and stays warm afterwards.
+
+### Performance budget
+
+Naïve "one WebGL canvas per card" doesn't scale past a few dozen
+spheres. The plan's strategy:
+
+- **Browse list (≤ ~30 visible at once):** one shared
+  `WebGLRenderer` rendering into a single canvas that overlays
+  the card grid via absolute positioning, with per-sphere
+  scissor regions. Same renderer, N sub-viewports, vastly fewer
+  GPU contexts than N canvases.
+- **Network graph (50–500 nodes):** instanced rendering of one
+  sphere geometry, with the per-sphere texture either:
+  - sampled from a CSS-style "texture atlas" (a single 4Kx4K
+    WebP with each dataset's 256x128 thumb tiled in), or
+  - a `THREE.DataArrayTexture` of equirectangular tiles indexed
+    per instance. The atlas approach is the simpler default.
+- **Off-viewport / paused tab:** rAF stops when the tab is
+  hidden (the page already does this for the main globe);
+  mini-spheres inherit the pause for free.
+- **Low-end fallback:** devices without WebGL2, or those that
+  fail the existing capability probe, render the flat thumbnail
+  unchanged. The component never crashes a browse view.
+
+The overall rule: a hundred mini-spheres should cost less than
+the main globe. If they don't, drop to the atlas billboard mode
+(pre-render each sphere to a 256x256 canvas once and treat it as
+a regular `<img>`) — visually similar at small sizes, almost free
+to render in bulk.
+
+### Network-graph view (defer the *design*, enable the *capability*)
+
+The catalog backend's job here is to make the asset cheaply
+available; the actual graph view is a separate piece of UI work
+worth its own short plan. What the catalog provides:
+
+- The `sphereThumbnailLink` field, populated for every dataset.
+- An optional `/api/v1/catalog/graph` endpoint (Phase 4) that
+  returns a slim payload — `{ id, sphereThumbnailLink, edges: [...] }`
+  with edges derived from shared keywords, categories, and tour
+  co-occurrence. Pre-computed on publish, cached in KV. Lets a
+  client render a graph without pulling full catalog records for
+  every node.
+- Federation: a peer's mini-spheres come along for the ride in
+  the federated catalog response. A network graph that spans
+  peers visualises the federation itself — which is exactly the
+  "constellation of nodes" mental model the user asked for.
+
+The graph view's own design (layout algorithm, interaction model,
+which edge predicates are exposed as filters) can land later
+without re-touching the backend.
+
+## Thumbnails, legends, captions
+
+All small assets land in a single R2 bucket (`terraviz-assets`)
+under predictable keys:
+
+- `datasets/{id}/thumbnail.{ext}`
+- `datasets/{id}/legend.{ext}`
+- `datasets/{id}/caption.vtt`
+- `tours/{id}/tour.json`
+- `tours/{id}/overlays/{key}`
+
+Public-visibility datasets serve thumbnails through the bucket's
+public URL plus Cloudflare cache. Restricted datasets serve through
+the `/manifest` endpoint, which issues short-lived presigned URLs.
+
+## Tour assets
+
+Tour JSON is stored in R2 and referenced by `tours.tour_json_ref`.
+The tour creator (see "Publishing tools") writes a draft to a
+`drafts/{tour_id}/tour.json` key; publishing copies to the canonical
+`tours/{id}/tour.json` and updates the row. Overlay images / audio
+referenced by `showImage` / `playAudio` tour tasks live alongside
+under `tours/{id}/overlays/`.
+
+## Asset lifecycle
+
+| State | Lives where | Cleaned up by |
+|---|---|---|
+| Draft (publisher portal) | R2 under `drafts/{publisher}/{id}/...` | Cron purges drafts older than 30 days. |
+| Published | R2 under `datasets/{id}/...` or Stream | Lives until retracted. |
+| Retracted | R2 path stays; Stream video stays; row marked retracted | After 90-day grace, a cron deletes assets and sets `data_ref` to `null` (catalog row remains as a tombstone for federation). |
+| Federated mirror | Not stored locally — only metadata | Naturally expires via `expires_at`; refreshed by sync. |
+
+## Offline (Tauri) compatibility
+
+`download_manager.rs` already negotiates direct downloads. The
+manifest endpoint adds an explicit `download_url` field for video
+(an MP4 rendition URL from Stream) and image datasets so the desktop
+app gets a single canonical URL per resolution tier. Existing
+download flow keeps working; it just reads from a single
+`/manifest` JSON instead of two endpoints.
