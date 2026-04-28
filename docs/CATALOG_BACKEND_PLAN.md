@@ -2204,65 +2204,127 @@ contract tests and unit tests.
 
 Each phase ships independently and leaves the app in a working
 state. Federation does not block on the publisher portal; the
-publisher portal does not block on Stream cutover. The order below
-is the recommended sequence, not a dependency chain.
+publisher portal does not block on Stream cutover. The order
+below is the recommended sequence, not a dependency chain.
 
-### Phase 1 — Catalog backbone
+Phase 1 is split into **1a** and **1b**. The split is internal to
+implementation cadence — both halves ship together as the Phase 1
+milestone — but 1a is independently demoable, so it functions as
+an early checkpoint if the Stream / asset-upload work in 1b hits
+a surprise. The "Phase 2" number is intentionally retired: the
+work formerly tracked as Phase 2 (asset hosting) is now Phase 1b.
+Existing "Phase 2" references throughout the docs continue to
+refer to that same body of work, sequenced earlier. Phase 3
+onward is unchanged.
+
+### Phase 1a — Catalog backbone + minimal publisher API
 
 **Replaces:** S3 metadata bucket fetch.
+**Enables:** scheduled metadata-only CLI publishing — update,
+retract, re-tag, re-link to existing assets — for partner
+workflows (e.g., Zyra pipelines that maintain catalog metadata
+against externally-hosted assets).
 
 - D1 migration with the core schema (`node_identity`, `datasets`,
-  decoration tables, `tours`, `audit_events`).
+  decoration tables, `tours`, `publishers`, `audit_events`).
 - `functions/api/v1/catalog.ts` and `/datasets/{id}.ts` reading
   from D1, writing through KV snapshot.
 - `functions/api/v1/datasets/{id}/manifest.ts` that resolves
   `vimeo:` and `url:` `data_ref` schemes (no Stream yet).
-- Seed importer CLI (`scripts/seed-catalog.ts`) that pulls the
-  current public catalog + enrichment and writes rows.
+- Publisher API surface (metadata-only):
+  `POST /api/v1/publish/datasets`, `PATCH .../{id}`,
+  `POST .../{id}/publish`, `POST .../{id}/retract`,
+  `GET .../{id}` (own draft).
+- Cloudflare Access protects `/api/v1/publish/**`; Access
+  service-token flow validated for non-browser callers; JIT
+  `publishers` row provisioning on first call.
+- Validation rules from
+  [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md)
+  enforced server-side; 400 error envelope formalized.
+- Audit-log writes for publish / edit / retract.
+- CLI (`terraviz` binary) shipping with metadata-only commands:
+  `publish`, `update`, `retract`, `list`, `get`. Reads YAML or
+  JSON; service-token auth for scheduled jobs.
+- Seed importer reimplemented as `terraviz publish --bulk`
+  against the new API (replaces the standalone
+  `scripts/seed-catalog.ts`).
 - Frontend `dataService.ts` reads from `/api/v1/catalog` behind
   a build flag (`VITE_CATALOG_SOURCE=node|legacy`).
 - `/.well-known/terraviz.json` published.
-- Self-hosting doc updated with the new D1 / R2 binding setup.
+- Self-hosting doc updated with the new D1 / R2 / Access binding
+  setup.
 
 **Exit criteria:** the public deployment serves its catalog from
-D1, rendering identically to today; offline desktop app still
-works via the legacy URL behind the build flag.
+D1, rendering identically to today; `terraviz publish` updates
+catalog metadata against the production node from a scheduled
+job; offline desktop app still works via the legacy URL behind
+the build flag.
 
-### Phase 2 — Asset hosting
+### Phase 1b — Asset hosting + CLI uploads
 
 **Replaces:** Vimeo proxy and the manual image-resolution suffix
-pattern.
+pattern. (This is the work formerly tracked as Phase 2.)
+**Enables:** scheduled end-to-end CLI publishing of new assets —
+the "Zyra pipeline produces a visualization → CLI uploads →
+catalog publishes" pattern works without human intervention.
 
 - R2 bucket (`terraviz-assets`) created, presigned PUT/GET wired.
 - Stream binding added; manifest endpoint resolves `stream:` refs.
+- Asset-complete handler with `content_digest` verification (see
+  "Asset integrity & verification" in
+  [`CATALOG_ASSETS_PIPELINE.md`](CATALOG_ASSETS_PIPELINE.md)).
 - Backfill job that pulls each Vimeo source into Stream and flips
-  `data_ref` from `vimeo:` to `stream:`. Runs as a Queue consumer;
-  idempotent.
+  `data_ref` from `vimeo:` to `stream:`. Runs as a Queue
+  consumer; idempotent.
 - Image pipeline: optional Cloudflare Images, falls back to R2.
-- Manifest endpoint returns the new variants shape.
+- Sphere-thumbnail generation pipeline.
+- Manifest endpoint returns the new variants shape with
+  per-rendition `content_digest` claims.
 - Frontend `hlsService.ts` and `datasetLoader.ts` read manifests
   from `/api/v1/datasets/{id}/manifest`.
 - Tauri `download_manager.rs` consumes the new `download_url`
-  field.
+  field with optional digest verification.
+- CLI gains asset-upload commands: `terraviz publish` against a
+  YAML that references a local file uploads the asset (R2 or
+  Stream as appropriate), polls for transcode/processing
+  completion, computes and confirms the content digest, then
+  submits the publish request.
 
-**Exit criteria:** Vimeo proxy can be turned off without breaking
-the public deployment; desktop downloads continue to function.
+**Exit criteria:** Vimeo proxy can be turned off without
+breaking the public deployment; desktop downloads continue to
+function; a Zyra-style scheduled pipeline can run
+`terraviz publish dataset.yaml`, upload a new visualization,
+and have it appear in the public catalog without human
+intervention.
+
+### Phase 2 — *Retired number*
+
+Originally Phase 2 covered asset hosting (Stream, R2, image
+pipeline, manifest, backfill). That work is now Phase 1b. The
+number is intentionally retired so existing in-tree references
+to "Phase 2" continue to read correctly — they refer to the same
+body of work, sequenced earlier.
 
 ### Phase 3 — Publisher portal (staff)
 
-**Adds:** ability to create/edit datasets and tours through the UI.
+**Adds:** a UI for the publisher API that Phases 1a/1b already
+exposed.
 
-- Cloudflare Access policy on `/publish/**` and the publisher API.
-- `publishers` row provisioned per Access user on first login.
-- Dataset entry page (form + asset uploader + preview).
+- Cloudflare Access policy on `/publish/**` extends the API-only
+  policy from Phase 1a to cover the browser flow.
+- Dataset entry page (form + asset uploader + preview), bound to
+  the existing publisher API.
 - Tour creator (capture mode + reorder + preview).
-- Bulk import CSV/JSON for migrating existing collections.
+- Bulk import CSV/JSON for migrating existing collections (the
+  same import the CLI already handles, with a UI for
+  non-technical publishers).
 - Audit log surfaced as a per-dataset history view.
 - Webhook fan-out scaffolding (no peers yet, but the queue is in
   place).
 
 **Exit criteria:** a staff user can publish a new dataset and a
-new tour end-to-end without touching D1 or R2 manually.
+new tour end-to-end through the browser without touching the CLI
+or D1 / R2 manually.
 
 ### Phase 4 — Federation
 
@@ -2313,9 +2375,9 @@ it disappear.
 
 | Phase | Scope | Risk |
 |---|---|---|
-| 1 | ~10 routes, 1 D1 migration, 1 importer, frontend swap | Low — well-understood |
-| 2 | Stream binding, image variants, manifest logic, Vimeo backfill | Medium — Stream is new; backfill bandwidth costs need a budget |
-| 3 | Publisher portal — biggest UI surface | Medium — long form work, lots of edge cases |
+| 1a | ~10 read routes + ~6 publisher routes, 1 D1 migration, Access service-token auth, CLI metadata commands, frontend swap | Low-medium — read paths well-understood; service-token auth is new |
+| 1b | Stream binding, R2 presigned uploads, image variants, sphere thumbnails, manifest with integrity, Vimeo backfill, CLI asset upload | Medium — Stream is new; backfill bandwidth costs need a budget |
+| 3 | Publisher portal UI on top of an already-working API | Low-medium — long form work, but the API contract is fixed before this phase starts |
 | 4 | Federation protocol + sync + UI | Medium-high — protocol design has compounding consequences |
 | 5 | Grants, signed URLs, revocation | Medium — security-sensitive; needs review |
 | 6 | OIDC + portability | Low-medium — mostly mechanical once the interfaces exist |
@@ -2348,15 +2410,7 @@ in the course of writing this plan have been removed; the git
 history under `docs/CATALOG_*` captures the resolutions for
 anyone who wants to see the path the decisions took.
 
-1. **Whether to ship a CLI in Phase 1 or wait.** A
-   `terraviz publish dataset.yaml` CLI would make the seed
-   importer redundant and gives partner orgs a path that doesn't
-   require the portal. The validation contract in
-   [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md)
-   is already CLI-shaped (same 400 error envelope), so the
-   surface is paid for; the question is build/release plumbing
-   cost (~1 week) versus Phase-1 scope budget.
-2. **Desktop offline caching of federated datasets.** The
+1. **Desktop offline caching of federated datasets.** The
    asset-pipeline mirror flow defines how a federation peer
    verifies and stores mirrored bytes; the desktop app's existing
    download manager doesn't yet have a story for downloading
@@ -2367,23 +2421,23 @@ anyone who wants to see the path the decisions took.
    inherits the integrity flow for free; direct-from-peer means
    the desktop app must implement
    `content_digest` verification itself).
-3. **Where does Orbit (the LLM docent) sit relative to
+2. **Where does Orbit (the LLM docent) sit relative to
    federated catalogs?** The system prompt builder currently
    assumes a flat catalog; including federated items expands the
    prompt. Cap by relevance, rotate per turn, or expose a
    per-peer "include in docent" toggle?
-4. **Out-of-Stream encoding host.** Beyond-4K HLS and
+3. **Out-of-Stream encoding host.** Beyond-4K HLS and
    packed-alpha variants need an encoder Stream won't run for
    us. Options: GitHub Actions ffmpeg job, a long-running
    self-hosted runner, or a separate Worker calling out to a
    transcoding API (Mux / Coconut / Bitmovin). The data model is
    the same in every case; the operator burden differs a lot.
-5. **Default codec ladder per dataset.** Always emit
+4. **Default codec ladder per dataset.** Always emit
    H.264 + HEVC + AV1, or only H.264 by default and let the
    publisher opt into the heavier codecs? Storage cost vs.
    playback quality tradeoff; needs a number from a few
    representative datasets before deciding.
-6. **Layer compositor scope.** Transparent video makes single-
+5. **Layer compositor scope.** Transparent video makes single-
    globe layering feasible, but the multi-globe layout already
    solves "compare two datasets." Is layered compositing a
    *replacement* for multi-globe (one globe, N stacked layers)
