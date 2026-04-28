@@ -2338,11 +2338,7 @@ anyone who wants to see the path the decisions took.
    is already CLI-shaped (same 400 error envelope), so the
    surface is paid for; the question is build/release plumbing
    cost (~1 week) versus Phase-1 scope budget.
-2. **Federation cadence default.** 15 minutes is a guess. Some
-   peers will want hourly; some will want webhooks-only. Should
-   the default be configurable per-peer at handshake time, or
-   per-node?
-3. **Desktop offline caching of federated datasets.** The
+2. **Desktop offline caching of federated datasets.** The
    asset-pipeline mirror flow defines how a federation peer
    verifies and stores mirrored bytes; the desktop app's existing
    download manager doesn't yet have a story for downloading
@@ -2353,29 +2349,29 @@ anyone who wants to see the path the decisions took.
    inherits the integrity flow for free; direct-from-peer means
    the desktop app must implement
    `content_digest` verification itself).
-4. **Where does Orbit (the LLM docent) sit relative to
+3. **Where does Orbit (the LLM docent) sit relative to
    federated catalogs?** The system prompt builder currently
    assumes a flat catalog; including federated items expands the
    prompt. Cap by relevance, rotate per turn, or expose a
    per-peer "include in docent" toggle?
-5. **Cloudflare Stream's signed URL TTL minimum.** 5 minutes is
+4. **Cloudflare Stream's signed URL TTL minimum.** 5 minutes is
    the assumed value used throughout this plan and the
    production-debugging playbook in
    [`CATALOG_BACKEND_DEVELOPMENT.md`](CATALOG_BACKEND_DEVELOPMENT.md);
    verify against Stream documentation and adjust manifest cache
    headers accordingly.
-6. **Out-of-Stream encoding host.** Beyond-4K HLS and
+5. **Out-of-Stream encoding host.** Beyond-4K HLS and
    packed-alpha variants need an encoder Stream won't run for
    us. Options: GitHub Actions ffmpeg job, a long-running
    self-hosted runner, or a separate Worker calling out to a
    transcoding API (Mux / Coconut / Bitmovin). The data model is
    the same in every case; the operator burden differs a lot.
-7. **Default codec ladder per dataset.** Always emit
+6. **Default codec ladder per dataset.** Always emit
    H.264 + HEVC + AV1, or only H.264 by default and let the
    publisher opt into the heavier codecs? Storage cost vs.
    playback quality tradeoff; needs a number from a few
    representative datasets before deciding.
-8. **Layer compositor scope.** Transparent video makes single-
+7. **Layer compositor scope.** Transparent video makes single-
    globe layering feasible, but the multi-globe layout already
    solves "compare two datasets." Is layered compositing a
    *replacement* for multi-globe (one globe, N stacked layers)

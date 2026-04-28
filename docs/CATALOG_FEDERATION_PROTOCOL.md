@@ -57,7 +57,7 @@ Subscriber A                                Publisher B
      │                                              │
      │  POST /api/v1/federation/handshake           │
      │  Body: { base_url, display_name,             │
-     │          public_key }                        │
+     │          public_key, webhook_url? }          │
      │  Signed: HMAC-SHA256 with bootstrap secret   │
      │          (out-of-band shared one-time code)  │
      ├─────────────────────────────────────────────►│
@@ -82,6 +82,15 @@ server-issued `shared_secret` is used for all future requests. This
 keeps the protocol self-contained — no external CA, no separate
 identity service.
 
+`webhook_url` is optional. If the subscriber provides one, the
+publisher will POST a small nudge payload to it whenever a new
+catalog event lands (publish / retract / grant change), so the
+subscriber can pull sooner than its scheduled cadence. If the
+field is omitted, the subscriber relies entirely on its own
+periodic pull. Webhooks supplement the pull model rather than
+replacing it — a subscriber that misses a webhook (network blip,
+worker restart) recovers on its next scheduled sync.
+
 ## Sync protocol
 
 Pull-based, cursor-driven. The subscriber does:
@@ -94,11 +103,27 @@ Pull-based, cursor-driven. The subscriber does:
 4. For each tombstone, delete or mark expired.
 5. Save the new cursor.
 
-Cadence is configurable per peer (default: every 15 minutes via
-Cloudflare Cron). Peers can also call
-`POST /api/v1/federation/webhook` to nudge the subscriber to pull
-sooner; the receiver enqueues a Queue message and the worker drains
-it.
+Cadence is **subscriber-controlled**: each subscriber's operator
+sets a per-peer pull interval (default 15 minutes via Cloudflare
+Cron, stored as `federation_peers.sync_interval_minutes`). The
+publisher does not enforce a minimum cadence — polite-pull is
+the contract — but a publisher can rate-limit a peer that
+exceeds reasonable bounds, surfacing the violation in the audit
+log.
+
+Two complementary nudge mechanisms exist:
+
+- **Inbound webhook on the subscriber.** If the subscriber
+  registered a `webhook_url` at handshake time, the publisher
+  POSTs `https://<subscriber>/api/v1/federation/webhook` whenever
+  it has news; the subscriber enqueues a Queue message and the
+  worker drains it (which then triggers an immediate pull). This
+  is the path that lets a subscriber set a long pull cadence
+  (e.g., "pull every 6 hours") and still see urgent updates
+  promptly.
+- **Outbound nudge from a manually-triggered subscriber.** A
+  subscriber operator can hit "Sync now" in their portal to
+  bypass the schedule for one cycle.
 
 A Durable Object per peer (Phase 4+) can replace the cron + queue
 combo with a single coordinator that owns cursor + retry timer +

@@ -219,6 +219,8 @@ CREATE TABLE federation_peers (
   status             TEXT NOT NULL,           -- pending | active | paused | blocked
   policy             TEXT NOT NULL DEFAULT 'mirror_public',
                                               -- mirror_public | mirror_granted | mirror_all
+  sync_interval_minutes INTEGER NOT NULL DEFAULT 15,
+                                              -- subscriber-controlled pull cadence; see "Sync protocol" in CATALOG_FEDERATION_PROTOCOL.md
   last_sync_at       TEXT,
   last_sync_cursor   TEXT,
   last_sync_error    TEXT,
@@ -261,6 +263,7 @@ CREATE TABLE federation_subscribers (
   public_key         TEXT NOT NULL,
   shared_secret      TEXT,
   status             TEXT NOT NULL,           -- pending | active | paused | blocked
+  webhook_url        TEXT,                    -- optional; if set, publisher POSTs nudge events here for this subscriber to pull on. Registered at handshake time.
   approved_at        TEXT,
   created_at         TEXT NOT NULL
 );
