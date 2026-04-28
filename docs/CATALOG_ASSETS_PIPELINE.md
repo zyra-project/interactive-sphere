@@ -210,21 +210,56 @@ playback) so the shader doesn't have to branch.
 
 ### Phasing of these capabilities
 
-To avoid over-scoping Phase 2:
+To avoid over-scoping Phase 1b (the asset-hosting milestone,
+formerly tracked as Phase 2):
 
-- **Phase 2 (asset hosting):** ship the manifest shape above, but
-  only the H.264 / Rec.709 / no-alpha rendition path. The schema
-  fields exist; the renderer changes don't.
+- **Phase 1b (asset hosting):** ship the manifest shape above,
+  but only the H.264 / Rec.709 / no-alpha rendition path. The
+  schema fields exist; the renderer changes don't.
 - **Phase 4–5 follow-on:** add packed-alpha encoding in the
   upload pipeline, the layer compositor in `mapRenderer.ts`,
   and the HDR path in the globe shader. This is its own piece
   of work — call it "Layered visualisation" — and it should get
   its own short plan rather than ride on this one.
 
-The catalog backend's job is to *not preclude* these capabilities.
-Reserving the schema fields, the manifest structure, and the
-`data_ref` scheme namespaces in Phase 2 means the renderer work
-in Phase 4–5 is purely client-side.
+The catalog backend's job is to *not preclude* these
+capabilities. Reserving the schema fields, the manifest
+structure, and the `data_ref` scheme namespaces in Phase 1b
+means the renderer work in Phase 4–5 is purely client-side.
+
+#### Layer compositor scope: additional, not replacement
+
+When the layer compositor lands in Phase 4–5, it is an
+**additional** affordance on the existing multi-globe layout,
+not a replacement for it. The two presentations sit alongside
+each other:
+
+- **Multiple globes, one layer each** = pattern comparison.
+  Showing hurricane Sandy 2012 next to hurricane Helene 2024
+  asks the brain to flick between two complete fields and
+  compare patterns. The existing 1 / 2 / 4 globe layout
+  (`viewportManager.ts`, camera lockstep, panel promotion)
+  is exactly the right tool for this and stays unchanged.
+- **One globe, multiple layers stacked** = registered overlay.
+  Showing temperature anomaly *over* precipitation asks the
+  brain to read the relationship at each pixel. This is the
+  new affordance the alpha pipeline unlocks.
+
+The two affordances answer different questions; collapsing them
+into one (a "replace multi-globe with stacked layers" approach
+that some scientific viz tools take) loses the side-by-side
+comparison case. Keeping both means the user picks the
+presentation that matches their analysis.
+
+Scope contained to `mapRenderer.ts`: each globe slot in the
+multi-globe layout grows a layer compositor independently.
+`viewportManager.ts` is untouched; per-slot layer controls slot
+into the existing Tools popover pattern (per-slot, since each
+slot can carry its own stack). The combinatorial space (up to
+4 globes × up to 4 layers per globe = 16 simultaneous layers)
+is more than analysis ever needs in practice; operator policy
+can cap the per-slot layer count lower if it becomes a UX
+concern.
 
 ## Image datasets (R2 + Cloudflare Images)
 
