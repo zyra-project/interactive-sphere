@@ -44,6 +44,10 @@ yarn-error.log*
 .wrangler/
 .dev.vars
 .dev.vars.local
+# Output of `npm run gen:node-key`; the wire-format public key is
+# also persisted in node_identity.public_key, so this file is just
+# a convenience for paste-into-portal flows.
+node-public-key.txt
 
 # Test / coverage artifacts
 coverage/

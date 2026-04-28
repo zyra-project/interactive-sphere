@@ -24,6 +24,7 @@
     "db:seed": "tsx scripts/seed-catalog.ts",
     "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate && npm run db:seed",
     "db:dump-schema": "tsx scripts/dump-catalog-schema.ts",
+    "gen:node-key": "tsx scripts/gen-node-key.ts",
     "refresh:sos-snapshot": "tsx scripts/refresh-sos-snapshot.ts",
     "tauri": "tauri",
     "dev:desktop": "tauri dev",
