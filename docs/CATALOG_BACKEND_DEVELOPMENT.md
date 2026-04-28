@@ -81,7 +81,7 @@ come from these sources:
 |---|---|---|
 | `NODE_ID_PRIVATE_KEY_PEM` | Generate with `npm run gen:node-key` (Phase 1 ships this script); writes both `.dev.vars` and a public-key file you can paste into the well-known doc | Phase 1 |
 | `MOCK_STREAM` | Set `true` for development; bypasses Stream's playback URL signing so you do not need a Stream account locally | Phase 1+ |
-| `STREAM_ACCOUNT_ID` / `STREAM_API_TOKEN` | Cloudflare dashboard → Stream. Only needed for Phase 2+ work; with `MOCK_STREAM=true` they can stay unset | Phase 2 |
+| `STREAM_ACCOUNT_ID` / `STREAM_API_TOKEN` | Cloudflare dashboard → Stream. Only needed for Phase 1b+ work (asset uploads); with `MOCK_STREAM=true` they can stay unset | Phase 1b |
 | `LLM_API_KEY` | Existing — your Orbit LLM provider key, only relevant if you will exercise the chat path locally | n/a |
 | `KILL_TELEMETRY` | Set `1` to disable analytics ingestion locally — you almost certainly want this | n/a |
 
@@ -117,11 +117,16 @@ preparing a deploy environment, not running locally:
 - A KV namespace and an R2 bucket — same dashboard / CLI flow,
   bindings declared in `wrangler.toml`.
 - A Stream account on the same Cloudflare account if you will
-  exercise asset uploads in a non-mock environment.
-- Cloudflare Access enabled on `/publish/**` for Phase 3+ work
-  (the publisher portal). Local dev does not need Access; the
-  publisher API has a `DEV_BYPASS_ACCESS=true` flag that mints a
-  fake `staff` publisher row keyed off the local user's email.
+  exercise asset uploads in a non-mock environment (Phase 1b
+  onward).
+- Cloudflare Access enabled on `/api/v1/publish/**` from Phase 1a
+  onward — both the CLI service-token flow and (from Phase 3) the
+  browser portal flow attach to the same policy. Local dev does
+  not need Access; the publisher API has a `DEV_BYPASS_ACCESS=true`
+  flag that mints a fake `staff` publisher row keyed off the
+  local user's email, and the CLI accepts a
+  `TERRAVIZ_INSECURE_LOCAL=1` flag that skips service-token
+  validation when targeting `localhost:8788`.
 
 The self-hosting walkthrough at
 [`docs/SELF_HOSTING.md`](SELF_HOSTING.md) is the more thorough
