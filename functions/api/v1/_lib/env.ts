@@ -67,4 +67,11 @@ export interface CatalogEnv {
    * the rows attributed to the right human.
    */
   DEV_PUBLISHER_EMAIL?: string
+  /**
+   * HMAC-SHA-256 secret used to sign short-lived preview tokens
+   * (`POST /api/v1/publish/datasets/{id}/preview`). Stored as a
+   * Wrangler secret in production; a deterministic dev fallback
+   * applies when unset (see `_lib/preview-token.ts`).
+   */
+  PREVIEW_SIGNING_KEY?: string
 }
