@@ -671,3 +671,85 @@ manifest endpoint adds an explicit `download_url` field for video
 app gets a single canonical URL per resolution tier. Existing
 download flow keeps working; it just reads from a single
 `/manifest` JSON instead of two endpoints.
+
+### Federated datasets
+
+For datasets owned by the local node, the existing flow is
+unchanged. For datasets the local node mirrored from a peer's
+catalog, the same flow still works without modification on the
+desktop side: the desktop talks only to its local node, and the
+local node handles the byte plumbing. `download_manager.rs`
+never speaks to a foreign peer directly.
+
+What that local-node-side plumbing looks like depends on the
+operator's per-peer asset policy, stored on `federation_peers` as
+`asset_proxy_policy`:
+
+| Value | What the manifest endpoint returns for desktop downloads | Cost / use case |
+|---|---|---|
+| `metadata_only` | 403 with "this peer's content is not available for offline download from this node" | Zero. Desktop UI surfaces the message. Federation is a discovery layer only. |
+| `proxy_lazy` | A signed URL pointing at a local-node proxy endpoint (`/api/v1/peer-proxy/{peer_id}/{dataset_id}/...`) that streams bytes from the peer on demand. | Worker CPU + bandwidth on every desktop download. No local storage cost. Use case: low-traffic federation with bandwidth-aware operators. |
+| `proxy_cached` (default) | First request: a signed URL pointing at the local-node proxy endpoint; the proxy verifies `content_digest` while streaming and writes the bytes to local R2. Subsequent requests: a signed URL pointing directly at local R2, skipping the proxy. | Worker CPU + bandwidth on first download per asset, then cheap. Storage cost grows as the cache fills with content desktop users have actually requested. Most institutional deploys want this. |
+| `mirror_eager` | A signed URL pointing at local R2 (the federation cron pre-mirrored the bytes during sync). | Maximum storage cost; minimum download latency. Use case: high-traffic mirrors / archival deploys / partner orgs that want their users' downloads to never depend on a peer's uptime. |
+
+The four policies map cleanly onto operator preferences: "discovery
+only" → `metadata_only`; "make peer content available, don't
+pre-pay storage" → `proxy_lazy`; "make peer content available,
+cache popular items naturally" → `proxy_cached`; "be a full
+mirror of trusted peers" → `mirror_eager`.
+
+### Integrity inheritance
+
+The desktop never verifies `content_digest` itself for federated
+datasets — that verification happens in the local node when bytes
+enter its cache, the boundary described in
+"Asset integrity & verification" above. The desktop trusts the
+local node's signed-URL-bearing manifest response; the local node
+trusts the peer's signed catalog row and verifies the bytes
+against the claimed digest. A digest mismatch in the local-node
+cache layer surfaces as a `federation_integrity_failure` event
+before any desktop user ever sees the bytes.
+
+This is the deliberate consequence of routing federated downloads
+through the local node: integrity verification happens **once at
+the right boundary**, instead of being duplicated in
+`download_manager.rs`. The alternative — desktop talks to peer
+directly, desktop verifies digest itself — was rejected for
+exactly this reason: duplicated verification logic is the kind of
+thing a one-line oversight breaks during a security review.
+
+### Worker streaming considerations
+
+Streaming a multi-GB video through a Pages Function bumps into
+two real Cloudflare limits:
+
+- **Request-duration ceiling.** Workers (including Pages
+  Functions) have a wall-clock limit per invocation. Long
+  streams need to handle disconnection-and-resume.
+- **CPU-time billing on Workers Paid.** Streaming bytes through a
+  Worker counts CPU time for the duration of the stream; this
+  is real money on a high-traffic deploy.
+
+Both are addressed by the same pattern:
+
+- `proxy_lazy` and `proxy_cached` use **HTTP range requests**
+  end-to-end. The Worker forwards the desktop's `Range` header
+  to the peer (or to local R2, once cached), pipes the response,
+  and closes the connection. The chunked-download logic already
+  in `download_manager.rs` handles range-resume on its side.
+- For `proxy_cached`, **once a fully-cached copy exists in local
+  R2 and its digest has been verified**, the manifest endpoint
+  returns a **direct R2 signed URL** instead of routing through
+  the proxy. The Worker sits in the path for the first download
+  only; subsequent downloads bypass it entirely. This caps the
+  per-asset Worker cost at "one download's worth of streaming"
+  no matter how many desktop users eventually pull the dataset.
+
+Streaming-while-caching is the operationally tricky bit: the
+proxy must hash bytes as they pass through (to verify the
+digest at the cache-write boundary) and must not commit a
+partial file to R2 if the upstream stream fails mid-flight. The
+implementation pattern is "write to a temporary R2 key, finalize
+to the canonical content-addressed key only on successful
+digest match." Failed mid-streams leave a temporary key that a
+nightly cron purges.
