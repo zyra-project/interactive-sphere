@@ -469,6 +469,112 @@ Miniflare instances in under a second.
   rollback can revert the bundle without leaving D1 mid-migration.
   Migrations are forward-only; rollbacks are forward-fix migrations.
 
+## Production debugging
+
+Production runs on Cloudflare's edge; debugging is mostly knowing
+which dashboard or CLI surfaces what, plus a small set of
+playbooks for the failure modes that actually happen.
+
+### Logs and metrics
+
+- **`wrangler pages deployment tail` against production.**
+  Real-time streaming of Pages Function logs; same shape as the
+  local tail but pulling from the deployed worker. Filter with
+  `--format=pretty` and `--search=...` for ad-hoc queries. Tail
+  is best for "is something happening right now" — for
+  retrospective questions, use Workers Logs.
+- **Workers Logs (Cloudflare dashboard → Pages → terraviz →
+  Logs).** Persistent log retention (Workers Paid: 7 days; free:
+  none, so production must be Workers Paid — see "Free-tier
+  viability" in [`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md)).
+  Filter by status code, route, or arbitrary header. The
+  `X-Request-Id` from the client side is the fastest way to
+  find the matching log line for a user-reported issue.
+- **Analytics Engine.** The catalog backend writes its own
+  operational metrics (request rate, p50/p95 latency by route,
+  D1 query duration distribution) to Workers AE alongside the
+  user-facing telemetry. Grafana dashboards under
+  `grafana/dashboards/catalog-backend-*` query them.
+
+### Inspecting production state
+
+| Resource | Inspect with | Notes |
+|---|---|---|
+| **D1** | `npx wrangler d1 execute terraviz --remote --command "..."` | Read-only queries are safe; never run schema-mutating SQL ad-hoc — use a migration. |
+| **KV** | `npx wrangler kv key list --binding=CATALOG_KV --remote` (and `... key get`) | KV reads are billed per call; an audit script that lists every key is fine, fetching every value isn't. |
+| **R2** | `npx wrangler r2 object list terraviz-assets --remote` (and `... object get`) | Free reads up to standard tier limits; bulk download via wrangler is rate-limited and expensive. |
+| **Stream** | Cloudflare dashboard → Stream → list videos | The `uid` from the dataset row's `data_ref` is searchable directly. |
+| **Audit log** | `wrangler d1 execute --remote 'SELECT * FROM audit_events WHERE subject_id = ? ORDER BY id DESC LIMIT 50'` | The subject-keyed timeline is the answer to most "what happened to dataset X" incidents. |
+
+The `audit_events` table is the centrepiece of production
+incident response. Every meaningful state change (publish,
+retract, grant, revoke, `integrity_failure`, hard delete,
+`schema_version_skew`, federation subscribe / sync) writes a row;
+ULID ordering means the timeline is queryable without a separate
+index. Most playbooks below boil down to "find the relevant
+audit_events rows."
+
+### Incident playbooks
+
+- **A peer subscriber claims they aren't receiving updates.**
+  Query `audit_events` filtered by `subject_id = <peer_id>`;
+  expect to see `federation_handshake_accepted` followed by
+  periodic `federation_sync_completed` rows. If syncs stopped,
+  the peer's well-known endpoint may be unreachable or the
+  signature is failing. Workers Logs filtered by the peer's
+  `node_id` surface the actual error.
+- **A user reports a 500 on a specific dataset.** Pull
+  `X-Request-Id` from their browser if they can read it; if
+  not, narrow Workers Logs to the dataset's slug or id over
+  the relevant time window. Common 500 causes: missing
+  rendition for the codec the caller advertised (manifest
+  endpoint can't satisfy the request), Stream signed-URL
+  signing-key rotation in flight, or a D1 prepared-statement
+  cache eviction storm (rare; recovers on its own).
+- **An integrity-failure event surfaces in the publisher
+  portal.** The `audit_events` row carries
+  `(peer_id, dataset_id, expected_digest, actual_digest)` in
+  its `metadata_json`. First investigation step: did the
+  publisher re-upload between the peer's mirror fetch and the
+  failure? Any retraction or update event for the same dataset
+  between those two timestamps explains the mismatch benignly;
+  if not, treat it as a real signal and pause that mirror until
+  reviewed.
+- **D1 latency spikes.** Workers AE's `db_query_duration`
+  distribution shows whether it's a specific query or a global
+  slowdown. Specific query: pull the EXPLAIN plan via
+  `wrangler d1 execute --remote 'EXPLAIN QUERY PLAN ...'` and
+  look for missing indexes (the catalog hot path is heavily
+  index-driven; a missing index after a schema change is the
+  most common cause). Global slowdown: check Cloudflare's D1
+  status page; this happens occasionally and resolves on its
+  own.
+- **Stream playback failures.** Stream signed URLs have a
+  5-minute TTL; a clock-skewed client can request a URL that
+  is already expired by the time it reaches Stream. The fix is
+  small client-side clock-skew detection (compare the `Date`
+  header from the manifest response to the client's clock;
+  warn if drift exceeds ~30s) — a Phase-2 hardening if it
+  shows up.
+
+### Things you should not do in production debugging
+
+- Run schema-mutating SQL ad-hoc against `--remote` D1. Always
+  use migrations; the audit trail and CI gates exist for a
+  reason.
+- Delete R2 objects directly. Asset cleanup goes through the
+  retraction or hard-delete paths so the audit log captures it.
+- Rotate the node-identity Ed25519 keypair without a peer-grace
+  overlap (see "Pinning happens at handshake" in
+  [`CATALOG_FEDERATION_PROTOCOL.md`](CATALOG_FEDERATION_PROTOCOL.md)).
+  Doing so silently breaks every peer's signature verification;
+  recovery requires re-handshaking each peer.
+- Restart workers expecting in-memory state to be fresh.
+  Cloudflare Workers don't have persistent in-memory state
+  across invocations; if a bug appears to depend on cold-start
+  behaviour, instrument the cold path rather than trying to
+  force restarts.
+
 ## Conventions
 
 - One commit per migration, with the migration file in the same
