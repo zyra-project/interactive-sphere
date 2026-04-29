@@ -542,6 +542,56 @@ describe('POST .../asset/{upload_id}/complete — refusals', () => {
     expect(body.dataset.sphere_thumbnail_ref).toBe('r2:datasets/x/sphere-thumbnail.jpg')
   })
 
+  it('fails closed with 500 unknown_target when upload.target is corrupted', async () => {
+    const { sqlite, datasetId, kv } = setupEnv()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+    }
+    // Manually insert an upload row with an unknown target — the
+    // init handler would never write this, but a corrupted /
+    // tampered row must not silently apply.
+    sqlite
+      .prepare(
+        `INSERT INTO asset_uploads
+          (id, dataset_id, publisher_id, kind, target, target_ref, mime,
+           declared_size, claimed_digest, status, failure_reason,
+           created_at, completed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, NULL)`,
+      )
+      .run(
+        'UP-WEIRD',
+        datasetId,
+        STAFF.id,
+        'thumbnail',
+        'gcs', // unknown target
+        'gcs:foo',
+        'image/png',
+        1234,
+        HELLO_DIGEST,
+        '2026-04-29T12:00:00.000Z',
+      )
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-WEIRD' }))
+    expect(res.status).toBe(500)
+    const body = await readJson<{ error: string }>(res)
+    expect(body.error).toBe('unknown_target')
+    // Row marked failed, dataset row untouched.
+    const row = sqlite
+      .prepare(`SELECT status, failure_reason FROM asset_uploads WHERE id = ?`)
+      .get('UP-WEIRD') as { status: string; failure_reason: string }
+    expect(row.status).toBe('failed')
+    expect(row.failure_reason).toBe('unknown_target')
+    // Dataset row's thumbnail_ref is unchanged (the fixture seeds a
+    // placeholder value; the assertion is "didn't get clobbered with
+    // the corrupt upload's target_ref").
+    const dataset = sqlite
+      .prepare(`SELECT thumbnail_ref FROM datasets WHERE id = ?`)
+      .get(datasetId) as { thumbnail_ref: string | null }
+    expect(dataset.thumbnail_ref).not.toBe('gcs:foo')
+    expect(dataset.thumbnail_ref).not.toContain('by-digest')
+  })
+
   it('returns 409 upload_failed when re-called on a failed row', async () => {
     const { sqlite, datasetId, kv } = setupEnv()
     const env = {

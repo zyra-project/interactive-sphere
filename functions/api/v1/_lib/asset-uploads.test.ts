@@ -286,3 +286,78 @@ describe('asset_uploads row helpers', () => {
     expect(after?.failure_reason).toBe('digest_mismatch')
   })
 })
+
+describe('applyAssetToDataset — atomic json_set merge', () => {
+  it('preserves prior auxiliary_digests keys when stamping a new one', async () => {
+    const { d1, sqlite } = makeDb()
+    const datasetId = 'DS001AAAAAAAAAAAAAAAAAAAAA'
+    // Pre-existing legend digest left by an earlier upload.
+    sqlite
+      .prepare(`UPDATE datasets SET auxiliary_digests = ? WHERE id = ?`)
+      .run(JSON.stringify({ legend: 'sha256:legendexisting' }), datasetId)
+    // New thumbnail upload completes — should add `thumbnail` without
+    // dropping the existing `legend` key.
+    const { applyAssetToDataset } = await import('./asset-uploads')
+    await applyAssetToDataset(
+      d1,
+      datasetId,
+      {
+        id: 'UP-AUX',
+        dataset_id: datasetId,
+        publisher_id: 'PUB001',
+        kind: 'thumbnail',
+        target: 'r2',
+        target_ref: `r2:datasets/${datasetId}/by-digest/sha256/${SHA64}/thumbnail.png`,
+        mime: 'image/png',
+        declared_size: 1234,
+        claimed_digest: HAPPY_DIGEST,
+        status: 'pending',
+        failure_reason: null,
+        created_at: '2026-04-29T12:00:00.000Z',
+        completed_at: null,
+      },
+      HAPPY_DIGEST,
+      '2026-04-29T12:01:00.000Z',
+    )
+    const row = sqlite
+      .prepare(`SELECT auxiliary_digests, thumbnail_ref FROM datasets WHERE id = ?`)
+      .get(datasetId) as { auxiliary_digests: string; thumbnail_ref: string }
+    const aux = JSON.parse(row.auxiliary_digests) as Record<string, string>
+    expect(aux.legend).toBe('sha256:legendexisting')
+    expect(aux.thumbnail).toBe(HAPPY_DIGEST)
+    expect(row.thumbnail_ref).toContain('thumbnail.png')
+  })
+
+  it('initialises auxiliary_digests from null without crashing', async () => {
+    const { d1, sqlite } = makeDb()
+    const datasetId = 'DS001AAAAAAAAAAAAAAAAAAAAA'
+    // auxiliary_digests starts NULL after fixture insert.
+    const { applyAssetToDataset } = await import('./asset-uploads')
+    await applyAssetToDataset(
+      d1,
+      datasetId,
+      {
+        id: 'UP-FRESH',
+        dataset_id: datasetId,
+        publisher_id: 'PUB001',
+        kind: 'sphere_thumbnail',
+        target: 'r2',
+        target_ref: `r2:datasets/${datasetId}/by-digest/sha256/${SHA64}/sphere-thumbnail.webp`,
+        mime: 'image/webp',
+        declared_size: 1234,
+        claimed_digest: HAPPY_DIGEST,
+        status: 'pending',
+        failure_reason: null,
+        created_at: '2026-04-29T12:00:00.000Z',
+        completed_at: null,
+      },
+      HAPPY_DIGEST,
+      '2026-04-29T12:01:00.000Z',
+    )
+    const row = sqlite
+      .prepare(`SELECT auxiliary_digests FROM datasets WHERE id = ?`)
+      .get(datasetId) as { auxiliary_digests: string }
+    const aux = JSON.parse(row.auxiliary_digests) as Record<string, string>
+    expect(aux.sphere_thumbnail).toBe(HAPPY_DIGEST)
+  })
+})

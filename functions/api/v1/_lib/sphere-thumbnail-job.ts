@@ -115,24 +115,25 @@ export async function generateSphereThumbnail(
   const size = bytes.byteLength
   const sphereRef = `r2:${r2Key}`
 
+  // Atomic JSON merge via SQLite's `json_set`: another writer may
+  // be updating a different `auxiliary_digests` key (e.g. a legend
+  // upload) at the same time, and a SELECT-then-UPDATE pattern
+  // would let the later writer clobber the earlier one's keys.
+  // `json_set(coalesce(...), '$.sphere_thumbnail', ?)` mutates
+  // exactly the path it names without touching siblings.
   await env.CATALOG_DB
     .prepare(
       `UPDATE datasets
          SET sphere_thumbnail_ref = ?,
-             auxiliary_digests = ?,
+             auxiliary_digests = json_set(
+               COALESCE(auxiliary_digests, '{}'),
+               '$.sphere_thumbnail',
+               ?
+             ),
              updated_at = ?
        WHERE id = ?`,
     )
-    .bind(
-      sphereRef,
-      mergeAuxDigests(
-        await readAuxDigests(env.CATALOG_DB, payload.dataset_id),
-        'sphere_thumbnail',
-        digest,
-      ),
-      new Date().toISOString(),
-      payload.dataset_id,
-    )
+    .bind(sphereRef, digest, new Date().toISOString(), payload.dataset_id)
     .run()
 
   return { ok: true, sphere_thumbnail_ref: sphereRef, digest, size }
@@ -176,33 +177,6 @@ function pickSourceUrl(env: CatalogEnv, sourceRef: string): string | null {
 
 function encodePath(key: string): string {
   return key.split('/').map(encodeURIComponent).join('/')
-}
-
-async function readAuxDigests(
-  db: D1Database,
-  datasetId: string,
-): Promise<string | null> {
-  const row = await db
-    .prepare(`SELECT auxiliary_digests FROM datasets WHERE id = ? LIMIT 1`)
-    .bind(datasetId)
-    .first<{ auxiliary_digests: string | null }>()
-  return row?.auxiliary_digests ?? null
-}
-
-function mergeAuxDigests(existing: string | null, key: string, digest: string): string {
-  let parsed: Record<string, string> = {}
-  if (existing) {
-    try {
-      const value = JSON.parse(existing) as unknown
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        parsed = value as Record<string, string>
-      }
-    } catch {
-      /* malformed → overwrite */
-    }
-  }
-  parsed[key] = digest
-  return JSON.stringify(parsed)
 }
 
 async function sha256Bytes(bytes: ArrayBuffer): Promise<string> {

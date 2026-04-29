@@ -84,18 +84,24 @@ export function validateAssetInit(
 ): { ok: true; value: ValidatedAssetInit } | { ok: false; errors: AssetInitValidationError[] } {
   const errors: AssetInitValidationError[] = []
 
+  // `kind` stays null until validation proves it's an enum member,
+  // so subsequent mime/size checks branch on a real `AssetKind`
+  // value rather than relying on JS quirks (e.g. `body.size >
+  // undefined === false`) for the invalid case to "no-op."
+  let kind: AssetKind | null = null
   if (typeof body.kind !== 'string' || !ALL_KINDS.has(body.kind as AssetKind)) {
     errors.push({
       field: 'kind',
       code: 'invalid_kind',
       message: `kind must be one of ${[...ALL_KINDS].join(', ')}.`,
     })
+  } else {
+    kind = body.kind as AssetKind
   }
-  const kind = body.kind as AssetKind
 
   if (typeof body.mime !== 'string' || !body.mime) {
     errors.push({ field: 'mime', code: 'invalid_mime', message: 'mime is required.' })
-  } else if (kind && MIME_ALLOWLIST[kind]) {
+  } else if (kind !== null) {
     if (!MIME_ALLOWLIST[kind].has(body.mime)) {
       errors.push({
         field: 'mime',
@@ -115,13 +121,16 @@ export function validateAssetInit(
       code: 'invalid_size',
       message: 'size must be a positive integer (bytes).',
     })
-  } else if (kind && body.size > maxSizeForKind(kind, body.mime as string | undefined)) {
-    const cap = maxSizeForKind(kind, body.mime as string | undefined)
-    errors.push({
-      field: 'size',
-      code: 'size_exceeded',
-      message: `size ${body.size} exceeds the ${formatBytes(cap)} cap for kind "${kind}".`,
-    })
+  } else if (kind !== null) {
+    const mime = typeof body.mime === 'string' ? body.mime : undefined
+    const cap = maxSizeForKind(kind, mime)
+    if (body.size > cap) {
+      errors.push({
+        field: 'size',
+        code: 'size_exceeded',
+        message: `size ${body.size} exceeds the ${formatBytes(cap)} cap for kind "${kind}".`,
+      })
+    }
   }
 
   if (typeof body.content_digest !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(body.content_digest)) {
@@ -133,10 +142,12 @@ export function validateAssetInit(
   }
 
   if (errors.length) return { ok: false, errors }
+  // `kind` is non-null in the success path because errors would be
+  // non-empty otherwise; the `!` makes the narrowing explicit.
   return {
     ok: true,
     value: {
-      kind,
+      kind: kind!,
       mime: body.mime as string,
       size: body.size as number,
       content_digest: body.content_digest as string,
@@ -311,6 +322,13 @@ export async function markAssetUploadFailed(
  *                         opaque so we trust the claim)
  *   - everything else:    *_ref + auxiliary_digests JSON merge
  *
+ * For auxiliary assets the JSON merge is done atomically inside the
+ * UPDATE via SQLite's `json_set(coalesce(...), '$.<key>', ?)`. This
+ * is concurrency-safe: two auxiliary uploads (or one upload + the
+ * sphere-thumbnail job) racing on the same row update disjoint JSON
+ * keys without clobbering each other. The previous read-then-write
+ * pattern lost keys under that race.
+ *
  * Does not invalidate the KV snapshot or stamp the asset_uploads
  * row — both happen in the route handler so the audit ordering is
  * one place.
@@ -345,21 +363,21 @@ export async function applyAssetToDataset(
     return
   }
 
-  // Auxiliary asset — stamp `*_ref` + merge into auxiliary_digests JSON.
+  // Auxiliary asset — stamp `*_ref` + atomically merge into the
+  // auxiliary_digests JSON via `json_set`. Both `refColumn` and
+  // `jsonPath` come from fixed enum maps below (not user input), so
+  // template-interpolating them into the SQL is safe.
   const refColumn = AUX_REF_COLUMN[upload.kind]
-  const digestKey = AUX_DIGEST_KEY[upload.kind]
-  const row = await db
-    .prepare(`SELECT auxiliary_digests FROM datasets WHERE id = ?`)
-    .bind(datasetId)
-    .first<{ auxiliary_digests: string | null }>()
-  const merged = mergeAuxDigests(row?.auxiliary_digests ?? null, digestKey, verifiedDigest)
+  const jsonPath = `$.${AUX_DIGEST_KEY[upload.kind]}`
   await db
     .prepare(
       `UPDATE datasets
-         SET ${refColumn} = ?, auxiliary_digests = ?, updated_at = ?
+         SET ${refColumn} = ?,
+             auxiliary_digests = json_set(COALESCE(auxiliary_digests, '{}'), '${jsonPath}', ?),
+             updated_at = ?
        WHERE id = ?`,
     )
-    .bind(upload.target_ref, merged, now, datasetId)
+    .bind(upload.target_ref, verifiedDigest, now, datasetId)
     .run()
 }
 
@@ -377,25 +395,3 @@ const AUX_DIGEST_KEY: Record<Exclude<AssetKind, 'data'>, string> = {
   caption: 'caption',
 }
 
-function mergeAuxDigests(
-  existingJson: string | null,
-  key: string,
-  digest: string,
-): string {
-  let parsed: Record<string, string> = {}
-  if (existingJson) {
-    try {
-      const value = JSON.parse(existingJson) as unknown
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        parsed = value as Record<string, string>
-      }
-    } catch {
-      // Existing payload is malformed — overwrite. The publisher API
-      // is the only writer to this column so this should never
-      // happen in a healthy deployment, but a defensive recovery is
-      // free.
-    }
-  }
-  parsed[key] = digest
-  return JSON.stringify(parsed)
-}

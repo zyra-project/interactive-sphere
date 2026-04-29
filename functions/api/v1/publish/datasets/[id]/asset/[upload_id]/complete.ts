@@ -226,6 +226,23 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     // hash); see `CATALOG_ASSETS_PIPELINE.md` "Stream assets:
     // bridging the model".
     verifiedDigest = upload.claimed_digest
+  } else {
+    // Unknown `target`. The init handler only ever writes `'r2'` or
+    // `'stream'`, so reaching here means the row was tampered with
+    // (manual D1 edit, schema regression, etc). Fail closed — mark
+    // the upload row failed and refuse to apply unverified bytes.
+    const failedAt = new Date().toISOString()
+    await markAssetUploadFailed(
+      context.env.CATALOG_DB!,
+      uploadId,
+      'unknown_target',
+      failedAt,
+    )
+    return jsonError(
+      500,
+      'unknown_target',
+      `Upload ${uploadId} has an unrecognised target "${upload.target}". The asset will not be applied.`,
+    )
   }
 
   // ----- Apply to the dataset row + mark the upload complete -----
