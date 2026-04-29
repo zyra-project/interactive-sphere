@@ -86,4 +86,91 @@ export interface CatalogEnv {
    * preview tokens.
    */
   ALLOW_DEV_PREVIEW_FALLBACK?: string
+  /**
+   * R2 bucket binding for catalog assets — sphere thumbnails,
+   * non-Stream image data, legends, captions, tour JSON. The
+   * binding is what the asset-complete handler uses to read
+   * just-uploaded bytes and verify `content_digest` (Phase 1b).
+   * Wrangler provisions a local on-disk emulation under
+   * `.wrangler/state/v3/r2/` even without real credentials.
+   */
+  CATALOG_R2?: R2Bucket
+  /**
+   * Bucket name as configured in the R2 dashboard. Defaults to
+   * `terraviz-assets` (the canonical name in
+   * `CATALOG_ASSETS_PIPELINE.md`); override only if a fork picks
+   * a different name. Used to build the SigV4 host for presigned
+   * PUT URLs.
+   */
+  CATALOG_R2_BUCKET?: string
+  /**
+   * R2 S3-compatible endpoint, e.g.
+   * `https://<account>.r2.cloudflarestorage.com`. Required for
+   * presigned-PUT minting; the dashboard prints it on the bucket
+   * page. Local dev with `MOCK_R2=true` does not need it.
+   */
+  R2_S3_ENDPOINT?: string
+  /** R2 S3 access-key id. Cloudflare dashboard → R2 → Manage API tokens. */
+  R2_ACCESS_KEY_ID?: string
+  /** R2 S3 secret access key — Wrangler secret in production. */
+  R2_SECRET_ACCESS_KEY?: string
+  /**
+   * Public-readable origin for the R2 bucket — e.g.
+   * `https://assets.terraviz.example.com` for a custom-domain
+   * mapping, or the bucket's public-access URL. Used by the
+   * manifest endpoint to construct image/file URLs that the
+   * frontend can fetch unauthenticated. When unset, the manifest
+   * falls back to MOCK_R2 (dev) or the S3 endpoint
+   * (public buckets). Restricted-bucket presigned-GET semantics
+   * land in Phase 4 federation work.
+   */
+  R2_PUBLIC_BASE?: string
+  /**
+   * `"true"` makes the asset-init handler emit deterministic
+   * `https://mock-r2.localhost/...` URLs instead of real presigned
+   * ones, so the contributor walkthrough works without an R2 S3
+   * token. Because no bytes are actually uploaded to that mock URL,
+   * `/asset/{upload_id}/complete` skips the binding-based digest
+   * verification and trusts the publisher's claimed digest as
+   * ground truth (parallel to the Stream-mock behaviour). The
+   * `mock_r2_unsafe` 500 refusal on non-loopback hostnames keeps a
+   * production misconfig from accepting forged claims.
+   */
+  MOCK_R2?: string
+  /**
+   * Cloudflare account id that owns the Stream subscription.
+   * Required for the video upload + transcode-status endpoints
+   * (Phase 1b). Local dev with `MOCK_STREAM=true` does not need it.
+   */
+  STREAM_ACCOUNT_ID?: string
+  /**
+   * Stream API token (`Stream: Edit` permission). Wrangler secret
+   * in production. Local dev with `MOCK_STREAM=true` does not
+   * need it.
+   */
+  STREAM_API_TOKEN?: string
+  /**
+   * Customer subdomain printed in the Stream dashboard, e.g.
+   * `customer-abc123.cloudflarestream.com`. Used to build the
+   * public HLS playback URL the manifest endpoint serves.
+   */
+  STREAM_CUSTOMER_SUBDOMAIN?: string
+  /**
+   * `"true"` makes the Stream helpers return deterministic stub
+   * upload URLs / uids / transcode statuses so the contributor
+   * walkthrough works without a Cloudflare Stream subscription.
+   */
+  MOCK_STREAM?: string
+  /**
+   * Origin used by the sphere-thumbnail generation pipeline to
+   * issue Cloudflare Images URL transformations against image
+   * datasets (Phase 1b). When set, image-source thumbnails are
+   * resized via `${CF_IMAGES_RESIZE_BASE}/cdn-cgi/image/fit=fill,...`.
+   * When unset, the job falls back to the source bytes (the
+   * publisher portal's regenerate button (Phase 3) handles the
+   * unrepresentative case manually). Stream-source thumbnails
+   * always go through Stream's own thumbnail API and never consult
+   * this var.
+   */
+  CF_IMAGES_RESIZE_BASE?: string
 }

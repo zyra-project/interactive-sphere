@@ -28,6 +28,7 @@ import {
 import Database from 'better-sqlite3'
 
 const EXPECTED_TABLES = [
+  'asset_uploads',
   'audit_events',
   'dataset_categories',
   'dataset_developers',
@@ -36,6 +37,7 @@ const EXPECTED_TABLES = [
   'dataset_renditions',
   'dataset_tags',
   'datasets',
+  'featured_datasets',
   'node_identity',
   'publishers',
   'tour_dataset_refs',
@@ -43,14 +45,16 @@ const EXPECTED_TABLES = [
 ]
 
 const EXPECTED_INDEXES = [
+  'idx_asset_uploads_dataset',
   'idx_audit_subject',
   'idx_datasets_publisher',
   'idx_datasets_updated_at',
   'idx_datasets_visibility',
+  'idx_featured_datasets_position',
   'idx_renditions_dataset',
 ]
 
-describe('Phase 1a migrations', () => {
+describe('catalog migrations', () => {
   it('apply cleanly in order to a fresh SQLite database', () => {
     const db = new Database(':memory:')
     db.pragma('foreign_keys = ON')

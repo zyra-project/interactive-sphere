@@ -119,13 +119,22 @@ come from these sources:
 | `PREVIEW_SIGNING_KEY` | HMAC-SHA-256 secret for preview tokens. **Required in production** — the preview endpoints fail closed (503 `preview_unconfigured`) when this is unset. A deterministic dev fallback exists, but it requires *both* `DEV_BYPASS_ACCESS=true` *and* `ALLOW_DEV_PREVIEW_FALLBACK=true` to activate (the doubled gate keeps a production misconfig from accepting forged tokens via the anonymous preview consumer, which lives outside the publish middleware). Set the real value via `npx wrangler pages secret put PREVIEW_SIGNING_KEY` on the production deployment. | Phase 1a (prod) |
 | `ALLOW_DEV_PREVIEW_FALLBACK` | `true` to opt into the deterministic dev preview-signing secret. Only honored when `DEV_BYPASS_ACCESS=true` is also set. | Phase 1a (dev only) |
 | `VIDEO_PROXY_BASE` | Override the upstream Vimeo proxy. Defaults to the production proxy when unset. | Phase 1a |
-| `MOCK_STREAM` | Set `true` for development; bypasses Stream's playback URL signing so you do not need a Stream account locally. | Phase 1b+ |
-| `STREAM_ACCOUNT_ID` / `STREAM_API_TOKEN` | Cloudflare dashboard → Stream. Only needed for Phase 1b+ asset uploads. | Phase 1b |
+| `MOCK_STREAM` | `.dev.vars.example` sets this to `true` by default. The asset-init handler returns deterministic stub Stream upload URLs, and the transcode-status helper reports `ready` immediately, so the contributor walkthrough works without a Cloudflare Stream subscription. | Phase 1b |
+| `STREAM_ACCOUNT_ID` / `STREAM_API_TOKEN` | Cloudflare dashboard → Stream. Only needed when `MOCK_STREAM` is unset. The token requires `Stream: Edit` permission. | Phase 1b (prod) |
+| `STREAM_CUSTOMER_SUBDOMAIN` | The `customer-<id>.cloudflarestream.com` hostname the dashboard prints. Used to build the public HLS playback URL the manifest endpoint serves. Mock mode falls back to `customer-mock.cloudflarestream.com` when this is unset. | Phase 1b (prod) |
+| `MOCK_R2` | `.dev.vars.example` sets this to `true` by default. The asset-init handler returns deterministic `https://mock-r2.localhost/...` URLs instead of real presigned ones. Because no bytes are uploaded to that mock URL, `/asset/{upload_id}/complete` skips the binding-based digest verification and trusts the publisher's claimed digest. Refused on non-loopback hostnames so a production misconfig can't accept forged claims. | Phase 1b |
+| `R2_S3_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Cloudflare dashboard → R2 → Manage API tokens. Only needed when `MOCK_R2` is unset. The presigning helper signs against the S3-compatible endpoint Cloudflare prints on the bucket page; access keys live as Wrangler secrets in production. | Phase 1b (prod) |
+| `R2_PUBLIC_BASE` | Public-readable origin the manifest endpoint emits for `r2:` data_refs (custom-domain mapping like `https://assets.terraviz.example.com` or the bucket's native public URL). Without this, the manifest falls back to `MOCK_R2` (dev) or the S3 endpoint (public buckets only); restricted-bucket presigned-GET semantics are a Phase 4 follow-on. | Phase 1b (prod) |
+| `CATALOG_R2_BUCKET` | Bucket name override; defaults to `terraviz-assets` to match `wrangler.toml`. Only set this if a fork picks a different name. | Phase 1b |
+| `CF_IMAGES_RESIZE_BASE` | Origin used by the sphere-thumbnail pipeline to resize R2 image sources via Cloudflare Images URL transformations. When unset, the job falls back to fetching the source bytes directly. The publisher portal's "regenerate sphere thumbnail" button (Phase 3) lets a publisher provide a hand-cropped version manually. | Phase 1b |
 | `KILL_TELEMETRY` | Set `1` to disable analytics ingestion locally — almost always what you want during dev. | n/a |
 
 Phase-1a contributors realistically only need `NODE_ID_PRIVATE_KEY_PEM`,
-`DEV_BYPASS_ACCESS=true`, and `KILL_TELEMETRY=1`. Everything else
-stays unset until the corresponding feature lands.
+`DEV_BYPASS_ACCESS=true`, and `KILL_TELEMETRY=1`. Phase 1b adds
+`MOCK_STREAM=true` + `MOCK_R2=true` (both set by the example
+template), nothing else. The real `STREAM_*` / `R2_*` env vars stay
+unset locally because the contributor walkthrough is mock-mode-only —
+production deploys configure them via `wrangler pages secret put`.
 
 ### What "good" looks like
 
@@ -141,9 +150,8 @@ After the checklist runs clean, you should be able to:
   step 2.
 - See a Wrangler startup line that reads
   `Ready on http://localhost:8788` with `CATALOG_DB`, `CATALOG_KV`,
-  `FEEDBACK_DB`, and the analytics + AI bindings all listed
-  (Stream prints `MOCK_STREAM` instead of a real binding when
-  mocked, which is expected through Phase 1b).
+  `CATALOG_R2`, `FEEDBACK_DB`, and the analytics + AI bindings all
+  listed (Stream is mock-only — there's no Stream binding to print).
 - Round-trip a draft via the CLI:
   ```bash
   echo '{"title":"From CLI","format":"video/mp4",
@@ -153,6 +161,28 @@ After the checklist runs clean, you should be able to:
     --insecure-local publish /tmp/m.json
   ```
   → "Created draft …" then "Published … (timestamp)".
+- (Phase 1b) Round-trip an asset upload end-to-end using the mock
+  pipeline. Pick any small file lying around — `MOCK_STREAM` /
+  `MOCK_R2` make the byte path a no-op; only the catalog rows
+  flow:
+  ```bash
+  # Create a draft to attach the asset to.
+  echo '{"title":"Asset roundtrip","format":"image/png"}' \
+    > /tmp/asset-draft.json
+  ID=$(npm run --silent terraviz -- publish /tmp/asset-draft.json \
+        --draft-only --server http://localhost:8788 --insecure-local \
+        | awk '/Created draft/ {print $3}')
+  # Upload a thumbnail. The CLI hashes the file, calls /asset to mint
+  # a (mock) presigned URL, sees the response's `mock: true` flag,
+  # and skips the byte PUT entirely. /complete then trusts the
+  # publisher's claimed digest (no bytes were uploaded to verify
+  # against), flips `thumbnail_ref`, and enqueues a sphere-thumbnail
+  # job against the in-memory queue shim.
+  npm run terraviz -- upload "$ID" thumbnail ./public/favicon.svg \
+    --mime=image/png --server http://localhost:8788 --insecure-local
+  ```
+  → "completed", then `terraviz get $ID` shows `thumbnail_ref`
+  populated with `r2:datasets/<id>/by-digest/sha256/.../thumbnail.png`.
 
 If any of these fail, the troubleshooting matrix in "Local
 debugging" below lists the common causes.
@@ -172,10 +202,20 @@ preparing a deploy environment, not running locally:
   `database_id` into `wrangler.toml`'s `[[d1_databases]]` block for
   `CATALOG_DB`.
 - A KV namespace and an R2 bucket — same dashboard / CLI flow,
-  bindings declared in `wrangler.toml`.
+  bindings declared in `wrangler.toml`. Phase 1b ships the
+  `CATALOG_R2` binding (bucket: `terraviz-assets`); the bucket can
+  be created with `wrangler r2 bucket create terraviz-assets`. R2
+  S3 access keys live under "Manage API tokens"; mint a
+  Read+Write token scoped to the bucket and stash the access-key
+  pair as `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` Wrangler
+  secrets.
 - A Stream account on the same Cloudflare account if you will
   exercise asset uploads in a non-mock environment (Phase 1b
-  onward).
+  onward). Mint an API token with `Stream: Edit` permission;
+  store as `STREAM_API_TOKEN`. The customer subdomain
+  (`customer-<id>.cloudflarestream.com`) goes in
+  `STREAM_CUSTOMER_SUBDOMAIN` so the manifest endpoint can build
+  HLS playback URLs without a runtime Stream API call.
 - Cloudflare Access enabled on `/api/v1/publish/**` from Phase 1a
   onward — both the CLI service-token flow and (from Phase 3) the
   browser portal flow attach to the same policy. Local dev does

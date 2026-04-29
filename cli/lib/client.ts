@@ -186,4 +186,81 @@ export class TerravizClient {
       options.ttl_seconds ? { ttl_seconds: options.ttl_seconds } : {},
     )
   }
+
+  // --- Asset upload endpoints (Phase 1b) --------------------------
+
+  /** Initiate an asset upload — mints a Stream direct-upload URL or R2 presigned PUT. */
+  initAssetUpload<T = unknown>(
+    datasetId: string,
+    body: {
+      kind: 'data' | 'thumbnail' | 'legend' | 'caption' | 'sphere_thumbnail'
+      mime: string
+      size: number
+      content_digest: string
+    },
+  ): Promise<Result<T>> {
+    return this.request<T>(
+      'POST',
+      `/api/v1/publish/datasets/${encodeURIComponent(datasetId)}/asset`,
+      body,
+    )
+  }
+
+  /** Finalise an asset upload — server verifies the digest and flips the row. */
+  completeAssetUpload<T = unknown>(
+    datasetId: string,
+    uploadId: string,
+  ): Promise<Result<T>> {
+    return this.request<T>(
+      'POST',
+      `/api/v1/publish/datasets/${encodeURIComponent(datasetId)}/asset/${encodeURIComponent(uploadId)}/complete`,
+    )
+  }
+
+  /**
+   * PUT bytes to a presigned R2 URL or POST bytes to a Stream
+   * direct-upload URL. Used by the upload command after `initAssetUpload`.
+   *
+   * For R2: a regular PUT with `Content-Type` matching the SigV4
+   * signature.
+   * For Stream: multipart/form-data with `file` field — Stream's
+   * direct-upload endpoint accepts both raw and multipart; the
+   * multipart form is what the dashboard / browser flows use.
+   */
+  async uploadBytes(
+    target: 'r2' | 'stream',
+    url: string,
+    headers: Record<string, string>,
+    body: Uint8Array,
+    mime: string,
+    filename: string,
+  ): Promise<{ ok: boolean; status: number; message?: string }> {
+    // The DOM `BodyInit` and `BlobPart` types resolved against
+    // `ArrayBuffer` (not `ArrayBufferLike`) — Uint8Array views over
+    // a shared buffer fail the structural check. Round-trip through
+    // a fresh ArrayBuffer to land on the strictly-typed branch.
+    const buffer = body.buffer.slice(
+      body.byteOffset,
+      body.byteOffset + body.byteLength,
+    ) as ArrayBuffer
+    let res: Response
+    try {
+      if (target === 'r2') {
+        res = await this.fetchImpl(url, {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Length': String(body.byteLength) },
+          body: buffer,
+        })
+      } else {
+        const form = new FormData()
+        form.append('file', new Blob([buffer], { type: mime }), filename)
+        res = await this.fetchImpl(url, { method: 'POST', body: form })
+      }
+    } catch (e) {
+      return { ok: false, status: 0, message: String(e) }
+    }
+    if (res.status >= 200 && res.status < 300) return { ok: true, status: res.status }
+    const text = await res.text().catch(() => '')
+    return { ok: false, status: res.status, message: text.slice(0, 200) }
+  }
 }

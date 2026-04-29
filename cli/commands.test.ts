@@ -20,6 +20,7 @@ import {
   runRetract,
   runTour,
   runUpdate,
+  runUpload,
   type CommandContext,
 } from './commands'
 import type { TerravizClient } from './lib/client'
@@ -63,6 +64,24 @@ function fakeClient(
     createTour: vi.fn(() => ok({ tour: { id: 'TR1', slug: 's', title: 'T', published_at: null } })),
     updateTour: vi.fn(() => ok({ tour: { id: 'TR1', slug: 's', title: 'T', published_at: null } })),
     previewTour: vi.fn(() => ok({ token: 'tk', url: '/api/v1/tours/TR1/preview/tk', expires_in: 900 })),
+    initAssetUpload: vi.fn(() =>
+      ok({
+        upload_id: 'UP1',
+        kind: 'thumbnail',
+        target: 'r2',
+        r2: {
+          method: 'PUT',
+          url: 'https://mock-r2.localhost/terraviz-assets/k',
+          headers: { 'Content-Type': 'image/png' },
+          key: 'datasets/DS1/by-digest/sha256/aaa/thumbnail.png',
+        },
+        expires_at: '2026-04-29T13:00:00Z',
+      }),
+    ),
+    completeAssetUpload: vi.fn(() =>
+      ok({ dataset: { id: 'DS1' }, verified_digest: 'sha256:abc' }),
+    ),
+    uploadBytes: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
     ...overrides,
   } as unknown as TerravizClient
   return stub
@@ -340,6 +359,285 @@ describe('runTour', () => {
     const { ctx, stdout } = makeCtx(['preview', 'TR1'], [], client)
     expect(await runTour(ctx)).toBe(0)
     expect(stdout.text()).toContain('/api/v1/tours/TR1/preview/t')
+  })
+})
+
+describe('runUpload', () => {
+  it('rejects when positional args are missing', async () => {
+    const { ctx, stderr } = makeCtx([])
+    expect(await runUpload(ctx)).toBe(2)
+    expect(stderr.text()).toContain('Usage: terraviz upload')
+  })
+
+  it('rejects an unknown kind', async () => {
+    const { ctx, stderr } = makeCtx(['DS1', 'manifest', '/tmp/asset.png'], [], fakeClient(), {
+      '/tmp/asset.png': 'fake bytes',
+    })
+    expect(await runUpload(ctx)).toBe(2)
+    expect(stderr.text()).toContain('Unknown kind')
+  })
+
+  it('rejects a path with no inferable mime', async () => {
+    const { ctx, stderr } = makeCtx(['DS1', 'thumbnail', '/tmp/file.weird'], [], fakeClient(), {
+      '/tmp/file.weird': 'fake',
+    })
+    expect(await runUpload(ctx)).toBe(2)
+    expect(stderr.text()).toContain('Could not infer mime')
+  })
+
+  it('honours --mime override', async () => {
+    const initFn = vi.fn(
+      (_id: string, _body: { mime: string; size: number; content_digest: string }) =>
+        Promise.resolve({
+          ok: true as const,
+          status: 200,
+          body: {
+            upload_id: 'UP1',
+            kind: 'thumbnail',
+            target: 'r2' as const,
+            r2: {
+              method: 'PUT' as const,
+              url: 'https://mock-r2.localhost/k',
+              headers: { 'Content-Type': 'image/png' },
+              key: 'k',
+            },
+            expires_at: '2026-04-29T13:00:00Z',
+          },
+        }),
+    )
+    const client = fakeClient({ initAssetUpload: initFn })
+    const { ctx } = makeCtx(
+      ['DS1', 'thumbnail', '/tmp/file.weird'],
+      ['--mime=image/png'],
+      client,
+      { '/tmp/file.weird': 'fake bytes' },
+    )
+    expect(await runUpload(ctx)).toBe(0)
+    expect(initFn).toHaveBeenCalledWith(
+      'DS1',
+      expect.objectContaining({ mime: 'image/png' }),
+    )
+  })
+
+  it('flows init → upload → complete for an R2 thumbnail', async () => {
+    const initFn = vi.fn(
+      (_id: string, _body: { kind: string; mime: string; size: number; content_digest: string }) =>
+        Promise.resolve({
+          ok: true as const,
+          status: 200,
+          body: {
+            upload_id: 'UP1',
+            kind: 'thumbnail',
+            target: 'r2' as const,
+            r2: {
+              method: 'PUT' as const,
+              url: 'https://mock-r2.localhost/k',
+              headers: { 'Content-Type': 'image/png' },
+              key: 'k',
+            },
+            expires_at: '2026-04-29T13:00:00Z',
+          },
+        }),
+    )
+    const uploadFn = vi.fn(
+      (_target: 'r2' | 'stream', _url: string, _h: Record<string, string>, _b: Uint8Array, _m: string, _f: string) =>
+        Promise.resolve({ ok: true, status: 200 }),
+    )
+    const completeFn = vi.fn((_id: string, _uploadId: string) =>
+      Promise.resolve({
+        ok: true as const,
+        status: 200,
+        body: { dataset: { id: 'DS1' }, verified_digest: 'sha256:xyz' },
+      }),
+    )
+    const client = fakeClient({
+      initAssetUpload: initFn,
+      uploadBytes: uploadFn,
+      completeAssetUpload: completeFn,
+    })
+    const { ctx, stdout } = makeCtx(
+      ['DS1', 'thumbnail', '/tmp/thumb.png'],
+      [],
+      client,
+      { '/tmp/thumb.png': 'fake png bytes' },
+    )
+    expect(await runUpload(ctx)).toBe(0)
+
+    expect(initFn).toHaveBeenCalledOnce()
+    expect(initFn).toHaveBeenCalledWith(
+      'DS1',
+      expect.objectContaining({
+        kind: 'thumbnail',
+        mime: 'image/png',
+        size: expect.any(Number),
+        content_digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      }),
+    )
+
+    expect(uploadFn).toHaveBeenCalledOnce()
+    expect(uploadFn).toHaveBeenCalledWith(
+      'r2',
+      'https://mock-r2.localhost/k',
+      expect.any(Object),
+      expect.any(Uint8Array),
+      'image/png',
+      'thumb.png',
+    )
+
+    expect(completeFn).toHaveBeenCalledWith('DS1', 'UP1')
+    expect(stdout.text()).toContain('completed')
+    expect(stdout.text()).toContain('verified_digest: sha256:xyz')
+  })
+
+  it('uses POST/multipart for Stream targets', async () => {
+    const initFn = vi.fn(
+      (_id: string, _body: unknown) =>
+        Promise.resolve({
+          ok: true as const,
+          status: 200,
+          body: {
+            upload_id: 'UP1',
+            kind: 'data',
+            target: 'stream' as const,
+            stream: { upload_url: 'https://upload.cloudflarestream.com/abc', stream_uid: 'abc' },
+            expires_at: '2026-04-29T13:00:00Z',
+          },
+        }),
+    )
+    const uploadFn = vi.fn(
+      (_target: 'r2' | 'stream', _url: string, _h: Record<string, string>, _b: Uint8Array, _m: string, _f: string) =>
+        Promise.resolve({ ok: true, status: 200 }),
+    )
+    const client = fakeClient({ initAssetUpload: initFn, uploadBytes: uploadFn })
+    const { ctx } = makeCtx(['DS1', 'data', '/tmp/v.mp4'], [], client, {
+      '/tmp/v.mp4': 'fake mp4',
+    })
+    expect(await runUpload(ctx)).toBe(0)
+    expect(uploadFn).toHaveBeenCalledWith(
+      'stream',
+      'https://upload.cloudflarestream.com/abc',
+      expect.any(Object),
+      expect.any(Uint8Array),
+      'video/mp4',
+      'v.mp4',
+    )
+  })
+
+  it('retries /complete when Stream returns 202 transcode_in_progress', async () => {
+    const initFn = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        status: 200,
+        body: {
+          upload_id: 'UP1',
+          kind: 'data',
+          target: 'stream',
+          stream: { upload_url: 'https://upload.cloudflarestream.com/abc', stream_uid: 'abc' },
+          expires_at: '2026-04-29T13:00:00Z',
+        },
+      }),
+    )
+    const completeResponses = [
+      { ok: false as const, status: 202, error: 'transcode_in_progress' },
+      { ok: false as const, status: 202, error: 'transcode_in_progress' },
+      { ok: true as const, status: 200, body: { dataset: { id: 'DS1' }, verified_digest: 'sha256:x' } },
+    ]
+    let i = 0
+    const completeFn = vi.fn(() => Promise.resolve(completeResponses[i++]))
+    const client = fakeClient({
+      initAssetUpload: initFn,
+      completeAssetUpload: completeFn,
+      uploadBytes: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+    })
+    const { ctx } = makeCtx(['DS1', 'data', '/tmp/v.mp4'], [], client, {
+      '/tmp/v.mp4': 'fake',
+    })
+    // Patch sleep to skip the actual delay.
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void) => {
+      fn()
+      return 0 as unknown as ReturnType<typeof realSetTimeout>
+    }) as typeof setTimeout
+    try {
+      expect(await runUpload(ctx)).toBe(0)
+    } finally {
+      globalThis.setTimeout = realSetTimeout
+    }
+    expect(completeFn).toHaveBeenCalledTimes(3)
+  })
+
+  it('surfaces validation errors from /asset', async () => {
+    const initFn = vi.fn(() =>
+      Promise.resolve({
+        ok: false as const,
+        status: 400,
+        error: 'http_error',
+        errors: [{ field: 'size', code: 'size_exceeded', message: 'too big' }],
+      }),
+    )
+    const client = fakeClient({ initAssetUpload: initFn })
+    const { ctx, stderr } = makeCtx(['DS1', 'thumbnail', '/tmp/t.png'], [], client, {
+      '/tmp/t.png': 'fake',
+    })
+    expect(await runUpload(ctx)).toBe(1)
+    expect(stderr.text()).toContain('size_exceeded')
+  })
+
+  it('surfaces upload-byte failures', async () => {
+    const uploadFn = vi.fn(() =>
+      Promise.resolve({ ok: false, status: 403, message: 'SignatureDoesNotMatch' }),
+    )
+    const client = fakeClient({ uploadBytes: uploadFn })
+    const { ctx, stderr } = makeCtx(['DS1', 'thumbnail', '/tmp/t.png'], [], client, {
+      '/tmp/t.png': 'fake',
+    })
+    expect(await runUpload(ctx)).toBe(1)
+    expect(stderr.text()).toContain('Upload failed')
+    expect(stderr.text()).toContain('403')
+  })
+
+  it('skips uploadBytes entirely when the server flags mock=true', async () => {
+    const initFn = vi.fn(
+      (_id: string, _body: unknown) =>
+        Promise.resolve({
+          ok: true as const,
+          status: 200,
+          body: {
+            upload_id: 'UP1',
+            kind: 'thumbnail',
+            target: 'r2' as const,
+            r2: {
+              method: 'PUT' as const,
+              url: 'https://mock-r2.localhost/k',
+              headers: { 'Content-Type': 'image/png' },
+              key: 'k',
+            },
+            expires_at: '2026-04-29T13:00:00Z',
+            mock: true,
+          },
+        }),
+    )
+    const uploadFn = vi.fn(() => Promise.resolve({ ok: true, status: 200 }))
+    const completeFn = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        status: 200,
+        body: { dataset: { id: 'DS1' }, verified_digest: 'sha256:xyz' },
+      }),
+    )
+    const client = fakeClient({
+      initAssetUpload: initFn,
+      uploadBytes: uploadFn,
+      completeAssetUpload: completeFn,
+    })
+    const { ctx, stdout } = makeCtx(['DS1', 'thumbnail', '/tmp/t.png'], [], client, {
+      '/tmp/t.png': 'fake',
+    })
+    expect(await runUpload(ctx)).toBe(0)
+    expect(uploadFn).not.toHaveBeenCalled()
+    expect(completeFn).toHaveBeenCalledOnce()
+    expect(stdout.text()).toContain('mock mode')
+    expect(stdout.text()).toContain('completed')
   })
 })
 

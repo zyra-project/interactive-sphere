@@ -10,6 +10,24 @@
 
 -- Tables
 
+CREATE TABLE asset_uploads (
+  id              TEXT PRIMARY KEY,           -- ULID
+  dataset_id      TEXT NOT NULL,
+  publisher_id    TEXT NOT NULL,              -- who minted the URL
+  kind            TEXT NOT NULL,              -- data | thumbnail | legend | caption | sphere_thumbnail
+  target          TEXT NOT NULL,              -- r2 | stream
+  target_ref      TEXT NOT NULL,              -- r2:<key> | stream:<uid>
+  mime            TEXT NOT NULL,
+  declared_size   INTEGER NOT NULL,
+  claimed_digest  TEXT NOT NULL,              -- "sha256:<hex>"
+  status          TEXT NOT NULL,              -- pending | completed | failed
+  failure_reason  TEXT,                       -- machine-readable code; NULL when status != failed
+  created_at      TEXT NOT NULL,
+  completed_at    TEXT,                       -- stamped on completed | failed
+  FOREIGN KEY (dataset_id)   REFERENCES datasets(id) ON DELETE CASCADE,
+  FOREIGN KEY (publisher_id) REFERENCES publishers(id)
+);
+
 CREATE TABLE audit_events (
   id              TEXT PRIMARY KEY,           -- ULID
   actor_kind      TEXT NOT NULL,              -- publisher | peer | system
@@ -149,6 +167,15 @@ CREATE TABLE datasets (
   FOREIGN KEY (publisher_id) REFERENCES publishers(id)
 );
 
+CREATE TABLE featured_datasets (
+  dataset_id   TEXT PRIMARY KEY,
+  position     INTEGER NOT NULL,             -- display order; lower = higher
+  added_by     TEXT NOT NULL,                -- publishers.id
+  added_at     TEXT NOT NULL,
+  FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE,
+  FOREIGN KEY (added_by)   REFERENCES publishers(id)
+);
+
 CREATE TABLE node_identity (
   node_id            TEXT PRIMARY KEY,        -- ULID, generated at install
   display_name       TEXT NOT NULL,
@@ -197,8 +224,10 @@ CREATE TABLE tours (
 
 -- Indexes
 
+CREATE INDEX idx_asset_uploads_dataset ON asset_uploads(dataset_id, created_at);
 CREATE INDEX idx_audit_subject ON audit_events(subject_kind, subject_id, created_at);
 CREATE INDEX idx_datasets_publisher  ON datasets(publisher_id);
 CREATE INDEX idx_datasets_updated_at ON datasets(updated_at);
 CREATE INDEX idx_datasets_visibility ON datasets(visibility, is_hidden, retracted_at);
+CREATE INDEX idx_featured_datasets_position ON featured_datasets(position);
 CREATE INDEX idx_renditions_dataset ON dataset_renditions(dataset_id);

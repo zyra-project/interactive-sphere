@@ -9,7 +9,9 @@
  * directly against these handlers with a stubbed fetch.
  */
 
-import { readFileSync } from 'node:fs'
+import { createReadStream, readFileSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { basename, extname } from 'node:path'
 import type { TerravizClient } from './lib/client'
 import { getNumber, getString, type ParsedArgs } from './lib/args'
 
@@ -249,6 +251,258 @@ export async function runPreview(ctx: CommandContext): Promise<number> {
   return 0
 }
 
+// --- upload (Phase 1b) --------------------------------------------
+
+const UPLOAD_KINDS = new Set([
+  'data',
+  'thumbnail',
+  'legend',
+  'caption',
+  'sphere_thumbnail',
+])
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.vtt': 'text/vtt',
+  '.json': 'application/json',
+}
+
+function detectMime(path: string, override: string | undefined): string | null {
+  if (override) return override
+  const ext = extname(path).toLowerCase()
+  return MIME_BY_EXT[ext] ?? null
+}
+
+interface InitAssetEnvelope {
+  upload_id: string
+  kind: string
+  target: 'r2' | 'stream'
+  stream?: { upload_url: string; stream_uid: string }
+  r2?: {
+    method: 'PUT'
+    url: string
+    headers: Record<string, string>
+    key: string
+  }
+  expires_at: string
+  /**
+   * `true` when the server is running with `MOCK_R2=true` /
+   * `MOCK_STREAM=true` for this target — no real bytes need to
+   * be transferred (the mint URL is unreachable). The CLI honors
+   * this flag by skipping the byte upload entirely; `/complete`
+   * trusts the publisher's claimed digest as ground truth on the
+   * server side. Optional for backwards compatibility with
+   * pre-1b/I servers.
+   */
+  mock?: boolean
+}
+
+interface CompleteEnvelope {
+  dataset?: { id: string }
+  upload?: { id: string; status: string }
+  verified_digest?: string
+  idempotent?: boolean
+}
+
+const TRANSCODE_RETRY_MAX = 30 // ~ 5 minutes total at 10 s spacing
+const TRANSCODE_RETRY_DELAY_MS = 10_000
+
+/**
+ * Hard cap on what the CLI will read into memory for the upload
+ * body. Server-side validation allows up to 10 GB for `data`
+ * videos; pulling 10 GB into memory in a Node process is asking
+ * for OOMs and unbounded latency. The first cut of the CLI
+ * (Phase 1b) buffers; streaming / TUS-resumable uploads are a
+ * Phase 3 / Phase 4 follow-on. Until that ships we fail fast at a
+ * size where a bog-standard host has comfortable headroom.
+ */
+const CLI_INMEMORY_UPLOAD_LIMIT = 256 * 1024 * 1024 // 256 MB
+
+function formatBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
+  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(0)} MB`
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${n} B`
+}
+
+/**
+ * Stream-hash a file via `fs.createReadStream` + `crypto.createHash`.
+ * Memory footprint is one chunk (~64 KB) regardless of file size, so
+ * it's safe even for the multi-GB video assets we cap above.
+ */
+function streamingHash(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = createReadStream(path)
+    stream.on('error', reject)
+    stream.on('data', chunk => hash.update(chunk as Buffer))
+    stream.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+export async function runUpload(ctx: CommandContext): Promise<number> {
+  const datasetId = ctx.args.positional[0]
+  const kind = ctx.args.positional[1]
+  const path = ctx.args.positional[2]
+  if (!datasetId || !kind || !path) {
+    ctx.stderr.write(
+      'Usage: terraviz upload <dataset_id> <kind> <path> [--mime=<type>]\n' +
+        '  kind ∈ data | thumbnail | legend | caption | sphere_thumbnail\n',
+    )
+    return 2
+  }
+  if (!UPLOAD_KINDS.has(kind)) {
+    ctx.stderr.write(
+      `Unknown kind "${kind}". Allowed: data | thumbnail | legend | caption | sphere_thumbnail\n`,
+    )
+    return 2
+  }
+
+  const mimeOverride = getString(ctx.args.options, 'mime')
+  const mime = detectMime(path, mimeOverride)
+  if (!mime) {
+    ctx.stderr.write(
+      `Could not infer mime from extension "${extname(path)}". Pass --mime=<type> explicitly.\n`,
+    )
+    return 2
+  }
+
+  // Hash via streaming SHA-256 so a multi-GB video doesn't load into
+  // memory just to be hashed. The upload body still buffers (see
+  // CLI_INMEMORY_UPLOAD_LIMIT below) — TUS-resumable streaming
+  // uploads are a Phase 3 publisher-portal / Phase 4 federation
+  // concern. Until then, fail fast with a clear message before
+  // OOM-ing the host.
+  let bytes: Uint8Array
+  let size: number
+  let digest: string
+  if (ctx.readFile) {
+    // Test mode — readFile returns a string. Hash the materialised
+    // bytes the same way to keep the test surface small.
+    bytes = new TextEncoder().encode(ctx.readFile(path))
+    size = bytes.byteLength
+    digest = 'sha256:' + createHash('sha256').update(bytes).digest('hex')
+  } else {
+    let stat
+    try {
+      stat = statSync(path)
+    } catch (e) {
+      ctx.stderr.write(`Could not stat ${path}: ${e instanceof Error ? e.message : e}\n`)
+      return 2
+    }
+    if (stat.size > CLI_INMEMORY_UPLOAD_LIMIT) {
+      ctx.stderr.write(
+        `${path} is ${formatBytes(stat.size)}; the CLI currently uploads via an in-memory ` +
+          `buffer capped at ${formatBytes(CLI_INMEMORY_UPLOAD_LIMIT)}. ` +
+          `Streaming / TUS-resumable uploads are a future-phase follow-on; until then, please ` +
+          `upload large assets via the publisher portal (Phase 3) or split the asset.\n`,
+      )
+      return 5
+    }
+    // Stream-hash first so we never need to hold the whole file
+    // twice (once as Buffer, once as the hash input). Then read
+    // into memory for the upload body — within the cap above.
+    try {
+      digest = 'sha256:' + (await streamingHash(path))
+    } catch (e) {
+      ctx.stderr.write(`Could not hash ${path}: ${e instanceof Error ? e.message : e}\n`)
+      return 2
+    }
+    try {
+      bytes = readFileSync(path) as unknown as Uint8Array
+    } catch (e) {
+      ctx.stderr.write(`Could not read ${path}: ${e instanceof Error ? e.message : e}\n`)
+      return 2
+    }
+    size = bytes.byteLength
+  }
+
+  ctx.stdout.write(
+    `Uploading ${path} (${size} bytes) → ${datasetId} as ${kind}.\n` +
+      `  digest: ${digest}\n`,
+  )
+
+  // `kind` was validated against `UPLOAD_KINDS` above, so it's
+  // safe to widen the string into the AssetKind union the client
+  // method expects.
+  const init = await ctx.client.initAssetUpload<InitAssetEnvelope>(datasetId, {
+    kind: kind as 'data' | 'thumbnail' | 'legend' | 'caption' | 'sphere_thumbnail',
+    mime,
+    size,
+    content_digest: digest,
+  })
+  if (!init.ok) return emitFailure(ctx, init.status, init.error, init.message, init.errors)
+
+  const env = init.body
+  ctx.stdout.write(`  upload_id: ${env.upload_id} (target: ${env.target})\n`)
+
+  const target = env.target
+  let url: string
+  let headers: Record<string, string> = {}
+  if (target === 'stream' && env.stream) {
+    url = env.stream.upload_url
+  } else if (target === 'r2' && env.r2) {
+    url = env.r2.url
+    headers = env.r2.headers
+  } else {
+    ctx.stderr.write(`Server returned an unrecognised init envelope shape.\n`)
+    return 1
+  }
+
+  if (env.mock) {
+    // Server is in MOCK_R2 / MOCK_STREAM mode — the mint URL is a
+    // stub (mock-r2.localhost / mock-stream.localhost) that doesn't
+    // accept real bytes. Skip the PUT/POST entirely; `/complete`
+    // will trust our claimed digest as ground truth.
+    ctx.stdout.write(`  mock mode — skipping byte upload.\n`)
+  } else {
+    const upload = await ctx.client.uploadBytes(target, url, headers, bytes, mime, basename(path))
+    if (!upload.ok) {
+      ctx.stderr.write(
+        `Upload failed (${upload.status})${upload.message ? `: ${upload.message}` : ''}\n`,
+      )
+      return 1
+    }
+    ctx.stdout.write(`  bytes uploaded.\n`)
+  }
+
+  // Poll /complete. Stream returns 202 transcode_in_progress while
+  // the asset is transcoding; everything else is a one-shot.
+  const maxAttempts = target === 'stream' ? TRANSCODE_RETRY_MAX : 1
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const completed = await ctx.client.completeAssetUpload<CompleteEnvelope>(datasetId, env.upload_id)
+    if (completed.ok) {
+      ctx.stdout.write(
+        `  completed${completed.body.idempotent ? ' (idempotent retry)' : ''}.\n` +
+          (completed.body.verified_digest
+            ? `  verified_digest: ${completed.body.verified_digest}\n`
+            : ''),
+      )
+      return 0
+    }
+    if (completed.status === 202) {
+      // Transcode still running — wait + retry.
+      ctx.stdout.write(`  transcode in progress, retrying in ${TRANSCODE_RETRY_DELAY_MS / 1000}s…\n`)
+      await sleep(TRANSCODE_RETRY_DELAY_MS)
+      continue
+    }
+    return emitFailure(ctx, completed.status, completed.error, completed.message, completed.errors)
+  }
+  ctx.stderr.write(
+    `Stream transcode did not finish within ${(maxAttempts * TRANSCODE_RETRY_DELAY_MS) / 1000}s. ` +
+      `Re-run \`terraviz upload\` later — the same upload_id remains valid until /complete succeeds.\n`,
+  )
+  return 1
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 // --- tour subcommands ---------------------------------------------
 
 export async function runTour(ctx: CommandContext): Promise<number> {
@@ -352,6 +606,14 @@ Commands:
   update <id> <metadata.json>         Patch dataset metadata
   retract <id>                        Retract a dataset
   preview <id> [--ttl=<seconds>]      Mint a short-lived preview URL
+
+  upload <id> <kind> <path> [--mime=<type>]
+                                      Upload an asset and finalise it.
+                                      kind ∈ data | thumbnail | legend |
+                                              caption | sphere_thumbnail.
+                                      Mime sniffed from extension; --mime
+                                      overrides. Polls Stream transcode for
+                                      "data" kind videos before completing.
 
   tour publish <metadata.json>        Create a tour (does not auto-publish)
   tour update <id> <metadata.json>    Patch tour metadata
