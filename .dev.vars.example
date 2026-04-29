@@ -34,6 +34,10 @@ DEV_PUBLISHER_EMAIL=dev@localhost
 
 # --- Preview tokens -----------------------------------------------
 # HMAC-SHA-256 secret for the publisher-API preview tokens.
-# A deterministic dev-only fallback applies when unset, which is
-# fine for localhost but must be set in production.
+# Required in production — the preview endpoints fail closed
+# (503 preview_unconfigured) when this is unset, rather than
+# falling back to a guessable constant. A deterministic dev secret
+# applies only when DEV_BYPASS_ACCESS=true (which is itself
+# refused on non-loopback hostnames), so the inner-loop dev flow
+# above doesn't need to set this.
 # PREVIEW_SIGNING_KEY=

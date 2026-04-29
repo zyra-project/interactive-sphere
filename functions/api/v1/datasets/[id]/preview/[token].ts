@@ -53,7 +53,20 @@ export const onRequestGet: PagesFunction<CatalogEnv, Params> = async context => 
     return jsonError(400, 'invalid_request', 'Missing dataset id or token.')
   }
 
-  const claims = await verifyPreviewToken(resolveSigningSecret(context.env), token)
+  let secret: string
+  try {
+    secret = resolveSigningSecret(context.env)
+  } catch {
+    // Operator hasn't set PREVIEW_SIGNING_KEY in production. Fail
+    // closed with a typed envelope so an anonymous probe doesn't
+    // get a stack trace.
+    return jsonError(
+      503,
+      'preview_unconfigured',
+      'Preview tokens are not configured on this deployment.',
+    )
+  }
+  const claims = await verifyPreviewToken(secret, token)
   if (!claims || claims.kind !== 'dataset') {
     return jsonError(401, 'invalid_token', 'Preview token is invalid or expired.')
   }

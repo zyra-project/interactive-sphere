@@ -37,6 +37,21 @@ describe('GET /api/v1/datasets/{id}/preview/{token}', () => {
     expect(res.status).toBe(503)
   })
 
+  it('returns 503 preview_unconfigured when PREVIEW_SIGNING_KEY is missing', async () => {
+    // The fail-closed contract from preview-token.ts: a production
+    // deploy without PREVIEW_SIGNING_KEY refuses to verify any token
+    // rather than falling back to a guessable dev secret.
+    const sqlite = seedFixtures({ count: 1 })
+    const env = { CATALOG_DB: asD1(sqlite), CATALOG_KV: makeKV() }
+    const ctx = makeCtx<'id' | 'token'>({
+      env,
+      params: { id: ID, token: 'irrelevant.value' },
+    })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(503)
+    expect((await readJson<{ error: string }>(res)).error).toBe('preview_unconfigured')
+  })
+
   it('returns 401 for a malformed token', async () => {
     const { env } = setupEnv()
     const ctx = makeCtx<'id' | 'token'>({ env, params: { id: ID, token: 'not-a-token' } })

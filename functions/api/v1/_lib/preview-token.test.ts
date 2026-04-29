@@ -87,8 +87,23 @@ describe('preview-token', () => {
     expect(await verifyPreviewToken(SECRET, '')).toBeNull()
   })
 
-  it('falls back to a stable dev secret when env is unset', () => {
-    expect(resolveSigningSecret({})).toBe('dev-preview-secret-only-for-localhost')
+  it('throws when PREVIEW_SIGNING_KEY is missing in production', () => {
+    expect(() => resolveSigningSecret({})).toThrow(/PREVIEW_SIGNING_KEY/)
+    expect(() => resolveSigningSecret({ PREVIEW_SIGNING_KEY: '   ' })).toThrow(
+      /PREVIEW_SIGNING_KEY/,
+    )
+  })
+
+  it('honors a real PREVIEW_SIGNING_KEY over the dev fallback', () => {
     expect(resolveSigningSecret({ PREVIEW_SIGNING_KEY: 'real' })).toBe('real')
+    expect(
+      resolveSigningSecret({ PREVIEW_SIGNING_KEY: 'real', DEV_BYPASS_ACCESS: 'true' }),
+    ).toBe('real')
+  })
+
+  it('falls back to a stable dev secret only under DEV_BYPASS_ACCESS=true', () => {
+    expect(resolveSigningSecret({ DEV_BYPASS_ACCESS: 'true' })).toBe(
+      'dev-preview-secret-only-for-localhost',
+    )
   })
 })

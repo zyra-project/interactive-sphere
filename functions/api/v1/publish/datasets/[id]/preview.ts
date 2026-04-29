@@ -56,7 +56,16 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     return jsonError(400, 'invalid_ttl', `ttl_seconds must be in [1, ${MAX_TTL_SECONDS}].`)
   }
 
-  const secret = resolveSigningSecret(context.env)
+  let secret: string
+  try {
+    secret = resolveSigningSecret(context.env)
+  } catch (e) {
+    return jsonError(
+      503,
+      'preview_unconfigured',
+      e instanceof Error ? e.message : 'Preview signing key is not configured.',
+    )
+  }
   const token = await issuePreviewToken(
     secret,
     { kind: 'dataset', id, publisher_id: publisher.id },

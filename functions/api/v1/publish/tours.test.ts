@@ -59,7 +59,14 @@ function setupEnv() {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(STAFF.id, STAFF.email, STAFF.display_name, STAFF.role, STAFF.is_admin, STAFF.status, STAFF.created_at)
-  return { sqlite, env: { CATALOG_DB: asD1(sqlite), CATALOG_KV: makeKV() } }
+  return {
+    sqlite,
+    env: {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      PREVIEW_SIGNING_KEY: 'test-preview-secret',
+    },
+  }
 }
 
 async function readJson<T>(res: Response): Promise<T> {

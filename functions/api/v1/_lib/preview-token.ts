@@ -120,9 +120,24 @@ export async function verifyPreviewToken(
 }
 
 /**
- * Resolve the signing secret from env, with a deterministic fallback
- * for local dev. The fallback is intentionally obvious and stable.
+ * Resolve the signing secret from env. Fails closed in production:
+ * a missing `PREVIEW_SIGNING_KEY` is only tolerated when
+ * `DEV_BYPASS_ACCESS=true` (which the publisher middleware refuses
+ * to honor on non-loopback hostnames anyway). That keeps the
+ * deterministic dev secret useful for the contributor inner loop
+ * while making "operator forgot to set the secret in production"
+ * fail loudly instead of silently accepting forged tokens.
  */
-export function resolveSigningSecret(env: { PREVIEW_SIGNING_KEY?: string }): string {
-  return env.PREVIEW_SIGNING_KEY ?? DEV_FALLBACK_KEY
+export function resolveSigningSecret(env: {
+  PREVIEW_SIGNING_KEY?: string
+  DEV_BYPASS_ACCESS?: string
+}): string {
+  const explicit = env.PREVIEW_SIGNING_KEY?.trim()
+  if (explicit) return explicit
+  if (env.DEV_BYPASS_ACCESS === 'true') return DEV_FALLBACK_KEY
+  throw new Error(
+    'PREVIEW_SIGNING_KEY is not configured. Set it via ' +
+      '`npx wrangler pages secret put PREVIEW_SIGNING_KEY` in production, ' +
+      'or set DEV_BYPASS_ACCESS=true for local development.',
+  )
 }
