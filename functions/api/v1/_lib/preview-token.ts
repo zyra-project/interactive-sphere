@@ -120,24 +120,38 @@ export async function verifyPreviewToken(
 }
 
 /**
- * Resolve the signing secret from env. Fails closed in production:
- * a missing `PREVIEW_SIGNING_KEY` is only tolerated when
- * `DEV_BYPASS_ACCESS=true` (which the publisher middleware refuses
- * to honor on non-loopback hostnames anyway). That keeps the
- * deterministic dev secret useful for the contributor inner loop
- * while making "operator forgot to set the secret in production"
- * fail loudly instead of silently accepting forged tokens.
+ * Resolve the signing secret from env. Fails closed by default and
+ * gates the deterministic dev fallback behind two independent
+ * opt-ins.
+ *
+ * Why two: the anonymous preview consumer
+ * (`/api/v1/datasets/{id}/preview/{token}`) lives *outside* the
+ * publish middleware that refuses `DEV_BYPASS_ACCESS=true` on a
+ * non-loopback hostname. So a misconfigured production deploy with
+ * `DEV_BYPASS_ACCESS=true` left on but `PREVIEW_SIGNING_KEY` unset
+ * could still verify forged tokens against the constant fallback
+ * — hence requiring `ALLOW_DEV_PREVIEW_FALLBACK=true` as a second
+ * explicit acknowledgment that the operator really intends the dev
+ * secret. Both env vars must be set together; either alone fails
+ * closed.
  */
 export function resolveSigningSecret(env: {
   PREVIEW_SIGNING_KEY?: string
   DEV_BYPASS_ACCESS?: string
+  ALLOW_DEV_PREVIEW_FALLBACK?: string
 }): string {
   const explicit = env.PREVIEW_SIGNING_KEY?.trim()
   if (explicit) return explicit
-  if (env.DEV_BYPASS_ACCESS === 'true') return DEV_FALLBACK_KEY
+  if (
+    env.DEV_BYPASS_ACCESS === 'true' &&
+    env.ALLOW_DEV_PREVIEW_FALLBACK === 'true'
+  ) {
+    return DEV_FALLBACK_KEY
+  }
   throw new Error(
     'PREVIEW_SIGNING_KEY is not configured. Set it via ' +
       '`npx wrangler pages secret put PREVIEW_SIGNING_KEY` in production, ' +
-      'or set DEV_BYPASS_ACCESS=true for local development.',
+      'or set both DEV_BYPASS_ACCESS=true and ' +
+      'ALLOW_DEV_PREVIEW_FALLBACK=true to use the deterministic dev fallback.',
   )
 }

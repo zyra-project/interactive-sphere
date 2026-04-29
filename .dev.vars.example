@@ -35,9 +35,14 @@ DEV_PUBLISHER_EMAIL=dev@localhost
 # --- Preview tokens -----------------------------------------------
 # HMAC-SHA-256 secret for the publisher-API preview tokens.
 # Required in production — the preview endpoints fail closed
-# (503 preview_unconfigured) when this is unset, rather than
-# falling back to a guessable constant. A deterministic dev secret
-# applies only when DEV_BYPASS_ACCESS=true (which is itself
-# refused on non-loopback hostnames), so the inner-loop dev flow
-# above doesn't need to set this.
+# (503 preview_unconfigured) when this is unset.
+#
+# A deterministic dev fallback exists, but it requires BOTH
+# DEV_BYPASS_ACCESS=true AND ALLOW_DEV_PREVIEW_FALLBACK=true to
+# activate. The double gate exists because the anonymous preview
+# consumer endpoint lives outside the publish middleware that
+# refuses dev-bypass on non-loopback hostnames; requiring a
+# separate explicit opt-in keeps a production misconfig from
+# accepting forged tokens.
 # PREVIEW_SIGNING_KEY=
+# ALLOW_DEV_PREVIEW_FALLBACK=true

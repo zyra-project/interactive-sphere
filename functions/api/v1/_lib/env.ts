@@ -70,8 +70,20 @@ export interface CatalogEnv {
   /**
    * HMAC-SHA-256 secret used to sign short-lived preview tokens
    * (`POST /api/v1/publish/datasets/{id}/preview`). Stored as a
-   * Wrangler secret in production; a deterministic dev fallback
-   * applies when unset (see `_lib/preview-token.ts`).
+   * Wrangler secret in production. Required: the preview endpoints
+   * fail closed (503 `preview_unconfigured`) when this is unset
+   * unless BOTH `DEV_BYPASS_ACCESS=true` AND
+   * `ALLOW_DEV_PREVIEW_FALLBACK=true` are also set.
    */
   PREVIEW_SIGNING_KEY?: string
+  /**
+   * Belt-and-suspenders gate for the deterministic preview signing
+   * fallback. The publish middleware refuses `DEV_BYPASS_ACCESS=true`
+   * on a non-loopback hostname, but the anonymous preview consumer
+   * lives outside that middleware. Requiring this second flag keeps
+   * a production misconfig (someone forgets to remove
+   * `DEV_BYPASS_ACCESS=true`) from accidentally accepting forged
+   * preview tokens.
+   */
+  ALLOW_DEV_PREVIEW_FALLBACK?: string
 }

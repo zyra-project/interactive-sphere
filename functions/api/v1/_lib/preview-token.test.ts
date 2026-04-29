@@ -101,9 +101,24 @@ describe('preview-token', () => {
     ).toBe('real')
   })
 
-  it('falls back to a stable dev secret only under DEV_BYPASS_ACCESS=true', () => {
-    expect(resolveSigningSecret({ DEV_BYPASS_ACCESS: 'true' })).toBe(
-      'dev-preview-secret-only-for-localhost',
+  it('falls back to a stable dev secret only under both opt-in flags', () => {
+    expect(
+      resolveSigningSecret({
+        DEV_BYPASS_ACCESS: 'true',
+        ALLOW_DEV_PREVIEW_FALLBACK: 'true',
+      }),
+    ).toBe('dev-preview-secret-only-for-localhost')
+  })
+
+  it('refuses the dev fallback when only one of the two flags is set', () => {
+    // Either flag alone fails closed — the doubled gate exists so a
+    // production misconfig that forgets to remove DEV_BYPASS_ACCESS
+    // can't silently accept forged tokens via the constant fallback.
+    expect(() => resolveSigningSecret({ DEV_BYPASS_ACCESS: 'true' })).toThrow(
+      /PREVIEW_SIGNING_KEY/,
     )
+    expect(() =>
+      resolveSigningSecret({ ALLOW_DEV_PREVIEW_FALLBACK: 'true' }),
+    ).toThrow(/PREVIEW_SIGNING_KEY/)
   })
 })

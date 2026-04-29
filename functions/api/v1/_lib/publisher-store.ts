@@ -95,11 +95,17 @@ export async function getOrCreatePublisher(
     status,
     created_at: new Date().toISOString(),
   }
+  // Race-safe insert: two concurrent first-hits for the same email
+  // both pass the SELECT above, then one INSERT trips the UNIQUE
+  // constraint on `publishers.email`. `ON CONFLICT(email) DO NOTHING`
+  // turns the loser into a no-op rather than a 500; we then re-read
+  // to pick up whichever row won.
   await db
     .prepare(
       `INSERT INTO publishers
          (id, email, display_name, affiliation, org_id, role, is_admin, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(email) DO NOTHING`,
     )
     .bind(
       row.id,
@@ -113,6 +119,10 @@ export async function getOrCreatePublisher(
       row.created_at,
     )
     .run()
-  return row
+  const persisted = await db
+    .prepare('SELECT * FROM publishers WHERE email = ? LIMIT 1')
+    .bind(identity.email)
+    .first<PublisherRow>()
+  return persisted ?? row
 }
 

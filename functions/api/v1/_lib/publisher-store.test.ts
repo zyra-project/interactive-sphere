@@ -122,4 +122,30 @@ describe('getOrCreatePublisher', () => {
     expect(second.id).toBe(first.id)
     expect(second.created_at).toBe(first.created_at)
   })
+
+  it('handles a concurrent first-hit without raising the UNIQUE constraint', async () => {
+    // Two requests for the same email both miss the SELECT and
+    // race to INSERT. The ON CONFLICT(email) DO NOTHING clause
+    // turns the loser into a no-op; the re-SELECT then returns
+    // whichever row won. End result: both callers get the same
+    // publisher with no surface-level error.
+    const sqlite = seedFixtures({ count: 0 })
+    const db = asD1(sqlite)
+    const identity = {
+      email: 'race@example.com',
+      sub: 'sub-race',
+      type: 'user' as const,
+    }
+    const [a, b] = await Promise.all([
+      getOrCreatePublisher(db, identity),
+      getOrCreatePublisher(db, identity),
+    ])
+    expect(a.email).toBe('race@example.com')
+    expect(b.email).toBe('race@example.com')
+    expect(a.id).toBe(b.id)
+    const count = sqlite.prepare('SELECT COUNT(*) AS n FROM publishers').get() as {
+      n: number
+    }
+    expect(count.n).toBe(1)
+  })
 })

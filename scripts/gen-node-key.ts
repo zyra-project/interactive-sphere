@@ -33,7 +33,7 @@
  */
 
 import { generateKeyPairSync } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findCatalogD1File } from './lib/d1-local.ts'
@@ -159,14 +159,15 @@ function main(): void {
 // Detect "is this file the entry point" vs. "imported by a test".
 // The naive `import.meta.url === \`file://${process.argv[1]}\`` form
 // is broken on Windows (path separators, drive letters, file-URL
-// percent-encoding) and on POSIX systems where argv[1] is a
-// symlink. Comparing the canonical filesystem paths via
-// `fileURLToPath` + `realpathSync.native` works everywhere.
+// percent-encoding) and on POSIX systems where either side might
+// be reached via a symlink (e.g. an `npm link`-ed bin). We
+// canonicalize both sides with `realpathSync.native` so symlink
+// indirection on either side doesn't suppress `main()`.
 function isInvokedAsScript(): boolean {
   if (!process.argv[1]) return false
   try {
-    const here = fileURLToPath(import.meta.url)
-    const argv1 = resolve(process.argv[1])
+    const here = realpathSync.native(fileURLToPath(import.meta.url))
+    const argv1 = realpathSync.native(resolve(process.argv[1]))
     return here === argv1
   } catch {
     return false
