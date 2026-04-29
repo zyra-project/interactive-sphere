@@ -136,4 +136,106 @@ describe('TerravizClient', () => {
     expect(calls[0].headers.get('Content-Type')).toBe('application/json')
     expect(JSON.parse(calls[0].body!)).toEqual({ title: 'New' })
   })
+
+  it('initAssetUpload POSTs the JSON body to the asset endpoint', async () => {
+    const { fetchImpl, calls } = recordingFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            upload_id: 'UP1',
+            kind: 'thumbnail',
+            target: 'r2',
+            r2: { method: 'PUT', url: 'https://r2/k', headers: {}, key: 'k' },
+            expires_at: '2026-04-29T13:00:00Z',
+          }),
+          { status: 201 },
+        ),
+    )
+    const client = new TerravizClient(baseConfig, { fetchImpl })
+    const result = await client.initAssetUpload('DS001', {
+      kind: 'thumbnail',
+      mime: 'image/png',
+      size: 1234,
+      content_digest: 'sha256:' + 'a'.repeat(64),
+    })
+    expect(result.ok).toBe(true)
+    expect(calls[0].url).toBe(`${SERVER}/api/v1/publish/datasets/DS001/asset`)
+    expect(calls[0].method).toBe('POST')
+    const body = JSON.parse(calls[0].body!) as { kind: string; mime: string }
+    expect(body.kind).toBe('thumbnail')
+    expect(body.mime).toBe('image/png')
+  })
+
+  it('completeAssetUpload POSTs to the upload-id sub-route with no body', async () => {
+    const { fetchImpl, calls } = recordingFetch(
+      () => new Response(JSON.stringify({ dataset: { id: 'DS001' } }), { status: 200 }),
+    )
+    const client = new TerravizClient(baseConfig, { fetchImpl })
+    await client.completeAssetUpload('DS001', 'UP1')
+    expect(calls[0].url).toBe(
+      `${SERVER}/api/v1/publish/datasets/DS001/asset/UP1/complete`,
+    )
+    expect(calls[0].method).toBe('POST')
+    expect(calls[0].body).toBeNull()
+  })
+
+  it('uploadBytes PUTs raw bytes for r2 with the supplied headers', async () => {
+    const seenInits: RequestInit[] = []
+    const fetchImpl = vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+      seenInits.push(init!)
+      return new Response('', { status: 200 })
+    }) as unknown as typeof fetch
+    const client = new TerravizClient(baseConfig, { fetchImpl })
+    const bytes = new TextEncoder().encode('hello')
+    const result = await client.uploadBytes(
+      'r2',
+      'https://r2/k',
+      { 'Content-Type': 'image/png' },
+      bytes,
+      'image/png',
+      'thumb.png',
+    )
+    expect(result.ok).toBe(true)
+    expect(seenInits[0].method).toBe('PUT')
+    const sentHeaders = new Headers(seenInits[0].headers)
+    expect(sentHeaders.get('Content-Type')).toBe('image/png')
+    expect(sentHeaders.get('Content-Length')).toBe(String(bytes.byteLength))
+  })
+
+  it('uploadBytes POSTs multipart for stream targets', async () => {
+    const seenInits: RequestInit[] = []
+    const fetchImpl = vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+      seenInits.push(init!)
+      return new Response('', { status: 200 })
+    }) as unknown as typeof fetch
+    const client = new TerravizClient(baseConfig, { fetchImpl })
+    await client.uploadBytes(
+      'stream',
+      'https://upload.cloudflarestream.com/abc',
+      {},
+      new TextEncoder().encode('mp4 bytes'),
+      'video/mp4',
+      'v.mp4',
+    )
+    expect(seenInits[0].method).toBe('POST')
+    expect(seenInits[0].body).toBeInstanceOf(FormData)
+  })
+
+  it('uploadBytes returns ok:false with the response status on non-2xx', async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response('SignatureDoesNotMatch', { status: 403 }),
+    ) as unknown as typeof fetch
+    const client = new TerravizClient(baseConfig, { fetchImpl })
+    const result = await client.uploadBytes(
+      'r2',
+      'https://r2/k',
+      { 'Content-Type': 'image/png' },
+      new TextEncoder().encode(''),
+      'image/png',
+      'thumb.png',
+    )
+    expect(result.ok).toBe(false)
+    expect(result.status).toBe(403)
+    expect(result.message).toContain('SignatureDoesNotMatch')
+  })
 })

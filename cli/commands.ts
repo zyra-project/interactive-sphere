@@ -10,6 +10,8 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { basename, extname } from 'node:path'
 import type { TerravizClient } from './lib/client'
 import { getNumber, getString, type ParsedArgs } from './lib/args'
 
@@ -249,6 +251,177 @@ export async function runPreview(ctx: CommandContext): Promise<number> {
   return 0
 }
 
+// --- upload (Phase 1b) --------------------------------------------
+
+const UPLOAD_KINDS = new Set([
+  'data',
+  'thumbnail',
+  'legend',
+  'caption',
+  'sphere_thumbnail',
+])
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.vtt': 'text/vtt',
+  '.json': 'application/json',
+}
+
+function detectMime(path: string, override: string | undefined): string | null {
+  if (override) return override
+  const ext = extname(path).toLowerCase()
+  return MIME_BY_EXT[ext] ?? null
+}
+
+interface InitAssetEnvelope {
+  upload_id: string
+  kind: string
+  target: 'r2' | 'stream'
+  stream?: { upload_url: string; stream_uid: string }
+  r2?: {
+    method: 'PUT'
+    url: string
+    headers: Record<string, string>
+    key: string
+  }
+  expires_at: string
+}
+
+interface CompleteEnvelope {
+  dataset?: { id: string }
+  upload?: { id: string; status: string }
+  verified_digest?: string
+  idempotent?: boolean
+}
+
+const TRANSCODE_RETRY_MAX = 30 // ~ 5 minutes total at 10 s spacing
+const TRANSCODE_RETRY_DELAY_MS = 10_000
+
+export async function runUpload(ctx: CommandContext): Promise<number> {
+  const datasetId = ctx.args.positional[0]
+  const kind = ctx.args.positional[1]
+  const path = ctx.args.positional[2]
+  if (!datasetId || !kind || !path) {
+    ctx.stderr.write(
+      'Usage: terraviz upload <dataset_id> <kind> <path> [--mime=<type>]\n' +
+        '  kind ∈ data | thumbnail | legend | caption | sphere_thumbnail\n',
+    )
+    return 2
+  }
+  if (!UPLOAD_KINDS.has(kind)) {
+    ctx.stderr.write(
+      `Unknown kind "${kind}". Allowed: data | thumbnail | legend | caption | sphere_thumbnail\n`,
+    )
+    return 2
+  }
+
+  const mimeOverride = getString(ctx.args.options, 'mime')
+  const mime = detectMime(path, mimeOverride)
+  if (!mime) {
+    ctx.stderr.write(
+      `Could not infer mime from extension "${extname(path)}". Pass --mime=<type> explicitly.\n`,
+    )
+    return 2
+  }
+
+  // Read + hash. For 1b we read the whole file into memory — the
+  // simplest path that round-trips bytes correctly through both
+  // backends; the publisher portal (Phase 3) and a future
+  // resumable-tus path are where the streaming hash earns its
+  // keep. The publisher API caps `data` uploads at 10 GB which is
+  // enforced server-side regardless of how the CLI reads the file.
+  const reader = ctx.readFile ?? ((p: string) => readFileSync(p, 'utf-8'))
+  let bytes: Uint8Array
+  if (ctx.readFile) {
+    // Test mode — readFile returns a string.
+    bytes = new TextEncoder().encode(reader(path))
+  } else {
+    try {
+      bytes = readFileSync(path) as unknown as Uint8Array
+    } catch (e) {
+      ctx.stderr.write(`Could not read ${path}: ${e instanceof Error ? e.message : e}\n`)
+      return 2
+    }
+  }
+
+  const size = bytes.byteLength
+  const digest = 'sha256:' + createHash('sha256').update(bytes).digest('hex')
+
+  ctx.stdout.write(
+    `Uploading ${path} (${size} bytes) → ${datasetId} as ${kind}.\n` +
+      `  digest: ${digest}\n`,
+  )
+
+  const init = await ctx.client.initAssetUpload<InitAssetEnvelope>(datasetId, {
+    kind: kind as 'data',
+    mime,
+    size,
+    content_digest: digest,
+  })
+  if (!init.ok) return emitFailure(ctx, init.status, init.error, init.message, init.errors)
+
+  const env = init.body
+  ctx.stdout.write(`  upload_id: ${env.upload_id} (target: ${env.target})\n`)
+
+  const target = env.target
+  let url: string
+  let headers: Record<string, string> = {}
+  if (target === 'stream' && env.stream) {
+    url = env.stream.upload_url
+  } else if (target === 'r2' && env.r2) {
+    url = env.r2.url
+    headers = env.r2.headers
+  } else {
+    ctx.stderr.write(`Server returned an unrecognised init envelope shape.\n`)
+    return 1
+  }
+
+  const upload = await ctx.client.uploadBytes(target, url, headers, bytes, mime, basename(path))
+  if (!upload.ok) {
+    ctx.stderr.write(
+      `Upload failed (${upload.status})${upload.message ? `: ${upload.message}` : ''}\n`,
+    )
+    return 1
+  }
+  ctx.stdout.write(`  bytes uploaded.\n`)
+
+  // Poll /complete. Stream returns 202 transcode_in_progress while
+  // the asset is transcoding; everything else is a one-shot.
+  const maxAttempts = target === 'stream' ? TRANSCODE_RETRY_MAX : 1
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const completed = await ctx.client.completeAssetUpload<CompleteEnvelope>(datasetId, env.upload_id)
+    if (completed.ok) {
+      ctx.stdout.write(
+        `  completed${completed.body.idempotent ? ' (idempotent retry)' : ''}.\n` +
+          (completed.body.verified_digest
+            ? `  verified_digest: ${completed.body.verified_digest}\n`
+            : ''),
+      )
+      return 0
+    }
+    if (completed.status === 202) {
+      // Transcode still running — wait + retry.
+      ctx.stdout.write(`  transcode in progress, retrying in ${TRANSCODE_RETRY_DELAY_MS / 1000}s…\n`)
+      await sleep(TRANSCODE_RETRY_DELAY_MS)
+      continue
+    }
+    return emitFailure(ctx, completed.status, completed.error, completed.message, completed.errors)
+  }
+  ctx.stderr.write(
+    `Stream transcode did not finish within ${(maxAttempts * TRANSCODE_RETRY_DELAY_MS) / 1000}s. ` +
+      `Re-run \`terraviz upload\` later — the same upload_id remains valid until /complete succeeds.\n`,
+  )
+  return 1
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 // --- tour subcommands ---------------------------------------------
 
 export async function runTour(ctx: CommandContext): Promise<number> {
@@ -352,6 +525,14 @@ Commands:
   update <id> <metadata.json>         Patch dataset metadata
   retract <id>                        Retract a dataset
   preview <id> [--ttl=<seconds>]      Mint a short-lived preview URL
+
+  upload <id> <kind> <path> [--mime=<type>]
+                                      Upload an asset and finalise it.
+                                      kind ∈ data | thumbnail | legend |
+                                              caption | sphere_thumbnail.
+                                      Mime sniffed from extension; --mime
+                                      overrides. Polls Stream transcode for
+                                      "data" kind videos before completing.
 
   tour publish <metadata.json>        Create a tour (does not auto-publish)
   tour update <id> <metadata.json>    Patch tour metadata

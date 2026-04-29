@@ -25,6 +25,7 @@ import {
   runRetract,
   runTour,
   runUpdate,
+  runUpload,
   type CommandContext,
 } from './commands'
 
@@ -66,6 +67,8 @@ async function main(argv: string[]): Promise<number> {
       return runRetract(ctx)
     case 'preview':
       return runPreview(ctx)
+    case 'upload':
+      return runUpload(ctx)
     case 'tour':
       return runTour(ctx)
     case 'help':
