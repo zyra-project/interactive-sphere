@@ -86,4 +86,40 @@ export interface CatalogEnv {
    * preview tokens.
    */
   ALLOW_DEV_PREVIEW_FALLBACK?: string
+  /**
+   * R2 bucket binding for catalog assets — sphere thumbnails,
+   * non-Stream image data, legends, captions, tour JSON. The
+   * binding is what the asset-complete handler uses to read
+   * just-uploaded bytes and verify `content_digest` (Phase 1b).
+   * Wrangler provisions a local on-disk emulation under
+   * `.wrangler/state/v3/r2/` even without real credentials.
+   */
+  CATALOG_R2?: R2Bucket
+  /**
+   * Bucket name as configured in the R2 dashboard. Defaults to
+   * `terraviz-assets` (the canonical name in
+   * `CATALOG_ASSETS_PIPELINE.md`); override only if a fork picks
+   * a different name. Used to build the SigV4 host for presigned
+   * PUT URLs.
+   */
+  CATALOG_R2_BUCKET?: string
+  /**
+   * R2 S3-compatible endpoint, e.g.
+   * `https://<account>.r2.cloudflarestorage.com`. Required for
+   * presigned-PUT minting; the dashboard prints it on the bucket
+   * page. Local dev with `MOCK_R2=true` does not need it.
+   */
+  R2_S3_ENDPOINT?: string
+  /** R2 S3 access-key id. Cloudflare dashboard → R2 → Manage API tokens. */
+  R2_ACCESS_KEY_ID?: string
+  /** R2 S3 secret access key — Wrangler secret in production. */
+  R2_SECRET_ACCESS_KEY?: string
+  /**
+   * `"true"` makes the asset-init handler emit deterministic
+   * `https://mock-r2.localhost/...` URLs instead of real
+   * presigned ones, so the contributor walkthrough works without
+   * an R2 S3 token. Server-side digest verification continues to
+   * use the `CATALOG_R2` binding regardless.
+   */
+  MOCK_R2?: string
 }

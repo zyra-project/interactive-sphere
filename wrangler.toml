@@ -94,3 +94,32 @@ id = "9c022b1295314939b76a28769fef6195"
 [[kv_namespaces]]
 binding = "CATALOG_KV"
 id = "00000000000000000000000000000000"
+
+# R2 bucket for catalog assets (Phase 1b onward) — sphere thumbnails,
+# image data refs, legends, captions, and tour JSON. Stream handles
+# video uploads via its own API (see STREAM_ACCOUNT_ID +
+# STREAM_API_TOKEN secrets); R2 carries everything else. Keys are
+# content-addressed (`datasets/{id}/by-digest/sha256/{hex}/asset.{ext}`)
+# per `docs/CATALOG_ASSETS_PIPELINE.md`, so revisions land at new
+# paths without invalidating existing caches.
+#
+# Two parallel access modes:
+#   - The Workers binding below is what server-side handlers use to
+#     read just-uploaded bytes and verify `content_digest`. Wrangler
+#     provisions a local on-disk bucket under
+#     `.wrangler/state/v3/r2/` even without real R2 credentials, so
+#     tests + dev work offline.
+#   - Browser / CLI uploads use S3-compatible presigned PUT URLs
+#     minted by `functions/api/v1/_lib/r2-store.ts`. That path needs
+#     `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`
+#     in `.dev.vars` (or `MOCK_R2=true` for the contributor
+#     walkthrough, which skips signing).
+#
+# Pages reads the binding from the dashboard, not this file: wire it
+# under Settings → Bindings → R2 → variable name CATALOG_R2 → bucket
+# created via `wrangler r2 bucket create terraviz-assets`. The bucket
+# name override knob is `CATALOG_R2_BUCKET` in `.dev.vars` (default
+# `terraviz-assets`, matching `bucket_name` below).
+[[r2_buckets]]
+binding = "CATALOG_R2"
+bucket_name = "terraviz-assets"
