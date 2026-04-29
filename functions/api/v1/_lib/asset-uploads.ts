@@ -299,3 +299,103 @@ export async function markAssetUploadFailed(
     .bind(completedAt, reason, id)
     .run()
 }
+
+/**
+ * Flip the appropriate `*_ref` (and digest) column on the
+ * `datasets` row for a successfully-verified upload.
+ *
+ *   - `data` over R2:     data_ref + content_digest
+ *   - `data` over Stream: data_ref + source_digest (master-playlist
+ *                         hash for content_digest is a Phase 4
+ *                         manifest concern; Stream's bytes are
+ *                         opaque so we trust the claim)
+ *   - everything else:    *_ref + auxiliary_digests JSON merge
+ *
+ * Does not invalidate the KV snapshot or stamp the asset_uploads
+ * row — both happen in the route handler so the audit ordering is
+ * one place.
+ */
+export async function applyAssetToDataset(
+  db: D1Database,
+  datasetId: string,
+  upload: AssetUploadRow,
+  verifiedDigest: string,
+  now: string,
+): Promise<void> {
+  if (upload.kind === 'data') {
+    if (upload.target === 'stream') {
+      await db
+        .prepare(
+          `UPDATE datasets
+             SET data_ref = ?, source_digest = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(upload.target_ref, verifiedDigest, now, datasetId)
+        .run()
+    } else {
+      await db
+        .prepare(
+          `UPDATE datasets
+             SET data_ref = ?, content_digest = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(upload.target_ref, verifiedDigest, now, datasetId)
+        .run()
+    }
+    return
+  }
+
+  // Auxiliary asset — stamp `*_ref` + merge into auxiliary_digests JSON.
+  const refColumn = AUX_REF_COLUMN[upload.kind]
+  const digestKey = AUX_DIGEST_KEY[upload.kind]
+  const row = await db
+    .prepare(`SELECT auxiliary_digests FROM datasets WHERE id = ?`)
+    .bind(datasetId)
+    .first<{ auxiliary_digests: string | null }>()
+  const merged = mergeAuxDigests(row?.auxiliary_digests ?? null, digestKey, verifiedDigest)
+  await db
+    .prepare(
+      `UPDATE datasets
+         SET ${refColumn} = ?, auxiliary_digests = ?, updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(upload.target_ref, merged, now, datasetId)
+    .run()
+}
+
+const AUX_REF_COLUMN: Record<Exclude<AssetKind, 'data'>, string> = {
+  thumbnail: 'thumbnail_ref',
+  sphere_thumbnail: 'sphere_thumbnail_ref',
+  legend: 'legend_ref',
+  caption: 'caption_ref',
+}
+
+const AUX_DIGEST_KEY: Record<Exclude<AssetKind, 'data'>, string> = {
+  thumbnail: 'thumbnail',
+  sphere_thumbnail: 'sphere_thumbnail',
+  legend: 'legend',
+  caption: 'caption',
+}
+
+function mergeAuxDigests(
+  existingJson: string | null,
+  key: string,
+  digest: string,
+): string {
+  let parsed: Record<string, string> = {}
+  if (existingJson) {
+    try {
+      const value = JSON.parse(existingJson) as unknown
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        parsed = value as Record<string, string>
+      }
+    } catch {
+      // Existing payload is malformed — overwrite. The publisher API
+      // is the only writer to this column so this should never
+      // happen in a healthy deployment, but a defensive recovery is
+      // free.
+    }
+  }
+  parsed[key] = digest
+  return JSON.stringify(parsed)
+}

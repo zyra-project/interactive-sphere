@@ -1,0 +1,203 @@
+/**
+ * POST /api/v1/publish/datasets/{id}/asset/{upload_id}/complete
+ *
+ * Finalise an asset upload that the publisher claims has finished
+ * uploading bytes to the URL we minted in `POST .../asset`.
+ *
+ * Steps:
+ *   1. Look up the `asset_uploads` row by `upload_id`. 404 if not
+ *      found, 409 if not still `pending` (idempotent retry on a
+ *      completed row → 200 with the existing dataset; re-attempt on
+ *      a failed row → 409, the publisher must mint a fresh upload).
+ *   2. Authorise: caller must own the dataset (same scope rule as
+ *      the rest of `/publish/`).
+ *   3. Verify the digest:
+ *        - R2 uploads:    fetch the object via the R2 binding and
+ *                         recompute SHA-256. Mismatch → mark failed,
+ *                         return 409.
+ *        - Stream uploads: poll Stream's transcode-status endpoint.
+ *                          Still processing → 202 with a retry hint
+ *                          (no row mutation). Errored → mark failed.
+ *                          Ready → trust the publisher's claim as
+ *                          source_digest; full master-playlist hash
+ *                          for `content_digest` is a Phase 4
+ *                          concern.
+ *   4. Flip the `*_ref` column on the `datasets` row (and either
+ *      `content_digest` for R2 data, `source_digest` for Stream
+ *      data, or `auxiliary_digests.<kind>` for auxiliary assets).
+ *   5. Mark the asset_uploads row `completed`.
+ *   6. Invalidate the KV catalog snapshot if the dataset is
+ *      currently published — same rule as `updateDataset`.
+ *   7. Return the updated dataset row in the same envelope shape as
+ *      `GET /api/v1/publish/datasets/{id}`.
+ *
+ * Failure envelopes match the rest of the publisher API:
+ *   - `{ error, message }` for 404 / 409 / 503 system-level errors.
+ *   - `{ errors: [{field, code, message}] }` is unused here — there's
+ *     no body to validate beyond the upload id, which lives in the
+ *     URL path.
+ */
+
+import type { CatalogEnv } from '../../../../../_lib/env'
+import type { PublisherData } from '../../../../_middleware'
+import type { DatasetRow } from '../../../../../_lib/catalog-store'
+import { getDatasetForPublisher } from '../../../../../_lib/dataset-mutations'
+import { invalidateSnapshot } from '../../../../../_lib/snapshot'
+import { verifyContentDigest } from '../../../../../_lib/r2-store'
+import { getTranscodeStatus } from '../../../../../_lib/stream-store'
+import {
+  applyAssetToDataset,
+  getAssetUpload,
+  markAssetUploadCompleted,
+  markAssetUploadFailed,
+} from '../../../../../_lib/asset-uploads'
+
+const CONTENT_TYPE = 'application/json; charset=utf-8'
+
+function jsonError(status: number, error: string, message: string, extra?: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ error, message, ...extra }), {
+    status,
+    headers: { 'Content-Type': CONTENT_TYPE },
+  })
+}
+
+interface RouteParams {
+  id: string
+  upload_id: string
+}
+
+function pickParam(value: string | string[] | undefined): string | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] : value
+}
+
+export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async context => {
+  const publisher = (context.data as unknown as PublisherData).publisher
+  const datasetId = pickParam(context.params.id as string | string[] | undefined)
+  const uploadId = pickParam(context.params.upload_id as string | string[] | undefined)
+  if (!datasetId || !uploadId) {
+    return jsonError(400, 'invalid_request', 'Missing dataset id or upload id.')
+  }
+
+  const dataset = await getDatasetForPublisher(context.env.CATALOG_DB!, publisher, datasetId)
+  if (!dataset) return jsonError(404, 'not_found', `Dataset ${datasetId} not found.`)
+
+  const upload = await getAssetUpload(context.env.CATALOG_DB!, uploadId)
+  if (!upload) return jsonError(404, 'not_found', `Upload ${uploadId} not found.`)
+
+  // Tie the upload to the dataset id from the URL — the storage row
+  // is the source of truth, but a publisher who's discovered another
+  // tenant's upload_id should not be able to apply it to their own
+  // dataset.
+  if (upload.dataset_id !== datasetId) {
+    return jsonError(404, 'not_found', `Upload ${uploadId} not found.`)
+  }
+
+  if (upload.status === 'completed') {
+    // Idempotent retry — the row was already applied. Surface the
+    // current dataset so the caller has an up-to-date view.
+    return new Response(JSON.stringify({ dataset, upload, idempotent: true }), {
+      status: 200,
+      headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
+    })
+  }
+  if (upload.status === 'failed') {
+    return jsonError(
+      409,
+      'upload_failed',
+      `Upload ${uploadId} previously failed (${upload.failure_reason ?? 'unknown'}). Mint a fresh upload to retry.`,
+    )
+  }
+
+  // ----- Verify the digest -----
+  let verifiedDigest = upload.claimed_digest
+
+  if (upload.target === 'r2') {
+    if (!upload.target_ref.startsWith('r2:')) {
+      return jsonError(500, 'malformed_target_ref', `Upload ${uploadId} has an unparseable target_ref.`)
+    }
+    const key = upload.target_ref.slice('r2:'.length)
+    const verification = await verifyContentDigest(context.env, key, upload.claimed_digest)
+    if (!verification.ok) {
+      const now = new Date().toISOString()
+      switch (verification.reason) {
+        case 'binding_missing':
+          return jsonError(503, 'r2_binding_missing', 'CATALOG_R2 binding is not configured on this deployment.')
+        case 'malformed_claim':
+          // Should never reach here — the init handler validates the
+          // claim shape — but defending against direct row writes.
+          await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'malformed_claim', now)
+          return jsonError(409, 'malformed_claim', 'Stored content_digest claim is malformed.')
+        case 'missing':
+          await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'asset_missing', now)
+          return jsonError(
+            409,
+            'asset_missing',
+            `Object at ${key} is not present in R2. The publisher likely never uploaded the bytes; mint a fresh upload to retry.`,
+          )
+        case 'mismatch':
+          await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'digest_mismatch', now)
+          return jsonError(409, 'digest_mismatch', 'Recomputed digest does not match the claim.', {
+            claimed: verification.claimed,
+            actual: verification.actual,
+          })
+      }
+    }
+    verifiedDigest = verification.digest
+  } else if (upload.target === 'stream') {
+    if (!upload.target_ref.startsWith('stream:')) {
+      return jsonError(500, 'malformed_target_ref', `Upload ${uploadId} has an unparseable target_ref.`)
+    }
+    const uid = upload.target_ref.slice('stream:'.length)
+    let status
+    try {
+      status = await getTranscodeStatus(context.env, uid)
+    } catch (err) {
+      return jsonError(503, 'stream_unconfigured', err instanceof Error ? err.message : String(err))
+    }
+    if (status.state === 'pending' || status.state === 'processing') {
+      return jsonError(
+        202,
+        'transcode_in_progress',
+        `Stream transcode is ${status.state}. Retry after a short delay.`,
+      )
+    }
+    if (status.state === 'error') {
+      const now = new Date().toISOString()
+      const reason = status.errors?.join(', ') || 'transcode_error'
+      await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, reason, now)
+      return jsonError(409, 'transcode_error', `Stream transcoding failed: ${reason}`)
+    }
+    // ready — trust the publisher's claimed digest (source-of-truth
+    // hash); see `CATALOG_ASSETS_PIPELINE.md` "Stream assets:
+    // bridging the model".
+    verifiedDigest = upload.claimed_digest
+  }
+
+  // ----- Apply to the dataset row + mark the upload complete -----
+  const now = new Date().toISOString()
+  await applyAssetToDataset(context.env.CATALOG_DB!, datasetId, upload, verifiedDigest, now)
+  await markAssetUploadCompleted(context.env.CATALOG_DB!, uploadId, now)
+
+  // Read the updated row so we can return it + decide whether the
+  // public catalog snapshot needs invalidation.
+  const updated = await context.env.CATALOG_DB!
+    .prepare(`SELECT * FROM datasets WHERE id = ?`)
+    .bind(datasetId)
+    .first<DatasetRow>()
+  if (updated?.published_at && !updated.retracted_at) {
+    await invalidateSnapshot(context.env)
+  }
+
+  return new Response(
+    JSON.stringify({
+      dataset: updated,
+      upload: { ...upload, status: 'completed', completed_at: now },
+      verified_digest: verifiedDigest,
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
+    },
+  )
+}
