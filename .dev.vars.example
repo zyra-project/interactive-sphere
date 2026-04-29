@@ -46,3 +46,54 @@ DEV_PUBLISHER_EMAIL=dev@localhost
 # accepting forged tokens.
 # PREVIEW_SIGNING_KEY=
 # ALLOW_DEV_PREVIEW_FALLBACK=true
+
+# --- Asset pipeline (Phase 1b) ------------------------------------
+# Cloudflare Stream + R2 are the asset-storage backends. Local dev
+# defaults to mock mode for both so the contributor walkthrough
+# works without a Cloudflare Stream subscription or R2 S3 token.
+#
+# When MOCK_STREAM=true is set, `mintDirectUploadUrl` returns a
+# deterministic `https://mock-stream.localhost/...` URL and
+# `getTranscodeStatus` reports 'ready' immediately. The publisher
+# API surfaces those upload URLs via /asset; the bytes never
+# actually flow anywhere, but every flow downstream — /complete
+# digest verification (R2), state-machine transitions, dataset row
+# flips — operates on the persisted rows just as in production.
+#
+# When MOCK_R2=true is set, the asset-init handler returns
+# deterministic `https://mock-r2.localhost/...` URLs. Server-side
+# digest verification continues to use the CATALOG_R2 binding
+# (Wrangler provisions a local on-disk bucket under
+# .wrangler/state/v3/r2/ regardless of credentials).
+MOCK_STREAM=true
+MOCK_R2=true
+
+# Real Stream credentials. Only needed when MOCK_STREAM is unset.
+# `STREAM_API_TOKEN` requires the `Stream: Edit` permission.
+# `STREAM_CUSTOMER_SUBDOMAIN` is the customer-<id> hostname the
+# Stream dashboard prints next to "Customer Subdomain" — used to
+# build the public HLS playback URL the manifest endpoint serves.
+# STREAM_ACCOUNT_ID=
+# STREAM_API_TOKEN=
+# STREAM_CUSTOMER_SUBDOMAIN=customer-<id>.cloudflarestream.com
+
+# Real R2 S3 credentials. Only needed when MOCK_R2 is unset.
+# `R2_S3_ENDPOINT` is the `https://<account>.r2.cloudflarestorage.com`
+# URL the R2 dashboard prints. Cloudflare → R2 → Manage API tokens
+# is where access keys are minted. Use a `Read+Write` permission
+# scoped to the `terraviz-assets` bucket; presigning runs entirely
+# server-side, so the secret only needs to live on the deploy.
+# R2_S3_ENDPOINT=
+# R2_ACCESS_KEY_ID=
+# R2_SECRET_ACCESS_KEY=
+
+# Bucket name override. Defaults to `terraviz-assets`, matching
+# `wrangler.toml`. Only set this if a fork picks a different name.
+# CATALOG_R2_BUCKET=terraviz-assets
+
+# Origin used by the sphere-thumbnail pipeline to issue Cloudflare
+# Images URL transformations against R2 image sources. When unset,
+# the job falls back to fetching the source bytes directly (the
+# publisher portal's "regenerate sphere thumbnail" button (Phase 3)
+# lets a publisher provide a hand-cropped version manually).
+# CF_IMAGES_RESIZE_BASE=https://images.example.com
