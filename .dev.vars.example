@@ -52,19 +52,17 @@ DEV_PUBLISHER_EMAIL=dev@localhost
 # defaults to mock mode for both so the contributor walkthrough
 # works without a Cloudflare Stream subscription or R2 S3 token.
 #
-# When MOCK_STREAM=true is set, `mintDirectUploadUrl` returns a
-# deterministic `https://mock-stream.localhost/...` URL and
-# `getTranscodeStatus` reports 'ready' immediately. The publisher
-# API surfaces those upload URLs via /asset; the bytes never
-# actually flow anywhere, but every flow downstream — /complete
-# digest verification (R2), state-machine transitions, dataset row
-# flips — operates on the persisted rows just as in production.
-#
-# When MOCK_R2=true is set, the asset-init handler returns
-# deterministic `https://mock-r2.localhost/...` URLs. Server-side
-# digest verification continues to use the CATALOG_R2 binding
-# (Wrangler provisions a local on-disk bucket under
-# .wrangler/state/v3/r2/ regardless of credentials).
+# In mock mode, the asset-init handler stamps a `mock: true` flag
+# on its response. The CLI honors that flag by skipping the actual
+# byte upload (mock-r2.localhost / mock-stream.localhost don't
+# accept real bytes), and `/asset/{upload_id}/complete` skips
+# server-side digest verification, trusting the publisher's claimed
+# digest as ground truth — same bargain we make for Stream uploads
+# in production. State-machine transitions, dataset row flips, KV
+# snapshot invalidation, and the sphere-thumbnail job all run as
+# they would in production. Both flags refuse to honor a non-loopback
+# hostname (`mock_r2_unsafe` / `mock_stream_unsafe`) so a production
+# misconfig with these left on can't accept forged claims.
 MOCK_STREAM=true
 MOCK_R2=true
 

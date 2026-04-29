@@ -122,7 +122,7 @@ come from these sources:
 | `MOCK_STREAM` | `.dev.vars.example` sets this to `true` by default. The asset-init handler returns deterministic stub Stream upload URLs, and the transcode-status helper reports `ready` immediately, so the contributor walkthrough works without a Cloudflare Stream subscription. | Phase 1b |
 | `STREAM_ACCOUNT_ID` / `STREAM_API_TOKEN` | Cloudflare dashboard → Stream. Only needed when `MOCK_STREAM` is unset. The token requires `Stream: Edit` permission. | Phase 1b (prod) |
 | `STREAM_CUSTOMER_SUBDOMAIN` | The `customer-<id>.cloudflarestream.com` hostname the dashboard prints. Used to build the public HLS playback URL the manifest endpoint serves. Mock mode falls back to `customer-mock.cloudflarestream.com` when this is unset. | Phase 1b (prod) |
-| `MOCK_R2` | `.dev.vars.example` sets this to `true` by default. The asset-init handler returns deterministic `https://mock-r2.localhost/...` URLs instead of real presigned ones. Server-side digest verification continues to use the local on-disk `CATALOG_R2` binding regardless. | Phase 1b |
+| `MOCK_R2` | `.dev.vars.example` sets this to `true` by default. The asset-init handler returns deterministic `https://mock-r2.localhost/...` URLs instead of real presigned ones. Because no bytes are uploaded to that mock URL, `/asset/{upload_id}/complete` skips the binding-based digest verification and trusts the publisher's claimed digest. Refused on non-loopback hostnames so a production misconfig can't accept forged claims. | Phase 1b |
 | `R2_S3_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Cloudflare dashboard → R2 → Manage API tokens. Only needed when `MOCK_R2` is unset. The presigning helper signs against the S3-compatible endpoint Cloudflare prints on the bucket page; access keys live as Wrangler secrets in production. | Phase 1b (prod) |
 | `CATALOG_R2_BUCKET` | Bucket name override; defaults to `terraviz-assets` to match `wrangler.toml`. Only set this if a fork picks a different name. | Phase 1b |
 | `CF_IMAGES_RESIZE_BASE` | Origin used by the sphere-thumbnail pipeline to resize R2 image sources via Cloudflare Images URL transformations. When unset, the job falls back to fetching the source bytes directly. The publisher portal's "regenerate sphere thumbnail" button (Phase 3) lets a publisher provide a hand-cropped version manually. | Phase 1b |
@@ -168,16 +168,17 @@ After the checklist runs clean, you should be able to:
   # Create a draft to attach the asset to.
   echo '{"title":"Asset roundtrip","format":"image/png"}' \
     > /tmp/asset-draft.json
-  ID=$(npm run --silent terraviz -- --server http://localhost:8788 \
-        --insecure-local publish /tmp/asset-draft.json --draft-only \
+  ID=$(npm run --silent terraviz -- publish /tmp/asset-draft.json \
+        --draft-only --server http://localhost:8788 --insecure-local \
         | awk '/Created draft/ {print $3}')
   # Upload a thumbnail. The CLI hashes the file, calls /asset to mint
-  # a (mock) presigned URL, PUTs the bytes to it (a no-op against
-  # mock-r2.localhost), then calls /complete which verifies the
-  # digest, flips `thumbnail_ref`, and enqueues a sphere-thumbnail
+  # a (mock) presigned URL, sees the response's `mock: true` flag,
+  # and skips the byte PUT entirely. /complete then trusts the
+  # publisher's claimed digest (no bytes were uploaded to verify
+  # against), flips `thumbnail_ref`, and enqueues a sphere-thumbnail
   # job against the in-memory queue shim.
-  npm run terraviz -- --server http://localhost:8788 --insecure-local \
-    upload "$ID" thumbnail ./public/favicon.svg --mime=image/png
+  npm run terraviz -- upload "$ID" thumbnail ./public/favicon.svg \
+    --mime=image/png --server http://localhost:8788 --insecure-local
   ```
   → "completed", then `terraviz get $ID` shows `thumbnail_ref`
   populated with `r2:datasets/<id>/by-digest/sha256/.../thumbnail.png`.

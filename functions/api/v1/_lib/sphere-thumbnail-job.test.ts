@@ -266,6 +266,66 @@ describe('generateSphereThumbnail — error paths', () => {
     ).rejects.toThrow(/CATALOG_DB binding/)
   })
 
+  it('preserves a manually-uploaded sphere_thumbnail (skip-if-manual)', async () => {
+    const { sqlite, datasetId } = setupDb()
+    // Simulate a publisher having explicitly uploaded a sphere
+    // thumbnail via `terraviz upload <id> sphere_thumbnail <path>`
+    // — those land at a `by-digest` content-addressed path, not the
+    // auto-generated `sphere-thumbnail.jpg`.
+    const manualRef = `r2:datasets/${datasetId}/by-digest/sha256/${'c'.repeat(64)}/sphere-thumbnail.webp`
+    sqlite
+      .prepare(`UPDATE datasets SET sphere_thumbnail_ref = ? WHERE id = ?`)
+      .run(manualRef, datasetId)
+    const { bucket, writes } = makeBucket()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_R2: bucket,
+      STREAM_CUSTOMER_SUBDOMAIN: 'customer-real.cloudflarestream.com',
+    }
+    const fetchStub = vi.fn(async () =>
+      new Response(HELLO_BUFFER, { status: 200 }),
+    ) as unknown as typeof fetch
+    const result = await generateSphereThumbnail(
+      env,
+      { dataset_id: datasetId, source_ref: 'stream:abc' },
+      { fetchImpl: fetchStub },
+    )
+    // Job returns null and never even fetched bytes — the manual
+    // ref is preserved end-to-end.
+    expect(result).toBeNull()
+    expect(fetchStub).not.toHaveBeenCalled()
+    expect(writes).toHaveLength(0)
+    const row = sqlite
+      .prepare(`SELECT sphere_thumbnail_ref FROM datasets WHERE id = ?`)
+      .get(datasetId) as { sphere_thumbnail_ref: string }
+    expect(row.sphere_thumbnail_ref).toBe(manualRef)
+  })
+
+  it('overwrites a previously auto-generated sphere thumbnail (idempotent re-run)', async () => {
+    const { sqlite, datasetId } = setupDb()
+    const autoRef = `r2:datasets/${datasetId}/sphere-thumbnail.jpg`
+    sqlite
+      .prepare(`UPDATE datasets SET sphere_thumbnail_ref = ? WHERE id = ?`)
+      .run(autoRef, datasetId)
+    const { bucket } = makeBucket()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_R2: bucket,
+      STREAM_CUSTOMER_SUBDOMAIN: 'customer-real.cloudflarestream.com',
+    }
+    const fetchStub = vi.fn(async () =>
+      new Response(HELLO_BUFFER, { status: 200 }),
+    ) as unknown as typeof fetch
+    const result = await generateSphereThumbnail(
+      env,
+      { dataset_id: datasetId, source_ref: 'stream:abc' },
+      { fetchImpl: fetchStub },
+    )
+    expect(result).not.toBeNull()
+    expect(result?.sphere_thumbnail_ref).toBe(autoRef)
+    expect(fetchStub).toHaveBeenCalledOnce()
+  })
+
   it('preserves prior auxiliary_digests entries on merge', async () => {
     const { sqlite, datasetId } = setupDb()
     sqlite

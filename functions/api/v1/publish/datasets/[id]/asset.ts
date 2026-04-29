@@ -42,6 +42,7 @@
 import type { CatalogEnv } from '../../../_lib/env'
 import type { PublisherData } from '../../_middleware'
 import { getDatasetForPublisher } from '../../../_lib/dataset-mutations'
+import { isConfigurationError } from '../../../_lib/errors'
 import { isLoopbackHost } from '../../../_lib/loopback'
 import {
   buildAssetKey,
@@ -206,10 +207,14 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     }
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    if (target === 'stream') {
-      return jsonError(503, 'stream_unconfigured', reason)
+    // Distinguish missing-credentials (operator must fix the deploy)
+    // from upstream-service failures (transient, may succeed on retry).
+    if (isConfigurationError(err)) {
+      const code = target === 'stream' ? 'stream_unconfigured' : 'r2_unconfigured'
+      return jsonError(503, code, reason)
     }
-    return jsonError(503, 'r2_unconfigured', reason)
+    const code = target === 'stream' ? 'stream_upstream_error' : 'r2_upstream_error'
+    return jsonError(502, code, reason)
   }
 
   return new Response(JSON.stringify(response), {

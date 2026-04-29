@@ -90,6 +90,26 @@ export async function generateSphereThumbnail(
     throw new Error('CATALOG_DB binding is required to stamp the sphere thumbnail row.')
   }
 
+  // Skip-if-manual: a publisher who explicitly uploaded a
+  // sphere_thumbnail (via `terraviz upload <id> sphere_thumbnail
+  // <path>`) lands the asset at a content-addressed
+  // `r2:datasets/<id>/by-digest/sha256/<hex>/sphere-thumbnail.<ext>`
+  // path. The auto-generated path below is the predictable
+  // `r2:datasets/<id>/sphere-thumbnail.jpg`. Only proceed if the row
+  // is empty or already points at the auto path — never overwrite a
+  // manual override. Cheap pre-read avoids a wasted source fetch +
+  // R2 write in the common "manual already exists" case; the
+  // conditional UPDATE at the end closes the residual TOCTOU window.
+  const autoRef = `r2:datasets/${payload.dataset_id}/sphere-thumbnail.jpg`
+  const existing = await env.CATALOG_DB
+    .prepare(`SELECT sphere_thumbnail_ref FROM datasets WHERE id = ? LIMIT 1`)
+    .bind(payload.dataset_id)
+    .first<{ sphere_thumbnail_ref: string | null }>()
+  if (existing?.sphere_thumbnail_ref && existing.sphere_thumbnail_ref !== autoRef) {
+    // Manual sphere thumbnail in place — preserve it.
+    return null
+  }
+
   const sourceUrl = pickSourceUrl(env, payload.source_ref)
   if (!sourceUrl) return null
 
@@ -115,13 +135,12 @@ export async function generateSphereThumbnail(
   const size = bytes.byteLength
   const sphereRef = `r2:${r2Key}`
 
-  // Atomic JSON merge via SQLite's `json_set`: another writer may
-  // be updating a different `auxiliary_digests` key (e.g. a legend
-  // upload) at the same time, and a SELECT-then-UPDATE pattern
-  // would let the later writer clobber the earlier one's keys.
-  // `json_set(coalesce(...), '$.sphere_thumbnail', ?)` mutates
-  // exactly the path it names without touching siblings.
-  await env.CATALOG_DB
+  // Atomic JSON merge + skip-if-manual race guard: the WHERE clause
+  // refuses to overwrite a manual sphere_thumbnail_ref that may
+  // have landed between our pre-read and now. If 0 rows changed,
+  // the manual override won and we leave the bytes we just wrote
+  // to R2 as harmless extraneous data (no further work needed).
+  const result = await env.CATALOG_DB
     .prepare(
       `UPDATE datasets
          SET sphere_thumbnail_ref = ?,
@@ -131,10 +150,18 @@ export async function generateSphereThumbnail(
                ?
              ),
              updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ?
+         AND (sphere_thumbnail_ref IS NULL OR sphere_thumbnail_ref = ?)`,
     )
-    .bind(sphereRef, digest, new Date().toISOString(), payload.dataset_id)
+    .bind(sphereRef, digest, new Date().toISOString(), payload.dataset_id, autoRef)
     .run()
+  const changes = (result.meta as { changes?: number } | undefined)?.changes ?? 0
+  if (changes === 0) {
+    // A manual sphere_thumbnail upload landed during the job — don't
+    // clobber it. Surface the no-op so callers (audit log, future
+    // job-queue retry semantics) can tell skipped from succeeded.
+    return null
+  }
 
   return { ok: true, sphere_thumbnail_ref: sphereRef, digest, size }
 }

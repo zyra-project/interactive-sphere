@@ -33,6 +33,8 @@
  * Cloudflare account, no API token, no real bytes uploaded.
  */
 
+import { ConfigurationError, UpstreamError } from './errors'
+
 export interface StreamEnv {
   /**
    * Cloudflare account id that owns the Stream subscription.
@@ -147,7 +149,7 @@ export async function mintDirectUploadUrl(
   const json = (await res.json().catch(() => null)) as StreamDirectUploadResponse | null
   if (!res.ok || !json?.success || !json.result?.uploadURL || !json.result?.uid) {
     const reason = (json?.errors && json.errors[0]?.message) || `HTTP ${res.status}`
-    throw new Error(`Stream direct_upload failed: ${reason}`)
+    throw new UpstreamError(`Stream direct_upload failed: ${reason}`, res.status)
   }
   return {
     upload_url: json.result.uploadURL,
@@ -202,7 +204,7 @@ export async function getTranscodeStatus(
   const json = (await res.json().catch(() => null)) as StreamGetResponse | null
   if (!res.ok || !json?.success || !json.result) {
     const reason = (json?.errors && json.errors[0]?.message) || `HTTP ${res.status}`
-    throw new Error(`Stream get failed: ${reason}`)
+    throw new UpstreamError(`Stream get failed: ${reason}`, res.status)
   }
   const rawState = json.result.status?.state ?? ''
   const errMsgs = (json.result.status?.errorReasonText
@@ -249,7 +251,7 @@ export function streamPlaybackUrl(env: StreamEnv, uid: string): string {
     env.STREAM_CUSTOMER_SUBDOMAIN?.trim() ||
     (env.MOCK_STREAM === 'true' ? MOCK_STREAM_SUBDOMAIN : '')
   if (!subdomain) {
-    throw new Error(
+    throw new ConfigurationError(
       'STREAM_CUSTOMER_SUBDOMAIN is not configured. Set it from the Stream ' +
         'dashboard, or set MOCK_STREAM=true for local development.',
     )
@@ -266,7 +268,7 @@ function requireStreamConfig(env: StreamEnv): ResolvedStreamConfig {
   const accountId = env.STREAM_ACCOUNT_ID?.trim()
   const apiToken = env.STREAM_API_TOKEN?.trim()
   if (!accountId || !apiToken) {
-    throw new Error(
+    throw new ConfigurationError(
       'Stream is not configured. Set STREAM_ACCOUNT_ID + STREAM_API_TOKEN, ' +
         'or set MOCK_STREAM=true for local development.',
     )

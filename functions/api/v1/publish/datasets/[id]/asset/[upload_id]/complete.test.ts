@@ -316,6 +316,84 @@ describe('POST .../asset/{upload_id}/complete — Stream', () => {
     }
   })
 
+  it('returns 409 stream_asset_not_found when Stream returns 404', async () => {
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: true })
+    const fetchStub = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: [{ code: 10006, message: 'video not found' }] }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      STREAM_ACCOUNT_ID: 'acct',
+      STREAM_API_TOKEN: 'tok',
+    }
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchStub
+    try {
+      insertPending(sqlite, {
+        uploadId: 'UP-MISSING',
+        datasetId,
+        kind: 'data',
+        target: 'stream',
+        target_ref: 'stream:abc',
+        mime: 'video/mp4',
+        claimed_digest: OTHER_DIGEST,
+      })
+      const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-MISSING' }))
+      expect(res.status).toBe(409)
+      expect((await readJson<{ error: string }>(res)).error).toBe('stream_asset_not_found')
+      const row = sqlite
+        .prepare(`SELECT status, failure_reason FROM asset_uploads WHERE id = ?`)
+        .get('UP-MISSING') as { status: string; failure_reason: string }
+      expect(row.status).toBe('failed')
+      expect(row.failure_reason).toBe('stream_asset_not_found')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('returns 502 stream_upstream_error for non-404 Stream API failures', async () => {
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: true })
+    const fetchStub = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: [{ code: 1, message: 'rate limit' }] }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      STREAM_ACCOUNT_ID: 'acct',
+      STREAM_API_TOKEN: 'tok',
+    }
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchStub
+    try {
+      insertPending(sqlite, {
+        uploadId: 'UP-RATE',
+        datasetId,
+        kind: 'data',
+        target: 'stream',
+        target_ref: 'stream:abc',
+        mime: 'video/mp4',
+        claimed_digest: OTHER_DIGEST,
+      })
+      const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-RATE' }))
+      expect(res.status).toBe(502)
+      expect((await readJson<{ error: string }>(res)).error).toBe('stream_upstream_error')
+      // Row stays pending — caller can retry.
+      const row = sqlite
+        .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+        .get('UP-RATE') as { status: string }
+      expect(row.status).toBe('pending')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('marks failed and returns 409 transcode_error when Stream errors', async () => {
     const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: true })
     const fetchStub = vi.fn(async () =>

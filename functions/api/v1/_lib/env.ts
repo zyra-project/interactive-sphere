@@ -116,10 +116,14 @@ export interface CatalogEnv {
   R2_SECRET_ACCESS_KEY?: string
   /**
    * `"true"` makes the asset-init handler emit deterministic
-   * `https://mock-r2.localhost/...` URLs instead of real
-   * presigned ones, so the contributor walkthrough works without
-   * an R2 S3 token. Server-side digest verification continues to
-   * use the `CATALOG_R2` binding regardless.
+   * `https://mock-r2.localhost/...` URLs instead of real presigned
+   * ones, so the contributor walkthrough works without an R2 S3
+   * token. Because no bytes are actually uploaded to that mock URL,
+   * `/asset/{upload_id}/complete` skips the binding-based digest
+   * verification and trusts the publisher's claimed digest as
+   * ground truth (parallel to the Stream-mock behaviour). The
+   * `mock_r2_unsafe` 500 refusal on non-loopback hostnames keeps a
+   * production misconfig from accepting forged claims.
    */
   MOCK_R2?: string
   /**

@@ -362,6 +362,40 @@ describe('POST /api/v1/publish/datasets/{id}/asset — config errors', () => {
     expect(res.status).toBe(503)
     expect((await readJson<{ error: string }>(res)).error).toBe('r2_unconfigured')
   })
+
+  it('returns 502 stream_upstream_error when Stream API errors out (configured)', async () => {
+    const { env, datasetId } = setupEnv({ MOCK_STREAM: undefined })
+    delete (env as Record<string, unknown>).MOCK_STREAM
+    Object.assign(env, {
+      STREAM_ACCOUNT_ID: 'acct',
+      STREAM_API_TOKEN: 'tok',
+    })
+    const fetchStub = (async () =>
+      new Response(JSON.stringify({ success: false, errors: [{ code: 1, message: 'quota' }] }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = fetchStub
+    try {
+      const res = await assetInit(
+        ctx({
+          env,
+          datasetId,
+          body: {
+            kind: 'data',
+            mime: 'video/mp4',
+            size: 1000,
+            content_digest: HAPPY_DIGEST,
+          },
+        }),
+      )
+      expect(res.status).toBe(502)
+      expect((await readJson<{ error: string }>(res)).error).toBe('stream_upstream_error')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })
 
 describe('POST /api/v1/publish/datasets/{id}/asset — mock flag', () => {

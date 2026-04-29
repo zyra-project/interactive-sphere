@@ -42,6 +42,7 @@ import type { CatalogEnv } from '../../../../../_lib/env'
 import type { PublisherData } from '../../../../_middleware'
 import type { DatasetRow } from '../../../../../_lib/catalog-store'
 import { getDatasetForPublisher } from '../../../../../_lib/dataset-mutations'
+import { isConfigurationError, isUpstreamError } from '../../../../../_lib/errors'
 import { isLoopbackHost } from '../../../../../_lib/loopback'
 import { invalidateSnapshot } from '../../../../../_lib/snapshot'
 import { verifyContentDigest } from '../../../../../_lib/r2-store'
@@ -207,7 +208,29 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     try {
       status = await getTranscodeStatus(context.env, uid)
     } catch (err) {
-      return jsonError(503, 'stream_unconfigured', err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      if (isConfigurationError(err)) {
+        return jsonError(503, 'stream_unconfigured', message)
+      }
+      // Stream returned 404 → the uid we minted at /asset isn't
+      // present. Either the publisher's POST never reached Stream
+      // or Stream lost the asset; either way the upload is dead and
+      // the publisher needs to mint a fresh one.
+      if (isUpstreamError(err) && err.status === 404) {
+        const failedAt = new Date().toISOString()
+        await markAssetUploadFailed(
+          context.env.CATALOG_DB!,
+          uploadId,
+          'stream_asset_not_found',
+          failedAt,
+        )
+        return jsonError(
+          409,
+          'stream_asset_not_found',
+          `Stream asset "${uid}" could not be found. Mint a fresh upload to retry.`,
+        )
+      }
+      return jsonError(502, 'stream_upstream_error', message)
     }
     if (status.state === 'pending' || status.state === 'processing') {
       return jsonError(

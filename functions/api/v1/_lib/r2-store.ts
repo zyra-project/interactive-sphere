@@ -32,6 +32,8 @@
  * invalidating any existing cache.
  */
 
+import { ConfigurationError } from './errors'
+
 export interface R2Env {
   /** Workers binding for read-after-write digest verification. */
   CATALOG_R2?: R2Bucket
@@ -186,7 +188,7 @@ function requireR2Config(env: R2Env): ResolvedR2Config {
   const accessKeyId = env.R2_ACCESS_KEY_ID?.trim()
   const secretAccessKey = env.R2_SECRET_ACCESS_KEY?.trim()
   if (!endpoint || !accessKeyId || !secretAccessKey) {
-    throw new Error(
+    throw new ConfigurationError(
       'R2 presigning is not configured. Set R2_S3_ENDPOINT, R2_ACCESS_KEY_ID, ' +
         'and R2_SECRET_ACCESS_KEY, or set MOCK_R2=true for local development.',
     )
