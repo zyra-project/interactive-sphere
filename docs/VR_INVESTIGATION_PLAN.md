@@ -3,24 +3,29 @@
 Feasibility investigation for running Interactive Sphere as an immersive
 web experience on Meta Quest (and other WebXR-capable) headsets.
 
-Status: **MVP + Phase 2 + Phase 2.1/2.2 + Phase 2.5 + Phase 3 shipped.** Feature-gated
-"Enter AR" / "Enter VR" button opens an immersive WebXR session
-that renders the currently-loaded dataset (or a photoreal
-day/night Earth with atmosphere, clouds, night lights, specular,
-and a tracked sun when no dataset is loaded) on a globe. Full
-spatial placement on real-world surfaces via hit-test, with
-cross-session persistence via WebXR anchors. Controller
-interaction (surface-pinned drag, two-hand pinch+rotate, thumbstick
-zoom, flick-to-spin inertia), floating HUD, animated 3D loading
-scene. The 2D experience is unchanged when WebXR is absent.
+Status: **MVP + Phase 2 + Phase 2.1/2.2 + Phase 2.5 + Phase 3 +
+Phase 3.5 shipped.** Feature-gated "Enter AR" / "Enter VR" button
+opens an immersive WebXR session that renders the currently-loaded
+dataset (or a photoreal day/night Earth with atmosphere, clouds,
+night lights, specular, and a tracked sun when no dataset is
+loaded) on a globe. Full spatial placement on real-world surfaces
+via hit-test, with cross-session persistence via WebXR anchors.
+Controller interaction (surface-pinned drag, two-hand pinch+rotate,
+thumbstick zoom, flick-to-spin inertia), floating HUD, animated 3D
+loading scene. VR tours play SOS-format JSON end-to-end with text /
+popup / image / video overlays, multiple-choice question panels,
+country-borders overlay, multi-globe `setEnvView` routing, and
+hybrid world-anchored / gaze-follow / drag-to-reposition placement.
+The 2D experience is unchanged when WebXR is absent.
 
-Remaining phases not yet built: VR tours (3.5), 2D↔VR camera sync
-(4), voice docent + hand tracking (5), AR-native enhancements
-(spatial audio, annotations, capture/share, real-time data,
-co-presence, layered datasets). 4-globe support is a Phase 2.5
-stretch (2-globe shipped; 4 gates on Quest decoder-budget
-testing). Free-text dataset search is a Phase 3 stretch (category
-chips shipped; keyboard/voice search pending).
+Remaining phases not yet built: Orbit Avatar embedded in VR (4),
+2D Orbit companion in the main app (4b), voice docent + hand
+tracking + 2D↔VR camera sync (5), AR-native enhancements (spatial
+audio, annotations, capture/share, real-time data, co-presence,
+layered datasets). 4-globe support is a Phase 2.5 stretch (2-globe
+shipped; 4 gates on Quest decoder-budget testing). Free-text
+dataset search is a Phase 3 stretch (category chips shipped;
+keyboard/voice search pending).
 
 ---
 
@@ -673,7 +678,7 @@ canvas redraws as each arrives — same progressive-render pattern as
 a web page loading images. Failed thumbnails show a placeholder
 icon (globe emoji or category color swatch).
 
-### Phase 3.5 — VR tours (the museum experience) *(in progress on `claude/vr-tours-phase-3.5`)*
+### Phase 3.5 — VR tours (the museum experience) ✅ *(shipped via PR #41 + follow-up Copilot fixes — all 8 commits in the breakdown plus inserted commit 4.5 (`vrBorders` shared world-border overlay) landed on `claude/vr-tours-phase-3.5`. Tour engine plays SOS-format JSON end-to-end in VR with text / popup / image / video overlays, multiple-choice questions, multi-globe `setEnvView` routing, and hybrid world-anchored / gaze-follow / drag-to-reposition placement.)*
 
 Tours are the killer app for VR Science On a Sphere. A real museum
 SOS installation runs curated, narrated dataset sequences with
@@ -803,189 +808,313 @@ Commits 2-4 reach the "tour plays with text overlays" milestone.
 5-6 cover the remaining overlay surfaces for single-panel tours.
 7 lifts the work to multi-globe. 8 is UX polish on anchoring.
 
-### Phase 4 — Orbit Avatar (the docent gets a body)
+### Phase 4 — Orbit Avatar embedded in VR (the docent gets a body)
 
-The chat assistant "Orbit" is currently a text panel. This phase
-gives it a physical presence: a small animated robot character that
-orbits the Earth, flies up to the user when chatting, and zooms off
-to point-of-interest locations on the globe. The avatar reinforces
-the "museum docent" metaphor and — critically — teaches scale: Orbit
-is a friendly companion at arm's length, then becomes a tiny speck
-circling a continent, making the user *feel* how big Earth is.
+The chat assistant "Orbit" already has a body — we built it. The
+character lives at [`src/services/orbitCharacter/`](../src/services/orbitCharacter/)
+and ships today on the standalone `/orbit` page. Design history:
+[`ORBIT_CHARACTER_DESIGN.md`](ORBIT_CHARACTER_DESIGN.md),
+[`ORBIT_CHARACTER_INTEGRATION_PLAN.md`](ORBIT_CHARACTER_INTEGRATION_PLAN.md),
+[`ORBIT_CHARACTER_VINYL_REDESIGN.md`](ORBIT_CHARACTER_VINYL_REDESIGN.md).
+Phase 4.5 of the integration plan extracted `photorealEarth.ts` so
+the Orbit page and `vrScene.ts` already share the Earth stack.
 
-**Character design constraints:**
+**Phase 4 is no longer "load a glTF and rig animations."** It is
+"embed the existing `OrbitController` inside the VR scene, wire its
+state machine to docent + tour signals, and use it to teach scale —
+Orbit as friendly companion at arm's length, then as a tiny speck
+on a continent, making the user *feel* how big Earth is."
 
-- Small, friendly, non-humanoid (avoids uncanny valley).
-- Satellite / probe / robot aesthetic — thematic with "orbiting
-  Earth" and the name "Orbit".
-- Low poly count (Quest GPU budget) — under 5K triangles.
-- Rigged with a humanoid-compatible skeleton (or simple bone rig)
-  so Mixamo / custom animations work.
-- glTF 2.0 format (Three.js native).
+**What's already shipped (the foundation):**
 
-**Model sources (free, animation-ready):**
+- Procedural avatar — head, body, sub-spheres, paired eyes, vinyl
+  pupil, iridescent body shader, eye-field + glass-dome materials,
+  point-sprite trails, eclipse shadows from sub-spheres on body.
+- State machine — IDLE / LISTENING / THINKING / TALKING / CHATTING
+  / CONFUSED behavior states, plus emotion + gesture overlays. See
+  `orbitStates.ts` / `orbitGestures.ts`.
+- Flight + scale presets — `flyToEarth()` / `flyHome()` Bézier
+  arcs, three scale presets (close / continental / planetary),
+  parking-spot + feature-location math in `orbitFlight.ts`.
+- Palette swap — four palettes (cyan / green / amber / violet)
+  with state-driven pupil tint blend.
+- Controller API — `setState`, `playGesture`, `setPalette`,
+  `setScalePreset`, `setEyeMode`, `flyToEarth`, `flyHome`,
+  `setReducedMotion`, `dispose`, plus a `postMessage` bridge for
+  external drivers (`orbit:setState`, `orbit:playGesture`, …).
+- a11y — OS `prefers-reduced-motion` listener; flight teleports
+  instead of arcing, sub-sphere orbit speed clamps, pupil flashes
+  drop.
 
-| Source | License | Notes |
-|---|---|---|
-| Kenney robot pack | CC0 | Simple low-poly bots, perfect aesthetic |
-| Ready Player Me stylized | MIT | Customizable, rigged for Mixamo |
-| Mixamo animation library | Free (Adobe) | Hundreds of animations: hover, fly, wave, point, talk idle |
-| Sketchfab CC-BY robots | CC-BY 4.0 | Several mascot/assistant-style models |
-| Custom satellite/probe | — | Most thematic; ~1 day of Blender work |
+The character work is done. Phase 4 is about **embedding** and
+**driving** it from the VR session and the docent stream.
 
-**Behaviour state machine:**
+**Embedding boundary — the renderer-agnostic node split.**
 
-```
-                    ┌──────────────────────┐
-                    │     ORBITING         │
-                    │ (idle circuit around │
-                    │  the globe, small)   │
-                    └──────┬───────────────┘
-                           │ user opens chat
-                           ▼
-                    ┌──────────────────────┐
-                    │     APPROACHING      │
-                    │ (flies toward user,  │
-                    │  grows in perspec-   │
-                    │  tive as it nears)   │
-                    └──────┬───────────────┘
-                           │ arrives ~1m from face
-                           ▼
-                    ┌──────────────────────┐
-                    │     CHATTING         │
-                    │ (hovers at arm's     │
-                    │  length, talk anim,  │
-                    │  eye contact)        │
-                    └──────┬───────────────┘
-                           │ LLM mentions a region /
-                           │ user taps "show me"
-                           ▼
-                    ┌──────────────────────┐
-                    │     PRESENTING       │
-                    │ (flies to lat/lng,   │
-                    │  shrinks as it       │
-                    │  recedes, orbits     │
-                    │  the POI, spotlight) │
-                    └──────┬───────────────┘
-                           │ user taps "follow me" →
-                           │ globe auto-rotates to
-                           │ track Orbit's position
-                           │
-                           │ user sends another
-                           │ message / taps Orbit
-                           ▼
-                    ┌──────────────────────┐
-                    │     RETURNING        │
-                    │ (flies back to user, │
-                    │  grows again — the   │
-                    │  scale lesson        │
-                    │  repeats every trip) │
-                    └──────────────────────┘
-```
+`OrbitController` today owns its own `WebGLRenderer` + `Scene` +
+`PerspectiveCamera` + container DOM + `window` listeners. That's
+exactly right for the standalone `/orbit` page; it is wrong for
+VR (vrSession owns the XR-bound renderer + headset camera; the
+avatar must be a child of the VR scene, sharing one render loop)
+and would also be wrong for any future 2D embed that wanted to
+share a renderer with another widget.
 
-**Scale design — the key insight:**
+So Phase 4 begins with a refactor: extract a **renderer-agnostic
+`OrbitAvatarNode`** out of `orbitScene.ts`. Contract:
 
-The user said: "use Orbit to emphasize the relative size of the
-planet." The scale contrast is the entire point. Design targets:
+- Exports a `THREE.Group` containing head, body, sub-spheres, eye
+  rigs, lids, trails, key light, target marker / halo. **Earth is
+  not part of the node** — hosts own their own Earth, and in VR the
+  existing primary globe doubles as Orbit's "Earth" so the avatar
+  orbits the scene the user is already looking at, not a duplicate.
+- Exports `setState`, `playGesture`, `setPalette`, `setScalePreset`,
+  `setEyeMode`, `flyToEarth`, `flyHome`, `setReducedMotion`.
+- Exports `update(dt, ctx)` — host calls per frame; `ctx` carries
+  the host camera (for gaze/proximity math) and the Earth handle
+  (so `flyToEarth` knows the orbit center).
+- No renderer, no canvas, no `window.addEventListener`, no pointer
+  state. Pointer-driven gaze + drag-rotate + tickle stay in
+  `OrbitController` (the standalone-page wrapper) where they
+  belong; the VR host wires controller raycast → equivalent calls
+  if/when needed (probably not in Phase 4).
 
-- **Chatting:** Orbit hovers ~1 m from the user's face, apparent
-  size ~15-20 cm (a third of the 0.5 m globe radius). It feels like
-  a companion — something you could reach out and touch.
-- **Presenting:** Orbit flies to a point on the globe surface. At
-  the globe's scale (0.5 m radius), the flight path is ~1-2 m. Orbit
-  doesn't need to artificially shrink — real perspective handles it.
-  A 15 cm object at 2 m distance subtends ~4.3° vs. ~8.6° at 1 m.
-  The user watches their "companion" become a tiny dot on a
-  continent, and viscerally understands: *that whole landmass is the
-  size of my friend's face.*
-- **Follow me:** A floating button (or Orbit waves a "come look!"
-  gesture) triggers a smooth globe auto-rotate to bring Orbit's
-  current position front-and-center. The user doesn't have to
-  manually search for where Orbit went.
+`OrbitController` then becomes a thin wrapper: owns the renderer +
+container + listeners, mounts an `OrbitAvatarNode`, owns its own
+`photorealEarth` Earth, drives `update()` from rAF. The standalone
+`/orbit` page is unchanged — same import path, same constructor
+options, pixel-stable. We gate that with a manual visual A/B
+before the extraction commit lands.
 
-**Flight path math:**
+**Three host contexts the architecture has to satisfy.**
 
-The flight path is a cubic Bézier from camera-relative coords to a
-lat/lng point on the globe surface:
+| Host | How Orbit mounts | Earth source | Renderer |
+|---|---|---|---|
+| `/orbit` standalone page | `new OrbitController({ container })` (unchanged) | Internal `photorealEarth` | Owned by controller |
+| VR scene (Phase 4) | `vrScene.ts` adds `OrbitAvatarNode` group as child of `scene`; calls `node.update(dt, { camera, earth })` from the per-frame loop | Existing primary globe (no second Earth) | XR-bound renderer from `vrSession` |
+| 2D main-app companion (Phase 4b) | `new OrbitController({ container, mode: 'mascot' \| 'replacement' })` mounted in chat panel | Internal (or hidden / wireframe in mascot mode) | Owned by controller |
+
+Phase 4b proves the third host. The split lands in Phase 4 so 4b
+becomes purely additive.
+
+**Host-agnostic docent bridge.**
+
+The mapping from docent stream chunks to avatar state belongs in
+exactly one place. New module
+`src/services/orbitDocentBridge.ts`:
 
 ```
-P0 = Orbit's current position (near user)
-P1 = P0 + forward * 0.3  (ease out from user)
-P2 = target + normal * 0.5  (ease into globe surface tangentially)
-P3 = target (lat/lng → 3D point on globe surface)
+attachOrbitToDocent(controller, docent) → unsubscribe
 ```
 
-`getSunPosition` already converts lat/lng → 3D direction; the same
-`sunDirectionFromLatLng` utility gives us the target point.
-`docentContext.ts` has dataset category/location metadata that can
-drive where Orbit flies.
+Subscribes to the existing `DocentStreamChunk` types and emits
+controller commands per the table from
+`ORBIT_CHARACTER_INTEGRATION_PLAN.md` §6:
 
-**Integration with existing chat:**
+| Stream event | Orbit reaction |
+|---|---|
+| User submits message | `setState('LISTENING')` |
+| First `delta` chunk | `setState('TALKING')` |
+| `action` chunk (dataset load) | `playGesture('beckon')` |
+| `auto-load` chunk | `playGesture('affirm')` |
+| Long latency before first delta | `setState('THINKING')` |
+| `done` with fallback | brief `setState('CONFUSED')`, then `CHATTING` |
+| `done` normal | `setState('CHATTING')` |
 
-- `docentService` already emits `action` chunks with dataset IDs.
-  Extend to emit `location` hints (lat/lng from enriched metadata)
-  that the avatar system consumes.
-- The LLM system prompt (`docentContext.ts`) can be extended with a
-  `fly_to_location` tool alongside the existing `load_dataset` tool.
-- Chat panel stays as-is (2D overlay or VR CanvasTexture from
-  Phase 5); the avatar is an additive layer, not a replacement.
+Mood markers (`<<MOOD:SOLEMN>>`) stay future work — same plan as
+§6 of the integration doc. The bridge takes a `controller`
+interface (subset of `OrbitController` — just `setState` /
+`playGesture` / `flyToEarth` / `flyHome`), so VR, 2D companion,
+and `/orbit` all consume it identically.
 
-**2D mode (future, not in initial scope):**
+**VR-specific behavior.**
 
-A simplified version could work in 2D: a small animated sprite or
-CSS-animated character that sits near the chat panel, flies across
-the MapLibre canvas to a location, and returns. The 3D model could
-be rendered to a small WebGL overlay or pre-rendered to a sprite
-sheet. Deferred until the VR version proves the concept.
+- **Idle.** Orbit drifts on a slow circular path around the
+  primary globe at ~0.7 m radius (just outside the 0.5 m globe).
+  Multi-globe (Phase 2.5): orbit primary only; secondary globes
+  are spectators.
+- **Summon.** HUD button (or Orbit-tap raycast) triggers
+  `flyHome()` — Orbit Béziers from idle orbit to a companion pose
+  ~0.8 m in front of the headset, ~15 cm apparent size.
+- **Present.** When the docent emits a location hint (or a tour
+  task points at lat/lng), `flyToEarth(target)` arcs Orbit to the
+  globe surface. The existing `sunDirectionFromLatLng` utility
+  gives us the surface point; `orbitFlight.ts` already shapes the
+  Bézier. At surface scale Orbit is ~3-4° of arc on the user's
+  view — the scale lesson the user originally asked for.
+- **Follow me.** Floating "follow me" affordance (or Orbit's
+  `beckon` gesture) triggers a smooth globe auto-rotate to bring
+  Orbit's current position front-and-center. Reuses the camera
+  utilities from `vrInteraction.ts`.
 
-**New modules:**
+VR omits the 2D-page camera moves (FOV, dolly) — the headset *is*
+the camera. Scale is purely Orbit's world-space distance + size.
+
+**Location hints from the docent (small `docentService` extension).**
+
+Today the docent emits `action` chunks with dataset IDs. To drive
+`flyToEarth(target)`, we need lat/lng. Two sources:
+
+1. **Enriched metadata** — many datasets in the SOS catalog carry
+   `centerLat` / `centerLng` already. `docentService` emits a
+   `location` chunk alongside the `action` chunk when the loaded
+   dataset has them. Zero LLM cost.
+2. **LLM tool** — extend the `docentContext.ts` tool list with a
+   `fly_to_location({ lat, lng })` tool the LLM can call when
+   referring to a region without loading a dataset (e.g. "let me
+   show you the Sahara"). Same wiring pattern as the existing
+   `load_dataset` tool.
+
+The chat panel itself stays as-is for Phase 4. VR text rendering
+is Phase 5 (CanvasTexture chat panel + voice). The avatar is an
+additive layer in VR; in 2D it can become a *replacement* for
+parts of the chat UI — see Phase 4b.
+
+**New + modified modules.**
 
 | Module | Est. LOC | Responsibility |
 |---|---|---|
-| `src/services/vrAvatar.ts` | ~400 | glTF loader, animation mixer, state machine, flight path, scale management |
-| `src/services/vrAvatarAssets.ts` | ~100 | Model URL constants, animation clip names, preload |
-| Extensions to `docentService.ts` | ~50 | Emit location hints from LLM response metadata |
-| Extensions to `docentContext.ts` | ~30 | `fly_to_location` tool definition for the LLM |
-| Extensions to `vrSession.ts` | ~50 | Wire avatar into render loop + chat open/close callbacks |
+| `src/services/orbitCharacter/orbitAvatarNode.ts` | ~600 (extracted from `orbitScene.ts`) | Renderer-agnostic scene-graph + `update(dt, ctx)`. New file; bulk of code moves here from existing `orbitScene.ts` |
+| `src/services/orbitCharacter/index.ts` | ~−300 (slimmer wrapper) | `OrbitController` retains renderer/listeners/container, delegates scene-graph to `OrbitAvatarNode` |
+| `src/services/orbitDocentBridge.ts` | ~120 | Subscribes to `DocentStreamChunk`, drives `setState` / `playGesture` / `flyToEarth` per the mapping table |
+| Extensions to `src/services/docentService.ts` | ~40 | Emit `location` chunks when enriched metadata carries lat/lng; add `fly_to_location` tool handling |
+| Extensions to `src/services/docentContext.ts` | ~25 | `fly_to_location` tool definition in the LLM system prompt |
+| Extensions to `src/services/vrSession.ts` / `vrScene.ts` | ~150 | Mount `OrbitAvatarNode` in scene; per-frame `update()`; HUD summon button; "follow me" globe auto-rotate; idle orbit pose |
+| Extensions to `src/services/tourEngine.ts` | ~30 | New tour task `presentLocation` (or reuse `setView`) routes through bridge → `flyToEarth` for tour POIs |
 
-**Commit sequence (~8 commits):**
+**Commit sequence.**
 
-| # | Commit | Scope |
+All work lands on one branch with mid-cycle pauses for on-Quest
+validation, mirroring the Phase 3.5 cadence.
+
+| # | Commit | Test pause? |
 |---|---|---|
-| 1 | Plan doc: Phase 4 breakdown | This section |
-| 2 | `vrAvatar: model loader + idle orbit` | Load glTF, attach to scene, circular orbit path around globe. No interaction yet. |
-| 3 | `vrAvatar: animation mixer` | Idle hover / fly / talk animations via `AnimationMixer`. Crossfade on state change. |
-| 4 | `vrAvatar: approach + return flight` | Bézier flight from orbit → user (chat open) and user → orbit (chat close). |
-| 5 | `vrAvatar: presenting flight` | Fly to lat/lng on globe surface. Globe auto-rotate to track. "Follow me" button. |
-| 6 | `docentService: location hints` | Emit lat/lng from dataset enriched metadata. Avatar consumes in presenting state. |
-| 7 | `vrAvatar: spotlight + gesture` | Subtle glow on globe surface at POI. Point/wave animation at presenting target. |
-| 8 | `vrAvatar: polish + tuning` | Flight speed curves, idle orbit radius, approach distance, animation blend times. |
+| 1 | `docs(vr): revise Phase 4 — embed OrbitController, add Phase 4b 2D companion hooks` | — |
+| 2 | `orbitCharacter: extract OrbitAvatarNode (renderer-agnostic group + update)` — `OrbitController` becomes a wrapper, `/orbit` page pixel-stable; manual visual A/B before merge | — |
+| 3 | `orbitDocentBridge: host-agnostic docent stream → state/gesture mapping` — wired on `/orbit` first to prove the bridge without VR/2D-main complexity | — |
+| 4 | `vr(4): mount OrbitAvatarNode in vrScene — idle orbit around primary globe` | **Pause** — on-Quest scale + framing check |
+| 5 | `vr(4): summon → companion pose; HUD button + Orbit-tap raycast` | **Pause** |
+| 6 | `vr(4): present → flyToEarth + "follow me" globe auto-rotate` | — |
+| 7 | `docentService: location chunks from enriched metadata + fly_to_location tool` — extends the bridge's vocabulary | — |
+| 8 | `vr(4): wire orbitDocentBridge into vrSession` | **Pause** — end-to-end with local engine, then with LLM |
+| 9 | `vr(4): tour POI integration — present pose during relevant tour tasks` | — |
+| 10 | `vr(4): polish — flight curves, multi-globe behavior, prefers-reduced-motion in XR` | — |
 
-Commits 2-4 reach the "avatar flies to user and back" milestone.
-5-6 add the "show me" → "follow me" loop. 7-8 are polish.
+Commits 2–3 are the host-agnostic foundation (no VR code yet).
+Commits 4–6 reach the "Orbit appears in VR, can be summoned, can
+fly to a continent" milestone. Commits 7–9 wire the docent and
+tours. Commit 10 is polish + the multi-globe story.
 
-**Dependencies:**
+**Dependencies.**
 
-- Phase 2.5 (multi-globe) should be landed — avatar needs to know
-  which globe to orbit (primary).
-- Phase 5 (voice) is independent — the avatar works with text chat.
-  Voice input is a natural follow-on that makes the avatar feel
-  alive ("talk to Orbit" vs. "type to Orbit"), but the avatar's
-  state machine doesn't depend on it.
+- Phase 2.5 (multi-globe) — landed. Avatar orbits primary only.
+- Phase 3.5 (VR tours) — landed. Tour POIs become a Phase 4
+  trigger source via the bridge.
+- Phase 5 (voice + VR chat panel) is independent. Avatar works
+  with the existing 2D chat panel until VR text rendering ships.
 
-**Open questions:**
+**Bundle.**
 
-1. Should Orbit have a speech bubble in 3D space (CanvasTexture
-   floating near its head) in addition to / instead of the chat
-   panel? Adds personality but is harder to read for long responses.
-2. Does Orbit need lip-sync or a simple "mouth open/close" cycle
-   during talk animation? Lip-sync from TTS is possible but complex.
-3. Should Orbit's orbit path respond to the current dataset — e.g.
-   orbiting along the equator for ocean datasets, circling the poles
-   for ice datasets? Cool but potentially distracting.
-4. Model selection: custom satellite probe (most thematic, most
-   work) vs. off-the-shelf Kenney robot (fastest to prototype)?
-   Recommend: prototype with Kenney, swap for a custom model later.
+Three.js + the orbit modules already lazy-load on first
+Enter VR / Enter Orbit tap. The VR chunk and the orbit chunk share
+Three.js + `photorealEarth.ts` transitively, so embedding orbit in
+VR adds the avatar-specific modules only (~120 KB gzipped est.).
+Confirm with a build-size check before commit 4 lands; gate the
+orbit dynamic-import behind the existing VR feature detector so
+non-Quest browsers never fetch it.
+
+**Open questions.**
+
+1. **Speech bubble in 3D space?** Floating CanvasTexture near
+   Orbit's head in addition to / instead of the chat panel. Adds
+   personality but is harder to read for long responses. Probably
+   defer to Phase 5 (along with the VR chat panel).
+2. **Lip-sync.** The vinyl character has paired eyes but no mouth.
+   "Talk" reads via head bobs + sub-sphere animation today. Add a
+   subtle pupil pulse or sub-orbit rate change while TALKING for
+   in-VR legibility? Cheap, worth trying in commit 10.
+3. **Dataset-driven orbit path.** Equator for ocean datasets, pole
+   loops for ice datasets, etc. Cool but potentially distracting —
+   note as future work, don't build in Phase 4.
+4. **Idle visibility.** With Orbit always orbiting the primary
+   globe, does it become visual clutter when the user is focused
+   on a dataset? Ship with a HUD toggle in commit 10 so users can
+   hide the avatar when they want a clean view.
+5. **Multi-globe + 4-globe.** Orbit orbits primary in Phase 4. If
+   4-globe ships later, do we need a "fly between globes" gesture?
+   Defer until 4-globe ships and we have actual usage to react to.
+
+### Phase 4b — 2D Orbit companion in the main app
+
+Phase 4 hands us, almost for free, the ability to bring Orbit into
+the flat web/desktop main app as well. The renderer-agnostic
+`OrbitAvatarNode` + the host-agnostic `orbitDocentBridge` mean the
+2D embed is mostly UI mounting — no second character codebase, no
+duplicate state machine.
+
+The user framing: Orbit can either **augment** the existing chat
+window (a small mascot watching the conversation, reacting with
+gestures) or **replace** parts of it (Orbit as the speaker, chat
+text streams into a bubble attached to the character). One config
+flag picks the mode; both modes use the same controller API.
+
+**Two modes.**
+
+| Mode | Footprint | Behavior |
+|---|---|---|
+| `mascot` (augment) | ~160×160 canvas tucked into the chat panel header | Earth hidden (or wireframe at low alpha). State-driven by docent bridge. Existing chat textarea + bubble flow stays untouched. Lowest risk. |
+| `replacement` | Larger canvas pinned where the chat panel sits | Orbit is the speaker. Response text streams into a DOM bubble anchored to the character (cheaper than CanvasTexture and crisp on retina). The current `chatUI.ts` provides input + history; Orbit becomes the output surface. |
+
+Phase 4b ships `mascot` first — both modes use the same controller
+API, so adding `replacement` later is a CSS/DOM change, not a
+refactor.
+
+**Architecture.**
+
+- New module `src/ui/orbitCompanion.ts` — mounts an
+  `OrbitController` in a small `<canvas>` docked to the chat
+  panel; lazy-loads the orbit chunk on first chat-open so the main
+  bundle is unchanged for users who never open the chat.
+- Reuses `orbitDocentBridge.ts` from Phase 4 unchanged. Same state
+  mapping, same gesture vocabulary, same flight calls.
+- `mode: 'mascot' | 'replacement'` config option on the companion
+  mount. Stored in the existing `sos-docent-config` localStorage
+  blob; configurable from the chat settings panel.
+- Tools menu gains a "Companion" toggle (off / mascot /
+  replacement) for users who want to opt out entirely.
+
+**Bundle.** The orbit chunk is ~200 KB gzipped (Three.js +
+character modules + shaders). Lazy-loaded on first chat-open so
+non-chat users pay zero. The standalone `/orbit` page already
+proves this loading pattern.
+
+**Commit sequence.**
+
+| # | Commit | Notes |
+|---|---|---|
+| 1 | `companion(4b): orbitCompanion mount in chat panel header (mascot mode)` | Lazy-loaded on first chat open; uses orbitDocentBridge unchanged |
+| 2 | `companion(4b): chat-settings toggle (off / mascot / replacement); persists to sos-docent-config` | UI only; `replacement` placeholder |
+| 3 | `companion(4b): replacement mode — Orbit as speaker, DOM bubble anchored to character` | The actual `replacement` implementation |
+| 4 | `companion(4b): Tools menu Companion toggle + a11y polish` | Mirrors the prefers-reduced-motion handling already in `OrbitController` |
+
+Phase 4b is small (~3-4 commits, mostly UI) because Phase 4 did
+the architectural work. It can ship on its own branch any time
+after Phase 4 commits 2–3 land — no VR dependency. Sequencing
+rationale: do Phase 4 first because the VR demand for the
+node-split is the forcing function; Phase 4b becomes a follow-on
+PR rather than its own design discussion.
+
+**Open questions.**
+
+1. **Default mode.** Off (opt-in), or mascot-on by default? Probably
+   off until we get user feedback on whether the mascot is delight
+   or distraction. Easy to flip later.
+2. **Mobile.** The chat panel on portrait phones is already tight.
+   Mascot mode probably hides on `≤600px + portrait`; replacement
+   mode hides outright. Confirm during commit 4.
+3. **Telemetry.** Companion open/close + mode-change events feel
+   like Tier B (research) telemetry — they tell us about a niche
+   feature without needing per-user tracking. Decide during
+   commit 1 whether to wire it; defer if unsure.
 
 ### Phase 5 — richer interaction, voice-driven Orbit & camera sync
 
