@@ -423,7 +423,16 @@ export interface FeaturedDatasetHit {
   position: number
 }
 
-/** Defaults match the route layer (`functions/api/v1/search.ts`). */
+/**
+ * Default + max forwarded to `/api/v1/search` from the docent tool.
+ * The MAX matches the route's server-side ceiling (50). The DEFAULT
+ * is intentionally lower than the route's URL default (10): the
+ * docent's LLM consumer prefers a tighter result set so the JSON
+ * blob fed back into the model stays small. The tool definition
+ * also advertises 5 to the LLM, so this is the value the model
+ * gets when it omits `limit` from a tool call. Tests:
+ * `getSearchDatasetsTool.accepts an optional limit parameter`.
+ */
 const SEARCH_DATASETS_DEFAULT_LIMIT = 5
 const SEARCH_DATASETS_MAX_LIMIT = 50
 /** Defaults match the route layer (`functions/api/v1/featured.ts`). */
