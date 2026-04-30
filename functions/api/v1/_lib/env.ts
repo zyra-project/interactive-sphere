@@ -191,4 +191,18 @@ export interface CatalogEnv {
    * search for the closest one" walk works end to end.
    */
   MOCK_VECTORIZE?: string
+  /**
+   * Workers AI binding for dataset embeddings (Phase 1c). Already
+   * provisioned at the project level for the Orbit chat path; the
+   * embedding pipeline reuses the same binding. `_lib/embeddings.ts`
+   * is the only consumer; routes never touch it directly.
+   */
+  AI?: Ai
+  /**
+   * `"true"` swaps the Workers AI binding for a deterministic
+   * feature-hashing mock so the contributor walkthrough does not
+   * burn AI quota and works without an account. Pairs with
+   * `MOCK_VECTORIZE=true` for the full mocked docent path.
+   */
+  MOCK_AI?: string
 }
