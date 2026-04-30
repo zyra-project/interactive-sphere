@@ -302,7 +302,7 @@ describe('POST /api/v1/publish/datasets/{id}/reindex', () => {
     expect(body.errors[0].code).toBe('not_published')
   })
 
-  it('returns 503 embed_unconfigured when neither bindings nor mock flags are set', async () => {
+  it('returns 503 embed_unconfigured as {error, message} (1d/O — structural error envelope)', async () => {
     const { env } = setupEnv()
     const created = await onRequestPost(
       ctxWithPublisher({
@@ -325,11 +325,15 @@ describe('POST /api/v1/publish/datasets/{id}/reindex', () => {
       ctxWithPublisher<'id'>({ env, method: 'POST', params: { id } }),
     )
     expect(res.status).toBe(503)
-    const body = await readJson<{ errors: Array<{ code: string }> }>(res)
-    expect(body.errors[0].code).toBe('embed_unconfigured')
+    // Mirrors publish.ts's identity_missing envelope rather than
+    // the {errors} validation shape so the CLI can surface the
+    // top-level `error` code instead of collapsing to "http_error".
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('embed_unconfigured')
+    expect(body.message).toMatch(/bindings/i)
   })
 
-  it('returns 404 when the dataset does not exist', async () => {
+  it('returns 404 not_found as {error, message} (1d/O)', async () => {
     const { env } = setupEnv()
     const envWithMocks = { ...env, MOCK_AI: 'true', MOCK_VECTORIZE: 'true' }
     const res = await datasetReindex(
@@ -340,6 +344,11 @@ describe('POST /api/v1/publish/datasets/{id}/reindex', () => {
       }),
     )
     expect(res.status).toBe(404)
+    // Pre-1d/O this came back as {errors:[{code:'not_found'}]} which
+    // the CLI translated to top-level `error: 'http_error'`. Now
+    // mirrors publish/retract's not-found envelope.
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('not_found')
   })
 })
 

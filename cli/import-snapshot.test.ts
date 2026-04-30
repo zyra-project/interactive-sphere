@@ -185,22 +185,17 @@ function fakeClient(opts: FakeClientOptions = {}): { client: TerravizClient; han
 
   const reindexDataset = vi.fn(async (id: string) => {
     if (opts.reindexFailFor?.has(id)) {
-      // Mirror the real route's response shape: top-level `error`
-      // collapsed from `errors[0].code` for the unstructured-error
-      // path, but the structured `errors[]` array is what the route
-      // actually returns. The CLI must print both so operators see
-      // the field/code/message tuple.
+      // Mirror the post-1d/O route shape for `embed_unconfigured`:
+      // `{error, message}` envelope (mirrors publish/retract's
+      // structural-error pattern), no `errors[]`. Pre-1d/O the
+      // route returned `{errors:[]}` for everything which made the
+      // CLI surface `error: "http_error"` instead of the meaningful
+      // code.
       return {
         ok: false as const,
         status: 503,
-        error: 'http_error',
-        errors: [
-          {
-            field: 'embed',
-            code: 'embed_unconfigured',
-            message: 'Embed bindings are not configured.',
-          },
-        ],
+        error: 'embed_unconfigured',
+        message: 'Embed bindings are not configured.',
       }
     }
     return {
@@ -420,11 +415,12 @@ describe('runImportSnapshot --reindex', () => {
     const code = await runImportSnapshot(ctx)
     expect(code).toBe(1)
     expect(handles.reindexDataset).toHaveBeenCalledTimes(2)
-    expect(err.text()).toContain('[DS-B] reindex failed (503)')
-    // Structured errors[] array surfaces field/code/message —
-    // without this an embed_unconfigured 503 collapses to
-    // "http_error" with no actionable detail.
-    expect(err.text()).toContain('embed: embed_unconfigured')
+    // Post-1d/O the route returns {error, message} for 503s, so the
+    // top-level `error` carries the meaningful code rather than
+    // collapsing to "http_error" — the CLI prints it directly
+    // without needing the errors[] indent block.
+    expect(err.text()).toContain('[DS-B] reindex failed (503): embed_unconfigured')
+    expect(err.text()).toContain('Embed bindings are not configured.')
     expect(out.text()).toContain('reindexed:             1')
     expect(out.text()).toContain('failed:                1')
   })

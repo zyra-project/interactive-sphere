@@ -157,6 +157,18 @@ describe('validateDraftCreate', () => {
     })
     expect(errs.some(e => e.field === 'legacy_id' && e.code === 'too_long')).toBe(true)
   })
+
+  it('rejects an empty / whitespace-only legacy_id (1d/O)', () => {
+    // Pre-1d/O an empty string slipped past the createDataset 409
+    // pre-check (which truthy-checks `body.legacy_id`) and only
+    // failed at the SQLite UNIQUE-index level — opaque to the CLI.
+    // Validator-level rejection keeps the mutation layer's
+    // truthy-check honest.
+    const empty = validateDraftCreate({ title: 'X', format: 'video/mp4', legacy_id: '' })
+    expect(empty.some(e => e.field === 'legacy_id' && e.code === 'too_short')).toBe(true)
+    const ws = validateDraftCreate({ title: 'X', format: 'video/mp4', legacy_id: '   ' })
+    expect(ws.some(e => e.field === 'legacy_id' && e.code === 'too_short')).toBe(true)
+  })
 })
 
 describe('validateDraftUpdate', () => {
