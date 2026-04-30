@@ -11,8 +11,12 @@
  *   - `limit`     (optional, 1–50; default 10): number of hits.
  *   - `category`  (optional): exact-match filter, lowercased.
  *   - `peer_id`   (optional): `'local'` (translated to the local
- *                 node id) or a peer node id. Federated peers are
- *                 excluded by default.
+ *                 node id) or a peer node id. Defaults to `'local'`
+ *                 when omitted, so federated peers are excluded by
+ *                 default — matching the plan's federation-opt-in
+ *                 stance (CATALOG_BACKEND_PLAN.md "Per-peer inclusion
+ *                 in the docent"). Pass an explicit peer node id to
+ *                 search a specific peer's content.
  *
  * Caching:
  *   - The most-common query shapes are cached in KV under a
@@ -62,7 +66,8 @@ interface ParsedRequest {
   q: string
   limit: number
   category: string | undefined
-  peer_id: string | undefined
+  /** Always populated — defaults to 'local' when the URL omits the param. */
+  peer_id: string
 }
 
 function parseRequest(url: URL): ParsedRequest | { error: string; message: string } {
@@ -90,25 +95,38 @@ function parseRequest(url: URL): ParsedRequest | { error: string; message: strin
     limit = parsed
   }
 
+  // Default peer_id to 'local' so federated peers are excluded
+  // unless an operator explicitly opts in. The helper translates
+  // 'local' to the configured node id before forwarding to
+  // Vectorize. An explicit empty string in the URL is also
+  // treated as "use the default" — `URLSearchParams.get('')`
+  // returns `''` which is falsy here.
+  const peerIdRaw = url.searchParams.get('peer_id')
+  const peer_id = peerIdRaw && peerIdRaw.length > 0 ? peerIdRaw : 'local'
+
   return {
     q,
     limit,
     category: url.searchParams.get('category') ?? undefined,
-    peer_id: url.searchParams.get('peer_id') ?? undefined,
+    peer_id,
   }
 }
 
 /**
  * Stable cache key for the (query, limit, filters) tuple.
- * Canonicalises whitespace and case so callers that only differ in
- * trivial ways share a cache slot.
+ * Canonicalises whitespace and case for `q` and `category` so trivial
+ * variants share a cache slot. `peer_id` keeps its case — node ids
+ * are case-sensitive in Vectorize metadata + D1 filtering, so two
+ * differently-cased peer ids must NOT collapse into the same cache
+ * slot (otherwise `peer_id=PEER_X` would serve `peer_id=peer_x`'s
+ * results back).
  */
 async function cacheKeyFor(parsed: ParsedRequest): Promise<string> {
   const canonical = JSON.stringify({
     q: parsed.q.normalize('NFC').trim().toLowerCase(),
     l: parsed.limit,
     c: parsed.category?.normalize('NFC').trim().toLowerCase() ?? null,
-    p: parsed.peer_id?.normalize('NFC').trim().toLowerCase() ?? null,
+    p: parsed.peer_id.normalize('NFC').trim(),
   })
   const bytes = new TextEncoder().encode(canonical)
   const digest = await crypto.subtle.digest('SHA-256', bytes)

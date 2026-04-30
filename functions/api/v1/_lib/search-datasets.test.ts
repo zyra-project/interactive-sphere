@@ -292,6 +292,40 @@ describe('searchDatasets — filters', () => {
     const ids = result.datasets.map(d => d.id)
     expect(ids).toEqual(['LOCAL_OCEAN'])
   })
+
+  it('returns empty when peer_id="local" but the node identity row is missing', async () => {
+    // Regression for #59 / Copilot review: prior behaviour fell
+    // through to "no peer filter" when local couldn't resolve,
+    // which would broaden the search to all peers — exactly the
+    // opposite of what the caller asked for. The helper now
+    // short-circuits to an empty result instead.
+    const db = freshMigratedDb()
+    // No node_identity row inserted on purpose. Seed a peer row
+    // so a "no filter" leak would be observable.
+    db.prepare(
+      `INSERT INTO publishers (id, email, display_name, role, status, created_at)
+       VALUES ('PUB001', 'p@t', 'P', 'staff', 'active', ?)`,
+    ).run(TS)
+    db.prepare(
+      `INSERT INTO datasets (id, slug, origin_node, title, abstract, format, data_ref,
+                             weight, visibility, is_hidden, schema_version,
+                             created_at, updated_at, published_at, publisher_id)
+       VALUES ('DS_PEER', 'ds_peer', 'PEER_X', 'Peer Hurricane', 'A.', 'video/mp4', 'vimeo:1',
+               0, 'public', 0, 1, ?, ?, ?, 'PUB001')`,
+    ).run(TS, TS, TS)
+    db.prepare(`INSERT INTO dataset_keywords (dataset_id, keyword) VALUES ('DS_PEER', 'hurricane')`).run()
+
+    const env = freshEnv(db)
+    await indexAll(env, ['DS_PEER'])
+
+    // Without the short-circuit fix, this would return DS_PEER
+    // because no peer_id filter is forwarded to Vectorize.
+    const result = await searchDatasets(env, {
+      query: 'hurricane',
+      filters: { peer_id: 'local' },
+    })
+    expect(result.datasets).toEqual([])
+  })
 })
 
 describe('searchDatasets — hydration filters', () => {

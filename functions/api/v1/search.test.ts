@@ -150,12 +150,46 @@ describe('GET /api/v1/search', () => {
     const { env, kv } = setup()
     await index(env, ['DS_HURR', 'DS_VOLC'])
 
+    // Note: a bare `?q=hurricane` defaults `peer_id` to `'local'`,
+    // so we use an explicit federated peer here for the third
+    // variant to make sure the three URLs hit three distinct cache
+    // slots.
     await onRequestGet(makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane' }))
     await onRequestGet(makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane&limit=5' }))
     await onRequestGet(
-      makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane&peer_id=local' }),
+      makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane&peer_id=PEER_X' }),
     )
     expect(kv?._store.size).toBe(3)
+  })
+
+  it('case-sensitive peer_id values land in different cache slots', async () => {
+    // Regression for #59 / Copilot review: lowercasing peer_id in
+    // the cache key would let `peer_id=PEER_X` and `peer_id=peer_x`
+    // share a slot, but Vectorize metadata is case-sensitive — they
+    // would produce different result sets, so the cache must keep
+    // them separate.
+    const { env, kv } = setup()
+    await index(env, ['DS_HURR'])
+    await onRequestGet(
+      makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane&peer_id=PEER_X' }),
+    )
+    await onRequestGet(
+      makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane&peer_id=peer_x' }),
+    )
+    expect(kv?._store.size).toBe(2)
+  })
+
+  it('defaults peer_id to "local" when the URL omits it', async () => {
+    // Per the route docs ("federated peers are excluded by
+    // default"); the explicit and the implicit forms must share a
+    // cache slot.
+    const { env, kv } = setup()
+    await index(env, ['DS_HURR'])
+    await onRequestGet(makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane' }))
+    await onRequestGet(
+      makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane&peer_id=local' }),
+    )
+    expect(kv?._store.size).toBe(1)
   })
 
   it('canonicalises whitespace + case so trivial query variants share a cache slot', async () => {

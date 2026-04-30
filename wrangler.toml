@@ -124,9 +124,9 @@ id = "00000000000000000000000000000000"
 binding = "CATALOG_R2"
 bucket_name = "terraviz-assets"
 
-# Vectorize index for the docent's semantic search (Phase 1c
-# onward). Holds 768-dim embeddings — one per published dataset
-# — produced from `@cf/baai/bge-base-en-v1.5` against the canonical
+# Vectorize index for the docent's semantic search, Phase 1c
+# onward. Holds 768-dim embeddings — one per published dataset —
+# produced from `@cf/baai/bge-base-en-v1.5` against the canonical
 # embedding text built in `functions/api/v1/_lib/embeddings.ts`.
 # `_lib/vectorize-store.ts` is the only Workers-side consumer:
 # `upsertEmbedding` on publish/update, `deleteEmbedding` on retract,

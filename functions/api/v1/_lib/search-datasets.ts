@@ -132,7 +132,14 @@ export async function searchDatasets(
   // Vectorize's exact-match filter matches what `embed-dataset-job`
   // wrote into the metadata. A request for a literal peer id falls
   // through as-is; a missing peer_id matches all peers.
+  //
+  // The builder returns `'unresolvable'` when the caller asked for
+  // `'local'` but no node identity row exists yet (fresh deploy
+  // pre-`gen:node-key`). Falling through with no filter would
+  // broaden the search to all peers — exactly the opposite of
+  // local-only — so short-circuit to an empty result instead.
   const filter = await buildVectorizeFilter(env, options.filters)
+  if (filter === 'unresolvable') return { datasets: [] }
 
   const queryVec = await embedDatasetText(env, query)
   const matches = await queryEmbedding(env, queryVec, { limit, filter })
@@ -185,10 +192,18 @@ async function fetchPublishedRows(
   return map
 }
 
+/**
+ * Returns either a Vectorize-shaped filter, `undefined` (no filter
+ * — match all peers), or `'unresolvable'` to signal that the
+ * caller asked for `peer_id='local'` but the local node identity
+ * row is missing. The caller short-circuits to an empty result in
+ * the unresolvable case so a fresh deploy doesn't accidentally
+ * surface federated content under a "local" filter.
+ */
 async function buildVectorizeFilter(
   env: SearchDatasetsEnv,
   filters: SearchDatasetsFilters | undefined,
-): Promise<VectorizeVectorMetadataFilter | undefined> {
+): Promise<VectorizeVectorMetadataFilter | undefined | 'unresolvable'> {
   if (!filters) return undefined
   const out: Record<string, string> = {}
 
@@ -199,9 +214,8 @@ async function buildVectorizeFilter(
   if (filters.peer_id) {
     if (filters.peer_id === LOCAL_PEER_ALIAS) {
       const identity = env.CATALOG_DB ? await getNodeIdentity(env.CATALOG_DB) : null
-      if (identity?.node_id) out.peer_id = identity.node_id
-      // If we can't resolve "local" (no node identity yet), fall
-      // through with no filter — better empty results than 5xx.
+      if (!identity?.node_id) return 'unresolvable'
+      out.peer_id = identity.node_id
     } else {
       out.peer_id = filters.peer_id
     }
