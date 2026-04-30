@@ -44,6 +44,8 @@ interface RawEnrichedEntry {
  */
 interface WireDataset {
   id: string
+  /** Phase 1d/T — bulk-import provenance (e.g. `INTERNAL_SOS_768`). */
+  legacyId?: string
   title: string
   format: string
   dataLink: string
@@ -210,6 +212,7 @@ export class DataService {
 
     const fromNode: Dataset[] = body.datasets.map(d => ({
       id: d.id,
+      legacyId: d.legacyId,
       title: d.title,
       format: d.format as DatasetFormat,
       dataLink: d.dataLink,
@@ -323,13 +326,21 @@ export class DataService {
   }
 
   /**
-   * Get a single dataset by ID
+   * Get a single dataset by ID. Primary match is `dataset.id` (the
+   * post-cutover ULID); falls back to `dataset.legacyId` (the
+   * `INTERNAL_SOS_*` id from before the SOS bulk import) so tour
+   * files and other long-lived references that hard-code legacy IDs
+   * keep resolving against the new ULID-keyed catalog. The fallback
+   * is the operator-friendly equivalent of doing a one-off rewrite
+   * of every tour file in the wild — see Phase 1d/T.
    */
   getDatasetById(id: string): Dataset | undefined {
     if (!this.cache) {
       return undefined
     }
-    return this.cache.datasets.find(d => d.id === id)
+    const direct = this.cache.datasets.find(d => d.id === id)
+    if (direct) return direct
+    return this.cache.datasets.find(d => d.legacyId === id)
   }
 
   /**
