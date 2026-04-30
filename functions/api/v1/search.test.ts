@@ -13,7 +13,7 @@
  *     its local engine.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { onRequestGet } from './search'
 import { asD1, makeCtx, makeKV } from './_lib/test-helpers'
 import { freshMigratedDb } from '../../../scripts/lib/catalog-migrations'
@@ -102,6 +102,27 @@ describe('GET /api/v1/search', () => {
     const { env } = setup()
     const longQ = 'a'.repeat(201)
     const ctx = makeCtx({ env, url: `https://t/api/v1/search?q=${longQ}` })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(400)
+  })
+
+  it('accepts q whose canonical form is ≤ MAX_QUERY_LENGTH after surrounding whitespace is trimmed', async () => {
+    // Regression for Copilot review on PR #59: length was checked
+    // against the raw URL value before NFC + trim, so
+    // `q=<spaces>hurricane<spaces>` (canonical length 9) could be
+    // rejected if the URL exceeded 200 chars. Validation now runs
+    // against the canonical form.
+    const { env } = setup()
+    await index(env, ['DS_HURR'])
+    const padded = '%20'.repeat(70) + 'hurricane' + '%20'.repeat(70) // ~210 raw chars; 9 canonical
+    const ctx = makeCtx({ env, url: `https://t/api/v1/search?q=${padded}` })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(200)
+  })
+
+  it('400 when q is whitespace-only after trim', async () => {
+    const { env } = setup()
+    const ctx = makeCtx({ env, url: 'https://t/api/v1/search?q=%20%20%20' })
     const res = await onRequestGet(ctx)
     expect(res.status).toBe(400)
   })
@@ -272,5 +293,33 @@ describe('GET /api/v1/search', () => {
     expect(res.status).toBe(200)
     const body = await readJson<SearchBody>(res)
     expect(body.datasets.length).toBeGreaterThan(0)
+  })
+
+  it('skips the SHA-256 cache-key computation when CATALOG_KV is not bound', async () => {
+    // Regression for Copilot review on PR #59: cache key was being
+    // hashed unconditionally, even when the value would never be
+    // used. Verify by spying on `crypto.subtle.digest` and asserting
+    // it isn't called when KV is absent.
+    const { env } = setup({ withKv: false })
+    await index(env, ['DS_HURR'])
+
+    const digestSpy = vi.spyOn(crypto.subtle, 'digest')
+    try {
+      const res = await onRequestGet(
+        makeCtx({ env, url: 'https://t/api/v1/search?q=hurricane' }),
+      )
+      expect(res.status).toBe(200)
+      // The cache-key path uses SHA-256; the embedder mock and
+      // anything else in the request flow uses no other digest, so
+      // any digest call here would be the cache key.
+      const sha256Calls = digestSpy.mock.calls.filter(call => {
+        const algo = call[0] as string | { name?: string }
+        if (typeof algo === 'string') return algo === 'SHA-256'
+        return algo?.name === 'SHA-256'
+      })
+      expect(sha256Calls.length).toBe(0)
+    } finally {
+      digestSpy.mockRestore()
+    }
   })
 })

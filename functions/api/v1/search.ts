@@ -72,14 +72,8 @@ interface ParsedRequest {
 
 function parseRequest(url: URL): ParsedRequest | { error: string; message: string } {
   const qRaw = url.searchParams.get('q')
-  if (!qRaw || qRaw.trim().length === 0) {
+  if (!qRaw) {
     return { error: 'invalid_request', message: 'Missing required query parameter `q`.' }
-  }
-  if (qRaw.length > MAX_QUERY_LENGTH) {
-    return {
-      error: 'invalid_request',
-      message: `Query parameter \`q\` is too long (max ${MAX_QUERY_LENGTH} chars).`,
-    }
   }
   // Canonicalise `q` once at parse time and use the same value for
   // both the cache key and the embed call. Without this, `q=Hurricane`
@@ -90,6 +84,18 @@ function parseRequest(url: URL): ParsedRequest | { error: string; message: strin
   // Lowercasing is conservative for English BGE which is largely
   // case-insensitive at the token level.
   const q = qRaw.normalize('NFC').trim().toLowerCase()
+  if (q.length === 0) {
+    return { error: 'invalid_request', message: 'Missing required query parameter `q`.' }
+  }
+  // Validate length on the canonical form so a request whose
+  // canonicalised query is ≤ MAX_QUERY_LENGTH isn't rejected just
+  // because the raw URL had a lot of surrounding whitespace.
+  if (q.length > MAX_QUERY_LENGTH) {
+    return {
+      error: 'invalid_request',
+      message: `Query parameter \`q\` is too long (max ${MAX_QUERY_LENGTH} chars).`,
+    }
+  }
 
   const limitRaw = url.searchParams.get('limit')
   let limit = 10
@@ -178,10 +184,17 @@ export const onRequestGet: PagesFunction<CatalogEnv> = async context => {
   }
   const parsed = parsedOrError
 
-  const cacheKey = await cacheKeyFor(parsed)
+  // Compute the cache key lazily — only when KV is bound. Skip the
+  // SHA-256 entirely on KV-less deployments. Memoised across read
+  // and write so we hash once per request when KV is present.
+  let cacheKey: string | null = null
+  const getCacheKey = async (): Promise<string> => {
+    if (cacheKey === null) cacheKey = await cacheKeyFor(parsed)
+    return cacheKey
+  }
 
   if (context.env.CATALOG_KV) {
-    const cached = await context.env.CATALOG_KV.get(cacheKey)
+    const cached = await context.env.CATALOG_KV.get(await getCacheKey())
     if (cached) {
       return new Response(cached, {
         status: 200,
@@ -219,7 +232,7 @@ export const onRequestGet: PagesFunction<CatalogEnv> = async context => {
     headers['Cache-Control'] = `public, max-age=${CACHE_TTL_SECONDS}`
     if (context.env.CATALOG_KV) {
       try {
-        await context.env.CATALOG_KV.put(cacheKey, body, {
+        await context.env.CATALOG_KV.put(await getCacheKey(), body, {
           expirationTtl: CACHE_TTL_SECONDS,
         })
       } catch {
