@@ -8,22 +8,25 @@
  * index, and so a future model-version bump can be rolled out as
  * a one-off cron that walks every row and POSTs reindex.
  *
- * Error envelope: mirrors publish/retract — pre-checks visibility
- * in the route so 404s use `jsonError({error, message})`,
- * `embed_unconfigured` (503, missing binding) does the same since
- * it's a structural / configuration error, and only the structured
- * `not_published` 409 conflict comes back as `{errors: [...]}`.
- * Pre-1d/O the route returned `{errors}` for every non-OK path,
- * which made the CLI surface `error: "http_error"` instead of the
- * more useful `not_found` / `embed_unconfigured` codes.
+ * Error envelope: structural errors (404 not_found, 503
+ * embed_unconfigured) translate to `{error, message}` to match
+ * publish/retract; the structured 409 not_published conflict
+ * stays as `{errors: [...]}` so the CLI's per-error printing
+ * surfaces the field/code/message tuple. Pre-1d/O the route
+ * returned `{errors}` for every non-OK path, which made the CLI
+ * collapse to `error: "http_error"` instead of the meaningful
+ * code.
+ *
+ * 1d/O originally pre-checked visibility in the route via
+ * `getDatasetForPublisher` (mirroring publish.ts), but
+ * `reindexDataset` also does that lookup internally — the dual
+ * fetch was redundant. 1d/P drops the pre-check and translates
+ * the mutation's 404 outcome into the same envelope.
  */
 
 import type { CatalogEnv } from '../../../_lib/env'
 import type { PublisherData } from '../../_middleware'
-import {
-  getDatasetForPublisher,
-  reindexDataset,
-} from '../../../_lib/dataset-mutations'
+import { reindexDataset } from '../../../_lib/dataset-mutations'
 import { type JobQueue, WaitUntilJobQueue } from '../../../_lib/job-queue'
 
 interface ReindexContextData extends PublisherData {
@@ -45,27 +48,18 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
   const id = Array.isArray(idParam) ? idParam[0] : idParam
   if (!id) return jsonError(400, 'invalid_request', 'Missing dataset id.')
 
-  // Pre-check visibility in the route (mirrors publish.ts) so the
-  // 404 lands as `{error: 'not_found'}` rather than the structured
-  // `{errors}` envelope we use for validation / conflict failures.
-  const existing = await getDatasetForPublisher(context.env.CATALOG_DB!, publisher, id)
-  if (!existing) return jsonError(404, 'not_found', `Dataset ${id} not found.`)
-
   const jobQueue =
     (context.data as unknown as ReindexContextData).jobQueue ??
     new WaitUntilJobQueue(context.env, context.waitUntil.bind(context))
   const result = await reindexDataset(context.env, publisher, id, { jobQueue })
   if (!result.ok) {
-    // 503 embed_unconfigured is a configuration error, not a
-    // validation failure — surface it in the same shape publish.ts
-    // / retract.ts use for missing-binding cases.
-    if (result.status === 503) {
+    // Structural errors collapse to {error, message}; the
+    // structured 409 not_published conflict keeps {errors} so the
+    // CLI surfaces field/code/message.
+    if (result.status === 404 || result.status === 503) {
       const e = result.errors[0]
-      return jsonError(503, e.code, e.message)
+      return jsonError(result.status, e.code, e.message)
     }
-    // Anything else (currently only 409 not_published) is a
-    // structured conflict; keep the {errors} shape so the CLI's
-    // per-error printing surfaces field/code/message tuples.
     return new Response(JSON.stringify({ errors: result.errors }), {
       status: result.status,
       headers: { 'Content-Type': CONTENT_TYPE },
