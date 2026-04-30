@@ -112,9 +112,11 @@ export class DataService {
 
   /**
    * Fetch all datasets. Branches on `VITE_CATALOG_SOURCE`:
-   *   - `legacy`: pull from the upstream SOS S3 + enriched JSON
-   *     (existing behaviour; default).
-   *   - `node`: pull from this deployment's `/api/v1/catalog`.
+   *   - `node` (default, post-1d/G cutover): pull from this
+   *     deployment's `/api/v1/catalog`.
+   *   - `legacy`: pull from the upstream SOS S3 + enriched JSON.
+   *     Kept behind the explicit flag for the cutover stabilisation
+   *     window; an operator can roll back with one env-var flip.
    *
    * The two paths produce values of the same `Dataset[]` shape; the
    * sample-tour built-ins and the supported-format filter apply to
