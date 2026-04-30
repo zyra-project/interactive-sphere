@@ -221,22 +221,41 @@ describe('buildSystemPrompt', () => {
     // illustrative IDs. Smaller LLMs mimicked the example prose
     // verbatim — emitting markers with `INTERNAL_SOS_5` /
     // `INTERNAL_SOS_12` regardless of what search_datasets actually
-    // returned. The post-cutover catalog uses ULIDs as `id`, so the
-    // anti-hallucination guard stripped those markers and the user
-    // saw prose without chips:
-    //   [Docent] Stripped hallucinated dataset IDs:
-    //     ["INTERNAL_SOS_5", "INTERNAL_SOS_12"]
-    //
-    // Fix: the example uses obvious placeholder names that aren't
-    // valid ID format in either world (ULID or legacy SOS), so an
-    // LLM that copies them verbatim produces a chip we strip with a
-    // warning rather than a chip that silently disappears looking
-    // like a real ID.
+    // returned. Fix: the example uses obvious placeholder names
+    // that aren't valid ID format in either world (ULID or legacy
+    // SOS).
     const prompt = buildSystemPrompt(datasets, null)
     expect(prompt).not.toMatch(/<<LOAD:INTERNAL_SOS_\d+>>/)
     expect(prompt).not.toMatch(/<<LOAD:INTERNAL_SOS_5>>/)
     // Sanity: the example still demonstrates marker placement.
-    expect(prompt).toMatch(/<<LOAD:[A-Z_]+_FROM_TOOL_RESULT>>/)
+    expect(prompt).toMatch(/<<LOAD:COPY_THE_/)
+  })
+
+  it('does not contain any "(Silently)" annotation or ULID-prefix substring (1d/W)', () => {
+    // Two failures observed on llama-3.1-70b after 1d/S:
+    //
+    //   1. "(Silently) Call search_datasets" leaked verbatim into
+    //      the user-visible reply — the model treated the
+    //      "(Silently)" prefix as text to emit, not as a meta-
+    //      instruction.
+    //   2. The example contained the substring `01KQFFCE` as part
+    //      of a placeholder ULID; the model copied it as a literal
+    //      ID and then incremented the prefix to fabricate
+    //      additional ULIDs (`01KQFFCG`, `01KQFFCH`).
+    //
+    // 1d/W rewrites the example with a structural "What you DO /
+    // What you SAY" divider (no narrate-able prefix words) and
+    // placeholders that don't share any prefix with real ULIDs.
+    const prompt = buildSystemPrompt(datasets, null)
+    // The phrase appears once in the don't-list (mention), but
+    // never as a leading annotation (use). Pre-1d/W the example
+    // had `(Silently) Call search_datasets(...)` and
+    // `(Silently) Receive results...`; the model copied it.
+    expect(prompt).not.toMatch(/\(Silently\) (Call|Receive)/)
+    // No ULID-prefix substring the model could mimic — real
+    // post-cutover ULIDs start with `01K...`. Anything that looks
+    // like a real ULID inside the prompt is a mimicry hazard.
+    expect(prompt).not.toMatch(/01K[A-Z0-9]{3,}/)
   })
 
   it('restricts the "I do not have a dataset" preface to zero-results only', () => {
