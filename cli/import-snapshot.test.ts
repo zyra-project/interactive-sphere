@@ -93,15 +93,18 @@ interface FakeClientHandles {
   list: ReturnType<typeof vi.fn>
   createDataset: ReturnType<typeof vi.fn>
   publishDataset: ReturnType<typeof vi.fn>
+  reindexDataset: ReturnType<typeof vi.fn>
 }
 
 interface FakeClientOptions {
   /** Pre-seeded legacy_id → dataset_id pairs returned by `list`. */
-  existing?: Array<{ id: string; legacy_id: string }>
+  existing?: Array<{ id: string; legacy_id: string; published_at?: string | null }>
   /** Override `createDataset` to return a 409 conflict. */
   createConflictFor?: Set<string>
   /** Override `publishDataset` to fail with a 400 for these dataset ids. */
   publishFailFor?: Set<string>
+  /** Override `reindexDataset` to fail with 503 for these dataset ids. */
+  reindexFailFor?: Set<string>
 }
 
 function fakeClient(opts: FakeClientOptions = {}): { client: TerravizClient; handles: FakeClientHandles } {
@@ -112,7 +115,11 @@ function fakeClient(opts: FakeClientOptions = {}): { client: TerravizClient; han
     ok: true as const,
     status: 200,
     body: {
-      datasets: existing.map(e => ({ id: e.id, legacy_id: e.legacy_id })),
+      datasets: existing.map(e => ({
+        id: e.id,
+        legacy_id: e.legacy_id,
+        published_at: e.published_at ?? '2026-04-30T00:00:00.000Z',
+      })),
       next_cursor: null,
     },
   }))
@@ -167,10 +174,34 @@ function fakeClient(opts: FakeClientOptions = {}): { client: TerravizClient; han
     }
   })
 
-  const stub = { serverUrl: 'http://localhost:8788', list, createDataset, publishDataset }
+  const reindexDataset = vi.fn(async (id: string) => {
+    if (opts.reindexFailFor?.has(id)) {
+      return {
+        ok: false as const,
+        status: 503,
+        error: 'embed_unconfigured',
+        message: 'bindings missing',
+      }
+    }
+    return {
+      ok: true as const,
+      status: 200,
+      body: {
+        dataset: { id, slug: 'x', title: 't', published_at: '2026-04-30T00:00:00.000Z' },
+      },
+    }
+  })
+
+  const stub = {
+    serverUrl: 'http://localhost:8788',
+    list,
+    createDataset,
+    publishDataset,
+    reindexDataset,
+  }
   return {
     client: stub as unknown as TerravizClient,
-    handles: { list, createDataset, publishDataset },
+    handles: { list, createDataset, publishDataset, reindexDataset },
   }
 }
 
@@ -280,11 +311,69 @@ describe('runImportSnapshot', () => {
       error: 'unauthorized',
       message: 'no Access token',
     }))
-    const stub = { serverUrl: 'x', list, createDataset: vi.fn(), publishDataset: vi.fn() }
+    const stub = {
+      serverUrl: 'x',
+      list,
+      createDataset: vi.fn(),
+      publishDataset: vi.fn(),
+      reindexDataset: vi.fn(),
+    }
     const { ctx, err } = makeCtx(stub as unknown as TerravizClient)
     const code = await runImportSnapshot(ctx)
     expect(code).toBe(1)
     expect(err.text()).toContain('Could not list existing datasets')
     expect(err.text()).toContain('401')
+  })
+})
+
+describe('runImportSnapshot --reindex', () => {
+  it('reindexes every published dataset returned by the list endpoint', async () => {
+    const { client, handles } = fakeClient({
+      existing: [
+        { id: 'DS-1', legacy_id: 'INTERNAL_SOS_1' },
+        { id: 'DS-2', legacy_id: 'INTERNAL_SOS_2' },
+        { id: 'DS-3', legacy_id: 'INTERNAL_SOS_3' },
+      ],
+    })
+    const { ctx, out, err } = makeCtx(client, { reindex: true })
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    expect(handles.list).toHaveBeenCalledTimes(1)
+    expect(handles.createDataset).not.toHaveBeenCalled()
+    expect(handles.publishDataset).not.toHaveBeenCalled()
+    expect(handles.reindexDataset).toHaveBeenCalledTimes(3)
+    expect(handles.reindexDataset.mock.calls.map(c => c[0])).toEqual(['DS-1', 'DS-2', 'DS-3'])
+    expect(out.text()).toContain('published rows to re-embed: 3')
+    expect(out.text()).toContain('reindexed:             3')
+    expect(err.text()).toBe('')
+  })
+
+  it('--reindex --dry-run prints the count and never reindexes', async () => {
+    const { client, handles } = fakeClient({
+      existing: [{ id: 'DS-1', legacy_id: 'INTERNAL_SOS_1' }],
+    })
+    const { ctx, out } = makeCtx(client, { reindex: true, 'dry-run': true })
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    expect(handles.reindexDataset).not.toHaveBeenCalled()
+    expect(out.text()).toContain('Dry run')
+    expect(out.text()).toContain('published rows to re-embed: 1')
+  })
+
+  it('--reindex returns exit 1 when a row fails to reindex', async () => {
+    const { client, handles } = fakeClient({
+      existing: [
+        { id: 'DS-A', legacy_id: 'INTERNAL_SOS_A' },
+        { id: 'DS-B', legacy_id: 'INTERNAL_SOS_B' },
+      ],
+      reindexFailFor: new Set(['DS-B']),
+    })
+    const { ctx, out, err } = makeCtx(client, { reindex: true })
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(1)
+    expect(handles.reindexDataset).toHaveBeenCalledTimes(2)
+    expect(err.text()).toContain('[DS-B] reindex failed (503)')
+    expect(out.text()).toContain('reindexed:             1')
+    expect(out.text()).toContain('failed:                1')
   })
 })

@@ -625,6 +625,11 @@ Commands:
                                       skips rows whose legacy_id is already
                                       published. Always run with --dry-run
                                       first to see the plan.
+  import-snapshot --reindex [--dry-run]
+                                      Walk every published dataset and re-enqueue
+                                      its embed job. Use after wiring up
+                                      Vectorize on a catalog that was already
+                                      populated, or for a model-version bump.
 
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)

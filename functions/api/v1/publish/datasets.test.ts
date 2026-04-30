@@ -18,6 +18,7 @@ import {
   onRequestPut as datasetPut,
 } from './datasets/[id]'
 import { onRequestPost as datasetPublish } from './datasets/[id]/publish'
+import { onRequestPost as datasetReindex } from './datasets/[id]/reindex'
 import { onRequestPost as datasetRetract } from './datasets/[id]/retract'
 import { onRequestPost as datasetPreview } from './datasets/[id]/preview'
 import { asD1, makeCtx, makeKV, seedFixtures } from '../_lib/test-helpers'
@@ -249,6 +250,96 @@ describe('POST /api/v1/publish/datasets/{id}/publish', () => {
     expect(res.status).toBe(400)
     const body = await readJson<{ errors: Array<{ field: string }> }>(res)
     expect(body.errors.length).toBeGreaterThan(0)
+  })
+})
+
+describe('POST /api/v1/publish/datasets/{id}/reindex', () => {
+  it('returns 200 + the dataset for a published row when bindings are present', async () => {
+    const { env } = setupEnv()
+    const envWithMocks = { ...env, MOCK_AI: 'true', MOCK_VECTORIZE: 'true' }
+    const created = await onRequestPost(
+      ctxWithPublisher({
+        env: envWithMocks,
+        method: 'POST',
+        body: {
+          title: 'Already published',
+          format: 'video/mp4',
+          data_ref: 'vimeo:1',
+          license_spdx: 'CC-BY-4.0',
+        },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(created)).dataset.id
+    await datasetPublish(
+      ctxWithPublisher<'id'>({ env: envWithMocks, method: 'POST', params: { id } }),
+    )
+
+    const res = await datasetReindex(
+      ctxWithPublisher<'id'>({ env: envWithMocks, method: 'POST', params: { id } }),
+    )
+    expect(res.status).toBe(200)
+    const body = await readJson<{ dataset: { id: string } }>(res)
+    expect(body.dataset.id).toBe(id)
+  })
+
+  it('returns 409 not_published for a draft row', async () => {
+    const { env } = setupEnv()
+    const envWithMocks = { ...env, MOCK_AI: 'true', MOCK_VECTORIZE: 'true' }
+    const created = await onRequestPost(
+      ctxWithPublisher({
+        env: envWithMocks,
+        method: 'POST',
+        body: { title: 'Just a draft', format: 'video/mp4' },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(created)).dataset.id
+
+    const res = await datasetReindex(
+      ctxWithPublisher<'id'>({ env: envWithMocks, method: 'POST', params: { id } }),
+    )
+    expect(res.status).toBe(409)
+    const body = await readJson<{ errors: Array<{ code: string }> }>(res)
+    expect(body.errors[0].code).toBe('not_published')
+  })
+
+  it('returns 503 embed_unconfigured when neither bindings nor mock flags are set', async () => {
+    const { env } = setupEnv()
+    const created = await onRequestPost(
+      ctxWithPublisher({
+        env,
+        method: 'POST',
+        body: {
+          title: 'Pre-vectorize',
+          format: 'video/mp4',
+          data_ref: 'vimeo:1',
+          license_spdx: 'CC-BY-4.0',
+        },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(created)).dataset.id
+    await datasetPublish(
+      ctxWithPublisher<'id'>({ env, method: 'POST', params: { id } }),
+    )
+
+    const res = await datasetReindex(
+      ctxWithPublisher<'id'>({ env, method: 'POST', params: { id } }),
+    )
+    expect(res.status).toBe(503)
+    const body = await readJson<{ errors: Array<{ code: string }> }>(res)
+    expect(body.errors[0].code).toBe('embed_unconfigured')
+  })
+
+  it('returns 404 when the dataset does not exist', async () => {
+    const { env } = setupEnv()
+    const envWithMocks = { ...env, MOCK_AI: 'true', MOCK_VECTORIZE: 'true' }
+    const res = await datasetReindex(
+      ctxWithPublisher<'id'>({
+        env: envWithMocks,
+        method: 'POST',
+        params: { id: 'NOPE' },
+      }),
+    )
+    expect(res.status).toBe(404)
   })
 })
 

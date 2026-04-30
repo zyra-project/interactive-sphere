@@ -511,6 +511,71 @@ export async function publishDataset(
   return { ok: true, dataset: after! }
 }
 
+/**
+ * Re-enqueue the embed job for an already-published dataset. Used
+ * by the Phase 1d/D `--reindex` operator path: an operator that
+ * wires up Vectorize after publishing some rows can backfill the
+ * vector index without an unnecessary update / republish of the
+ * row itself. Also handles the future model-version-bump case —
+ * a one-off cron that walks every row and calls reindex.
+ *
+ * Returns:
+ *   - 404 if the dataset isn't visible to the caller.
+ *   - 409 conflict if the row is unpublished or retracted (vectors
+ *     are only built for published, non-retracted rows; reindex
+ *     of a draft would be a no-op).
+ *   - 503 embed_unconfigured if neither Vectorize binding nor the
+ *     MOCK_VECTORIZE flag is present — surfaces the operator's
+ *     missing-binding configuration before they wonder why the
+ *     index isn't filling.
+ *   - 200 + { dataset: row } when the enqueue succeeds.
+ */
+export async function reindexDataset(
+  env: CatalogEnv,
+  publisher: PublisherRow,
+  id: string,
+  deps: MutationDeps = {},
+): Promise<DraftCreateOutcome | { ok: false; status: 503; errors: ValidationError[] }> {
+  const row = await getDatasetForPublisher(env.CATALOG_DB!, publisher, id)
+  if (!row) {
+    return {
+      ok: false,
+      status: 404,
+      errors: [{ field: 'id', code: 'not_found', message: `Dataset ${id} not found.` }],
+    }
+  }
+  if (!row.published_at || row.retracted_at) {
+    return {
+      ok: false,
+      status: 409,
+      errors: [
+        {
+          field: 'status',
+          code: 'not_published',
+          message: 'Reindex requires a published, non-retracted dataset.',
+        },
+      ],
+    }
+  }
+  if (!isEmbedConfigured(env)) {
+    return {
+      ok: false,
+      status: 503,
+      errors: [
+        {
+          field: 'embed',
+          code: 'embed_unconfigured',
+          message:
+            'Embed bindings are not configured. Bind Workers AI + Vectorize ' +
+            '(or set MOCK_AI=true / MOCK_VECTORIZE=true for local dev) and re-run.',
+        },
+      ],
+    }
+  }
+  await enqueueEmbed(deps, env, id)
+  return { ok: true, dataset: row }
+}
+
 export async function retractDataset(
   env: CatalogEnv,
   id: string,

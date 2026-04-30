@@ -59,7 +59,7 @@ const LIST_PAGE_LIMIT = 200
 const PUBLISH_PACE_MS = 200
 
 interface DatasetListEnvelope {
-  datasets: Array<{ id: string; legacy_id: string | null }>
+  datasets: Array<{ id: string; legacy_id: string | null; published_at: string | null }>
   next_cursor: string | null
 }
 
@@ -128,6 +128,72 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * --reindex path. Walks every published, non-retracted dataset
+ * visible to the caller and POSTs `/reindex` on each, paced at the
+ * same 5-rows/sec rhythm as the publish path so a 600-row pass
+ * doesn't burst Workers AI quota. Skips the snapshot files entirely.
+ *
+ * Uses cases (per the 1d brief):
+ *   1. Operator wired up Vectorize after the catalog was already
+ *      populated — embed jobs were silently no-op'd at publish
+ *      time. Re-enqueue closes the gap.
+ *   2. Future model-version bump rolled out as a one-off cron.
+ */
+async function runReindexAll(ctx: CommandContext, dryRun: boolean): Promise<number> {
+  const ids: string[] = []
+  let cursor: string | undefined
+  do {
+    const result = await ctx.client.list<DatasetListEnvelope>({
+      status: 'published',
+      limit: LIST_PAGE_LIMIT,
+      cursor,
+    })
+    if (!result.ok) {
+      ctx.stderr.write(
+        `Could not list published datasets (${result.status}): ${result.error}` +
+          (result.message ? ` — ${result.message}` : '') +
+          '\n',
+      )
+      return 1
+    }
+    for (const row of result.body.datasets) {
+      if (row.published_at) ids.push(row.id)
+    }
+    cursor = result.body.next_cursor ?? undefined
+  } while (cursor)
+
+  ctx.stdout.write(`Reindex plan:\n  published rows to re-embed: ${ids.length}\n`)
+  if (dryRun) {
+    ctx.stdout.write('\nDry run — no rows will be re-enqueued. Re-run without --dry-run to apply.\n')
+    return 0
+  }
+
+  let succeeded = 0
+  let failed = 0
+  for (const id of ids) {
+    const result = await ctx.client.reindexDataset(id)
+    if (!result.ok) {
+      failed++
+      ctx.stderr.write(
+        `[${id}] reindex failed (${result.status}): ${result.error}` +
+          (result.message ? ` — ${result.message}` : '') +
+          '\n',
+      )
+      continue
+    }
+    succeeded++
+    if (PUBLISH_PACE_MS > 0) await sleep(PUBLISH_PACE_MS)
+  }
+
+  ctx.stdout.write(
+    `\nReindex complete:\n` +
+      `  reindexed:             ${succeeded}\n` +
+      `  failed:                ${failed}\n`,
+  )
+  return failed > 0 ? 1 : 0
+}
+
+/**
  * Pretty-print the dry-run plan. Used by both `--dry-run` and the
  * pre-flight summary the live import emits before its first POST.
  */
@@ -159,6 +225,11 @@ export async function runImportSnapshot(ctx: CommandContext): Promise<number> {
     getString(ctx.args.options, 'enriched') ?? DEFAULT_ENRICHED_PATH,
   )
   const dryRun = getBool(ctx.args.options, 'dry-run')
+  const reindex = getBool(ctx.args.options, 'reindex')
+
+  if (reindex) {
+    return runReindexAll(ctx, dryRun)
+  }
 
   // --- Stage 1 — load + map ----------------------------------------
   let sosWrap: { datasets: RawSosEntry[] }

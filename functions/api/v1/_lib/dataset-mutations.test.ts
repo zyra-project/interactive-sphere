@@ -24,6 +24,7 @@ import {
   isEmbedConfigured,
   listDatasetsForPublisher,
   publishDataset,
+  reindexDataset,
   retractDataset,
   updateDataset,
 } from './dataset-mutations'
@@ -531,5 +532,92 @@ describe('retractDataset — delete-embedding enqueue', () => {
     expect(
       (await queryEmbedding(env, queryVec)).find(m => m.dataset_id === created.dataset.id),
     ).toBeUndefined()
+  })
+})
+
+describe('reindexDataset — bulk re-embed entry point (1d/D)', () => {
+  it('enqueues `embed_dataset` for a published row when env is configured', async () => {
+    const { env } = setupEmbedEnv()
+    const created = await createDataset(env, STAFF, {
+      title: 'Reindex Me',
+      format: 'video/mp4',
+      data_ref: 'vimeo:1',
+      license_spdx: 'CC-BY-4.0',
+    })
+    if (!created.ok) throw new Error('seed')
+    await publishDataset(env, created.dataset.id)
+
+    const queue = new CapturingJobQueue()
+    const result = await reindexDataset(env, STAFF, created.dataset.id, { jobQueue: queue })
+    expect(result.ok).toBe(true)
+    expect(queue.records).toEqual([
+      { name: EMBED_JOB_NAME, payload: { dataset_id: created.dataset.id } },
+    ])
+  })
+
+  it('returns 404 when the dataset is not visible to the caller', async () => {
+    const { env } = setupEmbedEnv()
+    const result = await reindexDataset(env, STAFF, 'NONEXISTENT', {})
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(404)
+    expect(result.errors[0].code).toBe('not_found')
+  })
+
+  it('returns 409 not_published when the row is still a draft', async () => {
+    const { env } = setupEmbedEnv()
+    const created = await createDataset(env, STAFF, {
+      title: 'Draft only',
+      format: 'video/mp4',
+    })
+    if (!created.ok) throw new Error('seed')
+
+    const queue = new CapturingJobQueue()
+    const result = await reindexDataset(env, STAFF, created.dataset.id, { jobQueue: queue })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.errors[0].code).toBe('not_published')
+    expect(queue.records).toEqual([])
+  })
+
+  it('returns 409 not_published when the row has been retracted', async () => {
+    const { env } = setupEmbedEnv()
+    const created = await createDataset(env, STAFF, {
+      title: 'Retract first',
+      format: 'video/mp4',
+      data_ref: 'vimeo:1',
+      license_spdx: 'CC-BY-4.0',
+    })
+    if (!created.ok) throw new Error('seed')
+    await publishDataset(env, created.dataset.id)
+    await retractDataset(env, created.dataset.id)
+
+    const queue = new CapturingJobQueue()
+    const result = await reindexDataset(env, STAFF, created.dataset.id, { jobQueue: queue })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(queue.records).toEqual([])
+  })
+
+  it('returns 503 embed_unconfigured when neither bindings nor mock flags are set', async () => {
+    const { env } = setupEnv() // no MOCK_AI / MOCK_VECTORIZE
+    const created = await createDataset(env, STAFF, {
+      title: 'Pre-vectorize publish',
+      format: 'video/mp4',
+      data_ref: 'vimeo:1',
+      license_spdx: 'CC-BY-4.0',
+    })
+    if (!created.ok) throw new Error('seed')
+    await publishDataset(env, created.dataset.id)
+
+    const queue = new CapturingJobQueue()
+    const result = await reindexDataset(env, STAFF, created.dataset.id, { jobQueue: queue })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(503)
+    expect(result.errors[0].code).toBe('embed_unconfigured')
+    expect(queue.records).toEqual([])
   })
 })
