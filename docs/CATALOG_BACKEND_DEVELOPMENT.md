@@ -335,6 +335,41 @@ production:
 If any of these fail, the troubleshooting matrix in "Local
 debugging" below lists the common causes.
 
+#### Docent model floor
+
+The docent's chat quality is bounded by the configured LLM. The
+post-1d cutover relies on the model **calling `search_datasets`
+and copying ID strings verbatim** from the tool result — both
+behaviours that mid-tier models (≤17B) execute unreliably:
+
+- **Tool-call short-circuiting.** Smaller models often answer
+  knowledge questions ("What are hurricanes?") from training data
+  without calling discovery tools, so chat replies come back as
+  prose without Load chips.
+- **ULID confabulation.** Models that recognise ULID-shaped
+  strings (`01...26-char base32`) frequently regenerate plausible
+  ones rather than copying the literal id from the tool result.
+  The `validateAndCleanText` safety net (1c/M) strips those, so
+  the user sees the dataset title in prose with no chip — the
+  chat is correct but mute.
+
+What works in practice:
+
+| LLM | Tool-calling reliability | Notes |
+|---|---|---|
+| `@cf/meta/llama-3.1-70b-instruct` | High | Production default. |
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | High | Faster, marginal quality drop. |
+| `@cf/meta/llama-3.1-8b-instruct` | Marginal | Good prose, ULID confabulation common. |
+| `@cf/meta/llama-4-scout` | Marginal | Tool-calling works on clear discovery prompts; ULID copying unreliable. |
+| Anything ≤8B | Unreliable | Docent works as a chat surface but Load chips rarely render. |
+
+The configured model is set per-deploy under
+**Orbit panel → ⚙ Settings → Model**. Operators investigating a
+"chat replies but no chips" report should check the model first
+before looking for code-side bugs — the Phase 1d safety nets
+silently strip everything an under-capable model would have
+broken anyway.
+
 ### Account-level setup (production-leaning)
 
 Most contributors never touch this. You only need it if you are
