@@ -51,6 +51,12 @@ export interface DatasetRow {
   published_at: string | null
   retracted_at: string | null
   publisher_id: string | null
+  /**
+   * Idempotency key for upstream-imported rows (e.g. the Phase 1d
+   * SOS bulk import populates this with the snapshot's
+   * `INTERNAL_SOS_*` id). NULL for publisher-created drafts.
+   */
+  legacy_id: string | null
 }
 
 export interface DecorationRows {

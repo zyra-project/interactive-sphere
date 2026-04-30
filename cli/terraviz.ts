@@ -28,6 +28,7 @@ import {
   runUpload,
   type CommandContext,
 } from './commands'
+import { runImportSnapshot } from './import-snapshot'
 
 async function main(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h' || argv[0] === 'help') {
@@ -71,6 +72,8 @@ async function main(argv: string[]): Promise<number> {
       return runUpload(ctx)
     case 'tour':
       return runTour(ctx)
+    case 'import-snapshot':
+      return runImportSnapshot(ctx)
     case 'help':
     case '--help':
     case '-h':

@@ -285,6 +285,30 @@ export async function createDataset(
   const id = newUlid()
   const now = new Date().toISOString()
 
+  // The unique partial index on `legacy_id` (migration 0008) means
+  // a duplicate import would surface as a SQLite UNIQUE-constraint
+  // failure. Pre-check so the importer gets a structured 409 with
+  // the existing row's id rather than an opaque write error.
+  if (body.legacy_id) {
+    const existing = await db
+      .prepare('SELECT id FROM datasets WHERE legacy_id = ? LIMIT 1')
+      .bind(body.legacy_id)
+      .first<{ id: string }>()
+    if (existing) {
+      return {
+        ok: false,
+        status: 409,
+        errors: [
+          {
+            field: 'legacy_id',
+            code: 'conflict',
+            message: `legacy_id "${body.legacy_id}" already imported as ${existing.id}.`,
+          },
+        ],
+      }
+    }
+  }
+
   await db
     .prepare(
       `INSERT INTO datasets (
@@ -292,9 +316,9 @@ export async function createDataset(
          thumbnail_ref, legend_ref, caption_ref, website_link,
          start_time, end_time, period, weight, visibility, is_hidden, run_tour_on_load,
          license_spdx, license_url, license_statement, attribution_text,
-         rights_holder, doi, citation_text,
+         rights_holder, doi, citation_text, legacy_id,
          schema_version, created_at, updated_at, published_at, publisher_id
-       ) VALUES (?,?,(SELECT node_id FROM node_identity LIMIT 1),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       ) VALUES (?,?,(SELECT node_id FROM node_identity LIMIT 1),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       id,
@@ -327,6 +351,7 @@ export async function createDataset(
       body.rights_holder ?? null,
       body.doi ?? null,
       body.citation_text ?? null,
+      body.legacy_id ?? null,
       1,
       now,
       now,
@@ -390,6 +415,7 @@ export async function updateDataset(
   if (body.rights_holder !== undefined) set('rights_holder', body.rights_holder)
   if (body.doi !== undefined) set('doi', body.doi)
   if (body.citation_text !== undefined) set('citation_text', body.citation_text)
+  if (body.legacy_id !== undefined) set('legacy_id', body.legacy_id)
 
   if (body.slug !== undefined) {
     const unique = await ensureUniqueSlug(db, body.slug!, id)

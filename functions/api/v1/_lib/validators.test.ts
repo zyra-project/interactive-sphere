@@ -114,6 +114,25 @@ describe('validateDraftCreate', () => {
     })
     expect(errs.some(e => e.field === 'end_time' && e.code === 'before_start')).toBe(true)
   })
+
+  it('accepts a legacy_id under 100 chars for bulk-imported rows', () => {
+    expect(
+      validateDraftCreate({
+        title: 'Hurricane Helene',
+        format: 'video/mp4',
+        legacy_id: 'INTERNAL_SOS_768',
+      }),
+    ).toEqual([])
+  })
+
+  it('rejects an over-long legacy_id', () => {
+    const errs = validateDraftCreate({
+      title: 'X',
+      format: 'video/mp4',
+      legacy_id: 'L'.repeat(101),
+    })
+    expect(errs.some(e => e.field === 'legacy_id' && e.code === 'too_long')).toBe(true)
+  })
 })
 
 describe('validateDraftUpdate', () => {

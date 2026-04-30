@@ -109,6 +109,40 @@ describe('createDataset', () => {
       expect(b.dataset.slug).toBe('same-title-2')
     }
   })
+
+  it('persists legacy_id and surfaces it on the returned row', async () => {
+    const { env } = setupEnv()
+    const result = await createDataset(env, STAFF, {
+      title: 'Imported Row',
+      format: 'video/mp4',
+      legacy_id: 'INTERNAL_SOS_42',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.dataset.legacy_id).toBe('INTERNAL_SOS_42')
+  })
+
+  it('rejects a duplicate legacy_id with a structured 409', async () => {
+    const { env } = setupEnv()
+    const first = await createDataset(env, STAFF, {
+      title: 'First Import',
+      format: 'video/mp4',
+      legacy_id: 'INTERNAL_SOS_99',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    const second = await createDataset(env, STAFF, {
+      title: 'Second Import (same source row)',
+      format: 'video/mp4',
+      legacy_id: 'INTERNAL_SOS_99',
+    })
+    expect(second.ok).toBe(false)
+    if (second.ok) return
+    expect(second.status).toBe(409)
+    expect(second.errors[0].field).toBe('legacy_id')
+    expect(second.errors[0].code).toBe('conflict')
+    expect(second.errors[0].message).toContain(first.dataset.id)
+  })
 })
 
 describe('listDatasetsForPublisher', () => {

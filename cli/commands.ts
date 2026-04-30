@@ -619,6 +619,13 @@ Commands:
   tour update <id> <metadata.json>    Patch tour metadata
   tour preview <id> [--ttl=<seconds>] Mint a short-lived preview URL
 
+  import-snapshot [--list=<path>] [--enriched=<path>] [--dry-run]
+                                      One-shot bulk import of the legacy SOS
+                                      catalog snapshot. Idempotent — re-running
+                                      skips rows whose legacy_id is already
+                                      published. Always run with --dry-run
+                                      first to see the plan.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)
