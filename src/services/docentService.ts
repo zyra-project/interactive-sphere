@@ -8,7 +8,7 @@
 import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext, LLMContextSnapshot, ReadingLevel } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart, type LLMToolCall } from './llmProvider'
 import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './appleIntelligenceProvider'
-import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
+import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
 import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { resolveRegion, boundsToGeoJSON } from '../data/regions'
@@ -391,6 +391,117 @@ export function executeSearchCatalog(
     }
     return result
   })
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1c — backend discovery tools (search_datasets + list_featured_datasets)
+//
+// Both call into the node catalog backend (`/api/v1/search?q=...` and
+// `/api/v1/featured`) and shape the response into a payload the LLM can
+// consume on the next round. Failures soft-degrade to an empty result —
+// the legacy `search_catalog` tool stays in the tool list as a fallback,
+// and the local engine fallback handles full LLM unavailability.
+// ---------------------------------------------------------------------------
+
+/** Hit shape forwarded back to the LLM after a search_datasets tool call. */
+export interface SearchDatasetsHit {
+  id: string
+  title: string
+  abstract_snippet: string
+  categories: string[]
+  peer_id: string
+  score: number
+}
+
+/** Hit shape forwarded back to the LLM after a list_featured_datasets tool call. */
+export interface FeaturedDatasetHit {
+  id: string
+  title: string
+  abstract_snippet: string
+  thumbnail_url: string | null
+  categories: string[]
+  position: number
+}
+
+/** Defaults match the route layer (`functions/api/v1/search.ts`). */
+const SEARCH_DATASETS_DEFAULT_LIMIT = 5
+const SEARCH_DATASETS_MAX_LIMIT = 50
+/** Defaults match the route layer (`functions/api/v1/featured.ts`). */
+const LIST_FEATURED_DEFAULT_LIMIT = 6
+const LIST_FEATURED_MAX_LIMIT = 24
+
+/** Trim trailing slashes so URL concatenation stays clean. */
+function normaliseApiBase(apiUrl: string): string {
+  return apiUrl.replace(/\/+$/, '')
+}
+
+/**
+ * Execute a `search_datasets` tool call against the node catalog
+ * backend. Returns the result shape the LLM expects to see in a
+ * `tool` message reply. On error / unreachable / degraded, returns
+ * an empty `{ datasets: [] }` so the LLM can move on (or call the
+ * legacy `search_catalog` fallback).
+ */
+export async function executeSearchDatasets(
+  args: Record<string, unknown>,
+  config: DocentConfig,
+): Promise<{ datasets: SearchDatasetsHit[] }> {
+  const query = typeof args.query === 'string' ? args.query.trim() : ''
+  if (!query) return { datasets: [] }
+  if (!config.apiUrl) return { datasets: [] }
+
+  const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : SEARCH_DATASETS_DEFAULT_LIMIT
+  const limit = Math.max(1, Math.min(SEARCH_DATASETS_MAX_LIMIT, Math.floor(limitArg)))
+
+  const url = new URL(`${normaliseApiBase(config.apiUrl)}/v1/search`, window.location.origin)
+  url.searchParams.set('q', query)
+  url.searchParams.set('limit', String(limit))
+
+  try {
+    const res = await fetch(url.toString(), { method: 'GET' })
+    if (!res.ok) {
+      logger.warn(`[Docent] search_datasets returned ${res.status}`)
+      return { datasets: [] }
+    }
+    const body = (await res.json()) as { datasets?: SearchDatasetsHit[]; degraded?: string }
+    if (body.degraded) {
+      logger.info(`[Docent] search_datasets degraded: ${body.degraded}`)
+    }
+    return { datasets: Array.isArray(body.datasets) ? body.datasets : [] }
+  } catch (err) {
+    logger.warn('[Docent] search_datasets fetch failed:', err)
+    return { datasets: [] }
+  }
+}
+
+/**
+ * Execute a `list_featured_datasets` tool call. Same soft-degrade
+ * semantics as `executeSearchDatasets`.
+ */
+export async function executeListFeaturedDatasets(
+  args: Record<string, unknown>,
+  config: DocentConfig,
+): Promise<{ datasets: FeaturedDatasetHit[] }> {
+  if (!config.apiUrl) return { datasets: [] }
+
+  const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : LIST_FEATURED_DEFAULT_LIMIT
+  const limit = Math.max(1, Math.min(LIST_FEATURED_MAX_LIMIT, Math.floor(limitArg)))
+
+  const url = new URL(`${normaliseApiBase(config.apiUrl)}/v1/featured`, window.location.origin)
+  url.searchParams.set('limit', String(limit))
+
+  try {
+    const res = await fetch(url.toString(), { method: 'GET' })
+    if (!res.ok) {
+      logger.warn(`[Docent] list_featured_datasets returned ${res.status}`)
+      return { datasets: [] }
+    }
+    const body = (await res.json()) as { datasets?: FeaturedDatasetHit[] }
+    return { datasets: Array.isArray(body.datasets) ? body.datasets : [] }
+  } catch (err) {
+    logger.warn('[Docent] list_featured_datasets fetch failed:', err)
+    return { datasets: [] }
+  }
 }
 
 /**
@@ -844,9 +955,14 @@ export async function* processMessage(
       ...buildCompressedHistory(history),
       userMessage,
     ]
-    // search_catalog is first because it's the primary discovery mechanism
-    // now that the catalog is no longer in the system prompt.
+    // search_datasets is first as the preferred (Phase 1c) discovery
+    // mechanism — semantic vector search over the node catalog backend.
+    // list_featured_datasets covers cold-start "what should I look at?"
+    // prompts. search_catalog stays as a legacy keyword fallback for
+    // self-hosters who haven't wired the backend yet.
     const tools = [
+      getSearchDatasetsTool(),
+      getListFeaturedDatasetsTool(),
       getSearchCatalogTool(),
       getLoadDatasetTool(),
       getFlyToTool(),
@@ -889,12 +1005,15 @@ export async function* processMessage(
       const conversationMessages: LLMMessage[] = [...llmMessages]
       let attemptErrored = false
       let round = 0
-      // Track all datasets returned by search_catalog across rounds in this
-      // attempt so we can auto-inject Load buttons for any the LLM mentions
-      // by title but forgets to tag with <<LOAD:...>> markers.
-      // Seed with pre-search results so the auto-inject safety net can match
-      // dataset titles in the LLM's prose even when the model doesn't call
-      // the search_catalog tool. Any tool-call results are appended later.
+      // Track all datasets returned by discovery tools across rounds in
+      // this attempt so we can auto-inject Load buttons for any the LLM
+      // mentions by title but forgets to tag with <<LOAD:...>> markers.
+      // Seed with pre-search results so the auto-inject safety net can
+      // match dataset titles in the LLM's prose even when the model
+      // doesn't call any discovery tool. Any tool-call results are
+      // appended later — both legacy `search_catalog` results and Phase
+      // 1c `search_datasets` / `list_featured_datasets` results land
+      // here, normalised to the same minimal shape (id + title).
       const searchResultsThisAttempt: CatalogSearchResult[] = [...preSearchCatalogResults]
 
       try {
@@ -933,8 +1052,14 @@ export async function* processMessage(
                 break
 
               case 'tool_call':
-                if (chunk.call.name === 'search_catalog') {
-                  // Needs a tool result sent back — queue for end of round.
+                if (
+                  chunk.call.name === 'search_catalog' ||
+                  chunk.call.name === 'search_datasets' ||
+                  chunk.call.name === 'list_featured_datasets'
+                ) {
+                  // All three discovery tools need a tool-result message
+                  // sent back to the LLM — queue for the end-of-round
+                  // dispatch below.
                   pendingSearchCalls.push(chunk.call)
                 } else if (chunk.call.name === 'load_dataset') {
                   const args = chunk.call.arguments as { dataset_id?: string; dataset_title?: string }
@@ -1091,14 +1216,51 @@ export async function* processMessage(
           })
 
           for (const call of pendingSearchCalls) {
-            const results = executeSearchCatalog(call.arguments, datasets)
-            searchResultsThisAttempt.push(...results)
-            logger.info(`[Docent] search_catalog("${String(call.arguments.query ?? '')}") → ${results.length} result(s)`)
-            conversationMessages.push({
-              role: 'tool',
-              tool_call_id: call.id,
-              content: JSON.stringify(results),
-            })
+            if (call.name === 'search_datasets') {
+              const result = await executeSearchDatasets(call.arguments, cfg)
+              for (const hit of result.datasets) {
+                searchResultsThisAttempt.push({
+                  id: hit.id,
+                  title: hit.title,
+                  categories: hit.categories,
+                  description: hit.abstract_snippet,
+                })
+              }
+              logger.info(
+                `[Docent] search_datasets("${String(call.arguments.query ?? '')}") → ${result.datasets.length} result(s)`,
+              )
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(result),
+              })
+            } else if (call.name === 'list_featured_datasets') {
+              const result = await executeListFeaturedDatasets(call.arguments, cfg)
+              for (const hit of result.datasets) {
+                searchResultsThisAttempt.push({
+                  id: hit.id,
+                  title: hit.title,
+                  categories: hit.categories,
+                  description: hit.abstract_snippet,
+                })
+              }
+              logger.info(`[Docent] list_featured_datasets → ${result.datasets.length} result(s)`)
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(result),
+              })
+            } else {
+              // Legacy in-process search_catalog.
+              const results = executeSearchCatalog(call.arguments, datasets)
+              searchResultsThisAttempt.push(...results)
+              logger.info(`[Docent] search_catalog("${String(call.arguments.query ?? '')}") → ${results.length} result(s)`)
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(results),
+              })
+            }
           }
         }
 

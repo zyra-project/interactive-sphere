@@ -8,6 +8,8 @@ import {
   buildCompressedHistory,
   summarizeOlderMessages,
   getSearchCatalogTool,
+  getSearchDatasetsTool,
+  getListFeaturedDatasetsTool,
   getLoadDatasetTool,
   getFlyToTool,
   getSetTimeTool,
@@ -115,15 +117,64 @@ describe('getSearchCatalogTool', () => {
   })
 })
 
+describe('getSearchDatasetsTool (Phase 1c)', () => {
+  it('returns the search_datasets function tool', () => {
+    const tool = getSearchDatasetsTool()
+    expect(tool.type).toBe('function')
+    expect(tool.function.name).toBe('search_datasets')
+  })
+
+  it('requires a query parameter', () => {
+    const tool = getSearchDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    expect(params.required).toEqual(['query'])
+    const props = params.properties as Record<string, { type: string }>
+    expect(props.query.type).toBe('string')
+  })
+
+  it('caps limit at the route-layer maximum (50)', () => {
+    const tool = getSearchDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    const props = params.properties as Record<string, { maximum: number }>
+    expect(props.limit.maximum).toBe(50)
+  })
+
+  it('description flags it as semantic / vector search', () => {
+    const tool = getSearchDatasetsTool()
+    expect(tool.function.description).toMatch(/semantic|vector/i)
+  })
+})
+
+describe('getListFeaturedDatasetsTool (Phase 1c)', () => {
+  it('returns the list_featured_datasets function tool', () => {
+    const tool = getListFeaturedDatasetsTool()
+    expect(tool.type).toBe('function')
+    expect(tool.function.name).toBe('list_featured_datasets')
+  })
+
+  it('takes no required parameters', () => {
+    const tool = getListFeaturedDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    expect(params.required).toBeUndefined()
+  })
+
+  it('caps limit at the route-layer maximum (24)', () => {
+    const tool = getListFeaturedDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    const props = params.properties as Record<string, { maximum: number }>
+    expect(props.limit.maximum).toBe(24)
+  })
+
+  it('description targets cold-start prompts', () => {
+    const tool = getListFeaturedDatasetsTool()
+    expect(tool.function.description).toMatch(/cold[- ]start|interesting|where to start/i)
+  })
+})
+
 describe('buildSystemPrompt', () => {
   it('includes docent role description', () => {
     const prompt = buildSystemPrompt(datasets, null)
     expect(prompt).toContain('Orbit')
-  })
-
-  it('includes dataset count', () => {
-    const prompt = buildSystemPrompt(datasets, null)
-    expect(prompt).toContain(String(datasets.length))
   })
 
   it('includes current dataset context', () => {
@@ -214,6 +265,50 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Reading Level: Expert')
     expect(prompt).toContain('ignore the default 150-word limit')
     expect(prompt).toContain('300 words')
+  })
+
+  // ------------------------------------------------------------------
+  // Phase 1c — static prompt: catalog state no longer affects content
+  // ------------------------------------------------------------------
+
+  it('does NOT include the per-turn dataset count', () => {
+    // The pre-1c prompt rendered "The collection has N datasets across..."
+    // — it now ships a static description. Same prompt for any catalog
+    // size; only currentDataset / readingLevel / etc shape it.
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).not.toMatch(/has\s+\d+\s+datasets across/i)
+    expect(prompt).not.toMatch(/collection has \d+/i)
+  })
+
+  it('produces an identical prompt for catalogs of different sizes', () => {
+    // Static-prompt invariant: feeding 0 datasets and many datasets
+    // through `buildSystemPrompt` produces the same string when the
+    // other inputs match.
+    const small = buildSystemPrompt([], null)
+    const large = buildSystemPrompt([...datasets, ...datasets, ...datasets], null)
+    expect(large).toBe(small)
+  })
+
+  it('mentions the new search_datasets tool', () => {
+    expect(buildSystemPrompt(datasets, null)).toContain('search_datasets')
+  })
+
+  it('mentions the new list_featured_datasets tool for cold-start prompts', () => {
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).toContain('list_featured_datasets')
+    expect(prompt).toMatch(/cold[- ]start|where to start|something interesting/i)
+  })
+
+  it('flags search_datasets as the preferred / primary discovery tool', () => {
+    // Section ordering matters: the LLM scans top-down and tends to
+    // pick the first-listed tool. Verify search_datasets appears
+    // before search_catalog in the prompt.
+    const prompt = buildSystemPrompt(datasets, null)
+    const searchDatasetsAt = prompt.indexOf('search_datasets')
+    const searchCatalogAt = prompt.indexOf('search_catalog')
+    expect(searchDatasetsAt).toBeGreaterThan(-1)
+    expect(searchCatalogAt).toBeGreaterThan(-1)
+    expect(searchDatasetsAt).toBeLessThan(searchCatalogAt)
   })
 })
 

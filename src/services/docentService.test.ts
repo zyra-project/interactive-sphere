@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
-import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime } from './docentService'
+import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime, executeSearchDatasets, executeListFeaturedDatasets } from './docentService'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -1444,5 +1444,214 @@ describe('processMessage — rewrite for Phase 5 markers', () => {
     const rewrite = chunks.find(c => c.type === 'rewrite') as { type: 'rewrite'; text: string } | undefined
     expect(rewrite).toBeDefined()
     expect(rewrite!.text).not.toContain('REGION')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 1c — backend discovery tools
+// ---------------------------------------------------------------------------
+
+const baseConfig: DocentConfig = {
+  apiUrl: '/api',
+  apiKey: '',
+  model: 'test',
+  enabled: true,
+  readingLevel: 'general',
+  visionEnabled: false,
+}
+
+describe('executeSearchDatasets', () => {
+  it('returns empty for blank query without hitting the network', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const result = await executeSearchDatasets({ query: '   ' }, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('returns empty when apiUrl is unset', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const result = await executeSearchDatasets(
+      { query: 'hurricane' },
+      { ...baseConfig, apiUrl: '' },
+    )
+    expect(result).toEqual({ datasets: [] })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('hits /api/v1/search?q= with the right params and surfaces the dataset list', async () => {
+    const datasetsResp = [
+      { id: 'DS001', title: 'Atlantic Hurricane Tracks', abstract_snippet: 'A.', categories: ['Atmosphere'], peer_id: 'local', score: 0.91 },
+    ]
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: datasetsResp }), { status: 200 }))
+
+    const result = await executeSearchDatasets({ query: 'hurricane', limit: 7 }, baseConfig)
+    expect(result.datasets).toEqual(datasetsResp)
+
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.pathname).toBe('/api/v1/search')
+    expect(url.searchParams.get('q')).toBe('hurricane')
+    expect(url.searchParams.get('limit')).toBe('7')
+  })
+
+  it('clamps limit to the route-layer max (50)', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeSearchDatasets({ query: 'hurricane', limit: 9999 }, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.searchParams.get('limit')).toBe('50')
+  })
+
+  it('soft-degrades to empty on non-OK response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream', { status: 500 }))
+    const result = await executeSearchDatasets({ query: 'hurricane' }, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+  })
+
+  it('soft-degrades to empty on fetch throw', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'))
+    const result = await executeSearchDatasets({ query: 'hurricane' }, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+  })
+
+  it('treats a degraded response as an empty dataset list (the LLM moves on)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ datasets: [], degraded: 'unconfigured' }), { status: 200 }),
+    )
+    const result = await executeSearchDatasets({ query: 'hurricane' }, baseConfig)
+    expect(result.datasets).toEqual([])
+  })
+})
+
+describe('executeListFeaturedDatasets', () => {
+  it('hits /api/v1/featured with the limit param', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeListFeaturedDatasets({ limit: 4 }, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.pathname).toBe('/api/v1/featured')
+    expect(url.searchParams.get('limit')).toBe('4')
+  })
+
+  it('defaults limit to 6 when none is supplied', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeListFeaturedDatasets({}, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.searchParams.get('limit')).toBe('6')
+  })
+
+  it('caps limit at 24', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeListFeaturedDatasets({ limit: 200 }, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.searchParams.get('limit')).toBe('24')
+  })
+
+  it('soft-degrades to empty on fetch error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('boom'))
+    const result = await executeListFeaturedDatasets({}, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+  })
+})
+
+describe('processMessage — backend tool round-trip', () => {
+  it('feeds a search_datasets tool result back to the LLM on the next round', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let callCount = 0
+    let round2Messages: any[] | null = null
+    mockedStream.mockImplementation(async function* (msgs) {
+      callCount++
+      if (callCount === 1) {
+        yield {
+          type: 'tool_call' as const,
+          call: {
+            id: 'call_search_dat_1',
+            name: 'search_datasets',
+            arguments: { query: 'hurricane' },
+          },
+        }
+        yield { type: 'done' as const }
+      } else {
+        round2Messages = [...msgs]
+        yield { type: 'delta' as const, text: 'Here are some matching datasets.' }
+        yield { type: 'done' as const }
+      }
+    })
+
+    const datasetsResp = [
+      { id: 'DS_HURR', title: 'Atlantic Hurricane Tracks', abstract_snippet: 'A.', categories: ['Atmosphere'], peer_id: 'local', score: 0.9 },
+    ]
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ datasets: datasetsResp }), { status: 200 }),
+    )
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('hurricane', [], datasets, null, baseConfig)) {
+      chunks.push(chunk)
+    }
+
+    expect(callCount).toBe(2)
+    expect(round2Messages).not.toBeNull()
+    const toolMsg = round2Messages!.find((m: any) => m.role === 'tool')
+    expect(toolMsg).toBeDefined()
+    expect(toolMsg.tool_call_id).toBe('call_search_dat_1')
+    const content = typeof toolMsg.content === 'string' ? toolMsg.content : ''
+    expect(content).toContain('Atlantic Hurricane Tracks')
+  })
+
+  it('feeds a list_featured_datasets tool result back to the LLM', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let callCount = 0
+    let round2Messages: any[] | null = null
+    mockedStream.mockImplementation(async function* (msgs) {
+      callCount++
+      if (callCount === 1) {
+        yield {
+          type: 'tool_call' as const,
+          call: {
+            id: 'call_feat_1',
+            name: 'list_featured_datasets',
+            arguments: { limit: 3 },
+          },
+        }
+        yield { type: 'done' as const }
+      } else {
+        round2Messages = [...msgs]
+        yield { type: 'delta' as const, text: 'Featured today.' }
+        yield { type: 'done' as const }
+      }
+    })
+
+    const featuredResp = [
+      { id: 'DS_FEAT', title: 'Climate Reanalysis 2024', abstract_snippet: 'F.', thumbnail_url: null, categories: ['Climate'], position: 0 },
+    ]
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ datasets: featuredResp }), { status: 200 }),
+    )
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me something interesting', [], datasets, null, baseConfig)) {
+      chunks.push(chunk)
+    }
+
+    expect(callCount).toBe(2)
+    const toolMsg = round2Messages!.find((m: any) => m.role === 'tool')
+    expect(toolMsg.tool_call_id).toBe('call_feat_1')
+    expect(toolMsg.content).toContain('Climate Reanalysis 2024')
   })
 })
