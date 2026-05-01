@@ -329,6 +329,131 @@ describe('processMessage — LLM path', () => {
   })
 })
 
+describe('processMessage — pre-search injection (1d/AC)', () => {
+  it('injects [RELEVANT DATASETS] from search_datasets results for discovery intents', async () => {
+    // The pre-search safety net (1d/F removed it, 1d/AC restored
+    // it sourced from Vectorize). For a discovery-intent query the
+    // server-side runs search_datasets BEFORE calling the LLM and
+    // inlines the results into the user message so the LLM has
+    // grounded IDs without having to tool-call. This closes the
+    // chip-render reliability gap on small/mid LLMs that
+    // confabulate id-shaped strings.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    // Stub the /api/v1/search call to return one real-looking ULID hit.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        return new Response(
+          JSON.stringify({
+            datasets: [
+              {
+                id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+                title: 'Hurricane Season - 2024',
+                abstract_snippet: 'Atlantic hurricane track animation.',
+                categories: ['Tropical Cyclones'],
+                peer_id: 'local',
+                score: 0.91,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    let userMessageContent = ''
+    mockedStream.mockImplementation(async function* (msgs) {
+      const userMsg = msgs.find(m => m.role === 'user')
+      if (userMsg) {
+        userMessageContent =
+          typeof userMsg.content === 'string'
+            ? userMsg.content
+            : JSON.stringify(userMsg.content)
+      }
+      yield { type: 'delta' as const, text: 'Reply.' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me datasets about hurricanes', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // The user message that reached the LLM should contain the
+    // [RELEVANT DATASETS] block with the real ULID.
+    expect(userMessageContent).toContain('[RELEVANT DATASETS')
+    expect(userMessageContent).toContain('01KQFFCEE4Q7NQGJNFB0Z042MC')
+    expect(userMessageContent).toContain('Hurricane Season - 2024')
+  })
+
+  it('does not inject [RELEVANT DATASETS] for non-discovery (knowledge) queries', async () => {
+    // Knowledge questions ("what are hurricanes") shouldn't burn
+    // the pre-search round-trip. parseIntent classifies them as
+    // 'search' too (anything with content is search by default),
+    // but greetings / explanations of the current view should
+    // skip the injection. This test pins the gate.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let userMessageContent = ''
+    let searchFetchCount = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        searchFetchCount++
+        return new Response(JSON.stringify({ datasets: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    mockedStream.mockImplementation(async function* (msgs) {
+      const userMsg = msgs.find(m => m.role === 'user')
+      if (userMsg) {
+        userMessageContent =
+          typeof userMsg.content === 'string'
+            ? userMsg.content
+            : JSON.stringify(userMsg.content)
+      }
+      yield { type: 'delta' as const, text: 'Hi!' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('hello', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // 'hello' classifies as a greeting; no pre-search should fire,
+    // and the injected block should not appear.
+    expect(searchFetchCount).toBe(0)
+    expect(userMessageContent).not.toContain('[RELEVANT DATASETS')
+  })
+})
+
 describe('processMessage — auto-inject Load buttons', () => {
   it('auto-injects action when LLM mentions a tool-result title without markers', async () => {
     // Regression test: when the LLM calls a discovery tool, gets a
@@ -1815,7 +1940,12 @@ describe('processMessage — backend tool round-trip', () => {
     const datasetsResp = [
       { id: 'DS_HURR', title: 'Atlantic Hurricane Tracks', abstract_snippet: 'A.', categories: ['Atmosphere'], peer_id: 'local', score: 0.9 },
     ]
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    // mockImplementation rather than mockResolvedValue — each fetch
+    // call gets a fresh Response. Pre-search injection (1d/AC) now
+    // calls /api/v1/search before the LLM does too, so a stale
+    // Response object whose body was already consumed would leave
+    // the tool-call-dispatch round with `{datasets:[]}`.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(JSON.stringify({ datasets: datasetsResp }), { status: 200 }),
     )
 
@@ -1861,7 +1991,9 @@ describe('processMessage — backend tool round-trip', () => {
     const featuredResp = [
       { id: 'DS_FEAT', title: 'Climate Reanalysis 2024', abstract_snippet: 'F.', thumbnail_url: null, categories: ['Climate'], position: 0 },
     ]
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    // 1d/AC — see the search_datasets tool round-trip test for why
+    // mockImplementation is required instead of mockResolvedValue.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(JSON.stringify({ datasets: featuredResp }), { status: 200 }),
     )
 

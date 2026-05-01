@@ -1067,24 +1067,55 @@ export async function* processMessage(
       ? `[GLOBE STATE: "${currentDataset.title}" is currently loaded on the globe.${currentTime ? ` Showing: ${currentTime}.` : ''}]\n`
       : '[GLOBE STATE: No dataset is loaded. The globe shows the default Earth view.]\n'
 
-    // Pre-search injection retired in catalog(1d/F). The
-    // [RELEVANT DATASETS] block was the bridge during the
-    // unwired-Vectorize rollback (Phase 1c/L); with the cutover
-    // in place the docent's primary discovery path is the
-    // search_datasets tool, with search_catalog as the
-    // empty-result fallback. Removing the injection drops a
-    // recurring per-turn token cost and avoids steering the LLM
-    // toward in-memory keyword matches when the semantic search
-    // would do better. Reverting this commit puts the seeding
-    // logic back without any other changes — that's the
-    // soft-rollback path the brief calls out as one of the
-    // cutover guarantees.
+    // Pre-search injection — Phase 1d/AC.
+    //
+    // Re-introduced after 1d/F's removal because the cutover's
+    // tool-call-only grounding path turned out to be unreliable
+    // on small/mid LLMs (llama-4-scout, sometimes 70b): when the
+    // LLM short-circuits and doesn't call search_datasets, it
+    // confabulates id-shaped strings the validator strips, and
+    // the user sees prose without chips.
+    //
+    // 1d/F removed an in-memory keyword-scan injection; 1d/AC
+    // restores the same SHAPE of injection but sources results
+    // from the Vectorize-backed `search_datasets` instead.
+    // Architectural cleanup of 1d (Vectorize as the single source
+    // of search truth, no in-memory legacy keyword scan in the
+    // primary path) is preserved; only the grounding mechanism
+    // reverts to "hand the LLM real IDs in the user message".
+    //
+    // The `search_datasets` LLM tool stays in the tool list so the
+    // model can refine for follow-up queries — it's no longer the
+    // only path to grounded IDs.
+    const needsPreSearch =
+      intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
+    const preSearchQuery =
+      intent.type === 'search' ? intent.query : intent.type === 'category' ? intent.category : input
+    const preSearchHits = needsPreSearch
+      ? (await executeSearchDatasets({ query: preSearchQuery, limit: 5 }, cfg)).datasets
+      : []
+
+    let preSearchContext = ''
+    if (preSearchHits.length > 0) {
+      const lines = preSearchHits.map(h => {
+        const cats = h.categories.join(', ')
+        const snippet = h.abstract_snippet
+          ? h.abstract_snippet.length > 200
+            ? h.abstract_snippet.slice(0, 200) + '…'
+            : h.abstract_snippet
+          : ''
+        return `- ${h.id} | ${h.title} | ${cats} | ${snippet}`
+      })
+      preSearchContext =
+        `[RELEVANT DATASETS for your query:\n${lines.join('\n')}\nRefer to these by exact title and copy the id field verbatim into <<LOAD:ID>> markers.]\n`
+    }
+
     const userMessage: LLMMessage = visionActive
       ? { role: 'user', content: [
           { type: 'image_url' as const, image_url: { url: screenshotDataUrl! } },
-          { type: 'text' as const, text: statePrefix + visionText },
+          { type: 'text' as const, text: statePrefix + preSearchContext + visionText },
         ] as LLMContentPart[] }
-      : { role: 'user', content: statePrefix + input }
+      : { role: 'user', content: statePrefix + preSearchContext + input }
 
     const llmMessages: LLMMessage[] = [
       { role: 'system' as const, content: systemPrompt },
@@ -1156,14 +1187,18 @@ export async function* processMessage(
       // Track all datasets returned by discovery tools across rounds in
       // this attempt so we can auto-inject Load buttons for any the LLM
       // mentions by title but forgets to tag with <<LOAD:...>> markers.
-      // Tool-call results land here, normalised to the same minimal
-      // shape (id + title) — `search_datasets`, `list_featured_datasets`,
-      // and the legacy `search_catalog` fallback all feed in.
-      // catalog(1d/F) dropped the pre-search seed; an LLM that never
-      // calls a discovery tool now has nothing to auto-inject for,
-      // which is fine — the system prompt makes calling a discovery
-      // tool the explicit prerequisite for mentioning a dataset.
-      const searchResultsThisAttempt: CatalogSearchResult[] = []
+      // Tool-call results (search_datasets / list_featured_datasets /
+      // legacy search_catalog) land here, normalised to the same minimal
+      // shape. catalog(1d/AC) seeds with the pre-search results so the
+      // safety net catches title-mentions when the LLM doesn't call a
+      // tool (which post-1d/AC is the common case for discovery
+      // intents — they're already grounded via [RELEVANT DATASETS]).
+      const searchResultsThisAttempt: CatalogSearchResult[] = preSearchHits.map(h => ({
+        id: h.id,
+        title: h.title,
+        categories: h.categories,
+        description: h.abstract_snippet,
+      }))
 
       try {
         toolLoop: while (round < MAX_TOOL_CALL_ROUNDS) {

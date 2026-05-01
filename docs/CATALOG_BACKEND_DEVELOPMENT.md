@@ -387,22 +387,40 @@ floor without verifying the prompt isn't.
 
 #### Cost model — what changed at the cutover
 
-Phase 1d/F removed the `[RELEVANT DATASETS]` injection from the
-docent's user-message build. That block was 500–1000 tokens per
-discovery-intent turn, but its replacement (the LLM calling
-`search_datasets` and consuming the result) is **not free** —
-every tool-using turn now takes a second LLM round-trip and pays
-~1000–1500 tokens for the tool result fed back. So:
+The cutover went through two iterations on this question:
 
-| Turn shape | Pre-1d cost | Post-1d cost | Δ |
+**1d/F (initial cutover)** removed the `[RELEVANT DATASETS]`
+injection from the docent's user-message build entirely, on the
+assumption that the LLM would tool-call `search_datasets` itself
+when it needed grounded IDs. Live testing on llama-4-scout (and
+sometimes llama-3.1-70b) showed mid-tier models confabulate
+id-shaped strings rather than reliably calling the tool, which
+the validator strips — chips silently disappeared.
+
+**1d/AC (corrected)** restored the per-turn injection, this time
+sourced from the Vectorize-backed `search_datasets` instead of
+the legacy in-memory keyword scan. The injection runs server-side
+before the LLM call for discovery-intent queries; the LLM sees
+real ULIDs in `[RELEVANT DATASETS]` and produces chips reliably
+without needing to tool-call.
+
+| Turn shape | Pre-1d cost | Post-1d/AC cost | Δ |
 |---|---|---|---|
-| User asks a knowledge question, LLM doesn't call a tool | inject 500–1000 tokens, 1 LLM round | nothing extra, 1 round | **cheaper** |
-| User asks a discovery question, LLM calls `search_datasets` | inject 500–1000 tokens, 1 round | tool result 1000–1500 tokens, 2 rounds | **more expensive** + 1 extra round |
+| User asks a knowledge question (`hello`, `explain this`) | inject 500–1000 tokens for non-discovery? Actually no — the gate skipped these | nothing extra, 1 round | **same** |
+| User asks a discovery question, LLM uses [RELEVANT DATASETS] without tool-calling | inject 500–1000 tokens (in-memory keyword scan), 1 LLM round | inject 1000–1500 tokens (Vectorize results, slightly richer with abstract_snippet), 1 LLM round | **+~500 tokens, no extra round** |
+| User asks a follow-up the [RELEVANT DATASETS] block doesn't cover, LLM tool-calls `search_datasets` | inject 500–1000 + tool round-trip 1000–1500, 2 rounds | inject 1000–1500 + tool round-trip 1000–1500, 2 rounds | **+~500 tokens for the same round count** |
 
-The structural shift worth flagging: **request count to the LLM
-provider doubles on tool-using turns**. If a deploy is on a
-per-request quota (Workers AI free tier is ~10k/day), that
-doubling — not raw token volume — is usually what hits first.
+So 1d/AC is modestly more expensive per discovery-intent turn
+than the pre-cutover regime (Vectorize results carry abstract
+snippets the in-memory scan didn't), but the architectural shift
+to a single Vectorize-backed search source of truth is preserved
+and the docent's chip-render reliability matches pre-cutover.
+
+`MAX_TOOL_CALL_ROUNDS` in `src/services/docentService.ts` caps
+tool-call chains at 5 per turn so a runaway model can't burn
+unbounded rounds. The `turn_rounds` analytics field (1d/Y)
+records the actual round count per turn for empirical
+measurement.
 
 `MAX_TOOL_CALL_ROUNDS` in `src/services/docentService.ts` caps
 tool-call chains at 5 per turn so a runaway model can't burn
