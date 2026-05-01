@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terraviz — Streaming Earth's Data to Every Device</title>
+  <meta name="description" content="A web-based presentation poster covering Terraviz: the globe stack, multi-globe comparison, AI-driven tours, the Orbit digital docent, immersive WebXR mode, multi-platform delivery, and the federated catalog backend." />
+  <meta name="author" content="Eric Hackathorn, NOAA Global Systems Laboratory" />
+  <meta name="theme-color" content="#00172D" />
+  <meta property="og:title" content="Terraviz — Streaming Earth's Data to Every Device" />
+  <meta property="og:description" content="A web-based presentation poster covering Terraviz." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&family=Source+Sans+3:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+/* =========================================================
+   Terraviz Poster — design tokens and base styles.
+   Authoring source. Do not edit poster/index.html directly —
+   run poster/scripts/build_poster.py to re-render it.
+
+   Companion to:
+     https://noaa-gsl.github.io/zyra/poster/
+     https://noaa-gsl.github.io/depot-explorer/
+     https://zyra-project.github.io/zyra-editor/
+   ========================================================= */
+
+:root {
+  /* Series chrome (matches the rest of the poster series) */
+  --navy: #00172D;
+  --ocean-blue: #1A5A69;
+  --cable-blue: #00529E;
+  --seafoam: #5F9DAE;
+  --mist: #9AB2B1;
+  --deep-teal: #091A1B;
+  --leaf-green: #2C670C;
+  --amber: #FFC107;
+  --red: #F44336;
+
+  /* Terraviz live-element accent */
+  --terra-accent: #4da6ff;
+  --terra-accent-bg: rgba(77, 166, 255, 0.12);
+  --terra-accent-text: #6ab8ff;
+
+  /* Frosted-glass surface (carries the app's design language) */
+  --surface-glass: rgba(13, 13, 18, 0.88);
+  --surface-border: rgba(255, 255, 255, 0.08);
+  --surface-border-hover: rgba(77, 166, 255, 0.4);
+
+  /* Neutral ramp */
+  --neutral-50: #fafafa;
+  --neutral-100: #f5f5f5;
+  --neutral-200: #e5e5e5;
+  --neutral-300: #d4d4d4;
+  --neutral-400: #a3a3a3;
+  --neutral-500: #737373;
+  --neutral-600: #525252;
+  --neutral-700: #404040;
+  --neutral-800: #262626;
+  --neutral-900: #171717;
+
+  /* Typography */
+  --font-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Source Code Pro', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  /* Layout */
+  --container-max: 1200px;
+  --section-py: 5rem;
+  --section-px: 4rem;
+  --section-py-mobile: 3rem;
+  --section-px-mobile: 1.25rem;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--neutral-900);
+  background: var(--neutral-50);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5 {
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 0.6em;
+}
+
+p { margin: 0 0 1em; }
+
+a {
+  color: var(--cable-blue);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+code, kbd, pre {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--terra-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
+}
+
+/* =========================================================
+   Section backgrounds — alternating per the series convention
+   ========================================================= */
+.section {
+  padding: var(--section-py) var(--section-px);
+  background: var(--neutral-50);
+  color: var(--neutral-900);
+}
+.section--alt {
+  background: var(--neutral-200);
+}
+.section--dark {
+  background: var(--navy);
+  color: var(--neutral-100);
+}
+.section--dark a { color: var(--terra-accent); }
+
+.container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+/* Placeholder treatment for empty section anchors landing in
+   later phases. Removed from each section as content arrives. */
+.section--placeholder {
+  background: var(--neutral-100);
+  border-top: 1px dashed var(--neutral-300);
+  border-bottom: 1px dashed var(--neutral-300);
+}
+.section--placeholder .container {
+  padding: 2.5rem 0;
+  font-family: var(--font-mono);
+  color: var(--neutral-500);
+  font-size: 0.85rem;
+}
+.section--placeholder h2 {
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--neutral-700);
+  margin-bottom: 0.4rem;
+}
+
+/* =========================================================
+   Sticky presentation timer — minimized by default.
+   Persists expanded/collapsed choice in localStorage so a
+   presenter can rehearse without re-clicking every load.
+   ========================================================= */
+.pres-timer {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10000;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  color: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: opacity 0.2s ease;
+}
+
+.pres-timer.is-minimized .pres-timer__body { display: none; }
+.pres-timer:not(.is-minimized) .pres-timer__expand { display: none; }
+
+.pres-timer__expand {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  line-height: 1;
+}
+
+.pres-timer__body {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pres-timer__display {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+  min-width: 3.4em;
+  text-align: right;
+}
+.pres-timer__display.is-warning { color: var(--amber); }
+.pres-timer__display.is-overtime { color: var(--red); }
+
+.pres-timer__btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--surface-border);
+  color: inherit;
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  font: inherit;
+  cursor: pointer;
+  line-height: 1.1;
+}
+.pres-timer__btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--surface-border-hover);
+}
+
+/* =========================================================
+   Scroll-fade reveal — gated on prefers-reduced-motion (JS
+   side too; this keeps the initial paint correct if JS fails)
+   ========================================================= */
+.fade-in {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.fade-in.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+  .fade-in {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  html { scroll-behavior: auto; }
+}
+
+/* =========================================================
+   Hero
+   ========================================================= */
+.hero {
+  padding: 5rem 4rem 4.5rem;
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(77, 166, 255, 0.22), transparent 60%),
+    linear-gradient(180deg, var(--navy) 0%, var(--deep-teal) 100%);
+  color: var(--neutral-100);
+  border-bottom: 1px solid var(--surface-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 2.5rem;
+  align-items: center;
+  position: relative;
+}
+
+.hero__logos,
+.hero__qrs {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hero__logo,
+.hero__qr {
+  width: 96px;
+  height: 96px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--neutral-400);
+  text-align: center;
+  padding: 0.4rem;
+  line-height: 1.3;
+}
+
+.hero__center { text-align: center; }
+
+.hero__title {
+  font-size: clamp(1.85rem, 3.6vw, 2.7rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.6rem;
+  color: white;
+}
+
+.hero__subtitle {
+  font-size: clamp(1rem, 1.4vw, 1.15rem);
+  color: var(--mist);
+  max-width: 600px;
+  margin: 0 auto 1.75rem;
+  font-weight: 300;
+  line-height: 1.5;
+}
+
+.hero__author {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--neutral-300);
+  line-height: 1.55;
+}
+.hero__author strong {
+  color: var(--neutral-100);
+  display: block;
+  font-weight: 600;
+  font-size: 1rem;
+}
+.hero__author .orcid {
+  color: #a6ce39;
+}
+.hero__author .orcid::before {
+  content: "iD ";
+  font-weight: 700;
+  font-style: italic;
+  color: #a6ce39;
+  margin-right: 0.15em;
+}
+
+@media (max-width: 900px) {
+  .section {
+    padding: var(--section-py-mobile) var(--section-px-mobile);
+  }
+  .hero {
+    padding: 3rem 1.25rem 2.75rem;
+  }
+  .hero__container {
+    grid-template-columns: 1fr;
+    text-align: center;
+    gap: 1.5rem;
+  }
+  .hero__logos,
+  .hero__qrs {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+  </style>
+</head>
+<body>
+  <!-- Sticky presentation timer.
+       Minimized by default per docs/POSTER_PLAN.md §0; the
+       expanded/collapsed choice is persisted in localStorage. -->
+  <div id="pres-timer" class="pres-timer is-minimized" role="region" aria-label="Presentation timer">
+    <button type="button" class="pres-timer__expand" aria-label="Expand presentation timer" aria-expanded="false">
+      <span aria-hidden="true">⏱</span>
+    </button>
+    <div class="pres-timer__body">
+      <span class="pres-timer__display" aria-live="off">00:00</span>
+      <button type="button" class="pres-timer__btn" data-action="play" aria-label="Start timer">▶</button>
+      <button type="button" class="pres-timer__btn" data-action="reset" aria-label="Reset timer">⟳</button>
+      <button type="button" class="pres-timer__btn" data-action="minimize" aria-label="Minimize timer">–</button>
+    </div>
+  </div>
+
+  <main id="poster">
+
+  <!-- sec-01-hero.html -->
+    <section id="sec-1-hero" class="hero" aria-labelledby="hero-title">
+      <div class="hero__container">
+        <div class="hero__logos" aria-hidden="true">
+          <!-- Real SVG logos drop in alongside the rest of the
+               P1 follow-up assets. Boxed text placeholders keep
+               layout stable until they land. -->
+          <div class="hero__logo">NOAA<br>logo</div>
+          <div class="hero__logo">Zyra<br>logo</div>
+        </div>
+
+        <div class="hero__center">
+          <h1 id="hero-title" class="hero__title">
+            Terraviz — Streaming Earth's Data to Every Device
+          </h1>
+          <p class="hero__subtitle">
+            Science On a Sphere lives in museums. Terraviz brings it everywhere.
+          </p>
+          <div class="hero__author">
+            <strong>Eric Hackathorn</strong>
+            NOAA Global Systems Laboratory<br>
+            <a class="orcid"
+               href="https://orcid.org/0000-0002-9693-2093"
+               rel="noopener"
+               aria-label="ORCID 0000-0002-9693-2093">0000-0002-9693-2093</a>
+          </div>
+        </div>
+
+        <div class="hero__qrs" aria-hidden="true">
+          <div class="hero__qr">QR<br>web app</div>
+          <div class="hero__qr">QR<br>GitHub</div>
+        </div>
+      </div>
+    </section>
+
+  <!-- sec-02-mission.html -->
+    <section id="sec-2-mission"
+             class="section section--alt section--placeholder fade-in"
+             aria-labelledby="sec-2-title">
+      <div class="container">
+        <h2 id="sec-2-title">2. The mission</h2>
+        <p>Section content lands in P2.</p>
+      </div>
+    </section>
+
+  <!-- sec-03-features.html -->
+    <section id="sec-3-features"
+             class="section section--placeholder fade-in"
+             aria-labelledby="sec-3-title">
+      <div class="container">
+        <h2 id="sec-3-title">3. What you can do — feature gallery</h2>
+        <p>Section content lands in P2.</p>
+      </div>
+    </section>
+
+  <!-- sec-04-globe.html -->
+    <section id="sec-4-globe"
+             class="section section--alt section--placeholder fade-in"
+             aria-labelledby="sec-4-title">
+      <div class="container">
+        <h2 id="sec-4-title">4. The globe under the hood</h2>
+        <p>Section content lands in P3.</p>
+      </div>
+    </section>
+
+  <!-- sec-05-multiglobe.html -->
+    <section id="sec-5-multiglobe"
+             class="section section--placeholder fade-in"
+             aria-labelledby="sec-5-title">
+      <div class="container">
+        <h2 id="sec-5-title">5. Multi-globe comparison</h2>
+        <p>Section content lands in P4.</p>
+      </div>
+    </section>
+
+  <!-- sec-06-tours.html -->
+    <section id="sec-6-tours"
+             class="section section--alt section--placeholder fade-in"
+             aria-labelledby="sec-6-title">
+      <div class="container">
+        <h2 id="sec-6-title">6. Tours — data-driven storytelling</h2>
+        <p>Section content lands in P5.</p>
+      </div>
+    </section>
+
+  <!-- sec-07-orbit.html -->
+    <section id="sec-7-orbit"
+             class="section section--placeholder fade-in"
+             aria-labelledby="sec-7-title">
+      <div class="container">
+        <h2 id="sec-7-title">7. Orbit — the digital docent</h2>
+        <p>Section content lands in P6.</p>
+      </div>
+    </section>
+
+  <!-- sec-08-immersive.html -->
+    <section id="sec-8-immersive"
+             class="section section--alt section--placeholder fade-in"
+             aria-labelledby="sec-8-title">
+      <div class="container">
+        <h2 id="sec-8-title">8. Immersive — AR & VR via WebXR</h2>
+        <p>Section content lands in P7.</p>
+      </div>
+    </section>
+
+  <!-- sec-09-platforms.html -->
+    <section id="sec-9-platforms"
+             class="section section--placeholder fade-in"
+             aria-labelledby="sec-9-title">
+      <div class="container">
+        <h2 id="sec-9-title">9. One codebase, every platform</h2>
+        <p>Section content lands in P8.</p>
+      </div>
+    </section>
+
+  <!-- sec-10-federation.html -->
+    <section id="sec-10-federation"
+             class="section section--alt section--placeholder fade-in"
+             aria-labelledby="sec-10-title">
+      <div class="container">
+        <h2 id="sec-10-title">10. Federated catalog & custom backend</h2>
+        <p>Section content lands in P9.</p>
+      </div>
+    </section>
+
+  <!-- sec-11-analytics.html -->
+    <section id="sec-11-analytics"
+             class="section section--placeholder fade-in"
+             aria-labelledby="sec-11-title">
+      <div class="container">
+        <h2 id="sec-11-title">11. Privacy-first analytics</h2>
+        <p>Section content lands in P10.</p>
+      </div>
+    </section>
+
+  <!-- sec-12-techstack.html -->
+    <section id="sec-12-techstack"
+             class="section section--alt section--placeholder fade-in"
+             aria-labelledby="sec-12-title">
+      <div class="container">
+        <h2 id="sec-12-title">12. Tech stack</h2>
+        <p>Section content lands in P10.</p>
+      </div>
+    </section>
+
+  <!-- sec-13-cta.html -->
+    <section id="sec-13-cta"
+             class="section section--placeholder fade-in"
+             aria-labelledby="sec-13-title">
+      <div class="container">
+        <h2 id="sec-13-title">13. Try it / get involved</h2>
+        <p>Section content lands in P10.</p>
+      </div>
+    </section>
+
+  <!-- sec-14-footer-block.html -->
+    <section id="sec-14-footer-block"
+             class="section section--dark section--placeholder fade-in"
+             aria-labelledby="sec-14-title">
+      <div class="container">
+        <h2 id="sec-14-title">14. Footer</h2>
+        <p>Section content lands in P10.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // Presentation timer.
+    // Minimized by default; warns at 4:00, overtime at 5:00.
+    // Choice persists in localStorage so rehearsals don't reset.
+    (function () {
+      'use strict';
+      var STORAGE_KEY = 'terraviz-poster-timer';
+      var WARN_AT = 240;
+      var OVER_AT = 300;
+
+      var timer = document.getElementById('pres-timer');
+      if (!timer) return;
+      var display = timer.querySelector('.pres-timer__display');
+      var expandBtn = timer.querySelector('.pres-timer__expand');
+      var minBtn = timer.querySelector('[data-action="minimize"]');
+      var playBtn = timer.querySelector('[data-action="play"]');
+      var resetBtn = timer.querySelector('[data-action="reset"]');
+      var elapsed = 0;
+      var intervalId = null;
+      var running = false;
+
+      try {
+        var saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved === 'expanded') {
+          timer.classList.remove('is-minimized');
+          expandBtn.setAttribute('aria-expanded', 'true');
+        }
+      } catch (e) { /* private mode etc. — fine */ }
+
+      function fmt(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function render() {
+        display.textContent = fmt(elapsed);
+        display.classList.toggle('is-warning', elapsed >= WARN_AT && elapsed < OVER_AT);
+        display.classList.toggle('is-overtime', elapsed >= OVER_AT);
+      }
+
+      function tick() {
+        elapsed += 1;
+        render();
+      }
+
+      function start() {
+        if (running) return;
+        running = true;
+        intervalId = window.setInterval(tick, 1000);
+        playBtn.textContent = '⏸';
+        playBtn.setAttribute('aria-label', 'Pause timer');
+      }
+
+      function pause() {
+        running = false;
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+          intervalId = null;
+        }
+        playBtn.textContent = '▶';
+        playBtn.setAttribute('aria-label', 'Resume timer');
+      }
+
+      function reset() {
+        pause();
+        elapsed = 0;
+        render();
+      }
+
+      function persist(state) {
+        try { window.localStorage.setItem(STORAGE_KEY, state); } catch (e) { /* ignore */ }
+      }
+
+      function expand() {
+        timer.classList.remove('is-minimized');
+        expandBtn.setAttribute('aria-expanded', 'true');
+        persist('expanded');
+      }
+
+      function minimize() {
+        timer.classList.add('is-minimized');
+        expandBtn.setAttribute('aria-expanded', 'false');
+        persist('minimized');
+      }
+
+      expandBtn.addEventListener('click', expand);
+      minBtn.addEventListener('click', minimize);
+      playBtn.addEventListener('click', function () { running ? pause() : start(); });
+      resetBtn.addEventListener('click', reset);
+
+      render();
+    })();
+
+    // Scroll-fade reveal.
+    // No-op under prefers-reduced-motion; falls back to immediate
+    // reveal if IntersectionObserver isn't available.
+    (function () {
+      'use strict';
+      var elements = document.querySelectorAll('.fade-in');
+      if (!elements.length) return;
+
+      var prefersReducedMotion =
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+        for (var i = 0; i < elements.length; i++) {
+          elements[i].classList.add('is-visible');
+        }
+        return;
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -10% 0px' });
+
+      elements.forEach(function (el) { io.observe(el); });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+  </main>
+
+  <script>
+    // Presentation timer.
+    // Minimized by default; warns at 4:00, overtime at 5:00.
+    // Choice persists in localStorage so rehearsals don't reset.
+    (function () {
+      'use strict';
+      var STORAGE_KEY = 'terraviz-poster-timer';
+      var WARN_AT = 240;
+      var OVER_AT = 300;
+
+      var timer = document.getElementById('pres-timer');
+      if (!timer) return;
+      var display = timer.querySelector('.pres-timer__display');
+      var expandBtn = timer.querySelector('.pres-timer__expand');
+      var minBtn = timer.querySelector('[data-action="minimize"]');
+      var playBtn = timer.querySelector('[data-action="play"]');
+      var resetBtn = timer.querySelector('[data-action="reset"]');
+      var elapsed = 0;
+      var intervalId = null;
+      var running = false;
+
+      try {
+        var saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved === 'expanded') {
+          timer.classList.remove('is-minimized');
+          expandBtn.setAttribute('aria-expanded', 'true');
+        }
+      } catch (e) { /* private mode etc. — fine */ }
+
+      function fmt(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function render() {
+        display.textContent = fmt(elapsed);
+        display.classList.toggle('is-warning', elapsed >= WARN_AT && elapsed < OVER_AT);
+        display.classList.toggle('is-overtime', elapsed >= OVER_AT);
+      }
+
+      function tick() {
+        elapsed += 1;
+        render();
+      }
+
+      function start() {
+        if (running) return;
+        running = true;
+        intervalId = window.setInterval(tick, 1000);
+        playBtn.textContent = '⏸';
+        playBtn.setAttribute('aria-label', 'Pause timer');
+      }
+
+      function pause() {
+        running = false;
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+          intervalId = null;
+        }
+        playBtn.textContent = '▶';
+        playBtn.setAttribute('aria-label', 'Resume timer');
+      }
+
+      function reset() {
+        pause();
+        elapsed = 0;
+        render();
+      }
+
+      function persist(state) {
+        try { window.localStorage.setItem(STORAGE_KEY, state); } catch (e) { /* ignore */ }
+      }
+
+      function expand() {
+        timer.classList.remove('is-minimized');
+        expandBtn.setAttribute('aria-expanded', 'true');
+        persist('expanded');
+      }
+
+      function minimize() {
+        timer.classList.add('is-minimized');
+        expandBtn.setAttribute('aria-expanded', 'false');
+        persist('minimized');
+      }
+
+      expandBtn.addEventListener('click', expand);
+      minBtn.addEventListener('click', minimize);
+      playBtn.addEventListener('click', function () { running ? pause() : start(); });
+      resetBtn.addEventListener('click', reset);
+
+      render();
+    })();
+
+    // Scroll-fade reveal.
+    // No-op under prefers-reduced-motion; falls back to immediate
+    // reveal if IntersectionObserver isn't available.
+    (function () {
+      'use strict';
+      var elements = document.querySelectorAll('.fade-in');
+      if (!elements.length) return;
+
+      var prefersReducedMotion =
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+        for (var i = 0; i < elements.length; i++) {
+          elements[i].classList.add('is-visible');
+        }
+        return;
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -10% 0px' });
+
+      elements.forEach(function (el) { io.observe(el); });
+    })();
+  </script>
+</body>
+</html>
