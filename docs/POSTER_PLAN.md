@@ -113,20 +113,49 @@ under ~3000 lines (zyra-editor's poster is ~2900). Splitting into
 
 ## Deployment
 
-Two options, listed in order of preference:
+**Decided: Cloudflare Pages — separate project.** A new Pages
+project (working name `terraviz-poster`) is pointed at the
+`poster/` subdirectory of this repo. Domain is
+`terraviz-poster.pages.dev` initially, with a custom subdomain
+under `zyra-project.org` to follow once the content is final.
 
-1. **Cloudflare Pages — separate project.** Point a new Pages
-   project at the `poster/` subdirectory. Domain something like
-   `terraviz-poster.pages.dev` (or a custom subdomain under
-   `zyra-project.org`). Keeps the poster fully isolated from the
-   main SPA build; a poster commit can never break the app.
-2. **GitHub Pages from `gh-pages` branch.** Mirrors the
-   `noaa-gsl.github.io/zyra/poster/` and
-   `zyra-project.github.io/zyra-editor/` patterns exactly. Simple,
-   no extra Cloudflare project.
+Why a separate project rather than a sub-route of the main SPA:
 
-The existing series uses a mix of both. Pick one before deploy
-— the source layout is the same either way.
+- **Isolation.** A poster commit can never break the app build.
+  The main `terraviz.zyra-project.org` SPA continues to deploy
+  from the existing project untouched.
+- **No build step.** The poster is hand-authored static HTML.
+  Cloudflare Pages serves it directly from `poster/` with an
+  empty build command and `poster/` as the output directory —
+  no Vite, no `npm install`, no node toolchain on the build.
+- **Independent caching headers.** We can set long-cache headers
+  on `poster/assets/` without touching the SPA's `_headers`.
+- **Independent rollback.** If a poster change has to be
+  reverted live, the rollback is in the Pages project's history
+  and doesn't entangle SPA deploy history.
+
+Pages project configuration (to be set up alongside the P12
+deploy commit):
+
+| Field | Value |
+|---|---|
+| Repo | `zyra-project/terraviz` |
+| Production branch | `main` |
+| Build command | _(empty)_ |
+| Build output directory | `poster` |
+| Root directory | _(repo root)_ |
+| Preview deploys | enabled — every PR touching `poster/**` gets a preview URL |
+
+Preview URLs from PRs are the review surface for everything from
+P3 onward — reviewers can scroll the actual poster instead of
+reading HTML diffs.
+
+Alternative considered and rejected: GitHub Pages from a
+`gh-pages` branch (the pattern used by `noaa-gsl.github.io/zyra`
+and `zyra-project.github.io/zyra-editor`). Simpler in some ways,
+but loses Cloudflare's preview-per-PR and forces a second
+deploy mechanism into the repo. We already use Cloudflare Pages
+for the SPA; staying on one platform is the smaller change.
 
 ---
 
@@ -498,7 +527,7 @@ catalog plan files follow.
 | **P9** | §10 analytics + §11 tech stack + §12 CTA + §13 footer. |
 | **P10** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run. |
 | **P11** | Optional: small SPA URL-param handlers for items 4/5/6 above. Separate commit, gated on user approval. |
-| **P12** | Deploy: Cloudflare Pages project (or `gh-pages` branch), DNS if applicable, README update with the live URL. |
+| **P12** | Deploy: create the `terraviz-poster` Cloudflare Pages project (build command empty, output dir `poster/`, production branch `main`, preview deploys on), point a `zyra-project.org` subdomain at it once content is final, and update `poster/README.md` + the main repo `README.md` with the live URL. |
 
 ## Risks & tradeoffs
 
@@ -559,8 +588,8 @@ before P1.
    what URL?
 8. **QR-code destinations.** Suggest: live web app, GitHub repo,
    desktop downloads page, self-hosting guide. Add or remove?
-9. **Hosting target.** Cloudflare Pages (separate project) or
-   GitHub Pages (`gh-pages` branch)?
+9. ~~**Hosting target.**~~ **Resolved:** Cloudflare Pages,
+   separate project (`terraviz-poster`). See Deployment above.
 10. **Branch & commit cadence.** Confirm
     `claude/create-presentation-poster-4sqyF`, DCO sign-off, one
     phase per commit.
