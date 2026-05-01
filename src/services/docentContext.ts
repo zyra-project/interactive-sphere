@@ -165,7 +165,7 @@ You do NOT have the full dataset catalog in your context window. Datasets to rec
 2. **\`list_featured_datasets\` tool** — small operator-curated list (no query). Use it for cold-start prompts ("show me something interesting", "what should I look at?", "I don't know where to start") when the user has not expressed a topic. Returns \`{ datasets: [{ id, title, abstract_snippet, thumbnail_url, categories, position }] }\`.
 3. **\`search_catalog\` tool** — legacy in-memory keyword scan over the catalog. **Use this ONLY as a fallback** when \`search_datasets\` returns an empty \`datasets\` array (typically a self-hosting deploy that hasn't provisioned Vectorize yet). Returns up to 10 results with \`id\`, \`title\`, \`categories\`, \`description\`. **If \`search_datasets\` is empty, ALWAYS try \`search_catalog\` before giving up — never invent dataset titles or IDs from training-time knowledge.**
 
-**ID INTEGRITY** — IDs returned by these tools are the ONLY valid \`<<LOAD:...>>\` payloads. If you cannot find an exact ID for a title in any of the sources above, do not include the title in your reply at all. The frontend strips markers whose ID isn't recognised; a stripped marker yields a title with no Load button — a worse UX than not mentioning the dataset. **Never guess at \`INTERNAL_SOS_*\` numbers, ULIDs, or any other ID format.**
+**ID INTEGRITY** — IDs returned by these tools are the ONLY valid \`<<LOAD:...>>\` payloads. If you cannot find an exact ID for a title in any of the sources above, do not include the title in your reply at all. The frontend strips markers whose ID isn't recognised; a stripped marker yields a title with no Load button — a worse UX than not mentioning the dataset. **Never invent or guess at any ID format. Do not generate a string that looks like an ID. The only valid IDs are the literal characters you receive in a tool result.**
 
 **CALL TOOLS SILENTLY.** If you call a discovery tool, do NOT narrate it in text. Never write "Here's a search for...", "Let me check the catalog", "I'll search for...", "Searching...", or similar. The user never sees your internal reasoning — only your final prose.
 
@@ -200,13 +200,13 @@ You may call discovery tools multiple times in the same turn with different quer
 **Following up with "related" suggestions** — if you want to extend your reply with "Here are some related datasets…" or "Another option is…", that follow-on MUST come from a tool call you actually make in this turn. Do not list "related" datasets you remember from elsewhere — the user has no chip to click and your sentence reads as half-formed prose.
 
 CRITICAL RULES — violations break the UI:
-- NEVER write a dataset ID (INTERNAL_SOS_...) anywhere in your prose text. IDs must ONLY appear inside <<LOAD:...>> markers.
+- NEVER write a dataset ID anywhere in your prose text. IDs must ONLY appear inside <<LOAD:...>> markers.
 - Refer to datasets by their TITLE in prose, never by ID. The marker carries the ID silently.
 - EVERY dataset you mention must have a <<LOAD:...>> marker. No exceptions.
 - NEVER say "I'll load", "let me load", "I've loaded", "loading this would", or similar. Just place the <<LOAD:...>> marker and move on. The marker automatically creates a Load button for the user.
 - Do NOT ask the user if they want to load, and do NOT describe what loading would do — just include the marker.
 - NEVER assume a dataset is loaded just because you suggested it in a previous message. ALWAYS check the "Current View" section above to see what is actually on the globe right now. If it's not loaded, include the <<LOAD:...>> marker again.
-- Use the FULL ID exactly as returned by the discovery tool (legacy SOS rows start with INTERNAL_; node-catalog rows are 26-char ULIDs).
+- Use the FULL ID exactly as returned by the discovery tool — copy the entire id string verbatim, character for character. Do not abbreviate, truncate, or generate ID-shaped strings.
 
 ## Globe Control Markers
 You can control the globe view by placing markers in your text, just like <<LOAD:...>> markers:
@@ -465,7 +465,7 @@ export function getLoadDatasetTool(): LLMTool {
         properties: {
           dataset_id: {
             type: 'string',
-            description: 'The dataset ID (e.g. "INTERNAL_SOS_768" for legacy SOS rows or a 26-char ULID for node-catalog rows), obtained from a prior discovery-tool result.',
+            description: 'The dataset ID — the literal value of the `id` field from a prior discovery-tool result, copied verbatim. Do not abbreviate, truncate, or invent.',
           },
           dataset_title: {
             type: 'string',

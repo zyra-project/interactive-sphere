@@ -231,6 +231,24 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toMatch(/<<LOAD:COPY_THE_/)
   })
 
+  it('does not surface specific ID-format templates the LLM could mimic (1d/AA)', () => {
+    // Live test on llama-4-scout produced fabricated IDs like
+    // "internal_sos_476" and "internal_sos_123" — the LLM saw the
+    // pattern `INTERNAL_SOS_*` referenced in the prompt's strict
+    // rules and synthesized plausible variants when it didn't have
+    // a real id to cite. Same root cause as 1d/W's ULID-prefix
+    // mimicry, just in legacy-id shape. Fix: don't mention specific
+    // ID format patterns in places the LLM can copy from. The
+    // "never invent IDs" rule is now phrased without naming a
+    // specific format.
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).not.toMatch(/INTERNAL_SOS_/)
+    // Tool descriptions also examined separately because they're
+    // included in the prompt the LLM sees.
+    const tool = getLoadDatasetTool()
+    expect(JSON.stringify(tool)).not.toMatch(/INTERNAL_SOS_/)
+  })
+
   it('does not contain any "(Silently)" annotation or ULID-prefix substring (1d/W)', () => {
     // Two failures observed on llama-3.1-70b after 1d/S:
     //
