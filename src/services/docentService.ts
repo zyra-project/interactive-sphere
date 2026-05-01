@@ -538,13 +538,25 @@ export async function executeSearchDatasets(
   args: Record<string, unknown>,
   config: DocentConfig,
 ): Promise<{ datasets: SearchDatasetsHit[] }> {
-  const query = typeof args.query === 'string' ? args.query.trim() : ''
+  // Phase 1f/I — canonicalise once and use the canonical form for
+  // BOTH the cache key and the wire `q=` parameter. Pre-1f/I the
+  // cache keyed off the canonical form but sent the raw query on
+  // the wire, so two queries that canonicalise the same ("Hurricanes!"
+  // and "hurricanes") could produce different server responses but
+  // collide on the cache. Sending the canonical form keeps the
+  // cache contract honest: same canonical key ↔ same server input.
+  const rawQuery = typeof args.query === 'string' ? args.query.trim() : ''
+  const query = canonicalisePreSearchQuery(rawQuery)
   if (!query) return { datasets: [] }
   if (!config.apiUrl) return { datasets: [] }
 
   const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : SEARCH_DATASETS_DEFAULT_LIMIT
   const limit = Math.max(1, Math.min(SEARCH_DATASETS_MAX_LIMIT, Math.floor(limitArg)))
 
+  // `query` is already canonicalised — preSearchCacheKey re-canonicalises
+  // defensively (idempotent on canonical input) so a future caller
+  // that bypasses the canonical-rawQuery normalisation above can't
+  // poison the cache.
   const cacheKey = preSearchCacheKey(query, limit)
   const now = Date.now()
   const cached = preSearchCache.get(cacheKey)

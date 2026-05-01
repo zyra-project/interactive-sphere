@@ -66,6 +66,12 @@ let pendingGlobeActions: ChatAction[] = []
 /** Tracks dataset load actions clicked per message (implicit positive feedback). */
 const actionClickMap = new Map<string, string[]>()
 
+/** Phase 1f/I — held across initChatUI calls so a re-init (test
+ * teardown / hot reload) releases the prior listener instead of
+ * accumulating them. Production calls initChatUI exactly once at
+ * boot, so this is purely defensive. */
+let degradedUnsubscribe: (() => void) | null = null
+
 /**
  * Initialize the chat UI with callbacks and restore session.
  */
@@ -86,9 +92,13 @@ export function initChatUI(cb: ChatCallbacks): void {
   // Phase 1f/D — render an initial degraded badge if the docent
   // already detected quota exhaustion before the chat UI booted
   // (e.g. when the disclosure banner triggered an early search),
-  // and keep it in sync with state changes for the session.
+  // and keep it in sync with state changes for the session. Release
+  // any prior subscription first so a re-init doesn't double-listen.
   renderDegradedBadge(getDegradedReason())
-  subscribeDegraded(state => renderDegradedBadge(state.reason))
+  degradedUnsubscribe?.()
+  degradedUnsubscribe = subscribeDegraded(state =>
+    renderDegradedBadge(state.reason),
+  )
 }
 
 /**
@@ -118,7 +128,12 @@ function renderDegradedBadge(reason: DegradedReason | null): void {
 function degradedBadgeText(reason: DegradedReason): string {
   switch (reason) {
     case 'quota_exhausted':
-      return 'Reduced functionality — quota approaching limit. Suggestions may use offline matching.'
+      // Phase 1f/I — text matches the state's actual semantics. The
+      // SPA only flips this reason in response to a Workers AI 4006
+      // (quota *exhausted*, not "approaching"). The earlier
+      // "approaching limit" copy implied a softer state than the
+      // server signals.
+      return 'Reduced functionality — Workers AI quota reached. Suggestions are using offline matching until it recovers.'
   }
 }
 

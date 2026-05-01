@@ -41,9 +41,14 @@ function emit(): void {
   for (const listener of listeners) listener(current)
 }
 
-/** Read the current degraded state. */
-export function getDegradedState(): DegradedState {
-  return current
+/**
+ * Read the current degraded state. Returns a shallow copy so external
+ * callers can't mutate module state without going through
+ * `markDegraded` / `clearDegraded` (and bypassing subscriber
+ * notification).
+ */
+export function getDegradedState(): Readonly<DegradedState> {
+  return { ...current }
 }
 
 /** Convenience for checks like `if (getDegradedReason() === 'quota_exhausted')`. */

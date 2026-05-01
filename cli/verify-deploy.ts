@@ -7,7 +7,10 @@
  *
  *   0 — everything passed (skipped rows are not failures).
  *   1 — at least one check failed.
- *   2 — usage error.
+ *
+ * (Argv-parsing usage errors are caught upstream in
+ * `cli/terraviz.ts` before this command runs, and surface as
+ * exit code 2 from the dispatcher.)
  *
  * Per the Phase 1f decision list (#4), the command supports both
  * public-only and full modes. Without a service token, the
