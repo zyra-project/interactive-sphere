@@ -124,6 +124,100 @@
 
       elements.forEach(function (el) { io.observe(el); });
     })();
+
+    // Live demo iframe — lazy load on scroll-into-view, with
+    // a fallback overlay that fades out once the iframe load
+    // event fires. Each .demo-frame[data-default-src] gets
+    // its iframe src populated when it enters the viewport.
+    (function () {
+      'use strict';
+      var frames = document.querySelectorAll('.demo-frame[data-default-src]');
+      if (!frames.length) return;
+
+      function load(frame) {
+        if (frame.dataset.loaded === 'true') return;
+        frame.dataset.loaded = 'true';
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
+        var src = frame.dataset.defaultSrc;
+        iframe.addEventListener('load', function () {
+          // First "load" fires for about:blank; only flip to
+          // ready once we've actually navigated to the embed.
+          if (iframe.src && iframe.src !== 'about:blank') {
+            frame.dataset.state = 'ready';
+          }
+        }, false);
+        iframe.src = src;
+      }
+
+      if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              load(entry.target);
+              io.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.05, rootMargin: '200px 0px' });
+        frames.forEach(function (f) { io.observe(f); });
+      } else {
+        frames.forEach(load);
+      }
+    })();
+
+    // Effect-toggle bar — buttons swap an iframe's src to a
+    // deep-linked URL. Marks the clicked button .is-active
+    // and resets the frame's state so the loading overlay
+    // reappears until the new src settles.
+    (function () {
+      'use strict';
+      var buttons = document.querySelectorAll('.effect-toggle[data-iframe-target][data-iframe-src]');
+      if (!buttons.length) return;
+      buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var frame = document.getElementById(btn.dataset.iframeTarget);
+          if (!frame) return;
+          var iframe = frame.querySelector('.demo-frame__iframe');
+          if (!iframe) return;
+          var bar = btn.closest('.effect-toggle-bar');
+          if (bar) {
+            bar.querySelectorAll('.effect-toggle').forEach(function (b) {
+              b.classList.toggle('is-active', b === btn);
+            });
+          }
+          frame.dataset.state = 'loading';
+          iframe.src = btn.dataset.iframeSrc;
+        });
+      });
+    })();
+
+    // Fullscreen toggle — flips .is-fullscreen on a target
+    // element so it covers the viewport. Escape exits.
+    (function () {
+      'use strict';
+      var btns = document.querySelectorAll('[data-fullscreen-target]');
+      if (!btns.length) return;
+      btns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var target = document.getElementById(btn.dataset.fullscreenTarget);
+          if (!target) return;
+          var nowFull = target.classList.toggle('is-fullscreen');
+          btn.textContent = nowFull ? '✕ Exit fullscreen' : '⤢ Fullscreen';
+          btn.setAttribute('aria-label', nowFull ? 'Exit fullscreen' : 'Toggle fullscreen');
+          if (nowFull) {
+            var onKey = function (e) {
+              if (e.key === 'Escape') {
+                target.classList.remove('is-fullscreen');
+                btn.textContent = '⤢ Fullscreen';
+                btn.setAttribute('aria-label', 'Toggle fullscreen');
+                document.removeEventListener('keydown', onKey);
+              }
+            };
+            document.addEventListener('keydown', onKey);
+          }
+        });
+      });
+    })();
   </script>
 </body>
 </html>

@@ -1,8 +1,166 @@
     <section id="sec-4-globe"
-             class="section section--alt section--placeholder fade-in"
+             class="section section--alt fade-in"
              aria-labelledby="sec-4-title">
-      <div class="container">
-        <h2 id="sec-4-title">4. The globe under the hood</h2>
-        <p>Section content lands in P3.</p>
+      <div class="globe__container">
+        <p class="section__eyebrow">§4 · The globe under the hood</p>
+        <h2 id="sec-4-title" class="globe__title">A custom WebGL2 layer over MapLibre, not a planetarium hack</h2>
+        <p class="globe__lede">
+          The globe is MapLibre GL JS in globe-projection mode with a hand-written <code>CustomLayerInterface</code> sitting on top. NASA's GIBS tile services supply Earth imagery; a multi-pass WebGL2 shader composites day, night, clouds, sun, and a starfield in real time per frame. No external WebGL globe library, no framework runtime — vanilla TypeScript and shaders, sized for phones up through desktop.
+        </p>
+
+        <div class="globe__stack-grid">
+          <article class="globe__stack-card">
+            <h3>mapRenderer.ts</h3>
+            <p>MapLibre globe projection. Owns navigation, markers, labels, country borders, terrain (3D elevation tiles), and region highlighting. Loads Blue Marble (day) and Black Marble (night-lights) GIBS tile sources on startup.</p>
+          </article>
+
+          <article class="globe__stack-card">
+            <h3>earthTileLayer.ts</h3>
+            <p>A MapLibre <code>CustomLayerInterface</code> running multi-pass WebGL2: day/night blend gated on real UTC sun position, framebuffer-captured city lights, specular sun glint, real-time clouds, starfield skybox.</p>
+          </article>
+
+          <article class="globe__stack-card">
+            <h3>tilePreloader.ts</h3>
+            <p>Eagerly fetches low-zoom GIBS tiles into the browser cache on startup, so the first interaction lands on a fully-painted globe rather than a checkerboard of pending tile requests.</p>
+          </article>
+
+          <article class="globe__stack-card">
+            <h3>datasetLoader.ts</h3>
+            <p>Hands a dataset to the globe: progressive image fallback (4096 → 2048 → 1024) for stills, HLS streaming with adaptive bitrate for video, attached as a live texture either way — same display path.</p>
+          </article>
+        </div>
+
+        <figure class="globe__diagram">
+          <svg viewBox="0 0 720 360"
+               role="img"
+               aria-label="Pipeline diagram: GIBS tile sources, cloud overlay, specular map, skybox, and dataset feeds flow through a CustomLayerInterface that runs five WebGL2 shader passes (day/night blend, city lights, specular sun glint, cloud composite, starfield skybox) to produce the final composited frame at 60 frames per second">
+            <defs>
+              <marker id="arrow-globe" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" fill="#737373" />
+              </marker>
+              <style>
+                .dgm-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .dgm-box-emph { fill: rgba(77, 166, 255, 0.08); stroke: #4da6ff; stroke-width: 1.5; }
+                .dgm-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .dgm-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; }
+                .dgm-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .dgm-mono-accent { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; }
+                .dgm-light { fill: #fafafa; }
+                .dgm-mist { fill: #9AB2B1; }
+                .dgm-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+              </style>
+            </defs>
+
+            <!-- Data sources column -->
+            <g transform="translate(20,30)">
+              <text class="dgm-mono" x="0" y="-8" text-anchor="start">DATA SOURCES</text>
+              <rect class="dgm-box" x="0" y="0" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="20" text-anchor="middle">NASA GIBS day (Blue Marble)</text>
+              <rect class="dgm-box" x="0" y="40" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="60" text-anchor="middle">NASA GIBS night (Black Marble)</text>
+              <rect class="dgm-box" x="0" y="80" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="100" text-anchor="middle">Cloud overlay tiles</text>
+              <rect class="dgm-box" x="0" y="120" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="140" text-anchor="middle">Specular map · skybox</text>
+              <rect class="dgm-box" x="0" y="160" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="180" text-anchor="middle">Dataset (image / HLS video)</text>
+            </g>
+
+            <!-- Arrows from each source into the layer block -->
+            <path class="dgm-arrow" d="M225,46  C 260,46  270,150 295,148" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,86  C 260,86  270,150 295,150" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,126 C 260,126 270,150 295,152" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,166 C 260,166 270,150 295,154" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,206 C 260,206 270,150 295,156" marker-end="url(#arrow-globe)" />
+
+            <!-- CustomLayerInterface block -->
+            <g transform="translate(295,118)">
+              <rect class="dgm-box-emph" x="0" y="0" width="180" height="64" rx="8" />
+              <text class="dgm-text" x="90" y="22" text-anchor="middle" font-weight="700">CustomLayerInterface</text>
+              <text class="dgm-mono" x="90" y="40" text-anchor="middle">earthTileLayer.ts</text>
+              <text class="dgm-mono-accent" x="90" y="56" text-anchor="middle">multi-pass WebGL2</text>
+            </g>
+
+            <!-- Shader-passes column -->
+            <g transform="translate(495,40)">
+              <text class="dgm-mono" x="0" y="-8" text-anchor="start">SHADER PASSES</text>
+              <rect class="dgm-box" x="0" y="0" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="17" text-anchor="middle">day/night blend (real UTC sun)</text>
+              <rect class="dgm-box" x="0" y="32" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="49" text-anchor="middle">city lights (framebuffer)</text>
+              <rect class="dgm-box" x="0" y="64" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="81" text-anchor="middle">specular sun glint</text>
+              <rect class="dgm-box" x="0" y="96" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="113" text-anchor="middle">cloud composite</text>
+              <rect class="dgm-box" x="0" y="128" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="145" text-anchor="middle">starfield skybox</text>
+            </g>
+
+            <!-- Arrow from layer into pass column -->
+            <path class="dgm-arrow" d="M475,150 L495,103" marker-end="url(#arrow-globe)" />
+
+            <!-- Frame block at bottom-center -->
+            <g transform="translate(295,260)">
+              <rect class="dgm-box-final" x="0" y="0" width="180" height="50" rx="8" />
+              <text class="dgm-text dgm-light" x="90" y="22" text-anchor="middle" font-weight="700">Composited frame</text>
+              <text class="dgm-mono dgm-mist" x="90" y="40" text-anchor="middle">@ 60 fps · per-tile</text>
+            </g>
+
+            <!-- Arrow from layer to frame, and pass-column to frame -->
+            <path class="dgm-arrow" d="M385,182 L385,258" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M595,200 C 595,240 480,270 480,272" marker-end="url(#arrow-globe)" />
+          </svg>
+          <p class="globe__diagram-caption">DATA SOURCES → CustomLayerInterface (multi-pass WebGL2) → COMPOSITED FRAME</p>
+        </figure>
+
+        <h3 class="demo-section__title">Drive it yourself</h3>
+        <p class="demo-section__hint">
+          The full TerraViz application, embedded. The buttons under the frame deep-link the iframe to specific globe states. Tap fullscreen for a presenter-ready view; press <kbd>Esc</kbd> to exit.
+        </p>
+
+        <div class="demo-frame"
+             id="globe-demo"
+             data-state="loading"
+             data-default-src="https://terraviz.zyra-project.org/">
+          <button type="button"
+                  class="demo-frame__fullscreen-btn"
+                  data-fullscreen-target="globe-demo"
+                  aria-label="Toggle fullscreen">⤢ Fullscreen</button>
+          <iframe class="demo-frame__iframe"
+                  src="about:blank"
+                  title="Live TerraViz application — interactive 3D globe of NOAA Science On a Sphere data"
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <div class="demo-frame__fallback" role="status" aria-live="polite">
+            <p class="demo-frame__fallback-title">Loading the live demo…</p>
+            <p class="demo-frame__fallback-body">If the embed doesn't load within a few seconds, the network may be blocking framed content. Open <a class="demo-frame__fallback-link" href="https://terraviz.zyra-project.org/" target="_blank" rel="noopener">terraviz.zyra-project.org</a> directly in a new tab.</p>
+          </div>
+        </div>
+
+        <div class="effect-toggle-bar"
+             role="group"
+             aria-label="Effect deep-links — change the iframe to demonstrate a specific globe feature">
+          <span class="effect-toggle-bar__label">Demonstrate</span>
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/">Default</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?terrain=on">3D terrain</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?labels=on">Geographic labels</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?borders=on">Country borders</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?rotate=on">Auto-rotate</button>
+        </div>
+
+        <p class="effect-note">
+          The deep-link query parameters land in P12 (SPA-side handlers). Until then, clicking a button still loads the live app — you'll see the default view rather than the requested effect. Once P12 ships, each button toggles the named feature inline.
+        </p>
       </div>
     </section>

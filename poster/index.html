@@ -590,6 +590,264 @@ code, kbd, pre {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   §4 Globe — architecture cards, pipeline diagram, live demo
+   iframe, and effect-toggle bar
+   ========================================================= */
+.globe__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.globe__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.globe__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.globe__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.globe__stack-card {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.globe__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.globe__stack-card p {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.globe__stack-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+@media (max-width: 700px) {
+  .globe__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.globe__diagram {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.75rem 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.globe__diagram svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.globe__diagram-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.75rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Demo iframe + effect bar */
+.demo-section__title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.demo-section__hint {
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  margin: 0 0 1.25rem;
+  max-width: 760px;
+}
+
+.demo-frame {
+  position: relative;
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  box-shadow: 0 12px 32px -16px rgba(0, 23, 45, 0.25);
+}
+
+.demo-frame__iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--navy);
+}
+
+.demo-frame__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  background: var(--navy);
+  color: var(--neutral-100);
+  font-family: var(--font-sans);
+  text-align: center;
+  padding: 2rem;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.demo-frame[data-state="ready"] .demo-frame__fallback {
+  opacity: 0;
+}
+
+.demo-frame__fallback-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--neutral-100);
+  margin: 0;
+}
+
+.demo-frame__fallback-body {
+  font-size: 0.9rem;
+  color: var(--mist);
+  max-width: 36em;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.demo-frame__fallback-link {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--terra-accent);
+  pointer-events: auto;
+}
+
+.demo-frame__fullscreen-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--neutral-100);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  padding: 0.32rem 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: border-color 0.15s, background 0.15s;
+}
+.demo-frame__fullscreen-btn:hover,
+.demo-frame__fullscreen-btn:focus-visible {
+  border-color: var(--surface-border-hover);
+  background: rgba(13, 13, 18, 0.94);
+}
+
+.demo-frame.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  border-radius: 0;
+  border: 0;
+  aspect-ratio: auto;
+}
+
+.effect-toggle-bar {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.effect-toggle-bar__label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 0.25rem;
+}
+
+.effect-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--neutral-300);
+  color: var(--neutral-800);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.effect-toggle:hover,
+.effect-toggle:focus-visible {
+  border-color: var(--terra-accent);
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+}
+
+.effect-toggle.is-active {
+  border-color: var(--terra-accent);
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+}
+
+.effect-note {
+  margin-top: 0.95rem;
+  font-size: 0.8rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  max-width: 760px;
+}
   </style>
 </head>
 <body>
@@ -821,11 +1079,169 @@ code, kbd, pre {
 
   <!-- sec-04-globe.html -->
     <section id="sec-4-globe"
-             class="section section--alt section--placeholder fade-in"
+             class="section section--alt fade-in"
              aria-labelledby="sec-4-title">
-      <div class="container">
-        <h2 id="sec-4-title">4. The globe under the hood</h2>
-        <p>Section content lands in P3.</p>
+      <div class="globe__container">
+        <p class="section__eyebrow">§4 · The globe under the hood</p>
+        <h2 id="sec-4-title" class="globe__title">A custom WebGL2 layer over MapLibre, not a planetarium hack</h2>
+        <p class="globe__lede">
+          The globe is MapLibre GL JS in globe-projection mode with a hand-written <code>CustomLayerInterface</code> sitting on top. NASA's GIBS tile services supply Earth imagery; a multi-pass WebGL2 shader composites day, night, clouds, sun, and a starfield in real time per frame. No external WebGL globe library, no framework runtime — vanilla TypeScript and shaders, sized for phones up through desktop.
+        </p>
+
+        <div class="globe__stack-grid">
+          <article class="globe__stack-card">
+            <h3>mapRenderer.ts</h3>
+            <p>MapLibre globe projection. Owns navigation, markers, labels, country borders, terrain (3D elevation tiles), and region highlighting. Loads Blue Marble (day) and Black Marble (night-lights) GIBS tile sources on startup.</p>
+          </article>
+
+          <article class="globe__stack-card">
+            <h3>earthTileLayer.ts</h3>
+            <p>A MapLibre <code>CustomLayerInterface</code> running multi-pass WebGL2: day/night blend gated on real UTC sun position, framebuffer-captured city lights, specular sun glint, real-time clouds, starfield skybox.</p>
+          </article>
+
+          <article class="globe__stack-card">
+            <h3>tilePreloader.ts</h3>
+            <p>Eagerly fetches low-zoom GIBS tiles into the browser cache on startup, so the first interaction lands on a fully-painted globe rather than a checkerboard of pending tile requests.</p>
+          </article>
+
+          <article class="globe__stack-card">
+            <h3>datasetLoader.ts</h3>
+            <p>Hands a dataset to the globe: progressive image fallback (4096 → 2048 → 1024) for stills, HLS streaming with adaptive bitrate for video, attached as a live texture either way — same display path.</p>
+          </article>
+        </div>
+
+        <figure class="globe__diagram">
+          <svg viewBox="0 0 720 360"
+               role="img"
+               aria-label="Pipeline diagram: GIBS tile sources, cloud overlay, specular map, skybox, and dataset feeds flow through a CustomLayerInterface that runs five WebGL2 shader passes (day/night blend, city lights, specular sun glint, cloud composite, starfield skybox) to produce the final composited frame at 60 frames per second">
+            <defs>
+              <marker id="arrow-globe" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" fill="#737373" />
+              </marker>
+              <style>
+                .dgm-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .dgm-box-emph { fill: rgba(77, 166, 255, 0.08); stroke: #4da6ff; stroke-width: 1.5; }
+                .dgm-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .dgm-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; }
+                .dgm-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .dgm-mono-accent { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; }
+                .dgm-light { fill: #fafafa; }
+                .dgm-mist { fill: #9AB2B1; }
+                .dgm-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+              </style>
+            </defs>
+
+            <!-- Data sources column -->
+            <g transform="translate(20,30)">
+              <text class="dgm-mono" x="0" y="-8" text-anchor="start">DATA SOURCES</text>
+              <rect class="dgm-box" x="0" y="0" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="20" text-anchor="middle">NASA GIBS day (Blue Marble)</text>
+              <rect class="dgm-box" x="0" y="40" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="60" text-anchor="middle">NASA GIBS night (Black Marble)</text>
+              <rect class="dgm-box" x="0" y="80" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="100" text-anchor="middle">Cloud overlay tiles</text>
+              <rect class="dgm-box" x="0" y="120" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="140" text-anchor="middle">Specular map · skybox</text>
+              <rect class="dgm-box" x="0" y="160" width="200" height="32" rx="4" />
+              <text class="dgm-text" x="100" y="180" text-anchor="middle">Dataset (image / HLS video)</text>
+            </g>
+
+            <!-- Arrows from each source into the layer block -->
+            <path class="dgm-arrow" d="M225,46  C 260,46  270,150 295,148" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,86  C 260,86  270,150 295,150" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,126 C 260,126 270,150 295,152" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,166 C 260,166 270,150 295,154" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M225,206 C 260,206 270,150 295,156" marker-end="url(#arrow-globe)" />
+
+            <!-- CustomLayerInterface block -->
+            <g transform="translate(295,118)">
+              <rect class="dgm-box-emph" x="0" y="0" width="180" height="64" rx="8" />
+              <text class="dgm-text" x="90" y="22" text-anchor="middle" font-weight="700">CustomLayerInterface</text>
+              <text class="dgm-mono" x="90" y="40" text-anchor="middle">earthTileLayer.ts</text>
+              <text class="dgm-mono-accent" x="90" y="56" text-anchor="middle">multi-pass WebGL2</text>
+            </g>
+
+            <!-- Shader-passes column -->
+            <g transform="translate(495,40)">
+              <text class="dgm-mono" x="0" y="-8" text-anchor="start">SHADER PASSES</text>
+              <rect class="dgm-box" x="0" y="0" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="17" text-anchor="middle">day/night blend (real UTC sun)</text>
+              <rect class="dgm-box" x="0" y="32" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="49" text-anchor="middle">city lights (framebuffer)</text>
+              <rect class="dgm-box" x="0" y="64" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="81" text-anchor="middle">specular sun glint</text>
+              <rect class="dgm-box" x="0" y="96" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="113" text-anchor="middle">cloud composite</text>
+              <rect class="dgm-box" x="0" y="128" width="200" height="26" rx="4" />
+              <text class="dgm-text" x="100" y="145" text-anchor="middle">starfield skybox</text>
+            </g>
+
+            <!-- Arrow from layer into pass column -->
+            <path class="dgm-arrow" d="M475,150 L495,103" marker-end="url(#arrow-globe)" />
+
+            <!-- Frame block at bottom-center -->
+            <g transform="translate(295,260)">
+              <rect class="dgm-box-final" x="0" y="0" width="180" height="50" rx="8" />
+              <text class="dgm-text dgm-light" x="90" y="22" text-anchor="middle" font-weight="700">Composited frame</text>
+              <text class="dgm-mono dgm-mist" x="90" y="40" text-anchor="middle">@ 60 fps · per-tile</text>
+            </g>
+
+            <!-- Arrow from layer to frame, and pass-column to frame -->
+            <path class="dgm-arrow" d="M385,182 L385,258" marker-end="url(#arrow-globe)" />
+            <path class="dgm-arrow" d="M595,200 C 595,240 480,270 480,272" marker-end="url(#arrow-globe)" />
+          </svg>
+          <p class="globe__diagram-caption">DATA SOURCES → CustomLayerInterface (multi-pass WebGL2) → COMPOSITED FRAME</p>
+        </figure>
+
+        <h3 class="demo-section__title">Drive it yourself</h3>
+        <p class="demo-section__hint">
+          The full TerraViz application, embedded. The buttons under the frame deep-link the iframe to specific globe states. Tap fullscreen for a presenter-ready view; press <kbd>Esc</kbd> to exit.
+        </p>
+
+        <div class="demo-frame"
+             id="globe-demo"
+             data-state="loading"
+             data-default-src="https://terraviz.zyra-project.org/">
+          <button type="button"
+                  class="demo-frame__fullscreen-btn"
+                  data-fullscreen-target="globe-demo"
+                  aria-label="Toggle fullscreen">⤢ Fullscreen</button>
+          <iframe class="demo-frame__iframe"
+                  src="about:blank"
+                  title="Live TerraViz application — interactive 3D globe of NOAA Science On a Sphere data"
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <div class="demo-frame__fallback" role="status" aria-live="polite">
+            <p class="demo-frame__fallback-title">Loading the live demo…</p>
+            <p class="demo-frame__fallback-body">If the embed doesn't load within a few seconds, the network may be blocking framed content. Open <a class="demo-frame__fallback-link" href="https://terraviz.zyra-project.org/" target="_blank" rel="noopener">terraviz.zyra-project.org</a> directly in a new tab.</p>
+          </div>
+        </div>
+
+        <div class="effect-toggle-bar"
+             role="group"
+             aria-label="Effect deep-links — change the iframe to demonstrate a specific globe feature">
+          <span class="effect-toggle-bar__label">Demonstrate</span>
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/">Default</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?terrain=on">3D terrain</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?labels=on">Geographic labels</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?borders=on">Country borders</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?rotate=on">Auto-rotate</button>
+        </div>
+
+        <p class="effect-note">
+          The deep-link query parameters land in P12 (SPA-side handlers). Until then, clicking a button still loads the live app — you'll see the default view rather than the requested effect. Once P12 ships, each button toggles the named feature inline.
+        </p>
       </div>
     </section>
 
@@ -1053,6 +1469,100 @@ code, kbd, pre {
       }, { threshold: 0.12, rootMargin: '0px 0px -10% 0px' });
 
       elements.forEach(function (el) { io.observe(el); });
+    })();
+
+    // Live demo iframe — lazy load on scroll-into-view, with
+    // a fallback overlay that fades out once the iframe load
+    // event fires. Each .demo-frame[data-default-src] gets
+    // its iframe src populated when it enters the viewport.
+    (function () {
+      'use strict';
+      var frames = document.querySelectorAll('.demo-frame[data-default-src]');
+      if (!frames.length) return;
+
+      function load(frame) {
+        if (frame.dataset.loaded === 'true') return;
+        frame.dataset.loaded = 'true';
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
+        var src = frame.dataset.defaultSrc;
+        iframe.addEventListener('load', function () {
+          // First "load" fires for about:blank; only flip to
+          // ready once we've actually navigated to the embed.
+          if (iframe.src && iframe.src !== 'about:blank') {
+            frame.dataset.state = 'ready';
+          }
+        }, false);
+        iframe.src = src;
+      }
+
+      if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              load(entry.target);
+              io.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.05, rootMargin: '200px 0px' });
+        frames.forEach(function (f) { io.observe(f); });
+      } else {
+        frames.forEach(load);
+      }
+    })();
+
+    // Effect-toggle bar — buttons swap an iframe's src to a
+    // deep-linked URL. Marks the clicked button .is-active
+    // and resets the frame's state so the loading overlay
+    // reappears until the new src settles.
+    (function () {
+      'use strict';
+      var buttons = document.querySelectorAll('.effect-toggle[data-iframe-target][data-iframe-src]');
+      if (!buttons.length) return;
+      buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var frame = document.getElementById(btn.dataset.iframeTarget);
+          if (!frame) return;
+          var iframe = frame.querySelector('.demo-frame__iframe');
+          if (!iframe) return;
+          var bar = btn.closest('.effect-toggle-bar');
+          if (bar) {
+            bar.querySelectorAll('.effect-toggle').forEach(function (b) {
+              b.classList.toggle('is-active', b === btn);
+            });
+          }
+          frame.dataset.state = 'loading';
+          iframe.src = btn.dataset.iframeSrc;
+        });
+      });
+    })();
+
+    // Fullscreen toggle — flips .is-fullscreen on a target
+    // element so it covers the viewport. Escape exits.
+    (function () {
+      'use strict';
+      var btns = document.querySelectorAll('[data-fullscreen-target]');
+      if (!btns.length) return;
+      btns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var target = document.getElementById(btn.dataset.fullscreenTarget);
+          if (!target) return;
+          var nowFull = target.classList.toggle('is-fullscreen');
+          btn.textContent = nowFull ? '✕ Exit fullscreen' : '⤢ Fullscreen';
+          btn.setAttribute('aria-label', nowFull ? 'Exit fullscreen' : 'Toggle fullscreen');
+          if (nowFull) {
+            var onKey = function (e) {
+              if (e.key === 'Escape') {
+                target.classList.remove('is-fullscreen');
+                btn.textContent = '⤢ Fullscreen';
+                btn.setAttribute('aria-label', 'Toggle fullscreen');
+                document.removeEventListener('keydown', onKey);
+              }
+            };
+            document.addEventListener('keydown', onKey);
+          }
+        });
+      });
     })();
   </script>
 </body>
