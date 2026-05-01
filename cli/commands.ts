@@ -631,6 +631,14 @@ Commands:
                                       Vectorize on a catalog that was already
                                       populated, or for a model-version bump.
 
+  verify-deploy [--skip-publish-checks]
+                                      Run the post-deploy smoke-test checklist
+                                      from CATALOG_BACKEND_DEVELOPMENT.md against
+                                      the configured --server. Public-only when
+                                      no service token is configured; full audit
+                                      when a token is set. --skip-publish-checks
+                                      forces public-only.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

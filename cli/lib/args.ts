@@ -32,6 +32,7 @@ export const BOOLEAN_FLAGS = new Set<string>([
   'json',
   'draft-only',
   'help',
+  'skip-publish-checks',
 ])
 
 export function parseArgs(argv: string[], booleans: Set<string> = BOOLEAN_FLAGS): ParsedArgs {
