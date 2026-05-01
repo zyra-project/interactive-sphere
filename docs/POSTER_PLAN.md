@@ -187,35 +187,51 @@ Why a separate project rather than a sub-route of the main SPA:
 - **Isolation.** A poster commit can never break the app build.
   The main `terraviz.zyra-project.org` SPA continues to deploy
   from the existing project untouched.
-- **No build step at deploy time.** The rendered `poster/index.html`
-  is committed alongside the section partials, so Cloudflare
-  Pages serves it directly from `poster/` with an empty build
-  command and `poster/` as the output directory — no Vite, no
-  `npm install`, no Python on the deploy. The Python build
-  script runs locally before commit, not on Pages. (This
-  matches how `zyra` and `zyra-editor` ship — committed render
-  output, deploy is dumb static serving.)
+- **Deploys flow through GitHub Actions, not Cloudflare's
+  Git integration.** A dedicated workflow at
+  `.github/workflows/poster.yml` runs `wrangler pages deploy
+  poster/ --project-name terraviz-poster` on every push that
+  touches `poster/**`. Same auth model and same secrets
+  (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) as the
+  SPA's existing `ci.yml`. We tried Cloudflare's "Connect to
+  Git" path first; it didn't reliably pick up commits on
+  this project even after reconnecting and confirming the
+  GitHub App had repo access. The wrangler-based pattern is
+  already proven in this repo for the SPA, so we use it
+  here too.
+- **No build step at deploy time.** The rendered
+  `poster/index.html` is committed alongside the section
+  partials, so the wrangler step just uploads the static
+  contents of `poster/` — no Vite, no `npm install`, no
+  Python on CI. The Python build script runs locally
+  before commit.
+- **Path-filtered trigger.** The workflow only fires when
+  `poster/**` or the workflow file itself changes. SPA-only
+  commits never invoke it; poster commits never invoke the
+  SPA pipeline.
 - **Independent caching headers.** We can set long-cache headers
   on `poster/assets/` without touching the SPA's `_headers`.
 - **Independent rollback.** If a poster change has to be
   reverted live, the rollback is in the Pages project's history
   and doesn't entangle SPA deploy history.
 
-Pages project configuration (to be set up alongside the P12
-deploy commit):
+Pages project configuration (set up in the dashboard; the
+"Connect to Git" parts are no-ops because deploys come from
+the GitHub Actions workflow rather than Cloudflare's webhook):
 
 | Field | Value |
 |---|---|
-| Repo | `zyra-project/terraviz` |
+| Project name | `terraviz-poster` |
 | Production branch | `main` |
-| Build command | _(empty)_ |
-| Build output directory | `poster` |
-| Root directory | _(repo root)_ |
-| Preview deploys | enabled — every PR touching `poster/**` gets a preview URL |
+| Deploy mechanism | `wrangler pages deploy` from `.github/workflows/poster.yml` |
+| Path filter | `poster/**` and the workflow file itself |
+| Preview deploys | every push to a non-`main` branch with poster changes gets a `<branch>.terraviz-poster.pages.dev` URL |
 
 Preview URLs from PRs are the review surface for everything from
 P3 onward — reviewers can scroll the actual poster instead of
-reading HTML diffs.
+reading HTML diffs. The PR's "Checks" tab gains a
+`Deploy poster to Cloudflare Pages` entry whose `View
+deployment` link points at the preview.
 
 Alternative considered and rejected: GitHub Pages from a
 `gh-pages` branch (the pattern used by `noaa-gsl.github.io/zyra`
