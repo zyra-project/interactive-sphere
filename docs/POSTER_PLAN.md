@@ -294,7 +294,7 @@ piece that ties them together — see §6.
 |---|---|
 | Photoreal globe | §4 |
 | Multi-globe comparison | §5 |
-| **Tours — data-driven storytelling** | **§6** |
+| **Tours — data-driven storytelling** (today: AI-authored, human-reviewed; soon: Orbit-authored on demand) | **§6** |
 | Orbit AI docent | §7 |
 | Immersive AR/VR | §8 |
 | Multi-platform (web + desktop + mobile) | §9 |
@@ -418,6 +418,43 @@ Terraviz more than a globe with a play button:
 URL-param handlers, and the tour player all drive the same
 tour through the same engine.
 
+**The sample tours were AI-authored.** Small but worth
+admitting on the poster: the Climate Futures tour and the
+other sample tours under `public/assets/*-tour.json` were
+drafted by an LLM from prompts that named the relevant
+datasets and the story to tell, then human-reviewed and
+adjusted. The SOS tour JSON format is small, declarative,
+and the task surface is documented — which makes it a
+plausible target for LLM authoring even with today's models.
+
+**Where this is going: Orbit as tour author, not just tour
+player.** This is the forward-looking thread that ties the
+poster together. Right now Orbit *recommends* tours from the
+catalog and *loads* them through the existing
+`<<LOAD:TOUR_ID>>` marker. Closing the loop — having Orbit
+*generate* a tour on the fly from a question like *"walk me
+through how Atlantic hurricane seasons have changed since
+2000"* — turns the docent into an educational-scaffolding
+generator instead of a chat surface that happens to know the
+catalog. The pieces are mostly already in place:
+
+- Orbit already has the catalog in its system prompt (turn 0
+  full, subsequent turns compact).
+- The tour-task surface is small, declarative, and already
+  reachable from `TourCallbacks`.
+- The streaming-marker pattern (`<<LOAD:…>>`) is already the
+  vehicle for structured action chunks; an analogous
+  `<<TOUR:…>>` marker carrying inline JSON, or a
+  function-calling tool that returns a tour document, is a
+  credible next deliverable rather than a research project.
+
+Honest framing on the poster: **this is the forward direction,
+not a shipped feature.** It deserves naming because it's the
+difference between "smart chat on a globe" and "an AI that
+produces lessons about the planet, on demand" — but the
+poster has to mark it clearly as next-up, not as something
+visitors can poke at the kiosk.
+
 **Interactive elements:**
 
 - **Tour-launcher buttons** under the demo iframe that
@@ -458,14 +495,23 @@ The AI chat surface. Cover `docentService.ts`,
 - Provider-agnostic: OpenAI, Ollama, LM Studio, Cloudflare AI
   Gateway, llama.cpp, vLLM. Desktop stores keys in OS keychain.
 
+**Where Orbit is going.** A short forward-looking pull-quote
+calling out the same idea as §6: today Orbit recommends and
+loads tours; the natural next step is having Orbit *write*
+them on demand from a user question. The pieces are in place
+(catalog in the system prompt, declarative task surface,
+streaming-marker action chunks). Framed honestly as the
+forward direction, not a shipped capability — full
+explanation lives in §6 to avoid duplication.
+
 **Interactive elements:**
 
 - Annotated chat-bubble mockup showing a real Orbit response
   with `<<LOAD:...>>` resolved into an inline button.
 - Sequence diagram (SVG) of `processMessage()` racing the local
   engine and the LLM stream.
-- "Ask Orbit" CTA that scrolls to the iframe and (if we add the
-  param) deep-links the app with the chat panel pre-opened.
+- "Ask Orbit" CTA that scrolls to the iframe and deep-links
+  the app with the chat panel pre-opened.
 
 ### 8. Immersive — AR & VR via WebXR
 
