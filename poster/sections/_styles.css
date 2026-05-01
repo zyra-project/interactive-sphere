@@ -344,3 +344,233 @@ code, kbd, pre {
     justify-content: center;
   }
 }
+
+/* =========================================================
+   Shared section eyebrow + lede typography
+   ========================================================= */
+.section__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ocean-blue);
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+/* =========================================================
+   §2 Mission — two-column on desktop, stacked on mobile
+   ========================================================= */
+.mission__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+.mission__lede {
+  font-size: clamp(1.2rem, 1.8vw, 1.45rem);
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--ocean-blue);
+  border-left: 3px solid var(--terra-accent);
+  padding-left: 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.mission__copy p {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--neutral-700);
+}
+
+.mission__copy p.mission__close {
+  margin-bottom: 0;
+  font-weight: 600;
+  color: var(--neutral-900);
+  font-size: 1.1rem;
+}
+
+.mission__visual {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mission__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.mission__pair > figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mission__ph {
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-500);
+  text-align: center;
+  padding: 0.5rem;
+  line-height: 1.4;
+}
+
+.mission__pair figcaption {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  text-align: center;
+}
+
+.mission__caption {
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ocean-blue);
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .mission__container {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+/* =========================================================
+   §3 Feature gallery — 3-up responsive card grid
+   ========================================================= */
+.features__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.features__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.features__intro {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 720px;
+  margin: 0 0 2.5rem;
+  line-height: 1.55;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-card:hover,
+.feature-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--terra-accent);
+  box-shadow:
+    0 8px 24px -12px rgba(0, 0, 0, 0.18),
+    0 0 0 1px rgba(77, 166, 255, 0.15);
+  text-decoration: none;
+}
+
+.feature-card__icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  border-radius: 10px;
+  flex-shrink: 0;
+  margin-bottom: 0.25rem;
+}
+
+.feature-card__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.feature-card__anchor {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: var(--terra-accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.feature-card__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.feature-card__desc {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.feature-card__cta {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--cable-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.feature-card__cta::after {
+  content: " →";
+}
+
+@media (max-width: 900px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}

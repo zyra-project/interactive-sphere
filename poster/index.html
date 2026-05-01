@@ -360,6 +360,236 @@ code, kbd, pre {
     justify-content: center;
   }
 }
+
+/* =========================================================
+   Shared section eyebrow + lede typography
+   ========================================================= */
+.section__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ocean-blue);
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+/* =========================================================
+   §2 Mission — two-column on desktop, stacked on mobile
+   ========================================================= */
+.mission__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+.mission__lede {
+  font-size: clamp(1.2rem, 1.8vw, 1.45rem);
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--ocean-blue);
+  border-left: 3px solid var(--terra-accent);
+  padding-left: 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.mission__copy p {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--neutral-700);
+}
+
+.mission__copy p.mission__close {
+  margin-bottom: 0;
+  font-weight: 600;
+  color: var(--neutral-900);
+  font-size: 1.1rem;
+}
+
+.mission__visual {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mission__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.mission__pair > figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mission__ph {
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-500);
+  text-align: center;
+  padding: 0.5rem;
+  line-height: 1.4;
+}
+
+.mission__pair figcaption {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  text-align: center;
+}
+
+.mission__caption {
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ocean-blue);
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .mission__container {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+/* =========================================================
+   §3 Feature gallery — 3-up responsive card grid
+   ========================================================= */
+.features__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.features__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.features__intro {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 720px;
+  margin: 0 0 2.5rem;
+  line-height: 1.55;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-card:hover,
+.feature-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--terra-accent);
+  box-shadow:
+    0 8px 24px -12px rgba(0, 0, 0, 0.18),
+    0 0 0 1px rgba(77, 166, 255, 0.15);
+  text-decoration: none;
+}
+
+.feature-card__icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  border-radius: 10px;
+  flex-shrink: 0;
+  margin-bottom: 0.25rem;
+}
+
+.feature-card__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.feature-card__anchor {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: var(--terra-accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.feature-card__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.feature-card__desc {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.feature-card__cta {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--cable-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.feature-card__cta::after {
+  content: " →";
+}
+
+@media (max-width: 900px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
   </style>
 </head>
 <body>
@@ -417,21 +647,175 @@ code, kbd, pre {
 
   <!-- sec-02-mission.html -->
     <section id="sec-2-mission"
-             class="section section--alt section--placeholder fade-in"
+             class="section section--alt fade-in"
              aria-labelledby="sec-2-title">
-      <div class="container">
-        <h2 id="sec-2-title">2. The mission</h2>
-        <p>Section content lands in P2.</p>
+      <div class="mission__container">
+        <div class="mission__copy">
+          <p class="section__eyebrow">The mission</p>
+          <h2 id="sec-2-title" class="mission__lede">
+            "It is one of the most powerful tools ever built for communicating environmental science. But you have to be in the room."
+          </h2>
+          <p>
+            Science On a Sphere is NOAA's six-foot suspended globe — a room-sized installation projecting planetary data across its surface. Hurricanes spin in real time, sea ice retreats season by season, ocean temperatures shift across decades. It has lived in museums, universities, and visitor centers since 2000.
+          </p>
+          <p>
+            Most people will never stand in front of one. Geography, mobility, access, and cost all create gaps between NOAA's data and the public it was collected to serve.
+          </p>
+          <p class="mission__close">
+            Terraviz closes those gaps. Same data — no museum required.
+          </p>
+        </div>
+
+        <figure class="mission__visual"
+                aria-label="Side-by-side: a Science On a Sphere installation and Terraviz running on a phone">
+          <div class="mission__pair">
+            <figure>
+              <div class="mission__ph">SOS installation photo<br>(asset to land)</div>
+              <figcaption>Science On a Sphere, installed</figcaption>
+            </figure>
+            <figure>
+              <div class="mission__ph">Terraviz on a phone<br>(asset to land)</div>
+              <figcaption>Terraviz, on any device</figcaption>
+            </figure>
+          </div>
+          <figcaption class="mission__caption">Same data, no museum required.</figcaption>
+        </figure>
       </div>
     </section>
 
   <!-- sec-03-features.html -->
     <section id="sec-3-features"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-3-title">
-      <div class="container">
-        <h2 id="sec-3-title">3. What you can do — feature gallery</h2>
-        <p>Section content lands in P2.</p>
+      <div class="features__container">
+        <p class="section__eyebrow">What you can do</p>
+        <h2 id="sec-3-title" class="features__title">Seven things Terraviz adds to a globe</h2>
+        <p class="features__intro">
+          A walk-through of the capability surface, ordered the way the rest of the poster takes them apart. Tap a card to jump straight to that section.
+        </p>
+
+        <div class="feature-grid">
+          <a class="feature-card" href="#sec-4-globe">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a13 13 0 0 1 0 18" />
+                <path d="M12 3a13 13 0 0 0 0 18" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§4</p>
+            <h3 class="feature-card__title">Photoreal globe</h3>
+            <p class="feature-card__desc">
+              MapLibre globe + NASA GIBS tiles. Day/night blend, city lights, clouds, specular sun glint, and atmosphere — composited in WebGL2 over a custom multi-pass layer.
+            </p>
+            <span class="feature-card__cta">See how it works</span>
+          </a>
+
+          <a class="feature-card" href="#sec-5-multiglobe">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="7.5" cy="7.5" r="3.5" />
+                <circle cx="16.5" cy="7.5" r="3.5" />
+                <circle cx="7.5" cy="16.5" r="3.5" />
+                <circle cx="16.5" cy="16.5" r="3.5" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§5</p>
+            <h3 class="feature-card__title">Multi-globe comparison</h3>
+            <p class="feature-card__desc">
+              One, two, or four globes side-by-side. Camera lockstep across panels; time-series animations sync by real-world date.
+            </p>
+            <span class="feature-card__cta">Compare scenarios</span>
+          </a>
+
+          <a class="feature-card" href="#sec-6-tours">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 18 C 4 10, 10 14, 12 8 S 18 5, 20 5" />
+                <circle cx="4" cy="18" r="1.6" fill="currentColor" stroke="none" />
+                <circle cx="12" cy="8" r="1.6" fill="currentColor" stroke="none" />
+                <circle cx="20" cy="5" r="1.6" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§6</p>
+            <h3 class="feature-card__title">Tours — data-driven storytelling</h3>
+            <p class="feature-card__desc">
+              Curated walkthroughs that fly the camera, swap layouts, and load datasets by narrative. Today AI-authored, human-reviewed. Soon: Orbit-authored on demand.
+            </p>
+            <span class="feature-card__cta">Read the tour story</span>
+          </a>
+
+          <a class="feature-card" href="#sec-7-orbit">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a8 8 0 0 1-11.4 7.2L3 21l1.8-6.6A8 8 0 1 1 21 12z" />
+                <circle cx="8.5" cy="12" r="0.9" fill="currentColor" stroke="none" />
+                <circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none" />
+                <circle cx="15.5" cy="12" r="0.9" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§7</p>
+            <h3 class="feature-card__title">Orbit — the digital docent</h3>
+            <p class="feature-card__desc">
+              A hybrid local + LLM chat surface that explains datasets, recommends tours, and loads them onto the globe by conversation. Provider-agnostic.
+            </p>
+            <span class="feature-card__cta">Meet Orbit</span>
+          </a>
+
+          <a class="feature-card" href="#sec-8-immersive">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="7" width="20" height="11" rx="3" />
+                <circle cx="8" cy="12.5" r="2" />
+                <circle cx="16" cy="12.5" r="2" />
+                <path d="M11 11l1-1 1 1" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§8</p>
+            <h3 class="feature-card__title">Immersive — AR &amp; VR</h3>
+            <p class="feature-card__desc">
+              WebXR on Quest. AR places the Earth on your real desk; VR drops you in front of a room-scale globe. Three.js lazy-loaded — non-XR browsers never pay the cost.
+            </p>
+            <span class="feature-card__cta">Step inside</span>
+          </a>
+
+          <a class="feature-card" href="#sec-9-platforms">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="13" height="9" rx="1.5" />
+                <path d="M5 16h9" />
+                <rect x="14.5" y="9.5" width="7" height="11" rx="1.5" />
+                <path d="M16 18h4" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§9</p>
+            <h3 class="feature-card__title">Multi-platform</h3>
+            <p class="feature-card__desc">
+              One TypeScript SPA. Ships as a web app, Windows / macOS / Linux desktop (Tauri v2), and iOS / Android (Tauri mobile, in-flight via PR #33).
+            </p>
+            <span class="feature-card__cta">See the platforms</span>
+          </a>
+
+          <a class="feature-card" href="#sec-10-federation">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="5" cy="6" r="2" />
+                <circle cx="19" cy="6" r="2" />
+                <circle cx="12" cy="18" r="2" />
+                <path d="M6.5 7.5 L11 16.5" />
+                <path d="M17.5 7.5 L13 16.5" />
+                <path d="M7 6h10" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§10</p>
+            <h3 class="feature-card__title">Federated catalog</h3>
+            <p class="feature-card__desc">
+              Self-host your own catalog on Cloudflare — D1, R2, Workers Analytics, Access. Federation across peer nodes is drafted, with live cross-node operation coming next.
+            </p>
+            <span class="feature-card__cta">Run your own</span>
+          </a>
+        </div>
       </div>
     </section>
 

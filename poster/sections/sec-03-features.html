@@ -1,8 +1,134 @@
     <section id="sec-3-features"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-3-title">
-      <div class="container">
-        <h2 id="sec-3-title">3. What you can do — feature gallery</h2>
-        <p>Section content lands in P2.</p>
+      <div class="features__container">
+        <p class="section__eyebrow">What you can do</p>
+        <h2 id="sec-3-title" class="features__title">Seven things Terraviz adds to a globe</h2>
+        <p class="features__intro">
+          A walk-through of the capability surface, ordered the way the rest of the poster takes them apart. Tap a card to jump straight to that section.
+        </p>
+
+        <div class="feature-grid">
+          <a class="feature-card" href="#sec-4-globe">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a13 13 0 0 1 0 18" />
+                <path d="M12 3a13 13 0 0 0 0 18" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§4</p>
+            <h3 class="feature-card__title">Photoreal globe</h3>
+            <p class="feature-card__desc">
+              MapLibre globe + NASA GIBS tiles. Day/night blend, city lights, clouds, specular sun glint, and atmosphere — composited in WebGL2 over a custom multi-pass layer.
+            </p>
+            <span class="feature-card__cta">See how it works</span>
+          </a>
+
+          <a class="feature-card" href="#sec-5-multiglobe">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="7.5" cy="7.5" r="3.5" />
+                <circle cx="16.5" cy="7.5" r="3.5" />
+                <circle cx="7.5" cy="16.5" r="3.5" />
+                <circle cx="16.5" cy="16.5" r="3.5" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§5</p>
+            <h3 class="feature-card__title">Multi-globe comparison</h3>
+            <p class="feature-card__desc">
+              One, two, or four globes side-by-side. Camera lockstep across panels; time-series animations sync by real-world date.
+            </p>
+            <span class="feature-card__cta">Compare scenarios</span>
+          </a>
+
+          <a class="feature-card" href="#sec-6-tours">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 18 C 4 10, 10 14, 12 8 S 18 5, 20 5" />
+                <circle cx="4" cy="18" r="1.6" fill="currentColor" stroke="none" />
+                <circle cx="12" cy="8" r="1.6" fill="currentColor" stroke="none" />
+                <circle cx="20" cy="5" r="1.6" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§6</p>
+            <h3 class="feature-card__title">Tours — data-driven storytelling</h3>
+            <p class="feature-card__desc">
+              Curated walkthroughs that fly the camera, swap layouts, and load datasets by narrative. Today AI-authored, human-reviewed. Soon: Orbit-authored on demand.
+            </p>
+            <span class="feature-card__cta">Read the tour story</span>
+          </a>
+
+          <a class="feature-card" href="#sec-7-orbit">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a8 8 0 0 1-11.4 7.2L3 21l1.8-6.6A8 8 0 1 1 21 12z" />
+                <circle cx="8.5" cy="12" r="0.9" fill="currentColor" stroke="none" />
+                <circle cx="12" cy="12" r="0.9" fill="currentColor" stroke="none" />
+                <circle cx="15.5" cy="12" r="0.9" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§7</p>
+            <h3 class="feature-card__title">Orbit — the digital docent</h3>
+            <p class="feature-card__desc">
+              A hybrid local + LLM chat surface that explains datasets, recommends tours, and loads them onto the globe by conversation. Provider-agnostic.
+            </p>
+            <span class="feature-card__cta">Meet Orbit</span>
+          </a>
+
+          <a class="feature-card" href="#sec-8-immersive">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="7" width="20" height="11" rx="3" />
+                <circle cx="8" cy="12.5" r="2" />
+                <circle cx="16" cy="12.5" r="2" />
+                <path d="M11 11l1-1 1 1" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§8</p>
+            <h3 class="feature-card__title">Immersive — AR &amp; VR</h3>
+            <p class="feature-card__desc">
+              WebXR on Quest. AR places the Earth on your real desk; VR drops you in front of a room-scale globe. Three.js lazy-loaded — non-XR browsers never pay the cost.
+            </p>
+            <span class="feature-card__cta">Step inside</span>
+          </a>
+
+          <a class="feature-card" href="#sec-9-platforms">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="13" height="9" rx="1.5" />
+                <path d="M5 16h9" />
+                <rect x="14.5" y="9.5" width="7" height="11" rx="1.5" />
+                <path d="M16 18h4" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§9</p>
+            <h3 class="feature-card__title">Multi-platform</h3>
+            <p class="feature-card__desc">
+              One TypeScript SPA. Ships as a web app, Windows / macOS / Linux desktop (Tauri v2), and iOS / Android (Tauri mobile, in-flight via PR #33).
+            </p>
+            <span class="feature-card__cta">See the platforms</span>
+          </a>
+
+          <a class="feature-card" href="#sec-10-federation">
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="5" cy="6" r="2" />
+                <circle cx="19" cy="6" r="2" />
+                <circle cx="12" cy="18" r="2" />
+                <path d="M6.5 7.5 L11 16.5" />
+                <path d="M17.5 7.5 L13 16.5" />
+                <path d="M7 6h10" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§10</p>
+            <h3 class="feature-card__title">Federated catalog</h3>
+            <p class="feature-card__desc">
+              Self-host your own catalog on Cloudflare — D1, R2, Workers Analytics, Access. Federation across peer nodes is drafted, with live cross-node operation coming next.
+            </p>
+            <span class="feature-card__cta">Run your own</span>
+          </a>
+        </div>
       </div>
     </section>
