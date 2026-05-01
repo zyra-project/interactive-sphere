@@ -166,10 +166,17 @@ to anchor IDs in the final `index.html`.
 
 ### 0. Sticky presentation timer
 
-Carried verbatim from the series. Top-right, glass surface, blur,
-play / pause / reset. Warns amber at 4:00, red at 5:00. Minimize
-collapses to a tab; restore expands. Time updates announce via
-`aria-label` on the display element.
+Carried from the series. Top-right, glass surface, blur,
+play / pause / reset. Warns amber at 4:00, red at 5:00.
+
+**Default state: minimized.** The poster has to read as a
+poster on first scroll (museum kiosk, walk-up at a conference
+hall) without any timer chrome dominating the hero. The timer
+collapses to its tab on load and only expands when the
+presenter taps it — at which point it behaves identically to
+the rest of the series. Persisting the expanded/collapsed
+choice in `localStorage` keeps a presenter's preference across
+talk rehearsals.
 
 ### 1. Hero
 
@@ -177,7 +184,10 @@ collapses to a tab; restore expands. Time updates announce via
 - Subtitle: one sentence from `MISSION.md` ("Science On a Sphere
   lives in museums. Terraviz brings it everywhere.")
 - Three-column layout: NOAA + Zyra logos (left) | center title +
-  authors | QR codes for live app + GitHub (right).
+  author block | QR codes for live app + GitHub (right).
+- Author block: `Hackshaven (zyra-project)` only, matching the
+  single-author convention used by the rest of the series. Easy
+  to extend later if collaborators want billing.
 - Background: navy gradient with a subtle SVG texture (matching
   the series). Optional CSS-only animated "starfield" for visual
   interest — gated on `prefers-reduced-motion`.
@@ -319,11 +329,87 @@ family per `VR_INVESTIGATION_PLAN.md`:
 **Interactive elements:**
 
 - **AR/VR screenshot carousel** — captured from a real Quest
-  headset. Need source captures (see Open questions).
+  headset. The user is capturing source media; until those land
+  the carousel ships with annotated placeholder boxes and a
+  follow-up swap commit.
+- **Short muted MP4 loop** of an AR session anchored on a real
+  surface, with a clear "captured on Quest 3" caption.
 - **Per-frame loop diagram (SVG)** showing the 9-step ordering
   documented in `CLAUDE.md`.
-- Optional: a short muted MP4 loop of an AR session anchored
-  on a real surface, with a clear "captured on Quest 3" caption.
+- **"Try AR on your phone" tile** — see expansion below.
+
+**Expanding XR reach beyond Quest (proposal).** The user asked
+whether a phone can stand in for a headset, so a passerby with
+no Quest can still get an immersive moment from the poster.
+Short answer: **yes, but not via the existing WebXR code path.**
+
+The Terraviz immersive mode is built on the WebXR Device API
+(`navigator.xr.requestSession('immersive-ar' | 'immersive-vr')`).
+That API:
+
+- ✅ **Works** on Meta Quest browsers, Pico, and Android Chrome
+  on most Pixel and recent Samsung devices (ARCore-backed).
+- ❌ **Does not work** on iOS Safari. Apple has not shipped a
+  WebXR implementation; `navigator.xr` is undefined in mobile
+  Safari and in the iOS Chrome / Firefox variants (which are
+  WebKit under the hood). This has been the state of play since
+  WebXR shipped in 2019 and there is no public Apple commitment
+  to change it.
+
+To reach iPhone visitors in a browser, the practical path is
+**`<model-viewer>` + AR Quick Look + Scene Viewer**:
+
+| Platform | Technology | Format |
+|---|---|---|
+| iOS Safari | AR Quick Look (built-in) | `.usdz` |
+| Android Chrome | Scene Viewer (built-in) | `.glb` |
+| Desktop browsers | `<model-viewer>` 3D preview only | `.glb` |
+
+`<model-viewer>` is a Google-maintained web component that
+abstracts both flows: tag a 3D model with `ar`-attribute and
+the same component renders an interactive 3D preview on
+desktop, opens AR Quick Look on iOS, and opens Scene Viewer on
+Android — no app install, no permission prompt beyond what the
+OS already shows for AR launches.
+
+This buys the poster a **"tap to place Earth on your desk"**
+demo that works on iPhone, Android phone, and tablet — turning
+the §7 story from "Quest only" into "anyone with a phone."
+What it does *not* do:
+
+- It is a **separate code path** from WebXR. The interactive
+  surface-pinned drag, controller raycasting, and dataset
+  texture reuse from `vrInteraction.ts` / `vrSession.ts` are
+  not available in AR Quick Look. The on-phone AR experience
+  is "view a 3D Earth model"; it is not the full Terraviz XR
+  app.
+- It needs **two new asset files** — a `terraviz-earth.glb` for
+  Scene Viewer + desktop preview, and a `terraviz-earth.usdz`
+  for AR Quick Look. We can generate these once from the
+  existing `photorealEarth.ts` Three.js scene by exporting a
+  baked sphere with diffuse + clouds + (optionally) night
+  lights, plus a USDZ converted via Apple's `usdpython` tools or
+  Reality Composer. Static models, ~2–10 MB each, committed
+  under `poster/assets/xr/models/`.
+- It does **not** stream live datasets onto the model. The data
+  story stays in the live demo iframe and the Quest captures.
+  This is a "what XR feels like" demo for visitors who can't
+  put on a headset, not a feature port.
+
+A more ambitious option — full in-browser camera AR via
+WebXR-polyfill / MindAR / AR.js / 8th Wall — was considered and
+rejected for this poster. They either require a commercial SDK
+(8th Wall), only do marker-based tracking (AR.js, MindAR), or
+ship a deprecated Mozilla codepath (WebXR-polyfill / WebXR
+Viewer, last meaningfully maintained ~2020). For a poster
+expected to last months at a kiosk, `<model-viewer>` + the
+two OS-native AR launchers is the right scope.
+
+**Build sequencing:** the model-viewer tile is added in P6
+alongside the Quest carousel. If exporting the GLB/USDZ pair
+turns out to be more than a single-commit task, the tile ships
+in a follow-up phase and we'll surface that in the §"Build
+phases" table. The Quest section itself does not block on it.
 
 ### 8. One codebase, every platform
 
@@ -467,11 +553,12 @@ The CTA section. Three columns:
   badges (Windows / macOS / Linux).
 - **Read more:** GitHub repo, `MISSION.md`, `SELF_HOSTING.md`,
   `ANALYTICS.md`, `VR_INVESTIGATION_PLAN.md`.
-- **Tell us what you think:** survey link (URL TBD — see Open
-  questions).
-
-Survey banner (gradient, matches the series' `survey-banner`
-treatment).
+- ~~**Tell us what you think:** survey link.~~ Skipped for
+  this round — a new survey is on the way and the link will be
+  added once it's live. The CTA section ships with two columns
+  for now (Try it now / Read more); when the survey lands we
+  add the third column and the gradient survey banner used by
+  the rest of the series.
 
 ### 13. Footer
 
@@ -493,7 +580,8 @@ Pulled together so we can confirm scope:
 | 5 | Tour-launcher deep-link buttons (1g, 2g, 4g Climate Futures) | §5 | App must honour `?tour=` and `?layout=` params |
 | 6 | "Ask Orbit" deep-link button | §6 | App must honour `?orbit=open` (or similar) |
 | 7 | AR/VR screenshot carousel | §7 | Captured Quest screenshots |
-| 8 | Optional AR session MP4 loop | §7 | Captured Quest recording |
+| 8 | AR session MP4 loop | §7 | Captured Quest recording |
+| 8a | "Tap to place Earth" tile (`<model-viewer>` + AR Quick Look on iOS / Scene Viewer on Android) | §7 | `terraviz-earth.glb` + `terraviz-earth.usdz` exported from `photorealEarth.ts` |
 | 9 | Federation diagram with animated request fan-out | §9 | Inline SVG + CSS keyframes |
 | 10 | Download badges linked to latest GitHub release | §8, §12 | Stable release URLs (already in `README.md`) |
 | 11 | QR codes (live app, GitHub, desktop downloads, self-hosting) | Hero, §12 | Generated once, committed under `assets/qr/` |
@@ -502,10 +590,12 @@ Pulled together so we can confirm scope:
 | 14 | `prefers-reduced-motion` honoured | All animations | Media query |
 
 Items 4, 5, 6 require small additions to the SPA (URL-param
-handlers). They are nice-to-have rather than blocking — the
-poster works without them, falling back to static screenshots
-under each launcher button. We can land the poster first and
-add the param-handlers in a follow-up commit.
+handlers). **Confirmed in scope** — they ship as P11 in the
+build phases below. P3–P6 still need a graceful fallback for
+the brief window between poster deploy and SPA param-handler
+deploy; each launcher button shows a static screenshot if the
+iframe `/health` probe fails or if the SPA param hasn't taken
+effect after a 2 s grace period.
 
 ## Build phases
 
@@ -526,7 +616,8 @@ catalog plan files follow.
 | **P8** | §9 federation section + architecture diagram SVG + CSS keyframe. |
 | **P9** | §10 analytics + §11 tech stack + §12 CTA + §13 footer. |
 | **P10** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run. |
-| **P11** | Optional: small SPA URL-param handlers for items 4/5/6 above. Separate commit, gated on user approval. |
+| **P11** | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open`, `?dataset={id}` (already supported). Lands as a regular SPA PR off `main`, not on the poster branch. |
+| **P11.5** | "Tap to place Earth" model-viewer tile: export `terraviz-earth.glb` + `terraviz-earth.usdz` from `photorealEarth.ts`, commit under `poster/assets/xr/models/`, wire up the `<model-viewer>` tag in §7. Optional — ships in a follow-up commit if asset export turns out to be more than one commit's worth. |
 | **P12** | Deploy: create the `terraviz-poster` Cloudflare Pages project (build command empty, output dir `poster/`, production branch `main`, preview deploys on), point a `zyra-project.org` subdomain at it once content is final, and update `poster/README.md` + the main repo `README.md` with the live URL. |
 
 ## Risks & tradeoffs
@@ -562,44 +653,55 @@ catalog plan files follow.
 
 ## Open questions
 
-These were posed in the prior turn and copied here for the
-review record. Answers will lock the corresponding sections
-before P1.
+Resolved before P1, captured here for the review record:
 
-1. **Venue / audience.** Conference poster session, stage talk,
-   museum kiosk, or all of the above? The timer suggests
-   presentation use; please confirm.
-2. **Author block & attribution.** Who is listed, and in what
-   order?
-3. **Color palette.** Confirm the hybrid (series chrome +
-   `#4da6ff` for live elements), or override.
-4. **Live demo URL & deep-links.** Use
-   `https://terraviz.zyra-project.org` directly. Are URL-param
-   handlers (interactive elements 4/5/6) in scope for P11, or
-   should we ship with screenshot fallbacks only?
-5. **VR/AR captures.** Do existing Quest screenshots/recordings
-   exist? If not, P6 ships with annotated placeholders and a
-   follow-up swap.
-6. **Catalog backend status framing.** Phase 1a is shipped; live
-   federation is upcoming. Confirm the poster presents
-   federation as "drafted, with live cross-node operation
-   coming next."
-7. **Survey URL.** Should §12 include a feedback survey? If yes,
-   what URL?
-8. **QR-code destinations.** Suggest: live web app, GitHub repo,
-   desktop downloads page, self-hosting guide. Add or remove?
+1. ~~**Venue / audience.**~~ **Resolved:** all of the above
+   (conference poster session, stage talk, museum kiosk). Timer
+   ships **minimized by default** with a tap-to-expand tab; see
+   §0.
+2. ~~**Author block & attribution.**~~ **Resolved:** single
+   author (`Hackshaven (zyra-project)`), matching the rest of
+   the series.
+3. ~~**Color palette.**~~ **Resolved:** hybrid — series tokens
+   for chrome, `#4da6ff` for live/interactive call-outs.
+4. ~~**Live demo URL & deep-links.**~~ **Resolved:** live deep
+   links using `https://terraviz.zyra-project.org`. SPA
+   URL-param handlers are **in scope as P11**.
+5. ~~**VR/AR captures.**~~ **Resolved:** user is capturing
+   Quest screenshots and video. P6 ships with annotated
+   placeholders; a follow-up swap commit lands real captures.
+   **New sub-question raised and answered in §7:** can a phone
+   stand in for a headset for visitors without a Quest? Yes,
+   via `<model-viewer>` + AR Quick Look (iOS) + Scene Viewer
+   (Android). Tracked as **P11.5**. WebXR on iOS Safari is not
+   available and is not expected to ship.
+6. ~~**Catalog backend status framing.**~~ **Resolved:**
+   federation framed as "drafted, with live cross-node
+   operation coming next."
+7. ~~**Survey URL.**~~ **Resolved:** skipped this round; a new
+   survey is incoming and §12 will gain a third column + the
+   series' gradient survey banner once the URL is final.
+8. ~~**QR-code destinations.**~~ **Resolved:** all four —
+   live web app, GitHub repo, desktop downloads page,
+   self-hosting guide.
 9. ~~**Hosting target.**~~ **Resolved:** Cloudflare Pages,
    separate project (`terraviz-poster`). See Deployment above.
-10. **Branch & commit cadence.** Confirm
-    `claude/create-presentation-poster-4sqyF`, DCO sign-off, one
-    phase per commit.
-11. **Mobile framing.** Confirm §8 should present mobile (PR #33)
-    as a current capability with on-device LLM as Phase 7
-    upcoming, and confirm what mobile artifacts to link from the
-    download badges (TestFlight invite? Play Internal Testing
-    URL? PR link as placeholder?).
+10. ~~**Branch & commit cadence.**~~ **Resolved:**
+    `claude/create-presentation-poster-4sqyF`, DCO sign-off,
+    one phase per commit.
+
+Still open:
+
+11. **Mobile-platform badges in §8.** Confirm what to link from
+    the iOS / Android badges before P7 lands. Options:
+    TestFlight invite link, Play Internal Testing URL, or PR
+    #33 as a placeholder until store builds exist. Default if
+    not specified by P7: PR #33 link with a "join the test
+    flight" tooltip, swapped to invite URLs once the store
+    builds are live.
 
 ---
 
-*Once the open questions are answered, P1 lands as the first
-commit and section work proceeds in order.*
+*Open questions 1–10 are resolved. Question 11 (mobile-platform
+badge targets) has a sensible default and does not block P1.
+P1 lands as the next commit.*
