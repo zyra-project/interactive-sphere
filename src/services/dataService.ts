@@ -406,9 +406,26 @@ export class DataService {
     return dataset.format === 'video/mp4'
   }
 
-  /** True if the dataset format is a supported image type (PNG or JPEG). */
+  /**
+   * True if the dataset format is a supported image type (PNG or
+   * JPEG). All three JPEG variants are accepted: the standard
+   * `image/jpeg` (what the publisher API canonicalises to and the
+   * post-1d cutover catalog returns) plus the legacy SOS-catalog
+   * typos `image/jpg` and `images/jpg` (still served verbatim
+   * when `VITE_CATALOG_SOURCE=legacy`).
+   *
+   * Pre-Phase-1f-cleanup this function only accepted the legacy
+   * typo'd values, which silently dropped every imported JPEG
+   * row from the browse list — visible to operators as "the
+   * catalog suddenly shrank by ~30 datasets after the cutover".
+   */
   isImageDataset(dataset: Dataset): boolean {
-    return dataset.format === 'image/png' || dataset.format === 'image/jpg' || dataset.format === 'images/jpg'
+    return (
+      dataset.format === 'image/png' ||
+      dataset.format === 'image/jpeg' ||
+      dataset.format === 'image/jpg' ||
+      dataset.format === 'images/jpg'
+    )
   }
 
   /** True if the dataset format is a guided tour. */

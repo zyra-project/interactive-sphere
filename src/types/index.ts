@@ -3,9 +3,25 @@
  */
 
 /**
- * Supported dataset formats
+ * Supported dataset formats.
+ *
+ * `image/jpeg` is the standard MIME and the only JPEG value the
+ * publisher API's validator accepts (`functions/api/v1/_lib/validators.ts`
+ * `FORMAT_VALUES`). The legacy SOS catalog ships rows with
+ * `image/jpg` and even `images/jpg` (typos preserved verbatim);
+ * those values flow through unchanged when the SPA runs in
+ * `VITE_CATALOG_SOURCE=legacy` mode and via the snapshot importer
+ * which canonicalises both to `image/jpeg`. All three variants
+ * are accepted client-side so the renderer doesn't drop rows
+ * depending on which catalog source the deploy reads from.
  */
-export type DatasetFormat = 'video/mp4' | 'image/png' | 'image/jpg' | 'images/jpg' | 'tour/json'
+export type DatasetFormat =
+  | 'video/mp4'
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/jpg'
+  | 'images/jpg'
+  | 'tour/json'
 
 /**
  * Core dataset metadata from SOS API

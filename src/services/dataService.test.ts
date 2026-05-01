@@ -56,6 +56,20 @@ describe('DataService.isImageDataset', () => {
     expect(dataService.isImageDataset(makeDataset({ format: 'image/jpg' }))).toBe(true)
   })
 
+  it('returns true for image/jpeg (the publisher-API canonical form)', () => {
+    // Phase 1f follow-up — without this case, every JPEG dataset
+    // imported via the cutover snapshot pipeline (29 of them at
+    // last count, including INTERNAL_SOS_119_ONLINE "Age of the
+    // Seafloor") was filtered out of the browse list because the
+    // importer canonicalises image/jpg → image/jpeg but the SPA
+    // only recognised the legacy non-standard typo'd variants.
+    expect(dataService.isImageDataset(makeDataset({ format: 'image/jpeg' }))).toBe(true)
+  })
+
+  it('returns true for images/jpg (legacy SOS double-typo)', () => {
+    expect(dataService.isImageDataset(makeDataset({ format: 'images/jpg' }))).toBe(true)
+  })
+
   it('returns false for video/mp4', () => {
     expect(dataService.isImageDataset(makeDataset({ format: 'video/mp4' }))).toBe(false)
   })
