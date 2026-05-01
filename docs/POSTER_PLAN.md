@@ -1,0 +1,529 @@
+# Terraviz Poster — Plan
+
+A web-based presentation poster covering the Terraviz application,
+its visualization stack, immersive (XR) mode, the Orbit AI docent,
+the multi-platform delivery story (web + Tauri desktop), and the
+emerging federated catalog backend on Cloudflare. Companion to the
+existing series:
+
+- [`zyra` poster](https://noaa-gsl.github.io/zyra/poster/) — source at
+  [`NOAA-GSL/zyra/poster`](https://github.com/NOAA-GSL/zyra/tree/main/poster)
+- [`depot-explorer` poster](https://noaa-gsl.github.io/depot-explorer/) —
+  source at
+  [`NOAA-GSL/depot-explorer/poster`](https://github.com/NOAA-GSL/depot-explorer/tree/main/poster)
+- [`zyra-editor` poster](https://zyra-project.github.io/zyra-editor/) —
+  source at
+  [`zyra-project/zyra-editor/poster`](https://github.com/zyra-project/zyra-editor/tree/main/poster)
+
+Status: **draft for review.** Nothing has been built yet; this
+document is the agreed-upon outline before any HTML/CSS lands.
+The deliverable is a single static site at `/poster/` that
+deploys alongside the application.
+
+---
+
+## Goals
+
+- Tell the Terraviz story end-to-end in a format that works as
+  both a conference poster (scrollable, projector-friendly) and a
+  standalone web page that can be linked or QR-scanned.
+- Match the construction technique and visual language of the
+  three companion posters so the series reads as a coherent set.
+- Embed the live application — not just screenshots — so anyone
+  walking up to the poster can drive Terraviz themselves.
+- Cover the parts of the system that the existing READMEs do
+  *not* foreground: the WebGL custom layer compositing the photoreal
+  Earth, the multi-globe lockstep, the WebXR two-renderer
+  architecture, the Tauri desktop adaptations, and the federated
+  catalog backend on Cloudflare.
+
+## Non-goals
+
+- A new design system. The poster reuses the series' design tokens
+  (Source Sans 3 / Source Code Pro, navy + ocean-blue + seafoam +
+  amber accents) plus the Terraviz `#4da6ff` accent for "live"
+  elements. No new branding.
+- Print fidelity. The poster is web-first; an A0 print pass is a
+  follow-up if requested.
+- A second build pipeline. The poster is hand-authored static
+  HTML/CSS/JS — no Vite, no framework, no bundler. Same as the
+  rest of the series.
+- Documentation rewrite. Where the poster needs depth, it links
+  out to the canonical doc (`MISSION.md`, `STYLE_GUIDE.md`,
+  `CATALOG_BACKEND_PLAN.md`, `VR_INVESTIGATION_PLAN.md`,
+  `ANALYTICS.md`, `DESKTOP_APP_PLAN.md`).
+
+---
+
+## Construction technique (carried from the series)
+
+| Element | Pattern |
+|---|---|
+| Layout | Single-column `max-width: 1200px` container, alternating `section` / `section--alt` backgrounds |
+| Typography | Source Sans 3 (body 300–800) + Source Code Pro (mono 400–600) via Google Fonts |
+| Animation | Scroll-triggered fade-in via `IntersectionObserver`; gated on `prefers-reduced-motion` |
+| Timer | Sticky top-right presentation timer — play / pause / reset, warning at 4 min, overtime at 5 min, minimize-to-tab |
+| Demo iframe | `/health`-probe with screenshot fallback; sandboxed `allow-scripts allow-same-origin allow-forms allow-popups`; fullscreen toggle |
+| Responsive | Single-column stack at ≤900 px |
+| Accessibility | Focus-visible outline, ARIA labels on emoji-only buttons, contrast meeting WCAG 2.1 AA |
+
+## Color palette (proposed)
+
+Reuse the series tokens for chrome (navy, ocean-blue, seafoam,
+amber, the neutral ramp) and adopt Terraviz's `#4da6ff` accent
+for live/interactive call-outs (the demo frame border, the
+"open in app" CTAs, the federation diagram's active path).
+This keeps the poster recognizably part of the family while
+giving Terraviz's globe-first identity a distinct hue.
+
+| Token | Value | Usage |
+|---|---|---|
+| `--navy` | `#00172D` | Footer, timer, hero gradient base |
+| `--ocean-blue` | `#1A5A69` | Section accents, links |
+| `--cable-blue` | `#00529E` | CTA buttons, primary links |
+| `--seafoam` | `#5F9DAE` | Secondary accents, dividers |
+| `--mist` | `#9AB2B1` | Muted text on dark |
+| `--amber` | `#FFC107` | Warning states (timer) |
+| `--terra-accent` | `#4da6ff` | Live-element borders, "open in app" |
+| `--surface-glass` | `rgba(13, 13, 18, 0.88)` | Demo frame chrome |
+
+## File layout
+
+```
+poster/
+├── index.html               # Single page, all sections inline
+├── README.md                # Build/deploy notes (mirrors series)
+├── assets/
+│   ├── logos/               # NOAA, Zyra, Terraviz
+│   ├── qr/                  # QR codes (live app, GitHub, downloads)
+│   ├── screenshots/         # 2D globe, multi-globe, browse, info panel
+│   ├── xr/                  # Quest captures (AR + VR)
+│   ├── diagrams/            # SVG: tile-layer pipeline, XR loop, federation
+│   └── demo-fallback.png    # Shown when iframe /health probe fails
+├── sections/                # Optional split partials (mirrors zyra)
+└── scripts/
+    ├── timer.js             # Presentation timer
+    ├── fade-in.js           # IntersectionObserver
+    └── demo-probe.js        # /health probe + iframe fullscreen
+```
+
+We may keep everything inline in `index.html` if the file stays
+under ~3000 lines (zyra-editor's poster is ~2900). Splitting into
+`sections/` is a refactor we do if the file grows beyond that.
+
+## Deployment
+
+Two options, listed in order of preference:
+
+1. **Cloudflare Pages — separate project.** Point a new Pages
+   project at the `poster/` subdirectory. Domain something like
+   `terraviz-poster.pages.dev` (or a custom subdomain under
+   `zyra-project.org`). Keeps the poster fully isolated from the
+   main SPA build; a poster commit can never break the app.
+2. **GitHub Pages from `gh-pages` branch.** Mirrors the
+   `noaa-gsl.github.io/zyra/poster/` and
+   `zyra-project.github.io/zyra-editor/` patterns exactly. Simple,
+   no extra Cloudflare project.
+
+The existing series uses a mix of both. Pick one before deploy
+— the source layout is the same either way.
+
+---
+
+## Section outline
+
+The poster is a vertical scroll. Section numbers below correspond
+to anchor IDs in the final `index.html`.
+
+### 0. Sticky presentation timer
+
+Carried verbatim from the series. Top-right, glass surface, blur,
+play / pause / reset. Warns amber at 4:00, red at 5:00. Minimize
+collapses to a tab; restore expands. Time updates announce via
+`aria-label` on the display element.
+
+### 1. Hero
+
+- Title: **Terraviz — Streaming Earth's Data to Every Device**
+- Subtitle: one sentence from `MISSION.md` ("Science On a Sphere
+  lives in museums. Terraviz brings it everywhere.")
+- Three-column layout: NOAA + Zyra logos (left) | center title +
+  authors | QR codes for live app + GitHub (right).
+- Background: navy gradient with a subtle SVG texture (matching
+  the series). Optional CSS-only animated "starfield" for visual
+  interest — gated on `prefers-reduced-motion`.
+
+**Interactive:** none. Hero is the static establishing shot.
+
+### 2. The mission
+
+Why this exists. Two-column layout:
+
+- Left: prose from `MISSION.md` — SOS in museums vs. SOS on a phone.
+- Right: side-by-side photo of an SOS installation with a
+  Terraviz screenshot on a phone, captioned "Same data, no
+  museum required."
+
+Light reading, ~120 words. Sets up the rest.
+
+### 3. What you can do — feature gallery
+
+Six-card responsive grid. Each card = icon + title + 1–2-line
+description. Cards link to deeper sections below.
+
+| Card | Anchor |
+|---|---|
+| Photoreal globe | §4 |
+| Multi-globe comparison | §5 |
+| Orbit AI docent | §6 |
+| Immersive AR/VR | §7 |
+| Multi-platform (web + desktop) | §8 |
+| Federated catalog backend | §9 |
+
+**Interactive:** clicking a card scrolls to its section. The grid
+itself uses scroll-fade reveal.
+
+### 4. The globe under the hood
+
+The first deep-dive section. Covers `mapRenderer.ts` +
+`earthTileLayer.ts`:
+
+- MapLibre GL JS with globe projection — the base.
+- NASA GIBS tile sources — Blue Marble (day) and Black Marble
+  (night lights with progressive zoom).
+- A `CustomLayerInterface` does multi-pass WebGL2 compositing:
+  day/night blend gated on real UTC sun position, framebuffer-
+  captured city lights, specular sun glint, real-time clouds,
+  starfield skybox.
+- Terrain via 3D elevation tiles.
+- Tile preloader fetches low-zoom tiles eagerly on startup.
+
+**Interactive elements:**
+
+- **Live demo iframe** anchored here. Default URL:
+  `https://terraviz.zyra-project.org`. `/health` probe at load;
+  fallback image if it fails.
+- **Effect-toggle buttons** below the iframe that deep-link to
+  app states demonstrating each effect (terrain on, labels on,
+  borders on, auto-rotate on). Clicking a button reloads the
+  iframe `src` with a query param. Requires the app to honor
+  these params — flag in §"Open questions" below.
+- **Diagram (SVG):** Tile sources → CustomLayerInterface →
+  multi-pass shader → frame.
+
+### 5. Multi-globe comparison
+
+Cover `viewportManager.ts`:
+
+- 1 / 2 / 4 synchronised MapRenderer instances in a CSS grid.
+- Camera lockstep across panels.
+- Time-series animations sync by real-world date — each panel
+  may run its own dataset on its own clock.
+- Climate Futures tour comparing SSP1/SSP2/SSP5 across air temp,
+  precipitation, sea-surface temp, sea-ice concentration.
+
+**Interactive elements:**
+
+- **Tour-launcher buttons** that change the iframe `src` to
+  specific deep-links: 1-globe default / 2-globe pair /
+  4-globe Climate Futures. Same query-param dependency.
+- Annotated still showing the lockstep camera matrix flowing
+  from panel A to panels B/C/D.
+
+### 6. Orbit — the digital docent
+
+The AI chat surface. Cover `docentService.ts`,
+`docentContext.ts`, `docentEngine.ts`, `llmProvider.ts`:
+
+- Hybrid architecture — local keyword engine (instant, offline)
+  runs concurrently with an LLM stream over any
+  OpenAI-compatible endpoint.
+- Stream chunk types: `delta`, `action`, `auto-load`, `done`.
+- The LLM is prompted to embed `<<LOAD:DATASET_ID>>` markers
+  inline; the service parses these into action chunks; chatUI
+  renders each as an inline load button.
+- Function-calling tool `load_dataset` supported as fallback for
+  providers that prefer tool calls.
+- System prompt is turn-aware: full catalog on turn 0, compact
+  catalog on subsequent turns; older history summarised.
+- Provider-agnostic: OpenAI, Ollama, LM Studio, Cloudflare AI
+  Gateway, llama.cpp, vLLM. Desktop stores keys in OS keychain.
+
+**Interactive elements:**
+
+- Annotated chat-bubble mockup showing a real Orbit response
+  with `<<LOAD:...>>` resolved into an inline button.
+- Sequence diagram (SVG) of `processMessage()` racing the local
+  engine and the LLM stream.
+- "Ask Orbit" CTA that scrolls to the iframe and (if we add the
+  param) deep-links the app with the chat panel pre-opened.
+
+### 7. Immersive — AR & VR via WebXR
+
+The most visually striking section. Cover the whole `vr*` module
+family per `VR_INVESTIGATION_PLAN.md`:
+
+- **Two renderers, one DOM.** MapLibre's canvas keeps running
+  unchanged; a parallel Three.js renderer is created on first
+  Enter AR/VR tap, takes over the XR session, and yields back on
+  session-end.
+- **Lazy-loaded Three.js.** ~183 KB gzipped chunk loaded only
+  when the user enters XR — non-XR browsers never pay the cost.
+- **AR-first button.** `vrButton.ts` prefers `immersive-ar`
+  where supported (Quest 2/3/Pro), falls back to `immersive-vr`
+  on PCVR, hides on non-XR browsers.
+- **Dataset texture reuse.** Video datasets reuse the existing
+  `<video>` element via `THREE.VideoTexture`; image datasets
+  reuse the decoded `HTMLImageElement`. Zero re-fetches.
+- **Earth-as-planet vs. data-as-surface.** With no dataset,
+  `photorealEarth.ts` renders the full diffuse + night lights +
+  specular + atmosphere + clouds + sun + ground-shadow stack
+  with day/night shading gated on real UTC sun position. With a
+  dataset, the Earth decoration is hidden so the data reads
+  uniformly across the sphere.
+- **AR placement.** WebXR hit-test + reticle + Place button +
+  Quest persistent anchors (`vrPersistence.ts`) for cross-
+  session stability.
+- **HUD.** In-VR floating panel (CanvasTexture) with title +
+  play/pause + exit-VR; UV hit regions for raycast.
+
+**Interactive elements:**
+
+- **AR/VR screenshot carousel** — captured from a real Quest
+  headset. Need source captures (see Open questions).
+- **Per-frame loop diagram (SVG)** showing the 9-step ordering
+  documented in `CLAUDE.md`.
+- Optional: a short muted MP4 loop of an AR session anchored
+  on a real surface, with a clear "captured on Quest 3" caption.
+
+### 8. One codebase, every platform
+
+The Tauri desktop story. Cover `src-tauri/`,
+`DESKTOP_APP_PLAN.md`, and the lazy `IS_TAURI` pattern:
+
+- 100 % shared TypeScript source. Desktop-only behaviour gated
+  at runtime.
+- Tile cache (SHA-256 flat-file) for offline GIBS tiles.
+- Offline dataset downloads — videos resolved via Vimeo proxy,
+  images via HEAD probes (4096 → 2048 → original); served to the
+  webview through `convertFileSrc()`.
+- OS keychain for LLM API keys (Windows Credential Manager /
+  macOS Keychain / Linux secret service).
+- HTTP plugin with allowlist for local-LLM endpoints (Ollama
+  11434, LM Studio 1234, llama.cpp/vLLM 8080) — bypasses webview
+  CORS so users can hit local models.
+- Auto-update via Tauri updater key + signed `latest.json`.
+- CI/CD: `desktop.yml` (PR builds), `release.yml` (tag-triggered
+  multi-platform with draft GitHub Release).
+
+**Interactive elements:**
+
+- Platform matrix table — Windows MSI, macOS DMG, Linux
+  AppImage, Web — with download badges that link to the latest
+  GitHub release.
+- Architecture diagram (SVG) showing one TypeScript SPA
+  branching at the `IS_TAURI` runtime gate into web vs. desktop
+  paths.
+
+### 9. Federated catalog & custom backend
+
+The newest piece, and the one that's least covered in existing
+external-facing material. Cover `CATALOG_BACKEND_PLAN.md`,
+`CATALOG_DATA_MODEL.md`, `CATALOG_FEDERATION_PROTOCOL.md`,
+`CATALOG_PUBLISHING_TOOLS.md`, `CATALOG_ASSETS_PIPELINE.md`,
+`CATALOG_BACKEND_DEVELOPMENT.md`:
+
+- The SPA can read its catalog from the SOS S3 source *or* from
+  a self-hosted node-backend on Cloudflare Pages Functions.
+- Backend stack: Pages Functions + D1 (catalog DB) + R2 (assets)
+  + Workers Analytics Engine + KV + Cloudflare Access.
+- Each node has a signed identity (Ed25519) generated locally
+  via `npm run gen:node-key`; identities anchor federation
+  requests across peers.
+- Publishing CLI (`bin/`) builds catalog rows from a manifest,
+  validates against the data model, and uploads.
+- Phase 1a is shipped (D1 seed, dev bypass via `.dev.vars`,
+  ~20-row seed). Federation protocol is drafted; live federation
+  across peer nodes is the upcoming phase — present this honestly
+  rather than overstating.
+- Self-hosting walkthrough lives in `docs/SELF_HOSTING.md`.
+
+**Interactive elements:**
+
+- **Architecture diagram (SVG):** SPA → `/api/v1/catalog` →
+  D1 + R2 + AE → federation peers, with a CSS keyframe that
+  animates a request fanning out across federated nodes.
+- **Code snippet block** showing the local-dev quickstart from
+  the README (`gen:node-key`, `db:reset`, `dev:functions`,
+  curl-and-jq smoke test).
+- Cross-links to all six catalog docs.
+
+### 10. Privacy-first analytics
+
+A short, honest section. Cover `src/analytics/`,
+`functions/api/ingest.ts`, and `ANALYTICS.md`:
+
+- Two-tier consent model — Essential (default on) and Research
+  (opt-in). User-controlled in Tools → Privacy.
+- Server-side stamping of `event_type`, `environment`, `country`
+  (from `CF-IPCountry`), and `internal` flag.
+- Storage: Workers Analytics Engine; dashboards in
+  `grafana/dashboards/`.
+- Privacy invariants (called out as a list):
+  - No IP storage, only country.
+  - No User-Agent storage, only bucketed enums.
+  - Search queries hashed before emit; error messages sanitized.
+  - Lat/lon rounded to 3 decimals before emit.
+  - Session id is in-memory, rotates every launch, never
+    persisted.
+  - `KILL_TELEMETRY=1` returns 410, client cools down.
+
+**Interactive elements:**
+
+- Event-flow diagram (SVG) — emit → batch → beacon → ingest
+  → AE → Grafana — with each hop labeled.
+- Optional: small Grafana dashboard screenshot.
+
+### 11. Tech stack
+
+Logo wall + one-line rationale per pick. Grouped in three rows:
+
+- **Front-end:** TypeScript, Vite, MapLibre GL JS, HLS.js,
+  Three.js.
+- **Desktop:** Tauri v2, Rust, keyring, reqwest.
+- **Cloud:** Cloudflare Pages, D1, R2, Workers Analytics
+  Engine, KV, Cloudflare Access.
+- **AI:** OpenAI-compatible LLM (any provider), Ollama, LM
+  Studio.
+
+### 12. Try it / get involved
+
+The CTA section. Three columns:
+
+- **Try it now:** live web app QR + URL; desktop download
+  badges (Windows / macOS / Linux).
+- **Read more:** GitHub repo, `MISSION.md`, `SELF_HOSTING.md`,
+  `ANALYTICS.md`, `VR_INVESTIGATION_PLAN.md`.
+- **Tell us what you think:** survey link (URL TBD — see Open
+  questions).
+
+Survey banner (gradient, matches the series' `survey-banner`
+treatment).
+
+### 13. Footer
+
+Authors, NOAA + Zyra attribution, license, build hash, current
+date. Static.
+
+---
+
+## Interactive element inventory
+
+Pulled together so we can confirm scope:
+
+| # | Element | Where | Dependency |
+|---|---|---|---|
+| 1 | Sticky presentation timer | All sections | None — pure CSS/JS |
+| 2 | Live demo iframe (default globe) | §4 | Live app reachable |
+| 3 | Iframe `/health` probe + screenshot fallback | §4 | App's `/health` route or static `/index.html` HEAD |
+| 4 | Effect-toggle deep-link buttons (terrain, labels, borders, auto-rotate) | §4 | App must honour query params for these toggles |
+| 5 | Tour-launcher deep-link buttons (1g, 2g, 4g Climate Futures) | §5 | App must honour `?tour=` and `?layout=` params |
+| 6 | "Ask Orbit" deep-link button | §6 | App must honour `?orbit=open` (or similar) |
+| 7 | AR/VR screenshot carousel | §7 | Captured Quest screenshots |
+| 8 | Optional AR session MP4 loop | §7 | Captured Quest recording |
+| 9 | Federation diagram with animated request fan-out | §9 | Inline SVG + CSS keyframes |
+| 10 | Download badges linked to latest GitHub release | §8, §12 | Stable release URLs (already in `README.md`) |
+| 11 | QR codes (live app, GitHub, desktop downloads, self-hosting) | Hero, §12 | Generated once, committed under `assets/qr/` |
+| 12 | Iframe fullscreen toggle | §4 | Pure JS |
+| 13 | Scroll-triggered fade-in | All sections | `IntersectionObserver` |
+| 14 | `prefers-reduced-motion` honoured | All animations | Media query |
+
+Items 4, 5, 6 require small additions to the SPA (URL-param
+handlers). They are nice-to-have rather than blocking — the
+poster works without them, falling back to static screenshots
+under each launcher button. We can land the poster first and
+add the param-handlers in a follow-up commit.
+
+## Build phases
+
+Each phase is a single commit (DCO-signed) on
+`claude/create-presentation-poster-4sqyF`. We commit each phase
+before starting the next to keep edits bounded — same rule the
+catalog plan files follow.
+
+| Phase | Deliverable |
+|---|---|
+| **P1** | Scaffold: `poster/index.html`, `poster/README.md`, design tokens, fonts, sticky timer, hero. Empty section anchors. |
+| **P2** | §2 Mission + §3 feature gallery (links to anchors only). |
+| **P3** | §4 globe section, including live demo iframe + `/health` probe + fallback. |
+| **P4** | §5 multi-globe + tour-launcher buttons (with screenshot fallbacks if the SPA params aren't ready). |
+| **P5** | §6 Orbit section, sequence diagram SVG, mock chat bubble. |
+| **P6** | §7 immersive section. Placeholder image boxes if Quest captures aren't ready; swap-in commit later. |
+| **P7** | §8 multi-platform section + download badges. |
+| **P8** | §9 federation section + architecture diagram SVG + CSS keyframe. |
+| **P9** | §10 analytics + §11 tech stack + §12 CTA + §13 footer. |
+| **P10** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run. |
+| **P11** | Optional: small SPA URL-param handlers for items 4/5/6 above. Separate commit, gated on user approval. |
+| **P12** | Deploy: Cloudflare Pages project (or `gh-pages` branch), DNS if applicable, README update with the live URL. |
+
+## Risks & tradeoffs
+
+- **Live iframe brittleness.** If the SPA changes a route or
+  removes a query param, the deep-link buttons silently break.
+  Mitigation: each button has a static screenshot fallback shown
+  under a "demo unreachable" banner from the `/health` probe.
+- **Quest captures bottleneck.** §7 is the visual centerpiece;
+  without real headset captures it falls flat. Mitigation: ship
+  with annotated mockups, add a follow-up commit when captures
+  arrive.
+- **Federation is partially shipped.** Phase 1a is live; live
+  federation across peer nodes is upcoming. The poster must say
+  this clearly — overstating it would be dishonest and would also
+  set up disappointment when readers click through to the docs.
+- **Bundle drift.** Three other posters in the series live in
+  separate repos. If a token ever changes upstream, this poster
+  can diverge silently. Mitigation: the design-tokens block is a
+  single CSS `:root` rule with comments pointing at the source.
+- **Print fallback.** The poster is web-first. A
+  conference-ready A0 export would need a separate pass with
+  print stylesheets and a different layout grid. Out of scope
+  for this round.
+
+## Open questions
+
+These were posed in the prior turn and copied here for the
+review record. Answers will lock the corresponding sections
+before P1.
+
+1. **Venue / audience.** Conference poster session, stage talk,
+   museum kiosk, or all of the above? The timer suggests
+   presentation use; please confirm.
+2. **Author block & attribution.** Who is listed, and in what
+   order?
+3. **Color palette.** Confirm the hybrid (series chrome +
+   `#4da6ff` for live elements), or override.
+4. **Live demo URL & deep-links.** Use
+   `https://terraviz.zyra-project.org` directly. Are URL-param
+   handlers (interactive elements 4/5/6) in scope for P11, or
+   should we ship with screenshot fallbacks only?
+5. **VR/AR captures.** Do existing Quest screenshots/recordings
+   exist? If not, P6 ships with annotated placeholders and a
+   follow-up swap.
+6. **Catalog backend status framing.** Phase 1a is shipped; live
+   federation is upcoming. Confirm the poster presents
+   federation as "drafted, with live cross-node operation
+   coming next."
+7. **Survey URL.** Should §12 include a feedback survey? If yes,
+   what URL?
+8. **QR-code destinations.** Suggest: live web app, GitHub repo,
+   desktop downloads page, self-hosting guide. Add or remove?
+9. **Hosting target.** Cloudflare Pages (separate project) or
+   GitHub Pages (`gh-pages` branch)?
+10. **Branch & commit cadence.** Confirm
+    `claude/create-presentation-poster-4sqyF`, DCO sign-off, one
+    phase per commit.
+
+---
+
+*Once the open questions are answered, P1 lands as the first
+commit and section work proceeds in order.*
