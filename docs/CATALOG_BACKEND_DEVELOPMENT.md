@@ -503,6 +503,208 @@ The self-hosting walkthrough at
 reference for the full deploy story; the section above is the
 minimum a contributor needs to know.
 
+### Production deployment checklist — first-deploy walkthrough
+
+The Account-level setup above is a topical reference. This
+subsection is the same material organised as a sequence, because
+the order matters and several steps don't take effect until later
+ones run. Working through it in order from a fresh fork avoids the
+recurring "503 binding_missing on the production hostname even
+though everything looks configured" gotcha.
+
+#### Step 1 — Apply catalog migrations to the production D1
+
+The `migrations/catalog/` files create the `datasets`,
+`publishers`, `node_identity`, `featured_datasets`,
+`asset_uploads`, `audit_events`, and decoration tables. Until they
+run against the production D1, every catalog endpoint 5xx's.
+
+Two paths:
+
+- **Wrangler CLI**:
+  ```
+  wrangler d1 migrations apply CATALOG_DB --remote
+  ```
+  Requires `wrangler login` to have completed against an account
+  that owns the D1.
+- **Cloudflare dashboard → Workers & Pages → D1 → `sphere-feedback`
+  → Console**: paste each migration file's contents in order
+  (`0001_init.sql` through `0008_legacy_id.sql` as of Phase 1d).
+  Slower but works when CLI auth fails.
+
+Verify with:
+```sql
+SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;
+```
+The catalog tables (`datasets`, `dataset_categories`, etc.) plus
+the existing feedback tables should be present.
+
+#### Step 2 — Provision `node_identity`
+
+The catalog backend needs exactly one `node_identity` row before
+any read or write endpoint will serve. The `gen-node-key` script
+generates a keypair locally and writes to local D1 only; the
+production row has to be inserted manually.
+
+1. Run `npm run gen:node-key` locally — produces
+   `node-public-key.txt` (wire-format `ed25519:<base64>`) and
+   writes the private half to `.dev.vars`.
+2. Set the private half as a Wrangler/Pages secret:
+   `npx wrangler pages secret put NODE_ID_PRIVATE_KEY_PEM`, OR via
+   dashboard env vars (mark as Secret).
+3. Insert the public-half row via the D1 console:
+   ```sql
+   INSERT INTO node_identity
+     (node_id, display_name, base_url, contact_email, public_key, created_at)
+   VALUES
+     ('NODE-YOUR-PROD-001', 'Your Node', 'https://your-domain',
+      'you@example.com', 'ed25519:<paste from node-public-key.txt>',
+      '2026-01-01T00:00:00.000Z');
+   ```
+4. Verify: `curl https://your-domain/.well-known/terraviz.json`
+   should return your real `node_id`, `display_name`, and
+   `public_key`.
+
+#### Step 3 — Configure Cloudflare Access for the publisher API
+
+`/api/v1/publish/**` is gated by Cloudflare Access. Without an
+Access app, the middleware refuses with `503 access_unconfigured`.
+
+1. **Zero Trust → Access → Applications → Add → Self-hosted**
+2. Application name: `Terraviz Publisher API`
+3. Destinations covering every hostname the API will be reached on:
+   `*.your-pages-domain.pages.dev/api/v1/publish/*`,
+   `your-domain/api/v1/publish/*`, etc. The wildcard subdomain
+   covers all preview branches.
+4. Two policies, in this order:
+   - `Service Token` policy, **Action: Service Auth**, Include →
+     Service Token → the token you'll create next. (`Service Auth`
+     is a distinct action from `Allow`; only Service Auth bypasses
+     interactive SSO for token-only callers.)
+   - `Staff` policy, **Action: Allow**, Include → Emails ending
+     in → your-org.org. (Use the suffix matcher, not the
+     exact-match selector.)
+5. **Service Auth → Service Tokens → Create Service Token** named
+   `terraviz-cli`. Copy the Client ID + Client Secret immediately
+   — the secret is shown once.
+6. From the Access app's Overview tab, copy the **Application
+   Audience (AUD) Tag** (64-char hex).
+
+#### Step 4 — Set Pages env vars and bindings (Production AND Preview)
+
+Both environments need separate toggles in the dashboard. The
+publisher middleware fail-closes when either of `ACCESS_TEAM_DOMAIN`
+/ `ACCESS_AUD` is missing, and the catalog endpoint 503s when
+`CATALOG_DB` is missing — same shape as forgetting to copy the
+config.
+
+**Cloudflare dashboard → Workers & Pages → terraviz → Settings →
+Variables and Bindings**:
+
+| Type | Name | Value |
+|---|---|---|
+| Plaintext | `ACCESS_TEAM_DOMAIN` | `your-team.cloudflareaccess.com` (no protocol) |
+| Plaintext | `ACCESS_AUD` | the AUD tag from Step 3 |
+| Secret | `NODE_ID_PRIVATE_KEY_PEM` | the base64 PKCS8 from Step 2 |
+| Binding (D1) | `CATALOG_DB` | `sphere-feedback` (or your DB) |
+| Binding (KV) | `CATALOG_KV` | namespace created via `wrangler kv namespace create CATALOG_KV` |
+| Binding (R2) | `CATALOG_R2` | `terraviz-assets` bucket |
+| Binding (Workers AI) | `AI` | (auto-detected) |
+| Binding (Vectorize) | `CATALOG_VECTORIZE` | `terraviz-datasets` index |
+
+**For each row, verify the Environment column shows "Production,
+Preview"** — the dashboard offers a separate toggle per
+environment and forgetting either one is the most common cause of
+"works on preview, breaks on production" reports.
+
+#### Step 5 — Trigger a production redeploy
+
+Adding bindings via the dashboard does **not** retro-fit them onto
+running deployments. Either:
+
+- Push a commit to the production branch (`main` by default), which
+  triggers an auto-build with current bindings in scope.
+- **Deployments tab → most recent Production row → ⋯ → Retry
+  deployment** to rebuild the same commit with current bindings.
+
+The redeploy is what activates Steps 1-4's configuration. Until
+this happens, the running production deployment carries whatever
+binding set existed at its original deploy time.
+
+#### Step 6 — Smoke test the publisher API
+
+```
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+     https://your-domain/api/v1/publish/me
+```
+
+Expected: 200 with the JIT-provisioned publisher row keyed off
+`<client-id>.access@service.local`. If the response 401s with
+`Invalid or expired Access assertion`, the JWT verification path
+isn't satisfied — usually `ACCESS_AUD` mismatch or the deployment
+didn't pick up the env vars (re-run Step 5).
+
+#### Step 7 — Run the snapshot import
+
+```
+npm run terraviz -- import-snapshot \
+  --server https://your-domain \
+  --client-id $CF_ACCESS_CLIENT_ID \
+  --client-secret $CF_ACCESS_CLIENT_SECRET \
+  --dry-run
+```
+
+Inspect the plan, then drop `--dry-run` to land 192 rows
+(approximate; varies with snapshot revisions). The import is
+idempotent via the `legacy_id` column — re-running is a no-op on
+rows already imported.
+
+#### Step 8 — Verify the public surface
+
+```
+curl https://your-domain/api/v1/catalog | jq '.datasets | length'
+```
+Expected: ~167 (192 imported minus ~25 with `is_hidden=1`).
+
+```
+curl 'https://your-domain/api/v1/search?q=hurricane' | jq '.datasets[0]'
+```
+Expected: a real dataset hit with a ULID `id` and a relevance
+`score`.
+
+#### Account context — Workers AI billing pitfall
+
+Workers AI usage is billed against the account that **owns the
+Pages project**, not the account whose dashboard a user is
+currently viewing. In a multi-account org this leads to a
+confusing sequence:
+
+1. Run `terraviz import-snapshot` against production.
+2. Get a `502 4006: you have used up your daily free allocation
+   of 10,000 neurons` error.
+3. Check the Workers AI dashboard, see "Neurons used today: 0/10k"
+   and assume Cloudflare is broken.
+
+The dashboard shown is for the currently-selected account
+(top-left dropdown). The Pages project's neuron usage is on the
+owning account's counter, which may be a different account. Switch
+the dropdown to the account that contains the `terraviz` Pages
+project; that's the counter the enforcer is honouring.
+
+#### Free-tier quota awareness
+
+Workers AI free tier is 10,000 neurons per UTC day. Tool-calling
+turns in the docent are 2 LLM rounds (one to call the tool, one to
+consume the result), so an aggressive testing day can exhaust the
+quota faster than expected. **Workers Paid ($5/month base, plus
+~$0.011 per 1k neurons)** is the realistic plan for any deploy
+that's exercising the chat surface beyond a smoke test.
+
+The Pages-owning account's subscription is what counts; upgrading
+a personal account doesn't help if the Pages project lives under
+an org. Settings → Billing → Subscriptions on the right account.
+
 ## Stack
 
 - **Wrangler** (`wrangler pages dev`) is the runner. It loads the
