@@ -59,6 +59,7 @@ deploys alongside the application.
 
 | Element | Pattern |
 |---|---|
+| Authoring | Section partials in `poster/sections/sec-NN-name.html` + four shared templates (`_head.html`, `_styles.css`, `_body-open.html`, `_footer.html`); `scripts/build_poster.py` concatenates them into `poster/index.html`. Both the partials and the rendered output are committed |
 | Layout | Single-column `max-width: 1200px` container, alternating `section` / `section--alt` backgrounds |
 | Typography | Source Sans 3 (body 300–800) + Source Code Pro (mono 400–600) via Google Fonts |
 | Animation | Scroll-triggered fade-in via `IntersectionObserver`; gated on `prefers-reduced-motion` |
@@ -89,27 +90,88 @@ giving Terraviz's globe-first identity a distinct hue.
 
 ## File layout
 
+The series builds the rendered HTML from section partials via a
+small Python script (`scripts/build_poster.py`), then commits
+the rendered output alongside the partials so GitHub Pages or
+Cloudflare Pages can serve the file directly without a build
+step. Confirmed by reading the actual `zyra` and `zyra-editor`
+poster sources — same partial-file naming convention
+(`_head.html`, `_styles.css`, `_body-open.html`, `_footer.html`,
+`sec-NN-name.html`) and the same `scripts/build_poster.py`
+entry point in both. Adopting that pattern verbatim:
+
 ```
 poster/
-├── index.html               # Single page, all sections inline
-├── README.md                # Build/deploy notes (mirrors series)
-├── assets/
-│   ├── logos/               # NOAA, Zyra, Terraviz
-│   ├── qr/                  # QR codes (live app, GitHub, downloads)
-│   ├── screenshots/         # 2D globe, multi-globe, browse, info panel
-│   ├── xr/                  # Quest captures (AR + VR)
-│   ├── diagrams/            # SVG: tile-layer pipeline, XR loop, federation
-│   └── demo-fallback.png    # Shown when iframe /health probe fails
-├── sections/                # Optional split partials (mirrors zyra)
-└── scripts/
-    ├── timer.js             # Presentation timer
-    ├── fade-in.js           # IntersectionObserver
-    └── demo-probe.js        # /health probe + iframe fullscreen
+├── README.md                        # Build/deploy notes
+├── index.html                       # RENDERED output — committed
+├── sections/                        # AUTHORING SURFACE
+│   ├── _head.html                   #   <head>, link rels, meta
+│   ├── _styles.css                  #   :root tokens + global CSS
+│   ├── _body-open.html              #   opening <body>, sticky timer
+│   ├── _footer.html                 #   closing scripts + </body></html>
+│   ├── sec-01-hero.html
+│   ├── sec-02-mission.html
+│   ├── sec-03-features.html
+│   ├── sec-04-globe.html
+│   ├── sec-05-multiglobe.html
+│   ├── sec-06-orbit.html
+│   ├── sec-07-immersive.html
+│   ├── sec-08-platforms.html
+│   ├── sec-09-federation.html
+│   ├── sec-10-analytics.html
+│   ├── sec-11-techstack.html
+│   ├── sec-12-cta.html
+│   └── sec-13-footer-block.html
+├── scripts/
+│   └── build_poster.py              # Concatenate partials → index.html
+└── assets/
+    ├── logos/                       # NOAA, Zyra, Terraviz
+    ├── qr/                          # QR codes (4 destinations)
+    ├── screenshots/                 # 2D globe, multi-globe, browse
+    ├── xr/                          # Quest captures (AR + VR)
+    │   └── models/                  # terraviz-earth.glb / .usdz
+    ├── diagrams/                    # SVG: tile pipeline, XR loop, federation
+    └── demo-fallback.png            # Iframe /health-probe fallback
 ```
 
-We may keep everything inline in `index.html` if the file stays
-under ~3000 lines (zyra-editor's poster is ~2900). Splitting into
-`sections/` is a refactor we do if the file grows beyond that.
+### Build script
+
+Mirrors the proven shape of `zyra/poster/scripts/build_poster.py`
+and `zyra-editor/poster/scripts/build_poster.py`:
+
+- Discovers `sections/sec-*.html` in numeric order.
+- Reads the four templates (`_head.html`, `_styles.css`,
+  `_body-open.html`, `_footer.html`).
+- Inlines the CSS into a `<style>` block in the head (so the
+  rendered file is single-file and works from `file://`).
+- Concatenates: `_head.html` + `<style>{_styles.css}</style>` +
+  `</head>` + `_body-open.html` + every `sec-NN-*.html` in
+  order + `_footer.html`.
+- Writes `poster/index.html`.
+- Prints byte count and line count for the result.
+
+Run it from anywhere: `python3 poster/scripts/build_poster.py`.
+No third-party Python deps — stdlib only. Same as the upstream
+references.
+
+### Author / publish workflow
+
+1. Edit a partial in `poster/sections/` (this is where all
+   poster work happens; `index.html` is never hand-edited).
+2. Run `python3 poster/scripts/build_poster.py`.
+3. `git diff poster/index.html` to confirm the rendered output
+   changed the way the partial implies.
+4. Commit both the partial and `poster/index.html` together so
+   Pages can serve the rendered file with no build step. This
+   also means PR reviewers see both the source diff and the
+   rendered diff in one place.
+
+### Drift guard (optional, P10)
+
+A small CI check runs the build script and `git diff --exit-code
+poster/index.html` to fail the build if a contributor edited a
+partial without re-running the script. Same idea as the
+existing `npm run check:privacy-page` check in this repo.
 
 ## Deployment
 
@@ -124,10 +186,14 @@ Why a separate project rather than a sub-route of the main SPA:
 - **Isolation.** A poster commit can never break the app build.
   The main `terraviz.zyra-project.org` SPA continues to deploy
   from the existing project untouched.
-- **No build step.** The poster is hand-authored static HTML.
-  Cloudflare Pages serves it directly from `poster/` with an
-  empty build command and `poster/` as the output directory —
-  no Vite, no `npm install`, no node toolchain on the build.
+- **No build step at deploy time.** The rendered `poster/index.html`
+  is committed alongside the section partials, so Cloudflare
+  Pages serves it directly from `poster/` with an empty build
+  command and `poster/` as the output directory — no Vite, no
+  `npm install`, no Python on the deploy. The Python build
+  script runs locally before commit, not on Pages. (This
+  matches how `zyra` and `zyra-editor` ship — committed render
+  output, deploy is dumb static serving.)
 - **Independent caching headers.** We can set long-cache headers
   on `poster/assets/` without touching the SPA's `_headers`.
 - **Independent rollback.** If a poster change has to be
@@ -606,7 +672,7 @@ catalog plan files follow.
 
 | Phase | Deliverable |
 |---|---|
-| **P1** | Scaffold: `poster/index.html`, `poster/README.md`, design tokens, fonts, sticky timer, hero. Empty section anchors. |
+| **P1** | Scaffold: `poster/sections/{_head,_styles.css,_body-open,_footer}.html`, `poster/sections/sec-01-hero.html`, empty placeholder partials for sec-02..sec-13, `poster/scripts/build_poster.py`, `poster/README.md`, design tokens, Source Sans 3 + Source Code Pro fonts, sticky timer (minimized by default). First run of the build script produces `poster/index.html` with the hero rendered and remaining sections as empty anchored placeholders — committed alongside the partials. |
 | **P2** | §2 Mission + §3 feature gallery (links to anchors only). |
 | **P3** | §4 globe section, including live demo iframe + `/health` probe + fallback. |
 | **P4** | §5 multi-globe + tour-launcher buttons (with screenshot fallbacks if the SPA params aren't ready). |
@@ -615,7 +681,7 @@ catalog plan files follow.
 | **P7** | §8 multi-platform section + download badges. |
 | **P8** | §9 federation section + architecture diagram SVG + CSS keyframe. |
 | **P9** | §10 analytics + §11 tech stack + §12 CTA + §13 footer. |
-| **P10** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run. |
+| **P10** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run, plus the optional CI drift guard that re-runs `build_poster.py` and fails on any uncommitted diff in `poster/index.html`. |
 | **P11** | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open`, `?dataset={id}` (already supported). Lands as a regular SPA PR off `main`, not on the poster branch. |
 | **P11.5** | "Tap to place Earth" model-viewer tile: export `terraviz-earth.glb` + `terraviz-earth.usdz` from `photorealEarth.ts`, commit under `poster/assets/xr/models/`, wire up the `<model-viewer>` tag in §7. Optional — ships in a follow-up commit if asset export turns out to be more than one commit's worth. |
 | **P12** | Deploy: create the `terraviz-poster` Cloudflare Pages project (build command empty, output dir `poster/`, production branch `main`, preview deploys on), point a `zyra-project.org` subdomain at it once content is final, and update `poster/README.md` + the main repo `README.md` with the live URL. |
@@ -646,6 +712,13 @@ catalog plan files follow.
   separate repos. If a token ever changes upstream, this poster
   can diverge silently. Mitigation: the design-tokens block is a
   single CSS `:root` rule with comments pointing at the source.
+- **Render drift.** Because `poster/index.html` is committed
+  alongside the partials, a contributor can edit a partial,
+  forget to run `build_poster.py`, and ship a stale rendered
+  file. Mitigation: the optional P10 CI drift guard
+  (`build_poster.py` + `git diff --exit-code`) catches this in
+  every PR — same shape as the existing
+  `npm run check:privacy-page` check.
 - **Print fallback.** The poster is web-first. A
   conference-ready A0 export would need a separate pass with
   print stylesheets and a different layout grid. Out of scope
