@@ -335,40 +335,55 @@ production:
 If any of these fail, the troubleshooting matrix in "Local
 debugging" below lists the common causes.
 
-#### Docent model floor
+#### Docent troubleshooting — "chat works but Load chips don't render"
 
-The docent's chat quality is bounded by the configured LLM. The
-post-1d cutover relies on the model **calling `search_datasets`
-and copying ID strings verbatim** from the tool result — both
-behaviours that mid-tier models (≤17B) execute unreliably:
+The docent's response path depends on three behaviours from the
+configured LLM:
+  1. Calling `search_datasets` (or `search_catalog` as fallback)
+     when the user expresses a discovery intent.
+  2. Copying the resulting `id` strings verbatim into
+     `<<LOAD:...>>` markers.
+  3. Not narrating internal reasoning ("Silently…", "Step 1…",
+     etc.) into the user-visible reply.
 
-- **Tool-call short-circuiting.** Smaller models often answer
-  knowledge questions ("What are hurricanes?") from training data
-  without calling discovery tools, so chat replies come back as
-  prose without Load chips.
-- **ULID confabulation.** Models that recognise ULID-shaped
-  strings (`01...26-char base32`) frequently regenerate plausible
-  ones rather than copying the literal id from the tool result.
-  The `validateAndCleanText` safety net (1c/M) strips those, so
-  the user sees the dataset title in prose with no chip — the
-  chat is correct but mute.
+When chips don't render despite the chat working, the LLM is
+breaking one of those rules. The `validateAndCleanText` safety
+net (1c/M) strips hallucinated IDs and logs them to the console as
+`[Docent] Stripped hallucinated dataset IDs: [...]` — that log is
+the first place to look.
 
-What works in practice:
+Diagnostic order:
 
-| LLM | Tool-calling reliability | Notes |
-|---|---|---|
-| `@cf/meta/llama-3.1-70b-instruct` | High | Production default. |
-| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | High | Faster, marginal quality drop. |
-| `@cf/meta/llama-3.1-8b-instruct` | Marginal | Good prose, ULID confabulation common. |
-| `@cf/meta/llama-4-scout` | Marginal | Tool-calling works on clear discovery prompts; ULID copying unreliable. |
-| Anything ≤8B | Unreliable | Docent works as a chat surface but Load chips rarely render. |
+1. **Check the configured model**
+   (Orbit panel → ⚙ Settings → Model). Any Llama 3.x or 4.x
+   variant exposed by Workers AI supports OpenAI-compatible tool
+   calling. Specific behaviour varies by model and changes across
+   Cloudflare's deploy schedule, so model-by-model verdicts in this
+   doc would rot quickly. Test empirically: ask a clear discovery
+   question ("show me datasets about hurricanes") and watch the
+   browser network tab for the `/api/v1/search?q=...` call. If the
+   call fires and returns real results but the marker IDs come
+   back as hallucinations, suspect the prompt before the model.
 
-The configured model is set per-deploy under
-**Orbit panel → ⚙ Settings → Model**. Operators investigating a
-"chat replies but no chips" report should check the model first
-before looking for code-side bugs — the Phase 1d safety nets
-silently strip everything an under-capable model would have
-broken anyway.
+2. **Check the system prompt** — `src/services/docentContext.ts`
+   `buildSystemPrompt`. The cutover history (1d/S, 1d/W) is full
+   of cases where a confidently-capable model failed because the
+   prompt example contained narrate-able annotations or a
+   real-looking ID prefix the model would mimic. The prompt itself
+   is the most common cause of "model can't copy IDs" symptoms;
+   it's much more often the bug than model size.
+
+3. **Check the search result shape**. Hit
+   `/api/v1/search?q=hurricane` directly via curl. If it returns
+   `{datasets: [], degraded: 'unconfigured'}`, the embed pipeline
+   isn't wired (Workers AI / Vectorize bindings missing); if it
+   returns real ULIDs, the LLM has what it needs and the issue is
+   prompt-side.
+
+The intuition "smaller models hallucinate more" is broadly true,
+but during cutover the prompt was responsible for confabulation
+patterns that affected every model. Don't assume the model is the
+floor without verifying the prompt isn't.
 
 ### Account-level setup (production-leaning)
 
