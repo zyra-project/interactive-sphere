@@ -10,6 +10,7 @@ export default defineConfig({
       'functions/**/*.test.ts',
       'scripts/**/*.test.ts',
       'cli/**/*.test.ts',
+      'grafana/**/*.test.ts',
     ],
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
