@@ -11,6 +11,11 @@ import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './domUtils'
 import { createMessageId } from '../services/docentEngine'
 import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureViewContext } from '../services/docentService'
+import {
+  getDegradedReason,
+  subscribe as subscribeDegraded,
+  type DegradedReason,
+} from '../services/docentDegradedState'
 import { captureGlobeScreenshot } from '../services/screenshotService'
 import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
@@ -77,6 +82,43 @@ export function initChatUI(cb: ChatCallbacks): void {
   // Collapse trigger to icon-only if user has opened chat before
   if (localStorage.getItem(CHAT_OPENED_KEY)) {
     document.getElementById('chat-trigger')?.classList.add('collapsed')
+  }
+  // Phase 1f/D — render an initial degraded badge if the docent
+  // already detected quota exhaustion before the chat UI booted
+  // (e.g. when the disclosure banner triggered an early search),
+  // and keep it in sync with state changes for the session.
+  renderDegradedBadge(getDegradedReason())
+  subscribeDegraded(state => renderDegradedBadge(state.reason))
+}
+
+/**
+ * Inject / refresh the "Reduced functionality" badge inside the
+ * chat panel. Idempotent — repeated calls update the existing
+ * element rather than appending duplicates.
+ */
+function renderDegradedBadge(reason: DegradedReason | null): void {
+  const panel = document.getElementById('chat-panel')
+  if (!panel) return
+  let badge = document.getElementById('chat-degraded-badge') as HTMLDivElement | null
+  if (reason === null) {
+    badge?.remove()
+    return
+  }
+  if (!badge) {
+    badge = document.createElement('div')
+    badge.id = 'chat-degraded-badge'
+    badge.className = 'chat-degraded-badge'
+    badge.setAttribute('role', 'status')
+    badge.setAttribute('aria-live', 'polite')
+    panel.prepend(badge)
+  }
+  badge.textContent = degradedBadgeText(reason)
+}
+
+function degradedBadgeText(reason: DegradedReason): string {
+  switch (reason) {
+    case 'quota_exhausted':
+      return 'Reduced functionality — quota approaching limit. Suggestions may use offline matching.'
   }
 }
 

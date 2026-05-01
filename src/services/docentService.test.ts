@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
 import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime, executeSearchDatasets, executeListFeaturedDatasets, clearPreSearchCache } from './docentService'
+import { getDegradedReason, resetForTests as resetDegradedForTests } from './docentDegradedState'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -41,6 +42,8 @@ beforeEach(() => {
   // Drop the per-session pre-search LRU so cache hits from one
   // test don't leak into the next.
   clearPreSearchCache()
+  // Reset Phase 1f/D degraded-mode state between tests.
+  resetDegradedForTests()
 })
 
 describe('processMessage — local fallback', () => {
@@ -2008,6 +2011,33 @@ describe('executeSearchDatasets — per-session pre-search cache (1f/C)', () => 
     clearPreSearchCache()
     await executeSearchDatasets({ query: 'aurora', limit: 5 }, baseConfig)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('executeSearchDatasets — quota-exhausted degraded handling (1f/D)', () => {
+  it('marks the SPA degraded when the response carries degraded=quota_exhausted', async () => {
+    expect(getDegradedReason()).toBeNull()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+        { status: 200 },
+      ),
+    )
+    const result = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(result.datasets).toEqual([])
+    expect(getDegradedReason()).toBe('quota_exhausted')
+  })
+
+  it('does not flip the badge for the unconfigured degraded reason', async () => {
+    expect(getDegradedReason()).toBeNull()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ datasets: [], degraded: 'unconfigured' }),
+        { status: 200 },
+      ),
+    )
+    await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(getDegradedReason()).toBeNull()
   })
 })
 

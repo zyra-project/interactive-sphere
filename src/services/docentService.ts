@@ -10,6 +10,7 @@ import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage
 import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './appleIntelligenceProvider'
 import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
+import { clearDegraded as clearDegradedState, markDegraded as markDegradedState } from './docentDegradedState'
 import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { resolveRegion, boundsToGeoJSON } from '../data/regions'
 import { logger } from '../utils/logger'
@@ -570,6 +571,13 @@ export async function executeSearchDatasets(
     const body = (await res.json()) as { datasets?: SearchDatasetsHit[]; degraded?: string }
     if (body.degraded) {
       logger.info(`[Docent] search_datasets degraded: ${body.degraded}`)
+      // Phase 1f/D — quota_exhausted on the search path drives the
+      // same SPA-side badge as the LLM-side detection. Other
+      // degraded reasons (`unconfigured`) are operator-misconfig
+      // cases that surface their own messaging elsewhere.
+      if (body.degraded === 'quota_exhausted') {
+        markDegradedState('quota_exhausted')
+      }
     }
     hits = Array.isArray(body.datasets) ? body.datasets : []
   } catch (err) {
@@ -1458,6 +1466,12 @@ export async function* processMessage(
                 logger.warn(`[Docent] LLM error (attempt ${attempt}, round ${round}):`, chunk.message)
                 attemptErrored = true
                 llmProducedText = false
+                // Phase 1f/D — surface the SPA-side degraded badge
+                // when the error is a 4006 quota signal. Other
+                // errors leave the existing fallback path untouched.
+                if (chunk.code === 'quota_exhausted') {
+                  markDegradedState('quota_exhausted')
+                }
                 break toolLoop
 
               case 'done':
@@ -1547,6 +1561,11 @@ export async function* processMessage(
         }
 
         if (!attemptErrored && llmProducedText) {
+          // Phase 1f/D — a successful LLM round means quota is back
+          // (Workers AI accepted the request and produced output).
+          // Self-heal the degraded badge so the user knows
+          // functionality is restored without a manual reload.
+          clearDegradedState()
           yield* emitValidatedActions(accumulatedText, datasets, yieldedIds)
 
           // Safety net: if the LLM mentioned dataset titles from search_catalog

@@ -117,7 +117,7 @@ export type StreamChunk =
   | { type: 'delta'; text: string }
   | { type: 'tool_call'; call: LLMToolCall }
   | { type: 'done' }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; code?: 'quota_exhausted' }
 
 // --- Constants ---
 const REQUEST_TIMEOUT_MS = 30000
@@ -187,13 +187,26 @@ export async function* streamChat(
     clearTimeout(inactivityTimer)
     const text = await response.text().catch(() => '')
     logger.warn(`[LLM] API error ${response.status}:`, text)
-    // Extract error detail from JSON body if available
+    // Extract error detail + structured `type` from JSON body if
+    // available. Phase 1f/D — `type: 'quota_exhausted'` (or
+    // `code: 4006`) triggers the SPA's degraded badge; everything
+    // else is a generic error chunk.
     let detail = ''
+    let code: 'quota_exhausted' | undefined
     try {
       const parsed = JSON.parse(text)
-      if (parsed.error) detail = `: ${typeof parsed.error === 'string' ? parsed.error : parsed.error.message ?? ''}`
+      if (parsed.error) {
+        detail = `: ${typeof parsed.error === 'string' ? parsed.error : parsed.error.message ?? ''}`
+        if (typeof parsed.error === 'object' && parsed.error !== null) {
+          if (parsed.error.type === 'quota_exhausted' || parsed.error.code === 4006) {
+            code = 'quota_exhausted'
+          }
+        }
+      }
     } catch { /* not JSON */ }
-    yield { type: 'error', message: `API error ${response.status}${detail}` }
+    yield code
+      ? { type: 'error', message: `API error ${response.status}${detail}`, code }
+      : { type: 'error', message: `API error ${response.status}${detail}` }
     return
   }
 

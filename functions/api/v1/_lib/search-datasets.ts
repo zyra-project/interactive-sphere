@@ -45,6 +45,7 @@ import {
   getNodeIdentity,
 } from './catalog-store'
 import { embedDatasetText, type EmbeddingEnv } from './embeddings'
+import { isWorkersAiQuotaError } from '../../_lib/workers-ai-error'
 import {
   queryEmbedding,
   VECTORIZE_DEFAULT_TOP_K,
@@ -91,11 +92,18 @@ export interface SearchDatasetsOptions {
 export interface SearchDatasetsResult {
   datasets: SearchDatasetsHit[]
   /**
-   * Set to `'unconfigured'` when the embed bindings are not wired,
-   * so the route can stamp a `Warning` header and the docent can
-   * fall back to its local engine. Absent in the happy path.
+   * Set when the search path could not produce real hits and the
+   * caller should treat the empty datasets array as degraded
+   * rather than "no matches":
+   *   - `'unconfigured'` — embed bindings not wired (operator
+   *     misconfiguration; Step 4 of the deploy checklist).
+   *   - `'quota_exhausted'` — Workers AI / Vectorize raised a
+   *     4006-shaped quota error (Phase 1f/D). Distinct from
+   *     `unconfigured` so the SPA can decide whether to show
+   *     "wire up Vectorize" guidance vs the
+   *     "Reduced functionality — quota approaching limit" badge.
    */
-  degraded?: 'unconfigured'
+  degraded?: 'unconfigured' | 'quota_exhausted'
 }
 
 /** Minimum env surface the helper needs across its three dependencies. */
@@ -152,8 +160,22 @@ export async function searchDatasets(
     ? ({ ...(baseFilter as Record<string, unknown>), visibility: 'public' } as unknown as VectorizeVectorMetadataFilter)
     : ({ visibility: 'public' } as unknown as VectorizeVectorMetadataFilter)
 
-  const queryVec = await embedDatasetText(env, query)
-  const matches = await queryEmbedding(env, queryVec, { limit, filter })
+  let queryVec: number[]
+  let matches: Awaited<ReturnType<typeof queryEmbedding>>
+  try {
+    queryVec = await embedDatasetText(env, query)
+    matches = await queryEmbedding(env, queryVec, { limit, filter })
+  } catch (err) {
+    // Phase 1f/D — Workers AI quota exhaustion lands here as a
+    // thrown Error from `embedDatasetText` (Workers AI free-tier
+    // budget) or `queryEmbedding` (rare). Surface it as a typed
+    // degraded reason so the SPA can flip its badge instead of
+    // showing an empty-result silent failure.
+    if (isWorkersAiQuotaError(err)) {
+      return { datasets: [], degraded: 'quota_exhausted' }
+    }
+    throw err
+  }
   if (matches.length === 0) return { datasets: [] }
 
   const ids = matches.map(m => m.dataset_id)
