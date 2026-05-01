@@ -44,6 +44,14 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     new WaitUntilJobQueue(context.env, context.waitUntil.bind(context))
   const result = await retractDataset(context.env, id, { jobQueue })
   if (!result.ok) {
+    // retractDataset only returns 404 today, but mirror reindex.ts
+    // (1d/O) so the structural-vs-validation envelope split is
+    // explicit at the route layer regardless of what the mutation
+    // grows to in future.
+    if (result.status === 404) {
+      const e = result.errors[0]
+      return jsonError(result.status, e.code, e.message)
+    }
     return new Response(JSON.stringify({ errors: result.errors }), {
       status: result.status,
       headers: { 'Content-Type': CONTENT_TYPE },
