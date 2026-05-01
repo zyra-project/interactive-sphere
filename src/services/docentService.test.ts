@@ -656,6 +656,43 @@ describe('validateAndCleanText', () => {
     expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
   })
 
+  it('resolves lowercase marker IDs by case-normalising before lookup (1d/Z)', () => {
+    // Llama-4-scout (and other models) sometimes lowercase the id
+    // when emitting a marker — `<<LOAD:internal_sos_476>>` for a row
+    // whose canonical legacy_id is `INTERNAL_SOS_476`. Pre-1d/Z the
+    // exact case-sensitive lookup stripped these as hallucinated.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCXXXXXXXXXXXXXXXXXX1',
+        legacyId: 'INTERNAL_SOS_476',
+        title: 'Demo Dataset',
+      }),
+    ]
+    const text = '<<LOAD:internal_sos_476>>\n'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCXXXXXXXXXXXXXXXXXX1')).toBe(true)
+    // Marker payload rewritten to the canonical ULID so the chat UI
+    // round-trip stays consistent.
+    expect(cleanedText).toContain('<<LOAD:01KQFFCXXXXXXXXXXXXXXXXXX1>>')
+  })
+
+  it('resolves lowercase ULID markers by case-normalising before lookup (1d/Z)', () => {
+    // Same case-insensitivity needed for ULIDs themselves — Crockford
+    // base32 is uppercase canonical but small models sometimes
+    // lowercase the entire id.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = '<<LOAD:01kqffcee4q7nqgjnfb0z042mc>>\n'
+    const { cleanedText, validIds } = validateAndCleanText(text, ds)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+    expect(cleanedText).toContain('<<LOAD:01KQFFCEE4Q7NQGJNFB0Z042MC>>')
+  })
+
   it('extracts <<FLY:lat,lon>> markers', () => {
     const text = 'Let me show you the Gulf.\n<<FLY:29.0,-89.0>>\nHere it is.'
     const { cleanedText, globeActions } = validateAndCleanText(text, datasets)

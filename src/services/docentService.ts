@@ -582,14 +582,27 @@ function resolveMarkerToDataset(
   if (datasetIdSet.has(id)) return id
   if (id.length === 0) return null
 
+  // Phase 1d/Z — case-insensitive id fallback. ULIDs are
+  // Crockford base32 (uppercase canonical) and legacy_ids are
+  // `INTERNAL_*` (uppercase). Llama-4-scout (and other models)
+  // sometimes lowercase the id when emitting markers; an exact
+  // case-sensitive lookup misses these. Re-try with the
+  // upper-cased form before falling through to the legacy / title
+  // / token-overlap heuristics.
+  const idUpper = id.toUpperCase()
+  if (idUpper !== id && datasetIdSet.has(idUpper)) return idUpper
+
   // Phase 1d/U — legacy_id fallback. Tour files and LLM responses
   // sometimes carry the row's bulk-import provenance id (e.g.
   // `INTERNAL_SOS_768`) instead of the post-cutover ULID. Resolve
   // those to the dataset's primary id before falling through to the
   // title-overlap heuristics; mirrors `dataService.getDatasetById`'s
   // legacyId fallback. The caller rewrites the marker payload to
-  // `dataset.id` so the chat UI's marker round-trip works.
-  const byLegacy = datasets.find(d => d.legacyId === id)
+  // `dataset.id` so the chat UI's marker round-trip works. 1d/Z
+  // makes the comparison case-insensitive too.
+  const byLegacy = datasets.find(
+    d => d.legacyId === id || (d.legacyId && d.legacyId === idUpper),
+  )
   if (byLegacy) return byLegacy
 
   const idLower = id.toLowerCase()
@@ -677,6 +690,11 @@ export function validateAndCleanText(
     const resolved = resolveMarkerToDataset(id, datasetIdSet, datasets)
     if (typeof resolved === 'string') {
       validIds.add(resolved)
+      // 1d/Z — when the resolver case-normalised the id (e.g. the
+      // LLM emitted lowercase but the canonical form is uppercase),
+      // record the rewrite so the marker payload in the cleaned
+      // text matches the canonical id the chat UI expects.
+      if (id !== resolved) markerRewrites.set(id, resolved)
     } else if (resolved) {
       // Title or token-overlap match.
       validIds.add(resolved.id)
@@ -685,17 +703,22 @@ export function validateAndCleanText(
       invalidIds.add(id)
     }
   }
-  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/g)) {
+  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/gi)) {
     const id = match[0]
     // Skip IDs already captured via markers
     if (validIds.has(id) || invalidIds.has(id)) continue
-    if (datasetIdSet.has(id)) {
-      validIds.add(id)
+    // Phase 1d/Z — `i` flag added so the bare-mention path catches
+    // lowercase emissions too (some LLMs lowercase identifiers).
+    // The legacy_id fallback also normalises to uppercase before
+    // comparing so `internal_sos_768` resolves to the
+    // `INTERNAL_SOS_768`-keyed row.
+    const idUpper = id.toUpperCase()
+    if (datasetIdSet.has(id) || datasetIdSet.has(idUpper)) {
+      validIds.add(datasetIdSet.has(id) ? id : idUpper)
+      if (id !== idUpper) markerRewrites.set(id, idUpper)
     } else {
       // Phase 1d/U — same legacy_id fallback the marker path uses.
-      // Bare `INTERNAL_SOS_*` mentions in prose now rewrite to the
-      // canonical ULID via legacyId match, mirroring resolveMarkerToDataset.
-      const byLegacy = datasets.find(d => d.legacyId === id)
+      const byLegacy = datasets.find(d => d.legacyId === idUpper)
       if (byLegacy) {
         validIds.add(byLegacy.id)
         markerRewrites.set(id, byLegacy.id)
