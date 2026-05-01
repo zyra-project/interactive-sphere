@@ -460,11 +460,78 @@ const LIST_FEATURED_MAX_LIMIT = 24
 const CATALOG_API_BASE = '/api'
 
 /**
+ * Per-session LRU cache for pre-search results. Phase 1f/C —
+ * follow-up to 1d/AC restoring the [RELEVANT DATASETS] block.
+ *
+ * The hot path: every discovery turn (intent.type === 'search' /
+ * 'category' / 'related') runs `executeSearchDatasets` to ground
+ * the user message before the LLM stream starts (1d/AC, line 1099
+ * below). Two follow-ups within a turn exchange — "show me
+ * hurricanes" then "any others?" — re-run the same canonicalised
+ * query and re-burn Workers AI embed neurons.
+ *
+ * The cache is module-level (= per-session, since the SPA
+ * re-initialises this module on every page load) with:
+ *   - 16-entry LRU eviction (small enough to keep memory tiny,
+ *     large enough to absorb most multi-turn discovery flows).
+ *   - 5-minute TTL (expires concurrent with the catalog snapshot's
+ *     KV-side cache TTL — same staleness contract).
+ *   - Canonical-query keying: lowercase + collapsed whitespace +
+ *     stripped trailing punctuation. Conservative — no stemming
+ *     or stop-word removal because those change semantics.
+ *
+ * The catalog backend's KV snapshot cache (`functions/api/v1/_lib/
+ * snapshot.ts`) is the precedent for "5-minute staleness is OK
+ * because publish/retract invalidate"; this is the same contract
+ * applied at the docent-client layer, before the request leaves
+ * the SPA.
+ *
+ * Decision-list note (Phase 1f #2 — cache scope): per-session
+ * in-memory was chosen over per-user (localStorage — privacy
+ * surface for raw queries) and per-deploy (CATALOG_KV — would
+ * still re-burn Workers AI without caching the embedding too).
+ * Revisit per-deploy after the cost panel (Commit E) shows
+ * cross-session hot queries.
+ */
+const PRE_SEARCH_CACHE_LIMIT = 16
+const PRE_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000
+
+interface PreSearchCacheEntry {
+  hits: SearchDatasetsHit[]
+  expiresAt: number
+}
+
+const preSearchCache = new Map<string, PreSearchCacheEntry>()
+
+function canonicalisePreSearchQuery(q: string): string {
+  return q.toLowerCase().replace(/\s+/g, ' ').trim().replace(/[.!?,;:]+$/u, '')
+}
+
+function preSearchCacheKey(query: string, limit: number): string {
+  return `${canonicalisePreSearchQuery(query)}|${limit}`
+}
+
+/**
+ * Test hook: drop every cached entry. The SPA never calls this in
+ * production (the cache lives for the lifetime of the page); tests
+ * call it from `beforeEach` to keep cases independent.
+ */
+export function clearPreSearchCache(): void {
+  preSearchCache.clear()
+}
+
+/**
  * Execute a `search_datasets` tool call against the node catalog
  * backend. Returns the result shape the LLM expects to see in a
  * `tool` message reply. On error / unreachable / degraded, returns
  * an empty `{ datasets: [] }` so the LLM can move on (or call the
  * legacy `search_catalog` fallback).
+ *
+ * Phase 1f/C: results pass through the per-session pre-search
+ * cache. The cache key normalises trivial query variations
+ * ("hurricanes" / "Hurricanes  " / "hurricanes!" all hit the same
+ * entry), bounded by limit. Empty results are cached too — a
+ * genuine no-match shouldn't re-burn neurons in the same window.
  */
 export async function executeSearchDatasets(
   args: Record<string, unknown>,
@@ -477,25 +544,48 @@ export async function executeSearchDatasets(
   const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : SEARCH_DATASETS_DEFAULT_LIMIT
   const limit = Math.max(1, Math.min(SEARCH_DATASETS_MAX_LIMIT, Math.floor(limitArg)))
 
+  const cacheKey = preSearchCacheKey(query, limit)
+  const now = Date.now()
+  const cached = preSearchCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    // Touch the entry's LRU position so a long-running session
+    // keeps the active query set hot rather than rotating it out.
+    preSearchCache.delete(cacheKey)
+    preSearchCache.set(cacheKey, cached)
+    return { datasets: cached.hits }
+  }
+
   const url = new URL(`${CATALOG_API_BASE}/v1/search`, window.location.origin)
   url.searchParams.set('q', query)
   url.searchParams.set('limit', String(limit))
 
+  let hits: SearchDatasetsHit[]
   try {
     const res = await fetch(url.toString(), { method: 'GET' })
     if (!res.ok) {
       logger.warn(`[Docent] search_datasets returned ${res.status}`)
+      // Don't cache transient failures — the next turn should retry.
       return { datasets: [] }
     }
     const body = (await res.json()) as { datasets?: SearchDatasetsHit[]; degraded?: string }
     if (body.degraded) {
       logger.info(`[Docent] search_datasets degraded: ${body.degraded}`)
     }
-    return { datasets: Array.isArray(body.datasets) ? body.datasets : [] }
+    hits = Array.isArray(body.datasets) ? body.datasets : []
   } catch (err) {
     logger.warn('[Docent] search_datasets fetch failed:', err)
+    // Network errors are also transient — same as non-OK responses.
     return { datasets: [] }
   }
+
+  preSearchCache.set(cacheKey, { hits, expiresAt: now + PRE_SEARCH_CACHE_TTL_MS })
+  if (preSearchCache.size > PRE_SEARCH_CACHE_LIMIT) {
+    // Map iteration order is insertion order; the first key is the
+    // least-recently-touched (since touches re-insert above).
+    const oldest = preSearchCache.keys().next().value
+    if (oldest !== undefined) preSearchCache.delete(oldest)
+  }
+  return { datasets: hits }
 }
 
 /**
