@@ -420,13 +420,9 @@ and the docent's chip-render reliability matches pre-cutover.
 tool-call chains at 5 per turn so a runaway model can't burn
 unbounded rounds. The `turn_rounds` analytics field (1d/Y)
 records the actual round count per turn for empirical
-measurement.
-
-`MAX_TOOL_CALL_ROUNDS` in `src/services/docentService.ts` caps
-tool-call chains at 5 per turn so a runaway model can't burn
-unbounded rounds. Operators investigating quota burn should
-sanity-check that constant alongside `turn_rounds` per turn in
-analytics.
+measurement; operators investigating quota burn can compare
+`turn_rounds` distributions in Grafana against the cap to spot
+chains that hit the ceiling.
 
 Phase 1d/Y plumbs `turn_rounds` through to the `orbit_turn`
 analytics event. Grafana panel filters can compare pre/post

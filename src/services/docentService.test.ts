@@ -646,6 +646,18 @@ describe('validateAndCleanText', () => {
     expect(invalidIds.has('INTERNAL_FAKE_OCEAN')).toBe(true)
   })
 
+  it('strips bare invalid INTERNAL_ IDs case-insensitively (1d/AD)', () => {
+    // 1d/Z added the `i` flag to detection but the strip pass kept
+    // the case-sensitive form, so lowercase invalid mentions like
+    // `internal_sos_123` were detected and added to invalidIds but
+    // not removed from the user-visible prose. Detection and
+    // stripping now both run case-insensitively.
+    const text = 'Check out internal_fake_ocean for ocean data'
+    const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).not.toContain('internal_fake_ocean')
+    expect(invalidIds.has('internal_fake_ocean')).toBe(true)
+  })
+
   it('keeps bare valid INTERNAL_ IDs in prose', () => {
     const ds = [makeDataset({ id: 'INTERNAL_SST_001' })]
     const text = 'Check out INTERNAL_SST_001 for SST data'

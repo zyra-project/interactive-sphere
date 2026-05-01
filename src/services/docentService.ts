@@ -849,8 +849,12 @@ export function validateAndCleanText(
     return match
   })
 
-  // Strip bare invalid INTERNAL_... IDs from prose
-  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/g, (id) => {
+  // Strip bare invalid INTERNAL_... IDs from prose. Case-insensitive
+  // to match the detection regex above (1d/Z added the `i` flag for
+  // detection but the strip pass kept the case-sensitive form, so
+  // lowercase invalid mentions like `internal_sos_123` were detected
+  // and reported but left in the user-visible text — 1d/AD).
+  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/gi, (id) => {
     if (invalidIds.has(id)) return ''
     return id
   })
