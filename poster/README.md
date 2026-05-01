@@ -1,6 +1,6 @@
-# Terraviz Poster
+# TerraViz Poster
 
-A web-based presentation poster covering Terraviz —
+A web-based presentation poster covering TerraViz —
 companion to the existing series:
 
 - [`zyra` poster](https://noaa-gsl.github.io/zyra/poster/)

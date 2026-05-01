@@ -1,6 +1,6 @@
-# Terraviz Poster — Plan
+# TerraViz Poster — Plan
 
-A web-based presentation poster covering the Terraviz application,
+A web-based presentation poster covering the TerraViz application,
 its visualization stack, immersive (XR) mode, the Orbit AI docent,
 the multi-platform delivery story (web + Tauri desktop), and the
 emerging federated catalog backend on Cloudflare. Companion to the
@@ -24,13 +24,13 @@ deploys alongside the application.
 
 ## Goals
 
-- Tell the Terraviz story end-to-end in a format that works as
+- Tell the TerraViz story end-to-end in a format that works as
   both a conference poster (scrollable, projector-friendly) and a
   standalone web page that can be linked or QR-scanned.
 - Match the construction technique and visual language of the
   three companion posters so the series reads as a coherent set.
 - Embed the live application — not just screenshots — so anyone
-  walking up to the poster can drive Terraviz themselves.
+  walking up to the poster can drive TerraViz themselves.
 - Cover the parts of the system that the existing READMEs do
   *not* foreground: the WebGL custom layer compositing the photoreal
   Earth, the multi-globe lockstep, the WebXR two-renderer
@@ -41,7 +41,7 @@ deploys alongside the application.
 
 - A new design system. The poster reuses the series' design tokens
   (Source Sans 3 / Source Code Pro, navy + ocean-blue + seafoam +
-  amber accents) plus the Terraviz `#4da6ff` accent for "live"
+  amber accents) plus the TerraViz `#4da6ff` accent for "live"
   elements. No new branding.
 - Print fidelity. The poster is web-first; an A0 print pass is a
   follow-up if requested.
@@ -71,11 +71,11 @@ deploys alongside the application.
 ## Color palette (proposed)
 
 Reuse the series tokens for chrome (navy, ocean-blue, seafoam,
-amber, the neutral ramp) and adopt Terraviz's `#4da6ff` accent
+amber, the neutral ramp) and adopt TerraViz's `#4da6ff` accent
 for live/interactive call-outs (the demo frame border, the
 "open in app" CTAs, the federation diagram's active path).
 This keeps the poster recognizably part of the family while
-giving Terraviz's globe-first identity a distinct hue.
+giving TerraViz's globe-first identity a distinct hue.
 
 | Token | Value | Usage |
 |---|---|---|
@@ -126,7 +126,7 @@ poster/
 ├── scripts/
 │   └── build_poster.py              # Concatenate partials → index.html
 └── assets/
-    ├── logos/                       # NOAA, Zyra, Terraviz
+    ├── logos/                       # NOAA, Zyra, TerraViz
     ├── qr/                          # QR codes (4 destinations)
     ├── screenshots/                 # 2D globe, multi-globe, browse
     ├── xr/                          # Quest captures (AR + VR)
@@ -269,9 +269,9 @@ talk rehearsals.
 
 ### 1. Hero
 
-- Title: **Terraviz — Streaming Earth's Data to Every Device**
+- Title: **TerraViz — Streaming Earth's Data to Every Device**
 - Subtitle: one sentence from `MISSION.md` ("Science On a Sphere
-  lives in museums. Terraviz brings it everywhere.")
+  lives in museums. TerraViz brings it everywhere.")
 - Three-column layout: NOAA + Zyra logos (left) | center title +
   author block | QR codes for live app + GitHub (right).
 - Author block (matches the `zyra` poster's single-author
@@ -297,7 +297,7 @@ Why this exists. Two-column layout:
 
 - Left: prose from `MISSION.md` — SOS in museums vs. SOS on a phone.
 - Right: side-by-side photo of an SOS installation with a
-  Terraviz screenshot on a phone, captioned "Same data, no
+  TerraViz screenshot on a phone, captioned "Same data, no
   museum required."
 
 Light reading, ~120 words. Sets up the rest.
@@ -377,7 +377,7 @@ Cover `viewportManager.ts`:
 
 ### 6. Tours — data-driven storytelling
 
-The educational scaffolding that turns Terraviz from a video
+The educational scaffolding that turns TerraViz from a video
 player into a guided tour of the planet. Cover
 `tourEngine.ts`, `tourUI.ts`, and the SOS-format tour JSON.
 
@@ -391,7 +391,7 @@ walkthrough — the same affordance an SOS docent gives a
 museum audience, available to anyone with a browser.
 
 **Why it matters in the poster.** Tours are what make
-Terraviz more than a globe with a play button:
+TerraViz more than a globe with a play button:
 
 - **Data-driven storytelling.** The Climate Futures tour
   compares SSP1, SSP2, and SSP5 climate scenarios across air
@@ -579,7 +579,7 @@ whether a phone can stand in for a headset, so a passerby with
 no Quest can still get an immersive moment from the poster.
 Short answer: **yes, but not via the existing WebXR code path.**
 
-The Terraviz immersive mode is built on the WebXR Device API
+The TerraViz immersive mode is built on the WebXR Device API
 (`navigator.xr.requestSession('immersive-ar' | 'immersive-vr')`).
 That API:
 
@@ -617,7 +617,7 @@ What it does *not* do:
   surface-pinned drag, controller raycasting, and dataset
   texture reuse from `vrInteraction.ts` / `vrSession.ts` are
   not available in AR Quick Look. The on-phone AR experience
-  is "view a 3D Earth model"; it is not the full Terraviz XR
+  is "view a 3D Earth model"; it is not the full TerraViz XR
   app.
 - It needs **two new asset files** — a `terraviz-earth.glb` for
   Scene Viewer + desktop preview, and a `terraviz-earth.usdz`

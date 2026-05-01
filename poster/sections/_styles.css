@@ -1,5 +1,5 @@
 /* =========================================================
-   Terraviz Poster — design tokens and base styles.
+   TerraViz Poster — design tokens and base styles.
    Authoring source. Do not edit poster/index.html directly —
    run poster/scripts/build_poster.py to re-render it.
 
@@ -21,7 +21,7 @@
   --amber: #FFC107;
   --red: #F44336;
 
-  /* Terraviz live-element accent */
+  /* TerraViz live-element accent */
   --terra-accent: #4da6ff;
   --terra-accent-bg: rgba(77, 166, 255, 0.12);
   --terra-accent-text: #6ab8ff;
