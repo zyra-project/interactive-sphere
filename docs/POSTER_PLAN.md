@@ -177,10 +177,14 @@ existing `npm run check:privacy-page` check in this repo.
 ## Deployment
 
 **Decided: Cloudflare Pages — separate project.** A new Pages
-project (working name `terraviz-poster`) is pointed at the
-`poster/` subdirectory of this repo. Domain is
-`terraviz-poster.pages.dev` initially, with a custom subdomain
-under `zyra-project.org` to follow once the content is final.
+project (`terraviz-poster`) is pointed at the `poster/`
+subdirectory of this repo. Production hostname is
+**`poster.terraviz.zyra-project.org`** (added as a custom
+domain on the project; Cloudflare auto-provisioned the cert
+and CNAME because the zone is on the same account). The
+default `terraviz-poster.pages.dev` URL still works as a
+backup; per-PR previews use the
+`<branch-alias>.terraviz-poster.pages.dev` form.
 
 Why a separate project rather than a sub-route of the main SPA:
 
@@ -857,7 +861,7 @@ catalog plan files follow.
 | **P11** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run, plus the optional CI drift guard that re-runs `build_poster.py` and fails on any uncommitted diff in `poster/index.html`. |
 | **P12** | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open` (and the `&prompt=tour` variant), `?dataset={id}` (already supported). Lands as a regular SPA PR off `main`, not on the poster branch. |
 | **P12.5** | "Tap to place Earth" model-viewer tile: export `terraviz-earth.glb` + `terraviz-earth.usdz` from `photorealEarth.ts`, commit under `poster/assets/xr/models/`, wire up the `<model-viewer>` tag in §8. Optional — ships in a follow-up commit if asset export turns out to be more than one commit's worth. |
-| **P13** | Deploy: create the `terraviz-poster` Cloudflare Pages project (build command empty, output dir `poster/`, production branch `main`, preview deploys on), point a `zyra-project.org` subdomain at it once content is final, and update `poster/README.md` + the main repo `README.md` with the live URL. |
+| **P13** | Deploy hand-off: confirm production-domain (`poster.terraviz.zyra-project.org` — already wired up) is serving the final content, update `poster/README.md` + the main repo `README.md` with the live URL, and add a short link from `MISSION.md` if appropriate. The Pages project, custom domain, and CI workflow are already in place at this point — P13 is documentation, not infrastructure. |
 
 ## Risks & tradeoffs
 

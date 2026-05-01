@@ -68,20 +68,18 @@ What it does:
 
 ## Deploy
 
-Cloudflare Pages, separate project (`terraviz-poster`):
+Cloudflare Pages, separate project (`terraviz-poster`).
+Production: <https://poster.terraviz.zyra-project.org>.
+Per-PR previews:
+`https://<branch-alias>.terraviz-poster.pages.dev`.
 
-| Field | Value |
-|---|---|
-| Repo | `zyra-project/terraviz` |
-| Production branch | `main` |
-| Build command | _(empty)_ |
-| Build output directory | `poster` |
-| Root directory | _(repo root)_ |
-| Preview deploys | enabled (any PR touching `poster/**`) |
-
-The rendered `index.html` is committed alongside the partials
-so Pages serves it directly without running Python on the
-deploy.
+Deploys are driven by `.github/workflows/poster.yml` —
+`wrangler pages deploy poster/ --project-name terraviz-poster`
+runs whenever `poster/**` (or the workflow file itself)
+changes. Same `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+secrets the SPA pipeline already uses. The rendered
+`index.html` is committed alongside the partials so wrangler
+just uploads the static contents — no Python on CI.
 
 ## Drift guard (optional, P11)
 
