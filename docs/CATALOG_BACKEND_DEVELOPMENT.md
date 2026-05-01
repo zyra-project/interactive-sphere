@@ -385,6 +385,37 @@ but during cutover the prompt was responsible for confabulation
 patterns that affected every model. Don't assume the model is the
 floor without verifying the prompt isn't.
 
+#### Cost model — what changed at the cutover
+
+Phase 1d/F removed the `[RELEVANT DATASETS]` injection from the
+docent's user-message build. That block was 500–1000 tokens per
+discovery-intent turn, but its replacement (the LLM calling
+`search_datasets` and consuming the result) is **not free** —
+every tool-using turn now takes a second LLM round-trip and pays
+~1000–1500 tokens for the tool result fed back. So:
+
+| Turn shape | Pre-1d cost | Post-1d cost | Δ |
+|---|---|---|---|
+| User asks a knowledge question, LLM doesn't call a tool | inject 500–1000 tokens, 1 LLM round | nothing extra, 1 round | **cheaper** |
+| User asks a discovery question, LLM calls `search_datasets` | inject 500–1000 tokens, 1 round | tool result 1000–1500 tokens, 2 rounds | **more expensive** + 1 extra round |
+
+The structural shift worth flagging: **request count to the LLM
+provider doubles on tool-using turns**. If a deploy is on a
+per-request quota (Workers AI free tier is ~10k/day), that
+doubling — not raw token volume — is usually what hits first.
+
+`MAX_TOOL_CALL_ROUNDS` in `src/services/docentService.ts` caps
+tool-call chains at 5 per turn so a runaway model can't burn
+unbounded rounds. Operators investigating quota burn should
+sanity-check that constant alongside `turn_rounds` per turn in
+analytics.
+
+Phase 1d/Y plumbs `turn_rounds` through to the `orbit_turn`
+analytics event. Grafana panel filters can compare pre/post
+distributions and answer "what fraction of turns are
+tool-calling now?" empirically. Field positions:
+[`docs/ANALYTICS_QUERIES.md` § `orbit_turn`](ANALYTICS_QUERIES.md#orbit_turn).
+
 ### Account-level setup (production-leaning)
 
 Most contributors never touch this. You only need it if you are

@@ -1433,7 +1433,11 @@ export async function* processMessage(
             }
           }
 
-          yield { type: 'done', fallback: false, llmContext }
+          yield {
+            type: 'done',
+            fallback: false,
+            llmContext: { ...llmContext, roundsCount: round },
+          }
           return
         }
 

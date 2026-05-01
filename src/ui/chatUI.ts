@@ -768,6 +768,11 @@ async function handleSend(): Promise<void> {
     input_tokens: 0,
     output_tokens: 0,
     content_length: docentMsg.text.length,
+    // 1d/Y — surface how many LLM round-trips this turn took so
+    // dashboards can monitor per-turn cost shifts since 1d/F
+    // replaced the single-round [RELEVANT DATASETS] injection
+    // with a tool-calling path that can take 2+ rounds.
+    turn_rounds: docentMsg.llmContext?.roundsCount ?? 0,
   })
 
   // Re-render fully to wire action button events
