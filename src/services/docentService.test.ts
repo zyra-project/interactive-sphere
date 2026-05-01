@@ -2039,6 +2039,43 @@ describe('executeSearchDatasets — quota-exhausted degraded handling (1f/D)', (
     await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
     expect(getDegradedReason()).toBeNull()
   })
+
+  it('does not cache a degraded response (1f/J — transient by nature)', async () => {
+    // First call: server returns degraded=quota_exhausted (empty hits).
+    // Second call (same query): server now returns real hits — quota
+    // recovered. Without the 1f/J fix the second call would hit the
+    // cache and serve empty hits for the rest of the TTL window.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            datasets: [
+              {
+                id: 'DS001',
+                title: 'A',
+                abstract_snippet: '',
+                categories: [],
+                peer_id: 'p',
+                score: 0.8,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+    const first = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(first.datasets).toEqual([])
+    const second = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(second.datasets).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('executeSearchDatasets — catalog URL is decoupled from LLM apiUrl', () => {

@@ -6,9 +6,12 @@
  * `quota_exhausted` or `/api/v1/search` returns
  * `degraded: 'quota_exhausted'`. When that happens we want:
  *
- *   1. A persistent visible badge in the chat UI ("Reduced
- *      functionality — quota approaching limit") so the user knows
- *      why suggestions stopped grounding through real search.
+ *   1. A persistent visible badge in the chat UI — current copy is
+ *      "Reduced functionality — Workers AI quota reached.
+ *      Suggestions are using offline matching until it recovers"
+ *      (see `chatUI.degradedBadgeText`). Aligned with the
+ *      `quota_exhausted` reason so user-facing messaging matches
+ *      the underlying state rather than understating it.
  *   2. The local-engine fallback (`docentEngine.ts`) takes over
  *      transparently — already wired through the existing
  *      LLM-error → local-result path.

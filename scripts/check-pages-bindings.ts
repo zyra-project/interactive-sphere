@@ -31,6 +31,9 @@
  * from — the script's view matches the dashboard's view.
  */
 
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { EXPECTED_BINDINGS } from './lib/expected-bindings.ts'
 import {
   diffBindings,
@@ -112,13 +115,26 @@ function summariseMissing(missing: DiffEntry[]): string {
   )
 }
 
-const isMain =
-  typeof process !== 'undefined' &&
-  process.argv?.[1] !== undefined &&
-  import.meta.url ===
-    new URL(`file://${process.argv[1].replace(/\\/g, '/')}`, 'file://').toString()
+// Detect "is this file the entry point" vs. "imported by a test".
+// The naive `import.meta.url === \`file://${process.argv[1]}\`` form
+// is broken on Windows (path separators, drive letters, file-URL
+// percent-encoding) and on POSIX systems where either side might
+// be reached via a symlink (e.g. an `npm link`-ed bin). Mirror
+// `gen-node-key.ts` and canonicalise both sides via
+// `realpathSync.native` so symlink indirection on either side
+// doesn't suppress the run.
+function isInvokedAsScript(): boolean {
+  if (typeof process === 'undefined' || !process.argv?.[1]) return false
+  try {
+    const here = realpathSync.native(fileURLToPath(import.meta.url))
+    const argv1 = realpathSync.native(resolve(process.argv[1]))
+    return here === argv1
+  } catch {
+    return false
+  }
+}
 
-if (isMain) {
+if (isInvokedAsScript()) {
   void runCheck({
     env: process.env as CliEnv,
     stdout: process.stdout,

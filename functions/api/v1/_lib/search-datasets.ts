@@ -101,7 +101,8 @@ export interface SearchDatasetsResult {
    *     4006-shaped quota error (Phase 1f/D). Distinct from
    *     `unconfigured` so the SPA can decide whether to show
    *     "wire up Vectorize" guidance vs the
-   *     "Reduced functionality — quota approaching limit" badge.
+   *     "Reduced functionality — Workers AI quota reached" badge
+   *     (see `src/ui/chatUI.ts` `degradedBadgeText`).
    */
   degraded?: 'unconfigured' | 'quota_exhausted'
 }

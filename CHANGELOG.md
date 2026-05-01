@@ -41,7 +41,7 @@ predict. Phase 1f closes those gaps.
 
 - **Quota guard rail:** When Workers AI returns 4006 / quota
   exhausted, the chat panel shows a "Reduced functionality —
-  quota approaching limit" badge and the docent transparently
+  Workers AI quota reached" badge and the docent transparently
   routes through the local-engine fallback. Self-heals on the
   next successful LLM call. Reactive only — preemptive
   detection is parked until 1f/E's cost panel produces real

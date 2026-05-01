@@ -557,7 +557,7 @@ toggle gotcha from Phase 8a.
 ### Docent suggestions stop showing dataset chips after working briefly
 
 You've hit Workers AI free-tier neuron exhaustion. The chat
-panel shows a "Reduced functionality — quota approaching limit"
+panel shows a "Reduced functionality — Workers AI quota reached"
 badge (Phase 1f/D); the deploy is healthy, just throttled. Two
 mitigations:
 

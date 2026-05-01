@@ -572,6 +572,7 @@ export async function executeSearchDatasets(
   url.searchParams.set('q', query)
   url.searchParams.set('limit', String(limit))
 
+  let degradedReason: string | undefined
   let hits: SearchDatasetsHit[]
   try {
     const res = await fetch(url.toString(), { method: 'GET' })
@@ -583,6 +584,7 @@ export async function executeSearchDatasets(
     const body = (await res.json()) as { datasets?: SearchDatasetsHit[]; degraded?: string }
     if (body.degraded) {
       logger.info(`[Docent] search_datasets degraded: ${body.degraded}`)
+      degradedReason = body.degraded
       // Phase 1f/D — quota_exhausted on the search path drives the
       // same SPA-side badge as the LLM-side detection. Other
       // degraded reasons (`unconfigured`) are operator-misconfig
@@ -596,6 +598,16 @@ export async function executeSearchDatasets(
     logger.warn('[Docent] search_datasets fetch failed:', err)
     // Network errors are also transient — same as non-OK responses.
     return { datasets: [] }
+  }
+
+  // Phase 1f/J — never cache a degraded response. quota_exhausted
+  // is by definition transient (the badge clears as soon as a
+  // subsequent successful round lands), and unconfigured points
+  // at a binding that may get wired up mid-session. Caching either
+  // would lock the same query into the empty result for the full
+  // 5-minute TTL even after the underlying condition clears.
+  if (degradedReason !== undefined) {
+    return { datasets: hits }
   }
 
   preSearchCache.set(cacheKey, { hits, expiresAt: now + PRE_SEARCH_CACHE_TTL_MS })
