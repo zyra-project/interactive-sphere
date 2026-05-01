@@ -114,14 +114,15 @@ poster/
 │   ├── sec-03-features.html
 │   ├── sec-04-globe.html
 │   ├── sec-05-multiglobe.html
-│   ├── sec-06-orbit.html
-│   ├── sec-07-immersive.html
-│   ├── sec-08-platforms.html
-│   ├── sec-09-federation.html
-│   ├── sec-10-analytics.html
-│   ├── sec-11-techstack.html
-│   ├── sec-12-cta.html
-│   └── sec-13-footer-block.html
+│   ├── sec-06-tours.html
+│   ├── sec-07-orbit.html
+│   ├── sec-08-immersive.html
+│   ├── sec-09-platforms.html
+│   ├── sec-10-federation.html
+│   ├── sec-11-analytics.html
+│   ├── sec-12-techstack.html
+│   ├── sec-13-cta.html
+│   └── sec-14-footer-block.html
 ├── scripts/
 │   └── build_poster.py              # Concatenate partials → index.html
 └── assets/
@@ -166,7 +167,7 @@ references.
    also means PR reviewers see both the source diff and the
    rendered diff in one place.
 
-### Drift guard (optional, P10)
+### Drift guard (optional, P11)
 
 A small CI check runs the build script and `git diff --exit-code
 poster/index.html` to fail the build if a contributor edited a
@@ -227,8 +228,10 @@ for the SPA; staying on one platform is the smaller change.
 
 ## Section outline
 
-The poster is a vertical scroll. Section numbers below correspond
-to anchor IDs in the final `index.html`.
+The poster is a vertical scroll, fourteen sections plus the
+sticky timer. Section numbers below correspond to anchor IDs
+in the final `index.html` and to filenames under
+`poster/sections/sec-NN-*.html`.
 
 ### 0. Sticky presentation timer
 
@@ -251,9 +254,17 @@ talk rehearsals.
   lives in museums. Terraviz brings it everywhere.")
 - Three-column layout: NOAA + Zyra logos (left) | center title +
   author block | QR codes for live app + GitHub (right).
-- Author block: `Hackshaven (zyra-project)` only, matching the
-  single-author convention used by the rest of the series. Easy
-  to extend later if collaborators want billing.
+- Author block (matches the `zyra` poster's single-author
+  attribution exactly):
+
+  > **Eric Hackathorn**
+  > NOAA Global Systems Laboratory
+  > <span title="ORCID">iD</span> 0000-0002-9693-2093
+
+  Render the ORCID identifier as a link to
+  `https://orcid.org/0000-0002-9693-2093` with the standard
+  ORCID green-leaf glyph next to it (same treatment as the zyra
+  poster). Easy to extend if collaborators want billing later.
 - Background: navy gradient with a subtle SVG texture (matching
   the series). Optional CSS-only animated "starfield" for visual
   interest — gated on `prefers-reduced-motion`.
@@ -273,17 +284,21 @@ Light reading, ~120 words. Sets up the rest.
 
 ### 3. What you can do — feature gallery
 
-Six-card responsive grid. Each card = icon + title + 1–2-line
-description. Cards link to deeper sections below.
+Seven-card responsive grid (3 across on desktop, wrapping to 2
+then 1 on narrower viewports). Each card = icon + title +
+1–2-line description. Cards link to deeper sections below.
+Tours sits between Multi-globe and Orbit because it is the
+piece that ties them together — see §6.
 
 | Card | Anchor |
 |---|---|
 | Photoreal globe | §4 |
 | Multi-globe comparison | §5 |
-| Orbit AI docent | §6 |
-| Immersive AR/VR | §7 |
-| Multi-platform (web + desktop + mobile) | §8 |
-| Federated catalog backend | §9 |
+| **Tours — data-driven storytelling** | **§6** |
+| Orbit AI docent | §7 |
+| Immersive AR/VR | §8 |
+| Multi-platform (web + desktop + mobile) | §9 |
+| Federated catalog backend | §10 |
 
 **Interactive:** clicking a card scrolls to its section. The grid
 itself uses scroll-fade reveal.
@@ -321,21 +336,109 @@ The first deep-dive section. Covers `mapRenderer.ts` +
 Cover `viewportManager.ts`:
 
 - 1 / 2 / 4 synchronised MapRenderer instances in a CSS grid.
-- Camera lockstep across panels.
+- Camera lockstep across panels — drag panel A, panels B/C/D
+  follow.
 - Time-series animations sync by real-world date — each panel
-  may run its own dataset on its own clock.
-- Climate Futures tour comparing SSP1/SSP2/SSP5 across air temp,
-  precipitation, sea-surface temp, sea-ice concentration.
+  may run its own dataset on its own clock; a hurricane in
+  September 2024 lines up across all panels regardless of
+  per-dataset framerate.
+- Layout switching (`setEnvView` task in §6 tours) hot-swaps
+  between 1-globe, 2-globe, and 4-globe grids without
+  reloading the app.
 
 **Interactive elements:**
 
-- **Tour-launcher buttons** that change the iframe `src` to
-  specific deep-links: 1-globe default / 2-globe pair /
-  4-globe Climate Futures. Same query-param dependency.
 - Annotated still showing the lockstep camera matrix flowing
   from panel A to panels B/C/D.
+- Layout-toggle buttons that change the iframe `src` to
+  `?layout=1`, `?layout=2`, `?layout=4`. (Tour-launcher
+  buttons live in §6, not here — they're how the layout
+  switch is *used*, not the mechanic itself.)
 
-### 6. Orbit — the digital docent
+### 6. Tours — data-driven storytelling
+
+The educational scaffolding that turns Terraviz from a video
+player into a guided tour of the planet. Cover
+`tourEngine.ts`, `tourUI.ts`, and the SOS-format tour JSON.
+
+**The pitch.** A tour is a small JSON document describing a
+sequence of tasks: "fly the camera to the Gulf of Mexico, load
+the SSP5 sea-surface-temperature dataset, switch to a 4-globe
+layout, show this caption, pause for the user." The engine
+executes them one at a time, awaiting promises so each task
+finishes before the next begins. The result is a curated
+walkthrough — the same affordance an SOS docent gives a
+museum audience, available to anyone with a browser.
+
+**Why it matters in the poster.** Tours are what make
+Terraviz more than a globe with a play button:
+
+- **Data-driven storytelling.** The Climate Futures tour
+  compares SSP1, SSP2, and SSP5 climate scenarios across air
+  temperature, precipitation, sea-surface temperature, and
+  sea-ice concentration. The narrative is in the JSON; the
+  app is the player.
+- **Educational scaffolding.** `pauseForInput`,
+  `pauseSeconds`, and text-overlay tasks (`showRect` /
+  `hideRect`) build pacing into a tour the way a lesson plan
+  paces a class. Captions support `<color=X>` and `<i>`
+  markup; the SOS tour-builder ecosystem already produces
+  this format.
+- **Orbit drives the app via tours.** This is the bit that
+  turns Orbit from a chat surface into an agent. Tours are
+  loaded by Orbit the same way regular datasets are — the
+  LLM emits `<<LOAD:TOUR_ID>>` markers and the docent
+  context already instructs it to recommend tours when "the
+  user seems new, asks for an overview, or wants to learn
+  about a broad topic" (`docentContext.ts:235`). Saying
+  "show me how the climate is going to change by 2100" can
+  fly the camera, swap to a 4-globe layout, load four
+  datasets across the panels, and start the narration —
+  all from chat.
+
+**The task surface.** A representative subset of what
+`tourEngine.ts` already supports today (Phases 1 + 2 shipped):
+
+| Task | Effect |
+|---|---|
+| `flyTo` | Camera to lat/lon at altitude (returns on `moveend`) |
+| `loadDataset` | Loads a dataset; `worldIndex` routes it to a specific panel |
+| `unloadDataset` / `unloadAllDatasets` | Clears the globe |
+| `setEnvView` | Switches 1g / 2g / 4g layout |
+| `datasetAnimation` | Toggles play/pause on the current video |
+| `showRect` / `hideRect` | Text overlay panels (DOM, glass-styled) |
+| `pauseForInput` | Wait for user to tap play |
+| `pauseSeconds` | Timed pause |
+| `setGlobeRotationRate` | Auto-rotate speed |
+| `envShowDayNightLighting` / `envShowClouds` | Earth-stack toggles |
+
+**Architecture callout.** The engine receives a
+`TourCallbacks` interface — it never imports
+`InteractiveSphere`. That decoupling is what lets Orbit, the
+URL-param handlers, and the tour player all drive the same
+tour through the same engine.
+
+**Interactive elements:**
+
+- **Tour-launcher buttons** under the demo iframe that
+  deep-link to specific tours: Climate Futures (1g intro →
+  2g compare → 4g full), plus a "general overview" tour for
+  first-time visitors. Wired via the `?tour={id}` param
+  (P11).
+- **"Ask Orbit to take you on a tour" button** that scrolls
+  to the iframe and posts `?orbit=open&prompt=tour` so
+  Orbit launches with a tour-recommendation prompt
+  pre-seeded.
+- **Annotated tour-task strip:** a horizontal SVG ribbon
+  showing the Climate Futures tour as a sequence of icons
+  (flyTo → setEnvView → loadDataset×4 → showRect →
+  pauseForInput …) so the audience can see the
+  storytelling unit on the poster without watching the
+  whole thing play.
+- **Cross-link** to `docs/TOURS_IMPLEMENTATION_PLAN.md` for
+  contributors who want to author their own tour.
+
+### 7. Orbit — the digital docent
 
 The AI chat surface. Cover `docentService.ts`,
 `docentContext.ts`, `docentEngine.ts`, `llmProvider.ts`:
@@ -346,7 +449,8 @@ The AI chat surface. Cover `docentService.ts`,
 - Stream chunk types: `delta`, `action`, `auto-load`, `done`.
 - The LLM is prompted to embed `<<LOAD:DATASET_ID>>` markers
   inline; the service parses these into action chunks; chatUI
-  renders each as an inline load button.
+  renders each as an inline load button. Tours load through
+  the same marker — see §6.
 - Function-calling tool `load_dataset` supported as fallback for
   providers that prefer tool calls.
 - System prompt is turn-aware: full catalog on turn 0, compact
@@ -363,7 +467,7 @@ The AI chat surface. Cover `docentService.ts`,
 - "Ask Orbit" CTA that scrolls to the iframe and (if we add the
   param) deep-links the app with the chat panel pre-opened.
 
-### 7. Immersive — AR & VR via WebXR
+### 8. Immersive — AR & VR via WebXR
 
 The most visually striking section. Cover the whole `vr*` module
 family per `VR_INVESTIGATION_PLAN.md`:
@@ -440,7 +544,7 @@ OS already shows for AR launches.
 
 This buys the poster a **"tap to place Earth on your desk"**
 demo that works on iPhone, Android phone, and tablet — turning
-the §7 story from "Quest only" into "anyone with a phone."
+the §8 story from "Quest only" into "anyone with a phone."
 What it does *not* do:
 
 - It is a **separate code path** from WebXR. The interactive
@@ -471,13 +575,14 @@ Viewer, last meaningfully maintained ~2020). For a poster
 expected to last months at a kiosk, `<model-viewer>` + the
 two OS-native AR launchers is the right scope.
 
-**Build sequencing:** the model-viewer tile is added in P6
+**Build sequencing:** the model-viewer tile is added in P7
 alongside the Quest carousel. If exporting the GLB/USDZ pair
 turns out to be more than a single-commit task, the tile ships
-in a follow-up phase and we'll surface that in the §"Build
-phases" table. The Quest section itself does not block on it.
+in a follow-up phase (P11.5) and we'll surface that in the
+§"Build phases" table. The Quest section itself does not block
+on it.
 
-### 8. One codebase, every platform
+### 9. One codebase, every platform
 
 The Tauri story across desktop *and* mobile. Covers `src-tauri/`,
 `DESKTOP_APP_PLAN.md`, `MOBILE_APP_PLAN.md`, and the lazy
@@ -537,7 +642,7 @@ The Tauri story across desktop *and* mobile. Covers `src-tauri/`,
 - Honest framing: mobile is **shipping** (release scaffolding
   in PR #33) but **on-device LLM is upcoming** (Phase 7).
 
-### 9. Federated catalog & custom backend
+### 10. Federated catalog & custom backend
 
 The newest piece, and the one that's least covered in existing
 external-facing material. Cover `CATALOG_BACKEND_PLAN.md`,
@@ -570,7 +675,7 @@ external-facing material. Cover `CATALOG_BACKEND_PLAN.md`,
   curl-and-jq smoke test).
 - Cross-links to all six catalog docs.
 
-### 10. Privacy-first analytics
+### 11. Privacy-first analytics
 
 A short, honest section. Cover `src/analytics/`,
 `functions/api/ingest.ts`, and `ANALYTICS.md`:
@@ -596,7 +701,7 @@ A short, honest section. Cover `src/analytics/`,
   → AE → Grafana — with each hop labeled.
 - Optional: small Grafana dashboard screenshot.
 
-### 11. Tech stack
+### 12. Tech stack
 
 Logo wall + one-line rationale per pick. Grouped in three rows:
 
@@ -611,7 +716,7 @@ Logo wall + one-line rationale per pick. Grouped in three rows:
 - **AI:** OpenAI-compatible LLM (any provider), Ollama, LM
   Studio, on-device Apple Intelligence, on-device Gemini Nano.
 
-### 12. Try it / get involved
+### 13. Try it / get involved
 
 The CTA section. Three columns:
 
@@ -626,7 +731,7 @@ The CTA section. Three columns:
   add the third column and the gradient survey banner used by
   the rest of the series.
 
-### 13. Footer
+### 14. Footer
 
 Authors, NOAA + Zyra attribution, license, build hash, current
 date. Static.
@@ -643,25 +748,30 @@ Pulled together so we can confirm scope:
 | 2 | Live demo iframe (default globe) | §4 | Live app reachable |
 | 3 | Iframe `/health` probe + screenshot fallback | §4 | App's `/health` route or static `/index.html` HEAD |
 | 4 | Effect-toggle deep-link buttons (terrain, labels, borders, auto-rotate) | §4 | App must honour query params for these toggles |
-| 5 | Tour-launcher deep-link buttons (1g, 2g, 4g Climate Futures) | §5 | App must honour `?tour=` and `?layout=` params |
-| 6 | "Ask Orbit" deep-link button | §6 | App must honour `?orbit=open` (or similar) |
-| 7 | AR/VR screenshot carousel | §7 | Captured Quest screenshots |
-| 8 | AR session MP4 loop | §7 | Captured Quest recording |
-| 8a | "Tap to place Earth" tile (`<model-viewer>` + AR Quick Look on iOS / Scene Viewer on Android) | §7 | `terraviz-earth.glb` + `terraviz-earth.usdz` exported from `photorealEarth.ts` |
-| 9 | Federation diagram with animated request fan-out | §9 | Inline SVG + CSS keyframes |
-| 10 | Download badges linked to latest GitHub release | §8, §12 | Stable release URLs (already in `README.md`) |
-| 11 | QR codes (live app, GitHub, desktop downloads, self-hosting) | Hero, §12 | Generated once, committed under `assets/qr/` |
+| 5 | Layout-toggle deep-link buttons (`?layout=1`, `?layout=2`, `?layout=4`) | §5 | App must honour `?layout=` param |
+| 5b | Tour-launcher deep-link buttons (Climate Futures, general overview) | §6 | App must honour `?tour=` param |
+| 5c | "Ask Orbit to take you on a tour" button | §6 | App must honour `?orbit=open&prompt=tour` |
+| 5d | Annotated tour-task strip (icon ribbon: flyTo → setEnvView → loadDataset×4 → showRect …) | §6 | Inline SVG |
+| 6 | "Ask Orbit" deep-link button (general chat) | §7 | App must honour `?orbit=open` |
+| 7 | AR/VR screenshot carousel | §8 | Captured Quest screenshots |
+| 8 | AR session MP4 loop | §8 | Captured Quest recording |
+| 8a | "Tap to place Earth" tile (`<model-viewer>` + AR Quick Look on iOS / Scene Viewer on Android) | §8 | `terraviz-earth.glb` + `terraviz-earth.usdz` exported from `photorealEarth.ts` |
+| 9 | Federation diagram with animated request fan-out | §10 | Inline SVG + CSS keyframes |
+| 10 | Download badges linked to latest GitHub release | §9, §13 | Stable release URLs (already in `README.md`) |
+| 11 | QR codes (live app, GitHub, desktop downloads, self-hosting) | Hero, §13 | Generated once, committed under `assets/qr/` |
 | 12 | Iframe fullscreen toggle | §4 | Pure JS |
 | 13 | Scroll-triggered fade-in | All sections | `IntersectionObserver` |
 | 14 | `prefers-reduced-motion` honoured | All animations | Media query |
 
-Items 4, 5, 6 require small additions to the SPA (URL-param
-handlers). **Confirmed in scope** — they ship as P11 in the
-build phases below. P3–P6 still need a graceful fallback for
-the brief window between poster deploy and SPA param-handler
-deploy; each launcher button shows a static screenshot if the
-iframe `/health` probe fails or if the SPA param hasn't taken
-effect after a 2 s grace period.
+Items 4, 5, 5b, 5c, and 6 require small additions to the SPA
+(URL-param handlers — terrain/labels/borders/auto-rotate
+toggles, `?layout=`, `?tour=`, `?orbit=open` and the
+`&prompt=tour` variant). **Confirmed in scope** — they ship as
+P12 in the build phases below. P3–P7 still need a graceful
+fallback for the brief window between poster deploy and SPA
+param-handler deploy; each launcher button shows a static
+screenshot if the iframe `/health` probe fails or if the SPA
+param hasn't taken effect after a 2 s grace period.
 
 ## Build phases
 
@@ -675,16 +785,17 @@ catalog plan files follow.
 | **P1** | Scaffold: `poster/sections/{_head,_styles.css,_body-open,_footer}.html`, `poster/sections/sec-01-hero.html`, empty placeholder partials for sec-02..sec-13, `poster/scripts/build_poster.py`, `poster/README.md`, design tokens, Source Sans 3 + Source Code Pro fonts, sticky timer (minimized by default). First run of the build script produces `poster/index.html` with the hero rendered and remaining sections as empty anchored placeholders — committed alongside the partials. |
 | **P2** | §2 Mission + §3 feature gallery (links to anchors only). |
 | **P3** | §4 globe section, including live demo iframe + `/health` probe + fallback. |
-| **P4** | §5 multi-globe + tour-launcher buttons (with screenshot fallbacks if the SPA params aren't ready). |
-| **P5** | §6 Orbit section, sequence diagram SVG, mock chat bubble. |
-| **P6** | §7 immersive section. Placeholder image boxes if Quest captures aren't ready; swap-in commit later. |
-| **P7** | §8 multi-platform section + download badges. |
-| **P8** | §9 federation section + architecture diagram SVG + CSS keyframe. |
-| **P9** | §10 analytics + §11 tech stack + §12 CTA + §13 footer. |
-| **P10** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run, plus the optional CI drift guard that re-runs `build_poster.py` and fails on any uncommitted diff in `poster/index.html`. |
-| **P11** | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open`, `?dataset={id}` (already supported). Lands as a regular SPA PR off `main`, not on the poster branch. |
-| **P11.5** | "Tap to place Earth" model-viewer tile: export `terraviz-earth.glb` + `terraviz-earth.usdz` from `photorealEarth.ts`, commit under `poster/assets/xr/models/`, wire up the `<model-viewer>` tag in §7. Optional — ships in a follow-up commit if asset export turns out to be more than one commit's worth. |
-| **P12** | Deploy: create the `terraviz-poster` Cloudflare Pages project (build command empty, output dir `poster/`, production branch `main`, preview deploys on), point a `zyra-project.org` subdomain at it once content is final, and update `poster/README.md` + the main repo `README.md` with the live URL. |
+| **P4** | §5 multi-globe section — lockstep mechanics, layout-toggle buttons (with screenshot fallback if `?layout=` isn't live yet). |
+| **P5** | §6 tours section — pitch, task table, "Orbit drives the app" architecture callout, tour-launcher buttons, "Ask Orbit for a tour" button, annotated tour-task strip SVG. |
+| **P6** | §7 Orbit section, sequence diagram SVG, mock chat bubble (with the tours forward-link wired). |
+| **P7** | §8 immersive section. Placeholder image boxes if Quest captures aren't ready; swap-in commit later. |
+| **P8** | §9 multi-platform section + download badges. |
+| **P9** | §10 federation section + architecture diagram SVG + CSS keyframe. |
+| **P10** | §11 analytics + §12 tech stack + §13 CTA + §14 footer. |
+| **P11** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run, plus the optional CI drift guard that re-runs `build_poster.py` and fails on any uncommitted diff in `poster/index.html`. |
+| **P12** | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open` (and the `&prompt=tour` variant), `?dataset={id}` (already supported). Lands as a regular SPA PR off `main`, not on the poster branch. |
+| **P12.5** | "Tap to place Earth" model-viewer tile: export `terraviz-earth.glb` + `terraviz-earth.usdz` from `photorealEarth.ts`, commit under `poster/assets/xr/models/`, wire up the `<model-viewer>` tag in §8. Optional — ships in a follow-up commit if asset export turns out to be more than one commit's worth. |
+| **P13** | Deploy: create the `terraviz-poster` Cloudflare Pages project (build command empty, output dir `poster/`, production branch `main`, preview deploys on), point a `zyra-project.org` subdomain at it once content is final, and update `poster/README.md` + the main repo `README.md` with the live URL. |
 
 ## Risks & tradeoffs
 
@@ -692,7 +803,7 @@ catalog plan files follow.
   removes a query param, the deep-link buttons silently break.
   Mitigation: each button has a static screenshot fallback shown
   under a "demo unreachable" banner from the `/health` probe.
-- **Quest captures bottleneck.** §7 is the visual centerpiece;
+- **Quest captures bottleneck.** §8 is the visual centerpiece;
   without real headset captures it falls flat. Mitigation: ship
   with annotated mockups, add a follow-up commit when captures
   arrive.
@@ -704,7 +815,7 @@ catalog plan files follow.
   release scaffolding; the on-device-LLM Phase 7 is design-only
   in `MOBILE_APP_PLAN.md`. By the time the poster goes live,
   PR #33 may be merged but TestFlight / Play Internal builds may
-  not yet be public. Mitigation: §8 frames mobile as "shipping
+  not yet be public. Mitigation: §9 frames mobile as "shipping
   via PR #33" and on-device LLM as "upcoming Phase 7," with the
   mobile-platform badges linking to the PR until store builds
   exist, then swapping to invite links.
@@ -733,8 +844,9 @@ Resolved before P1, captured here for the review record:
    ships **minimized by default** with a tap-to-expand tab; see
    §0.
 2. ~~**Author block & attribution.**~~ **Resolved:** single
-   author (`Hackshaven (zyra-project)`), matching the rest of
-   the series.
+   author — Eric Hackathorn, NOAA Global Systems Laboratory,
+   ORCID 0000-0002-9693-2093 — rendered with the ORCID glyph
+   exactly as the `zyra` poster does it.
 3. ~~**Color palette.**~~ **Resolved:** hybrid — series tokens
    for chrome, `#4da6ff` for live/interactive call-outs.
 4. ~~**Live demo URL & deep-links.**~~ **Resolved:** live deep
@@ -743,7 +855,7 @@ Resolved before P1, captured here for the review record:
 5. ~~**VR/AR captures.**~~ **Resolved:** user is capturing
    Quest screenshots and video. P6 ships with annotated
    placeholders; a follow-up swap commit lands real captures.
-   **New sub-question raised and answered in §7:** can a phone
+   **New sub-question raised and answered in §8:** can a phone
    stand in for a headset for visitors without a Quest? Yes,
    via `<model-viewer>` + AR Quick Look (iOS) + Scene Viewer
    (Android). Tracked as **P11.5**. WebXR on iOS Safari is not
@@ -752,7 +864,7 @@ Resolved before P1, captured here for the review record:
    federation framed as "drafted, with live cross-node
    operation coming next."
 7. ~~**Survey URL.**~~ **Resolved:** skipped this round; a new
-   survey is incoming and §12 will gain a third column + the
+   survey is incoming and §13 will gain a third column + the
    series' gradient survey banner once the URL is final.
 8. ~~**QR-code destinations.**~~ **Resolved:** all four —
    live web app, GitHub repo, desktop downloads page,
@@ -765,7 +877,7 @@ Resolved before P1, captured here for the review record:
 
 Still open:
 
-11. **Mobile-platform badges in §8.** Confirm what to link from
+11. **Mobile-platform badges in §9.** Confirm what to link from
     the iOS / Android badges before P7 lands. Options:
     TestFlight invite link, Play Internal Testing URL, or PR
     #33 as a placeholder until store builds exist. Default if
