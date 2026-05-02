@@ -1,8 +1,64 @@
     <section id="sec-12-techstack"
-             class="section section--alt section--placeholder fade-in"
+             class="section section--alt fade-in"
              aria-labelledby="sec-12-title">
-      <div class="container">
-        <h2 id="sec-12-title">12. Tech stack</h2>
-        <p>Coming soon.</p>
+      <div class="stack__container">
+        <p class="section__eyebrow">§12 · Tech stack</p>
+        <h2 id="sec-12-title" class="stack__title">Boring picks where they buy boring reliability. Sharp picks where they buy reach.</h2>
+        <p class="stack__lede">
+          The choices below all share a common bias: small surface area, mature tooling, no proprietary dependencies for any single piece. Replace any one of them and the rest still works.
+        </p>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Front-end</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">TypeScript</span><span class="stack__item-blurb">Static types catch dataset-shape mistakes before they ship.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Vite</span><span class="stack__item-blurb">Fast dev loop, simple production build, no framework lock-in.</span></li>
+            <li class="stack__item"><span class="stack__item-name">MapLibre GL JS</span><span class="stack__item-blurb">Open-source globe-projection renderer; no Mapbox API key.</span></li>
+            <li class="stack__item"><span class="stack__item-name">HLS.js</span><span class="stack__item-blurb">Adaptive-bitrate video on every browser, mobile included.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Three.js</span><span class="stack__item-blurb">Industry-standard WebGL/WebXR scene graph; lazy-loaded for XR only.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Vanilla DOM</span><span class="stack__item-blurb">No React, no Vue. The chrome is panels on a canvas — it doesn't need a runtime.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Desktop</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">Tauri v2</span><span class="stack__item-blurb">Native shell over the web view; signed updates; small bundle.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Rust</span><span class="stack__item-blurb">The native side. Tile cache, download manager, keychain, IPC.</span></li>
+            <li class="stack__item"><span class="stack__item-name">keyring</span><span class="stack__item-blurb">Cross-platform OS keychain — Windows Credential Manager, macOS Keychain, Linux secret-service.</span></li>
+            <li class="stack__item"><span class="stack__item-name">reqwest</span><span class="stack__item-blurb">CORS-free HTTP client so the web view can reach local LLM endpoints.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Mobile</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">Tauri v2 mobile</span><span class="stack__item-blurb">Same Rust + web-view sandwich, generated Xcode and Gradle host projects.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Swift bridge</span><span class="stack__item-blurb">Forthcoming. Wraps Apple Intelligence Foundation Models for on-device Orbit.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Kotlin bridge</span><span class="stack__item-blurb">Forthcoming. Wraps AICore (Gemini Nano) for on-device Orbit on Android.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Cloud</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">Cloudflare Pages</span><span class="stack__item-blurb">Static + Pages Functions on the same edge, same deploy.</span></li>
+            <li class="stack__item"><span class="stack__item-name">D1</span><span class="stack__item-blurb">SQLite at the edge. The catalog database.</span></li>
+            <li class="stack__item"><span class="stack__item-name">R2</span><span class="stack__item-blurb">S3-compatible object storage for assets — thumbnails, legends, captions.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Workers Analytics Engine</span><span class="stack__item-blurb">Append-only telemetry sink with SQL-flavoured queries.</span></li>
+            <li class="stack__item"><span class="stack__item-name">KV</span><span class="stack__item-blurb">Short-lived caches and rate-limit counters at the edge.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Cloudflare Access</span><span class="stack__item-blurb">Staff sign-in for the publisher portal — no password store of our own.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">AI</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">OpenAI-compatible</span><span class="stack__item-blurb">Provider-agnostic. Any endpoint that speaks the protocol works.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Ollama · LM Studio</span><span class="stack__item-blurb">Local models on desktop. The HTTP allowlist permits localhost.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Apple Intelligence</span><span class="stack__item-blurb">Forthcoming. Foundation Models on iOS — free, private, offline.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Gemini Nano</span><span class="stack__item-blurb">Forthcoming. AICore on Android — same shape, same bridge pattern.</span></li>
+          </ul>
+        </div>
       </div>
     </section>

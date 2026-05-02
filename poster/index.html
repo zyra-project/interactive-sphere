@@ -2421,6 +2421,527 @@ code, kbd, pre {
 .platforms__forward strong {
   color: var(--neutral-900);
 }
+
+/* =========================================================
+   §11 Analytics — tier diptych, invariants list, flow
+   diagram, doc cross-links
+   ========================================================= */
+.analytics__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.analytics__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.analytics__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.analytics__lede code,
+.analytics__tier code,
+.analytics__invariants code,
+.analytics__flow-caption code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.analytics__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.analytics__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+.analytics__tiers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.analytics__tier {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.analytics__tier--essential {
+  border-left: 3px solid var(--leaf-green);
+}
+
+.analytics__tier--research {
+  border-left: 3px solid var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.05), white);
+}
+
+.analytics__tier-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.analytics__tier--essential .analytics__tier-tag { color: var(--leaf-green); }
+.analytics__tier--research  .analytics__tier-tag { color: var(--cable-blue); }
+
+.analytics__tier h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.analytics__tier p {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.6rem;
+}
+
+.analytics__tier ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.analytics__tier li {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--neutral-700);
+  margin: 0 0 0.2rem;
+}
+
+@media (max-width: 800px) {
+  .analytics__tiers { grid-template-columns: 1fr; }
+}
+
+.analytics__invariants {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem 1.5rem;
+}
+
+.analytics__invariants li {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  padding-left: 1.4rem;
+  position: relative;
+  line-height: 1.5;
+}
+
+.analytics__invariants li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--leaf-green);
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 700px) {
+  .analytics__invariants { grid-template-columns: 1fr; }
+}
+
+.analytics__flow {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2rem;
+  overflow-x: auto;
+}
+
+.analytics__flow svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.analytics__flow-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+.analytics__refs {
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  margin: 0;
+}
+
+.analytics__refs a {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* =========================================================
+   §12 Tech stack — grouped logo/name list with rationale
+   ========================================================= */
+.stack__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.stack__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.stack__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.stack__group {
+  margin: 0 0 1.75rem;
+}
+
+.stack__group-title {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cable-blue);
+  font-weight: 700;
+  margin: 0 0 0.6rem;
+}
+
+.stack__items {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stack__item {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.85rem;
+  align-items: baseline;
+  padding: 0.6rem 0.85rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+}
+
+.stack__item-name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+}
+
+.stack__item-blurb {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.45;
+}
+
+@media (max-width: 800px) {
+  .stack__items { grid-template-columns: 1fr; }
+  .stack__item { grid-template-columns: 7.5rem 1fr; }
+}
+
+@media (max-width: 500px) {
+  .stack__item { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+/* =========================================================
+   §13 CTA — try-it + read-more two-column block
+   ========================================================= */
+.cta__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.cta__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.cta__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.cta__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.cta__column {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+
+.cta__column h3 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cable-blue);
+  font-weight: 700;
+  margin: 0 0 0.85rem;
+}
+
+.cta__qrs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+  margin: 0 0 1.25rem;
+}
+
+.cta__qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.cta__qr-ph {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  text-align: center;
+  padding: 0.5rem;
+  line-height: 1.4;
+}
+
+.cta__qr-label {
+  font-size: 0.85rem;
+  color: var(--neutral-700);
+  font-weight: 600;
+}
+
+.cta__qr-url {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  word-break: break-all;
+}
+
+.cta__downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.cta__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--navy);
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.cta__download:hover {
+  background: var(--cable-blue);
+  text-decoration: none;
+}
+
+.cta__download-arrow {
+  color: var(--terra-accent);
+  font-weight: 700;
+}
+
+.cta__links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cta__links li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cta__links a {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--cable-blue);
+  text-decoration: none;
+}
+
+.cta__links a:hover { text-decoration: underline; }
+
+.cta__links small {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--neutral-600);
+}
+
+@media (max-width: 800px) {
+  .cta__columns { grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   §14 Footer
+   ========================================================= */
+.footer-block__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.footer-block__title {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.footer-block__authors {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--mist);
+  margin: 0 0 1rem;
+}
+
+.footer-block__authors strong {
+  color: white;
+  font-weight: 600;
+}
+
+.footer-block__authors a {
+  color: var(--terra-accent);
+}
+
+.footer-block__attribution {
+  font-size: 0.85rem;
+  color: var(--mist);
+  line-height: 1.55;
+  margin: 0 0 1rem;
+}
+
+.footer-block__meta {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #5d7a89;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.footer-block__meta span {
+  display: block;
+}
+
+.footer-block__poster-series {
+  font-size: 0.85rem;
+  color: var(--mist);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.footer-block__poster-series h4 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.footer-block__poster-series ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.footer-block__poster-series a {
+  color: white;
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+.footer-block__poster-series a:hover {
+  color: var(--terra-accent);
+  text-decoration: underline;
+}
+
+@media (max-width: 700px) {
+  .footer-block__container { grid-template-columns: 1fr; }
+}
   </style>
 </head>
 <body>
@@ -4127,41 +4648,307 @@ code, kbd, pre {
 
   <!-- sec-11-analytics.html -->
     <section id="sec-11-analytics"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-11-title">
-      <div class="container">
-        <h2 id="sec-11-title">11. Privacy-first analytics</h2>
-        <p>Coming soon.</p>
+      <div class="analytics__container">
+        <p class="section__eyebrow">§11 · Privacy-first analytics</p>
+        <h2 id="sec-11-title" class="analytics__title">We measure to make it better. We measure as little as possible.</h2>
+        <p class="analytics__lede">
+          TerraViz emits product telemetry on a two-tier consent model. <strong>Essential</strong> events are on by default — they cover broad usage shape (sessions, datasets viewed, layer toggles, performance samples, errors). <strong>Research</strong> events are opt-in and unlock the deeper signals an instance operator might want for studies (chat dwell, attention zones, captured search queries — hashed). Visitors control the tier from <em>Tools → Privacy</em> in the live app.
+        </p>
+
+        <h3 class="analytics__subhead">Two tiers, visitor-controlled</h3>
+        <p class="analytics__subhead-hint">
+          Both tiers exist so an honest operator can ship value-add features that need data without making everyone a research subject.
+        </p>
+
+        <div class="analytics__tiers">
+          <article class="analytics__tier analytics__tier--essential">
+            <p class="analytics__tier-tag">Essential · default on</p>
+            <h3>What keeps the lights on</h3>
+            <p>Coarse usage shape, performance, errors. Enough to know what's working and what's not.</p>
+            <ul>
+              <li><code>session_start</code> · <code>session_end</code></li>
+              <li><code>layer_load</code> · <code>layer_unload</code></li>
+              <li><code>camera_settled</code> (lat/lng rounded to 3 decimals)</li>
+              <li><code>map_click</code> · <code>playback_action</code></li>
+              <li><code>tour_*</code> · <code>vr_session_*</code></li>
+              <li><code>perf_sample</code> · <code>error</code> · <code>feedback</code></li>
+            </ul>
+          </article>
+
+          <article class="analytics__tier analytics__tier--research">
+            <p class="analytics__tier-tag">Research · opt-in</p>
+            <h3>What unlocks studies</h3>
+            <p>Per-action dwell, captured (and hashed) text, per-gesture XR interaction, sanitized error stacks. Off by default.</p>
+            <ul>
+              <li><code>dwell</code> (chat, browse, info, tools, legend)</li>
+              <li><code>orbit_*</code> (turn-level chat events)</li>
+              <li><code>browse_search</code> (query hashed before emit)</li>
+              <li><code>vr_interaction</code> (per-gesture, throttled)</li>
+              <li><code>error_detail</code> (sanitized stack)</li>
+              <li><code>tour_question_answered</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 class="analytics__subhead">Privacy invariants</h3>
+        <p class="analytics__subhead-hint">
+          Six rules the pipeline holds to, regardless of tier. Designed so a deployment can be operated honestly and a kiosk visitor doesn't have to take anyone's word for it — the constraints are visible in the source.
+        </p>
+
+        <ul class="analytics__invariants">
+          <li>No IP storage. Country comes from <code>CF-IPCountry</code>; the IP itself is dropped at ingest.</li>
+          <li>No User-Agent storage. Only bucketed enums (OS family, viewport bin, aspect, screen tier, build channel).</li>
+          <li>Search queries hashed before emit (12-hex SHA-256 truncation).</li>
+          <li>Error messages sanitized; only Tier-B carries (also sanitized) stack traces.</li>
+          <li>Lat/lon rounded to 3 decimals (~111&nbsp;m) before emit.</li>
+          <li>Session id is in-memory only — rotates every launch, never persisted. Server-side <code>KILL_TELEMETRY=1</code> returns 410 and the client cools down for the rest of the session.</li>
+        </ul>
+
+        <h3 class="analytics__subhead">Where the events go</h3>
+        <p class="analytics__subhead-hint">
+          From the browser to a Grafana dashboard, four hops. Each one is reviewable in the source; each one drops information rather than gathering it.
+        </p>
+
+        <figure class="analytics__flow">
+          <svg viewBox="0 0 760 220"
+               role="img"
+               aria-label="Analytics event flow diagram. Five boxes left to right. The browser emit module batches events client-side. A pagehide beacon ships the batch to a Cloudflare Pages Function ingest endpoint. The function stamps event_type, country (from CF-IPCountry), and an internal flag, then writes to Workers Analytics Engine. Grafana reads aggregated rows from AE for dashboards.">
+            <defs>
+              <marker id="arrow-an" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <style>
+                .an-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .an-box-emph { fill: rgba(77, 166, 255, 0.06); stroke: #4da6ff; stroke-width: 1.4; }
+                .an-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .an-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; font-weight: 600; }
+                .an-text-light { fill: #fafafa; }
+                .an-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .an-mono-mist { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #9AB2B1; }
+                .an-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .an-arrow-label { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #525252; }
+              </style>
+            </defs>
+
+            <g transform="translate(20,80)">
+              <rect class="an-box" x="0" y="0" width="130" height="60" rx="8" />
+              <text class="an-text" x="65" y="26" text-anchor="middle">Browser</text>
+              <text class="an-mono" x="65" y="44" text-anchor="middle">emit · batch</text>
+            </g>
+            <path class="an-arrow" d="M150,110 L185,110" marker-end="url(#arrow-an)" />
+            <text class="an-arrow-label" x="167" y="102" text-anchor="middle">beacon</text>
+
+            <g transform="translate(190,80)">
+              <rect class="an-box-emph" x="0" y="0" width="160" height="60" rx="8" />
+              <text class="an-text" x="80" y="26" text-anchor="middle">Pages Function</text>
+              <text class="an-mono" x="80" y="44" text-anchor="middle">/api/ingest</text>
+            </g>
+            <path class="an-arrow" d="M350,110 L385,110" marker-end="url(#arrow-an)" />
+            <text class="an-arrow-label" x="367" y="102" text-anchor="middle">stamp</text>
+
+            <g transform="translate(390,80)">
+              <rect class="an-box" x="0" y="0" width="160" height="60" rx="8" />
+              <text class="an-text" x="80" y="22" text-anchor="middle">Drop &amp; sanitize</text>
+              <text class="an-mono" x="80" y="40" text-anchor="middle">no IP · no UA</text>
+              <text class="an-mono" x="80" y="54" text-anchor="middle">stamp country · internal</text>
+            </g>
+            <path class="an-arrow" d="M550,110 L585,110" marker-end="url(#arrow-an)" />
+            <text class="an-arrow-label" x="567" y="102" text-anchor="middle">write</text>
+
+            <g transform="translate(590,80)">
+              <rect class="an-box-final" x="0" y="0" width="150" height="60" rx="8" />
+              <text class="an-text an-text-light" x="75" y="22" text-anchor="middle">Workers</text>
+              <text class="an-text an-text-light" x="75" y="38" text-anchor="middle">Analytics Engine</text>
+              <text class="an-mono an-mono-mist" x="75" y="54" text-anchor="middle">aggregated rows</text>
+            </g>
+
+            <path class="an-arrow" d="M665,140 L665,170" marker-end="url(#arrow-an)" />
+            <text class="an-arrow-label" x="680" y="158" text-anchor="start">read</text>
+            <g transform="translate(590,170)">
+              <rect class="an-box" x="0" y="0" width="150" height="36" rx="6" />
+              <text class="an-text" x="75" y="22" text-anchor="middle">Grafana dashboards</text>
+            </g>
+          </svg>
+          <figcaption class="analytics__flow-caption">
+            BROWSER · EMIT → BEACON → /API/INGEST · DROP+STAMP → ANALYTICS ENGINE → GRAFANA
+          </figcaption>
+        </figure>
+
+        <p class="analytics__refs">
+          Full event catalog, query schema, and reviewer checklist live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/ANALYTICS.md" target="_blank" rel="noopener">docs/ANALYTICS.md</a>; the user-facing privacy policy is at <a href="https://terraviz.zyra-project.org/privacy.html" target="_blank" rel="noopener">terraviz.zyra-project.org/privacy.html</a>.
+        </p>
       </div>
     </section>
 
   <!-- sec-12-techstack.html -->
     <section id="sec-12-techstack"
-             class="section section--alt section--placeholder fade-in"
+             class="section section--alt fade-in"
              aria-labelledby="sec-12-title">
-      <div class="container">
-        <h2 id="sec-12-title">12. Tech stack</h2>
-        <p>Coming soon.</p>
+      <div class="stack__container">
+        <p class="section__eyebrow">§12 · Tech stack</p>
+        <h2 id="sec-12-title" class="stack__title">Boring picks where they buy boring reliability. Sharp picks where they buy reach.</h2>
+        <p class="stack__lede">
+          The choices below all share a common bias: small surface area, mature tooling, no proprietary dependencies for any single piece. Replace any one of them and the rest still works.
+        </p>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Front-end</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">TypeScript</span><span class="stack__item-blurb">Static types catch dataset-shape mistakes before they ship.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Vite</span><span class="stack__item-blurb">Fast dev loop, simple production build, no framework lock-in.</span></li>
+            <li class="stack__item"><span class="stack__item-name">MapLibre GL JS</span><span class="stack__item-blurb">Open-source globe-projection renderer; no Mapbox API key.</span></li>
+            <li class="stack__item"><span class="stack__item-name">HLS.js</span><span class="stack__item-blurb">Adaptive-bitrate video on every browser, mobile included.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Three.js</span><span class="stack__item-blurb">Industry-standard WebGL/WebXR scene graph; lazy-loaded for XR only.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Vanilla DOM</span><span class="stack__item-blurb">No React, no Vue. The chrome is panels on a canvas — it doesn't need a runtime.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Desktop</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">Tauri v2</span><span class="stack__item-blurb">Native shell over the web view; signed updates; small bundle.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Rust</span><span class="stack__item-blurb">The native side. Tile cache, download manager, keychain, IPC.</span></li>
+            <li class="stack__item"><span class="stack__item-name">keyring</span><span class="stack__item-blurb">Cross-platform OS keychain — Windows Credential Manager, macOS Keychain, Linux secret-service.</span></li>
+            <li class="stack__item"><span class="stack__item-name">reqwest</span><span class="stack__item-blurb">CORS-free HTTP client so the web view can reach local LLM endpoints.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Mobile</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">Tauri v2 mobile</span><span class="stack__item-blurb">Same Rust + web-view sandwich, generated Xcode and Gradle host projects.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Swift bridge</span><span class="stack__item-blurb">Forthcoming. Wraps Apple Intelligence Foundation Models for on-device Orbit.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Kotlin bridge</span><span class="stack__item-blurb">Forthcoming. Wraps AICore (Gemini Nano) for on-device Orbit on Android.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">Cloud</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">Cloudflare Pages</span><span class="stack__item-blurb">Static + Pages Functions on the same edge, same deploy.</span></li>
+            <li class="stack__item"><span class="stack__item-name">D1</span><span class="stack__item-blurb">SQLite at the edge. The catalog database.</span></li>
+            <li class="stack__item"><span class="stack__item-name">R2</span><span class="stack__item-blurb">S3-compatible object storage for assets — thumbnails, legends, captions.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Workers Analytics Engine</span><span class="stack__item-blurb">Append-only telemetry sink with SQL-flavoured queries.</span></li>
+            <li class="stack__item"><span class="stack__item-name">KV</span><span class="stack__item-blurb">Short-lived caches and rate-limit counters at the edge.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Cloudflare Access</span><span class="stack__item-blurb">Staff sign-in for the publisher portal — no password store of our own.</span></li>
+          </ul>
+        </div>
+
+        <div class="stack__group">
+          <h3 class="stack__group-title">AI</h3>
+          <ul class="stack__items">
+            <li class="stack__item"><span class="stack__item-name">OpenAI-compatible</span><span class="stack__item-blurb">Provider-agnostic. Any endpoint that speaks the protocol works.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Ollama · LM Studio</span><span class="stack__item-blurb">Local models on desktop. The HTTP allowlist permits localhost.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Apple Intelligence</span><span class="stack__item-blurb">Forthcoming. Foundation Models on iOS — free, private, offline.</span></li>
+            <li class="stack__item"><span class="stack__item-name">Gemini Nano</span><span class="stack__item-blurb">Forthcoming. AICore on Android — same shape, same bridge pattern.</span></li>
+          </ul>
+        </div>
       </div>
     </section>
 
   <!-- sec-13-cta.html -->
     <section id="sec-13-cta"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-13-title">
-      <div class="container">
-        <h2 id="sec-13-title">13. Try it / get involved</h2>
-        <p>Coming soon.</p>
+      <div class="cta__container">
+        <p class="section__eyebrow">§13 · Try it · get involved</p>
+        <h2 id="sec-13-title" class="cta__title">No login. No paywall. Open source.</h2>
+        <p class="cta__lede">
+          Scan to load TerraViz on your phone. Grab the desktop build for offline-friendly use. Self-host your own node if you want full control of the data path. Read the source. Fork it. Run your own.
+        </p>
+
+        <div class="cta__columns">
+          <div class="cta__column">
+            <h3>Try it now</h3>
+            <div class="cta__qrs">
+              <figure class="cta__qr">
+                <div class="cta__qr-ph">QR · web app<br>(asset to land)</div>
+                <span class="cta__qr-label">Live web app</span>
+                <span class="cta__qr-url">terraviz.zyra-project.org</span>
+              </figure>
+              <figure class="cta__qr">
+                <div class="cta__qr-ph">QR · desktop downloads<br>(asset to land)</div>
+                <span class="cta__qr-label">Desktop downloads</span>
+                <span class="cta__qr-url">github.com/zyra-project/terraviz/releases</span>
+              </figure>
+            </div>
+
+            <div class="cta__downloads" aria-label="Desktop platform downloads">
+              <a class="cta__download" href="https://github.com/zyra-project/terraviz/releases/latest" target="_blank" rel="noopener">
+                Windows
+                <span class="cta__download-arrow">↓</span>
+              </a>
+              <a class="cta__download" href="https://github.com/zyra-project/terraviz/releases/latest" target="_blank" rel="noopener">
+                macOS
+                <span class="cta__download-arrow">↓</span>
+              </a>
+              <a class="cta__download" href="https://github.com/zyra-project/terraviz/releases/latest" target="_blank" rel="noopener">
+                Linux
+                <span class="cta__download-arrow">↓</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="cta__column">
+            <h3>Read &amp; build</h3>
+            <div class="cta__qrs">
+              <figure class="cta__qr">
+                <div class="cta__qr-ph">QR · GitHub repo<br>(asset to land)</div>
+                <span class="cta__qr-label">Source on GitHub</span>
+                <span class="cta__qr-url">github.com/zyra-project/terraviz</span>
+              </figure>
+              <figure class="cta__qr">
+                <div class="cta__qr-ph">QR · self-hosting guide<br>(asset to land)</div>
+                <span class="cta__qr-label">Self-hosting guide</span>
+                <span class="cta__qr-url">SELF_HOSTING.md</span>
+              </figure>
+            </div>
+
+            <ul class="cta__links">
+              <li><a href="https://github.com/zyra-project/terraviz/blob/main/MISSION.md" target="_blank" rel="noopener">MISSION.md</a><small>why this exists</small></li>
+              <li><a href="https://github.com/zyra-project/terraviz/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noopener">SELF_HOSTING.md</a><small>run your own node on Cloudflare</small></li>
+              <li><a href="https://github.com/zyra-project/terraviz/blob/main/docs/ANALYTICS.md" target="_blank" rel="noopener">ANALYTICS.md</a><small>what we measure, what we don't</small></li>
+              <li><a href="https://github.com/zyra-project/terraviz/blob/main/docs/VR_INVESTIGATION_PLAN.md" target="_blank" rel="noopener">VR_INVESTIGATION_PLAN.md</a><small>how the immersive mode works</small></li>
+              <li><a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_BACKEND_PLAN.md" target="_blank" rel="noopener">CATALOG_BACKEND_PLAN.md</a><small>federation architecture</small></li>
+            </ul>
+          </div>
+        </div>
       </div>
     </section>
 
   <!-- sec-14-footer-block.html -->
     <section id="sec-14-footer-block"
-             class="section section--dark section--placeholder fade-in"
+             class="section section--dark fade-in"
              aria-labelledby="sec-14-title">
-      <div class="container">
-        <h2 id="sec-14-title">14. Footer</h2>
-        <p>Coming soon.</p>
+      <div class="footer-block__container">
+        <div>
+          <p id="sec-14-title" class="footer-block__title">TerraViz</p>
+          <p class="footer-block__authors">
+            <strong>Eric Hackathorn</strong> · NOAA Global Systems Laboratory<br>
+            <a href="https://orcid.org/0000-0002-9693-2093" rel="noopener" target="_blank" aria-label="ORCID 0000-0002-9693-2093">ORCID 0000-0002-9693-2093</a>
+          </p>
+          <p class="footer-block__attribution">
+            A NOAA Global Systems Laboratory project, developed under the Zyra Project umbrella. Source available under the Apache License 2.0.
+          </p>
+          <p class="footer-block__meta">
+            <span>github.com/zyra-project/terraviz · Apache-2.0</span>
+            <span>poster.terraviz.zyra-project.org · live · auto-deploy on poster commits</span>
+            <span>Built with vanilla TypeScript, MapLibre GL JS, Three.js, Tauri v2, Cloudflare Pages.</span>
+          </p>
+        </div>
+
+        <div>
+          <div class="footer-block__poster-series">
+            <h4>Companion posters</h4>
+            <ul>
+              <li><a href="https://noaa-gsl.github.io/zyra/poster/" target="_blank" rel="noopener">Zyra</a></li>
+              <li><a href="https://noaa-gsl.github.io/depot-explorer/" target="_blank" rel="noopener">Depot Explorer</a></li>
+              <li><a href="https://zyra-project.github.io/zyra-editor/" target="_blank" rel="noopener">Zyra Editor</a></li>
+            </ul>
+          </div>
+        </div>
       </div>
     </section>
   </main>
