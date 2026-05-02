@@ -1227,6 +1227,267 @@ code, kbd, pre {
   margin: 0 0 1rem;
   max-width: 760px;
 }
+
+/* =========================================================
+   §7 Orbit — architecture cards, sequence diagram, chunk
+   reference, chat-bubble mockup, live demo, forward callout
+   ========================================================= */
+.orbit__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.orbit__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.orbit__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.orbit__lede code,
+.orbit__stack-card code,
+.orbit-chat-mockup code,
+.orbit__forward code,
+.orbit-chunks-list code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.orbit__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.orbit__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.orbit__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.orbit__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .orbit__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.orbit__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.orbit__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+.orbit__sequence {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.orbit__sequence svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.orbit__sequence-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Chunk-types reference */
+.orbit-chunks-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 1.5rem;
+}
+
+.orbit-chunks-list li {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  padding-left: 1.1rem;
+  position: relative;
+  line-height: 1.5;
+}
+
+.orbit-chunks-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--terra-accent);
+}
+
+@media (max-width: 700px) {
+  .orbit-chunks-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Chat-bubble mockup — frosted-glass aesthetic from
+   STYLE_GUIDE.md, simplified to read at poster scale */
+.orbit-chat-mockup {
+  background: var(--navy);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin: 0 0 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 760px;
+}
+
+.orbit-chat-mockup__bubble {
+  border-radius: 10px;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.orbit-chat-mockup__bubble--user {
+  background: rgba(77, 166, 255, 0.18);
+  color: #e8eaf0;
+  align-self: flex-end;
+  max-width: 75%;
+  border: 1px solid rgba(77, 166, 255, 0.3);
+}
+
+.orbit-chat-mockup__bubble--orbit {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--surface-border);
+  color: #e8eaf0;
+  align-self: flex-start;
+  max-width: 88%;
+}
+
+.orbit-chat-mockup__bubble--orbit p {
+  margin: 0 0 0.85rem;
+}
+
+.orbit-chat-mockup__bubble--orbit p:last-child {
+  margin-bottom: 0;
+}
+
+.orbit-chat-mockup__load-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(77, 166, 255, 0.15);
+  border: 1px solid rgba(77, 166, 255, 0.4);
+  color: #6ab8ff;
+  border-radius: 6px;
+  padding: 0.45rem 0.8rem;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin: 0 0 0.85rem;
+  cursor: not-allowed;
+  opacity: 0.95;
+}
+
+.orbit-chat-mockup__load-btn--tour {
+  background: rgba(77, 166, 255, 0.22);
+  border-color: var(--terra-accent);
+}
+
+.orbit-chat-mockup__load-btn::before {
+  content: "⟶";
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--terra-accent);
+}
+
+.orbit-chat-mockup__annotation {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--mist);
+  letter-spacing: 0.04em;
+  text-align: center;
+  margin: 0.5rem 0 0;
+}
+
+/* Forward callout linking back to §6 */
+.orbit__forward {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.08), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1rem;
+}
+
+.orbit__forward .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.orbit__forward h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.orbit__forward p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0;
+}
   </style>
 </head>
 <body>
@@ -2024,11 +2285,213 @@ code, kbd, pre {
 
   <!-- sec-07-orbit.html -->
     <section id="sec-7-orbit"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-7-title">
-      <div class="container">
-        <h2 id="sec-7-title">7. Orbit — the digital docent</h2>
-        <p>Section content lands in P6.</p>
+      <div class="orbit__container">
+        <p class="section__eyebrow">§7 · Orbit — the digital docent</p>
+        <h2 id="sec-7-title" class="orbit__title">A chat surface that drives the app, not just talks about it</h2>
+        <p class="orbit__lede">
+          Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
+        </p>
+
+        <div class="orbit__stack-grid">
+          <article class="orbit__stack-card">
+            <h3>docentService.ts</h3>
+            <p>Orchestrator. <code>processMessage()</code> races the local <code>docentEngine</code> match (instant, offline) against the LLM stream. If the LLM fails, the local result is used. If the LLM succeeds, its stream is the sole source of dataset and tour recommendations.</p>
+          </article>
+
+          <article class="orbit__stack-card">
+            <h3>docentContext.ts</h3>
+            <p>System-prompt builder. Turn-aware — full catalog (ID, title, categories) on turn 0; compact catalog (ID, title) thereafter. Last 3 exchanges sent verbatim; older history summarised. Keeps per-turn cost bounded as a chat grows.</p>
+          </article>
+
+          <article class="orbit__stack-card">
+            <h3>llmProvider.ts</h3>
+            <p>Provider-agnostic OpenAI-compatible SSE client. Works against OpenAI, Ollama, LM Studio, Cloudflare AI Gateway, llama.cpp, vLLM. On desktop the API key lives in the OS keychain (Windows Credential Manager / macOS Keychain) instead of <code>localStorage</code>.</p>
+          </article>
+        </div>
+
+        <h3 class="orbit__subhead">Two paths, raced</h3>
+        <p class="orbit__subhead-hint">
+          <code>processMessage()</code> kicks off the local engine and the LLM stream concurrently. Stream chunks reach <code>chatUI</code> as they arrive; the LLM's <code>&lt;&lt;LOAD:ID&gt;&gt;</code> markers are parsed into <code>action</code> chunks that render as inline load buttons.
+        </p>
+
+        <figure class="orbit__sequence">
+          <svg viewBox="0 0 760 320"
+               role="img"
+               aria-label="Sequence diagram showing the hybrid Orbit pipeline. A user message enters processMessage which kicks off two parallel paths. The top path is the local docentEngine that returns a keyword-matched result instantly. The bottom path is the LLM stream over llmProvider that emits delta, delta, action, and done chunks over time. Both paths feed chatUI; the LLM's response is used when available, otherwise the local engine result is the fallback.">
+            <defs>
+              <marker id="arrow-orbit" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <marker id="arrow-orbit-accent" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#4da6ff" />
+              </marker>
+              <style>
+                .ob-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .ob-box-emph { fill: rgba(77, 166, 255, 0.10); stroke: #4da6ff; stroke-width: 1.5; }
+                .ob-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .ob-pill { fill: #ffffff; stroke: #4da6ff; stroke-width: 1.2; }
+                .ob-pill-action { fill: rgba(77, 166, 255, 0.18); stroke: #4da6ff; stroke-width: 1.5; }
+                .ob-pill-done { fill: #00172D; stroke: #00529E; stroke-width: 1.2; }
+                .ob-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; font-weight: 600; }
+                .ob-text-light { fill: #fafafa; }
+                .ob-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .ob-mono-accent { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; font-weight: 700; }
+                .ob-mono-mist { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #9AB2B1; }
+                .ob-pill-text { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #00529E; font-weight: 600; }
+                .ob-pill-text-done { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #fafafa; font-weight: 600; }
+                .ob-lane { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #737373; font-weight: 700; letter-spacing: 0.1em; }
+                .ob-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .ob-arrow-accent { stroke: #4da6ff; stroke-width: 1.4; fill: none; }
+                .ob-arrow-dashed { stroke: #737373; stroke-width: 1.2; fill: none; stroke-dasharray: 3 3; }
+              </style>
+            </defs>
+
+            <!-- User input -->
+            <g transform="translate(20,135)">
+              <rect class="ob-box" x="0" y="0" width="120" height="50" rx="8" />
+              <text class="ob-text" x="60" y="22" text-anchor="middle">User</text>
+              <text class="ob-mono" x="60" y="38" text-anchor="middle">processMessage()</text>
+            </g>
+
+            <!-- Branch arrows from User to both lanes -->
+            <path class="ob-arrow" d="M140,150 C 160,150 160,80 180,80" marker-end="url(#arrow-orbit)" />
+            <path class="ob-arrow" d="M140,170 C 160,170 160,225 180,225" marker-end="url(#arrow-orbit)" />
+
+            <!-- Local engine lane -->
+            <text class="ob-lane" x="20" y="40" text-anchor="start">LOCAL ENGINE</text>
+            <g transform="translate(180,50)">
+              <rect class="ob-box" x="0" y="0" width="220" height="60" rx="8" />
+              <text class="ob-text" x="110" y="22" text-anchor="middle">docentEngine.match()</text>
+              <text class="ob-mono" x="110" y="42" text-anchor="middle">keyword · intent · instant</text>
+            </g>
+            <!-- result arrow from local box to chatUI -->
+            <path class="ob-arrow-dashed" d="M400,80 C 480,80 540,130 580,150" marker-end="url(#arrow-orbit)" />
+            <text class="ob-mono" x="490" y="105" text-anchor="middle">result · used as fallback</text>
+
+            <!-- LLM stream lane -->
+            <text class="ob-lane" x="20" y="285" text-anchor="start">LLM STREAM</text>
+            <g transform="translate(180,195)">
+              <rect class="ob-box-emph" x="0" y="0" width="220" height="60" rx="8" />
+              <text class="ob-text" x="110" y="22" text-anchor="middle">llmProvider.stream()</text>
+              <text class="ob-mono-accent" x="110" y="42" text-anchor="middle">OpenAI-compatible SSE</text>
+            </g>
+
+            <!-- Stream chunk pills emitted from the LLM box -->
+            <g transform="translate(420,210)">
+              <rect class="ob-pill" x="0" y="0" width="44" height="30" rx="6" />
+              <text class="ob-pill-text" x="22" y="19" text-anchor="middle">delta</text>
+            </g>
+            <path class="ob-arrow-accent" d="M400,225 L420,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <g transform="translate(474,210)">
+              <rect class="ob-pill" x="0" y="0" width="44" height="30" rx="6" />
+              <text class="ob-pill-text" x="22" y="19" text-anchor="middle">delta</text>
+            </g>
+            <path class="ob-arrow-accent" d="M464,225 L474,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <g transform="translate(528,210)">
+              <rect class="ob-pill-action" x="0" y="0" width="48" height="30" rx="6" />
+              <text class="ob-pill-text" x="24" y="19" text-anchor="middle">action</text>
+            </g>
+            <path class="ob-arrow-accent" d="M518,225 L528,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <g transform="translate(584,210)">
+              <rect class="ob-pill-done" x="0" y="0" width="44" height="30" rx="6" />
+              <text class="ob-pill-text-done" x="22" y="19" text-anchor="middle">done</text>
+            </g>
+            <path class="ob-arrow-accent" d="M576,225 L584,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <!-- chatUI block on the right -->
+            <g transform="translate(640,135)">
+              <rect class="ob-box-final" x="0" y="0" width="100" height="50" rx="8" />
+              <text class="ob-text ob-text-light" x="50" y="22" text-anchor="middle">chatUI</text>
+              <text class="ob-mono-mist" x="50" y="38" text-anchor="middle">renders</text>
+            </g>
+
+            <!-- Arrow from chunk row up into chatUI -->
+            <path class="ob-arrow-accent" d="M628,225 C 660,225 660,200 660,185" marker-end="url(#arrow-orbit-accent)" />
+
+            <!-- Note tying the two paths together -->
+            <text class="ob-mono" x="380" y="305" text-anchor="middle">LLM stream is the response when available · local result is the fallback on error</text>
+          </svg>
+          <figcaption class="orbit__sequence-caption">
+            PROCESSMESSAGE — TWO PATHS RACED · LLM WINS IF AVAILABLE · LOCAL ENGINE IS THE FALLBACK
+          </figcaption>
+        </figure>
+
+        <h3 class="orbit__subhead">Stream chunk types</h3>
+        <p class="orbit__subhead-hint">
+          The four chunk shapes <code>chatUI</code> consumes from <code>processMessage()</code>:
+        </p>
+        <ul class="orbit-chunks-list">
+          <li><code>delta</code> — text fragment to append to the current bubble</li>
+          <li><code>action</code> — <code>&lt;&lt;LOAD:ID&gt;&gt;</code> resolved into a clickable load button</li>
+          <li><code>auto-load</code> — dataset loaded immediately, no click required</li>
+          <li><code>done</code> — stream complete; <code>fallback: true</code> flag if local engine took over</li>
+        </ul>
+
+        <h3 class="orbit__subhead">A real Orbit response, annotated</h3>
+        <p class="orbit__subhead-hint">
+          The LLM emits <code>&lt;&lt;LOAD:ID&gt;&gt;</code> markers inline with its prose. The service parses each into an <code>action</code> chunk; <code>chatUI</code> renders each as an inline load button so the visitor can drop the dataset (or tour) onto the globe with a tap. Same marker pattern for both.
+        </p>
+
+        <div class="orbit-chat-mockup" aria-label="Annotated mockup of an Orbit chat response, showing inline load buttons resolved from <<LOAD:ID>> markers">
+          <div class="orbit-chat-mockup__bubble orbit-chat-mockup__bubble--user">
+            Show me how the climate is changing in the Atlantic.
+          </div>
+
+          <div class="orbit-chat-mockup__bubble orbit-chat-mockup__bubble--orbit">
+            <p>Atlantic warming is one of the clearer signals in the SOS catalog.</p>
+            <button class="orbit-chat-mockup__load-btn" type="button" disabled aria-disabled="true">
+              Load · Sea-surface temperature, 1981–2023
+            </button>
+            <p>If you want to see what climate scientists project for the rest of the century, the Climate Futures tour compares three SSP scenarios across temperature, precipitation, and sea ice.</p>
+            <button class="orbit-chat-mockup__load-btn orbit-chat-mockup__load-btn--tour" type="button" disabled aria-disabled="true">
+              Take a tour · Climate Futures · 2100
+            </button>
+          </div>
+
+          <p class="orbit-chat-mockup__annotation">
+            BUTTONS ARE INLINE <code>&lt;&lt;LOAD:ID&gt;&gt;</code> MARKERS RESOLVED INTO ACTIONS · TAP TO LOAD
+          </p>
+        </div>
+
+        <h3 class="orbit__subhead">Drive Orbit yourself</h3>
+        <p class="orbit__subhead-hint">
+          The live app, with the Orbit chat panel ready. Ask whatever you want — the docent will answer and (where relevant) drop datasets or tours onto the globe in front of you.
+        </p>
+
+        <div class="demo-frame"
+             id="orbit-demo"
+             data-state="loading"
+             data-default-src="https://terraviz.zyra-project.org/?orbit=open">
+          <button type="button"
+                  class="demo-frame__fullscreen-btn"
+                  data-fullscreen-target="orbit-demo"
+                  aria-label="Toggle fullscreen">⤢ Fullscreen</button>
+          <iframe class="demo-frame__iframe"
+                  src="about:blank"
+                  title="Live TerraViz application — Orbit chat demo"
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <div class="demo-frame__fallback" role="status" aria-live="polite">
+            <p class="demo-frame__fallback-title">Loading the live demo…</p>
+            <p class="demo-frame__fallback-body">If the embed doesn't load within a few seconds, the network may be blocking framed content. Open <a class="demo-frame__fallback-link" href="https://terraviz.zyra-project.org/?orbit=open" target="_blank" rel="noopener">terraviz.zyra-project.org</a> directly in a new tab.</p>
+          </div>
+        </div>
+
+        <p class="effect-note">
+          Like the §4, §5, and §6 deep-links, <code>?orbit=open</code> relies on an SPA-side handler landing in P12. Until then, the iframe loads the default app — tap the chat trigger in the lower-right of the embedded view to open the Orbit panel manually.
+        </p>
+
+        <aside class="orbit__forward">
+          <p class="section__eyebrow">What's next</p>
+          <h3>Orbit as tour author, not just tour player</h3>
+          <p>Right now Orbit recommends and loads tours from the catalog. The natural next step is having it <em>generate</em> a tour from a question like <em>"walk me through how Atlantic hurricane seasons have changed since 2000"</em> — turning the docent from a chat surface that knows the catalog into an educational-scaffolding generator. Full pitch in <a href="#sec-6-tours">§6 Tours</a>.</p>
+        </aside>
       </div>
     </section>
 
