@@ -53,6 +53,10 @@ import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourIm
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, IS_MOBILE_NATIVE, getCloudTextureUrl } from './utils/deviceCapability'
 import { initDeepLinks } from './services/deepLinkService'
+import {
+  applyPosterDeepLinks,
+  parseInitialLayout,
+} from './utils/posterDeepLinks'
 import { initVrButton } from './ui/vrButton'
 import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
@@ -272,7 +276,7 @@ class InteractiveSphere {
         this.setLoadingStatus('Loading dataset\u2026', 50)
         await this.loadDataset(datasetId, 'url')
         this.setLoading(false)
-        showChatTrigger()
+        this.runUrlLoadUiSync()
         // In multi-viewport mode, pre-render the browse panel in its
         // collapsed state so users can slide it open to load datasets
         // into the remaining panels, and pulse the Browse button so
@@ -340,9 +344,68 @@ class InteractiveSphere {
     // Phase 5: listen for deep links unconditionally so the app can
     // load a dataset when opened from an external URL at any time,
     // not just when a ?dataset= query param is present at startup.
-    initDeepLinks((id) => {
-      this.loadDataset(id, 'url')
+    // The Tauri native deep-link plugin fires `zyra://dataset/<id>`
+    // and `https://terraviz.zyra-project.org/dataset/<id>` events
+    // mid-session; route them through the same post-load UI sync
+    // that the boot ?dataset= and poster ?tour= paths use, so the
+    // chat trigger / canvas description / help overlay all stay in
+    // sync regardless of which entry point the load came from.
+    initDeepLinks(async (id) => {
+      await this.loadDataset(id, 'url')
+      this.runUrlLoadUiSync()
     })
+
+    // Apply any poster-flavoured deep-link query params (?tour=,
+    // ?terrain=, ?labels=, ?borders=, ?rotate=, ?orbit=). These run
+    // after the catalog is loaded and the Tools menu is wired so the
+    // dispatch can route through canonical APIs and button click
+    // handlers without any race risk. ?layout= and ?dataset= are
+    // already handled by the existing initial-load path above. The
+    // call is awaited so a ?tour= load completes before subsequent
+    // ?orbit=open / view-toggle dispatches run on top of it.
+    //
+    // The loadDataset callback runs the same post-load UI sync the
+    // boot ?dataset= path does (showChatTrigger, notifyDatasetChanged,
+    // setHelpActiveDataset). Without it, a poster URL like
+    // ?tour=climate-futures&orbit=open opens the chat panel but the
+    // floating Orbit trigger stays hidden — so if the visitor closes
+    // the chat panel they have no way to reopen it.
+    await applyPosterDeepLinks({
+      catalog: this.appState.datasets,
+      loadDataset: async (id) => {
+        await this.loadDataset(id, 'url')
+        this.runUrlLoadUiSync()
+      },
+      openChatWithQuery: (query) => this.openChatWithQuery(query),
+    })
+  }
+
+  /**
+   * Post-load UI sync that every URL-driven dataset load needs to
+   * run on top of `loadDataset()`: surface the floating Orbit chat
+   * trigger so the visitor can re-open chat after closing it,
+   * refresh the canvas's accessible description so screen readers
+   * stop announcing the stale Earth title, announce the dataset
+   * change to the chat panel so its system prompt picks up the
+   * new context, and tell the help overlay which dataset is now
+   * active.
+   *
+   * Browse-panel and chat-driven loads (`selectDatasetFromBrowse`,
+   * `selectDatasetFromChat`) call equivalent code inline; URL
+   * paths share this helper — boot `?dataset=`, the
+   * `applyPosterDeepLinks` poster pipeline, and the Tauri
+   * `zyra://`/`/dataset/...` native deep-link listener — so the
+   * sequencing stays consistent across every URL-driven entry
+   * point.
+   */
+  private runUrlLoadUiSync(): void {
+    showChatTrigger()
+    const dataset = this.appState.currentDataset
+    if (dataset) {
+      this.renderer?.setCanvasDescription(`3D globe showing ${dataset.title}`)
+      notifyDatasetChanged(dataset)
+      setHelpActiveDataset(dataset.id)
+    }
   }
 
   /** Extract the `dataset` query parameter from the current URL. */
@@ -352,17 +415,16 @@ class InteractiveSphere {
   }
 
   /**
-   * Read the initial viewport layout from the `?setview=` query param.
-   * Phase 1 defaults to `'1'` (single globe); the param is a dev flag
-   * for smoke-testing multi-viewport before the layout picker ships.
-   * Unknown values fall back to single-view.
+   * Read the initial viewport layout from the URL. Prefers
+   * `?layout=` (the public form used by the companion poster's
+   * deep-link buttons); falls back to the legacy dev `?setview=`
+   * for backwards compatibility. Both forms accept the same set
+   * of values: `1`, `2`, `2h`, `2v`, `4`. The shorthand `2`
+   * resolves to `2h`. Unknown / missing values default to
+   * single-view (`1`).
    */
   private getInitialLayoutFromUrl(): ViewLayout {
-    const raw = new URLSearchParams(window.location.search).get('setview')
-    if (raw === '1' || raw === '2h' || raw === '2v' || raw === '4') return raw
-    // Legacy shorthand: ?setview=2 → 2h, ?setview=4 → 4
-    if (raw === '2') return '2h'
-    return '1'
+    return parseInitialLayout(window.location.search)
   }
 
   /** Fetch the dataset catalog from the data service and store in app state. */
