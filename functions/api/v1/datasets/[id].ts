@@ -20,6 +20,7 @@ import {
   getDecorations,
 } from '../_lib/catalog-store'
 import { serializeDataset } from '../_lib/dataset-serializer'
+import { makeDataRefResolver } from '../_lib/data-ref-resolver'
 import { computeEtag } from '../_lib/snapshot'
 
 const CACHE_CONTROL = 'public, max-age=60, stale-while-revalidate=300'
@@ -56,7 +57,8 @@ export const onRequestGet: PagesFunction<CatalogEnv, 'id'> = async context => {
   if (!row) return jsonError(404, 'not_found', `Dataset ${id} not found.`)
 
   const decorations = await getDecorations(db, [id])
-  const dataset = serializeDataset(row, decorations.get(id)!, identity)
+  const resolveDataRef = makeDataRefResolver(context.env)
+  const dataset = serializeDataset(row, decorations.get(id)!, identity, resolveDataRef)
   const body = JSON.stringify(dataset)
   const etag = await computeEtag(body)
 

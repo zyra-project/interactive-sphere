@@ -545,7 +545,14 @@ class InteractiveSphere {
     try {
       if (dataset.format === 'tour/json') {
         this.tourIsStandalone = true
-        await this.startTour(dataset.dataLink, gen, null, {
+        // The node-catalog source surfaces the actual tour-fetch
+        // URL on `tourJsonUrl`; the manifest endpoint at
+        // `dataLink` 415s tour formats. Legacy SOS catalog
+        // responses don't carry `tourJsonUrl` — fall back to
+        // `dataLink` (which on those rows is the direct
+        // CloudFront URL).
+        const tourUrl = dataset.tourJsonUrl ?? dataset.dataLink
+        await this.startTour(tourUrl, gen, null, {
           tourId: dataset.id,
           tourTitle: dataset.title,
           source: triggerToTourSource(trigger),
@@ -608,7 +615,8 @@ class InteractiveSphere {
           const tourDataset = dataService.getDatasetById(ref)
           if (tourDataset && tourDataset.format === 'tour/json') {
             logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
-            await this.startTour(tourDataset.dataLink, gen, targetSlot)
+            const tourUrl = tourDataset.tourJsonUrl ?? tourDataset.dataLink
+            await this.startTour(tourUrl, gen, targetSlot)
           } else {
             logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
           }

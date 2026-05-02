@@ -40,6 +40,7 @@ import {
   type DatasetRow,
 } from './_lib/catalog-store'
 import { serializeDataset, maxUpdatedAt, type WireDataset } from './_lib/dataset-serializer'
+import { makeDataRefResolver } from './_lib/data-ref-resolver'
 import {
   buildAndCacheSnapshot,
   computeEtag,
@@ -105,8 +106,9 @@ async function renderCatalog(
     db,
     rows.map(r => r.id),
   )
+  const resolveDataRef = makeDataRefResolver(env)
   const datasets = rows.map(r =>
-    serializeDataset(r, decorationMap.get(r.id)!, identity),
+    serializeDataset(r, decorationMap.get(r.id)!, identity, resolveDataRef),
   )
 
   // The etag stamped in the response header MUST equal the one

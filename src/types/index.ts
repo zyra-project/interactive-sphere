@@ -24,6 +24,16 @@ export interface Dataset {
   title: string
   format: DatasetFormat
   dataLink: string
+  /**
+   * For `tour/json` rows: the resolved URL the tour engine fetches
+   * the tour document from, bypassing the manifest endpoint
+   * indirection (which only handles `video|image` manifests). Set
+   * by the node-catalog serializer for tour-format rows; the
+   * tour-load path prefers this field over `dataLink` when present
+   * and falls back to `dataLink` for legacy SOS catalog responses
+   * that don't surface it.
+   */
+  tourJsonUrl?: string
   organization?: string
   abstractTxt?: string
   thumbnailLink?: string
