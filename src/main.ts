@@ -53,6 +53,10 @@ import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourIm
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, IS_MOBILE_NATIVE, getCloudTextureUrl } from './utils/deviceCapability'
 import { initDeepLinks } from './services/deepLinkService'
+import {
+  applyPosterDeepLinks,
+  parseInitialLayout,
+} from './utils/posterDeepLinks'
 import { initVrButton } from './ui/vrButton'
 import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
@@ -343,6 +347,18 @@ class InteractiveSphere {
     initDeepLinks((id) => {
       this.loadDataset(id, 'url')
     })
+
+    // Apply any poster-flavoured deep-link query params (?tour=,
+    // ?terrain=, ?labels=, ?borders=, ?rotate=, ?orbit=). These run
+    // after the catalog is loaded and the Tools menu is wired so the
+    // dispatch can route through canonical APIs and button click
+    // handlers without any race risk. ?layout= and ?dataset= are
+    // already handled by the existing initial-load path above.
+    applyPosterDeepLinks({
+      catalog: this.appState.datasets,
+      loadDataset: (id) => this.loadDataset(id, 'url'),
+      openChatWithQuery: (query) => this.openChatWithQuery(query),
+    })
   }
 
   /** Extract the `dataset` query parameter from the current URL. */
@@ -352,17 +368,14 @@ class InteractiveSphere {
   }
 
   /**
-   * Read the initial viewport layout from the `?setview=` query param.
-   * Phase 1 defaults to `'1'` (single globe); the param is a dev flag
-   * for smoke-testing multi-viewport before the layout picker ships.
-   * Unknown values fall back to single-view.
+   * Read the initial viewport layout from the URL. Prefers the
+   * public `?layout=1|2|4` param (used by the companion poster's
+   * deep-link buttons); falls back to the legacy dev `?setview=`
+   * which additionally accepts `2h`/`2v` orientations. Unknown
+   * values fall back to single-view.
    */
   private getInitialLayoutFromUrl(): ViewLayout {
-    const raw = new URLSearchParams(window.location.search).get('setview')
-    if (raw === '1' || raw === '2h' || raw === '2v' || raw === '4') return raw
-    // Legacy shorthand: ?setview=2 → 2h, ?setview=4 → 4
-    if (raw === '2') return '2h'
-    return '1'
+    return parseInitialLayout(window.location.search)
   }
 
   /** Fetch the dataset catalog from the data service and store in app state. */
