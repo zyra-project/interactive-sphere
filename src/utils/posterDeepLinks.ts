@@ -38,7 +38,11 @@ const TOUR_ALIASES: Readonly<Record<string, string>> = {
 
 /** Suggested chat input when the poster opens the docent with a hint. */
 const ORBIT_PROMPT_TEMPLATES: Readonly<Record<string, string>> = {
-  tour: 'Can you recommend a tour for me?',
+  // First-time-visitor framing. Establishes "I'm new here" context
+  // so Orbit's docent biases toward intro tours rather than the
+  // most advanced ones. Visitor presses Enter to send (or edits
+  // first); the seed isn't auto-submitted.
+  tour: "I'm new here. What tour should I start with?",
 }
 
 /**

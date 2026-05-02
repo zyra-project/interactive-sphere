@@ -156,7 +156,7 @@ describe('resolveTourId', () => {
 describe('resolveOrbitPrompt', () => {
   it('returns the tour-recommendation seed for prompt=tour', () => {
     expect(resolveOrbitPrompt('tour')).toBe(
-      'Can you recommend a tour for me?',
+      "I'm new here. What tour should I start with?",
     )
   })
 
@@ -333,7 +333,7 @@ describe('applyPosterDeepLinks', () => {
     await applyPosterDeepLinks(ctx)
 
     expect(ctx.openChatWithQuery).toHaveBeenCalledWith(
-      'Can you recommend a tour for me?',
+      "I'm new here. What tour should I start with?",
     )
   })
 
