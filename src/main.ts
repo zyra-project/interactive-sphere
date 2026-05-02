@@ -276,7 +276,7 @@ class InteractiveSphere {
         this.setLoadingStatus('Loading dataset\u2026', 50)
         await this.loadDataset(datasetId, 'url')
         this.setLoading(false)
-        showChatTrigger()
+        this.runUrlLoadUiSync()
         // In multi-viewport mode, pre-render the browse panel in its
         // collapsed state so users can slide it open to load datasets
         // into the remaining panels, and pulse the Browse button so
@@ -356,11 +356,43 @@ class InteractiveSphere {
     // already handled by the existing initial-load path above. The
     // call is awaited so a ?tour= load completes before subsequent
     // ?orbit=open / view-toggle dispatches run on top of it.
+    //
+    // The loadDataset callback runs the same post-load UI sync the
+    // boot ?dataset= path does (showChatTrigger, notifyDatasetChanged,
+    // setHelpActiveDataset). Without it, a poster URL like
+    // ?tour=climate-futures&orbit=open opens the chat panel but the
+    // floating Orbit trigger stays hidden — so if the visitor closes
+    // the chat panel they have no way to reopen it.
     await applyPosterDeepLinks({
       catalog: this.appState.datasets,
-      loadDataset: (id) => this.loadDataset(id, 'url'),
+      loadDataset: async (id) => {
+        await this.loadDataset(id, 'url')
+        this.runUrlLoadUiSync()
+      },
       openChatWithQuery: (query) => this.openChatWithQuery(query),
     })
+  }
+
+  /**
+   * Post-load UI sync that every URL-driven dataset load needs to
+   * run on top of `loadDataset()`: surface the floating Orbit chat
+   * trigger so the visitor can re-open chat after closing it,
+   * announce the dataset to the chat panel so its system prompt
+   * picks up the new context, and tell the help overlay which
+   * dataset is now active.
+   *
+   * Browse-panel and chat-driven loads (`selectDatasetFromBrowse`,
+   * `selectDatasetFromChat`) call equivalent code inline; URL
+   * paths share this helper so the sequencing stays consistent
+   * between them.
+   */
+  private runUrlLoadUiSync(): void {
+    showChatTrigger()
+    const dataset = this.appState.currentDataset
+    if (dataset) {
+      notifyDatasetChanged(dataset)
+      setHelpActiveDataset(dataset.id)
+    }
   }
 
   /** Extract the `dataset` query parameter from the current URL. */
@@ -370,11 +402,13 @@ class InteractiveSphere {
   }
 
   /**
-   * Read the initial viewport layout from the URL. Prefers the
-   * public `?layout=1|2|4` param (used by the companion poster's
+   * Read the initial viewport layout from the URL. Prefers
+   * `?layout=` (the public form used by the companion poster's
    * deep-link buttons); falls back to the legacy dev `?setview=`
-   * which additionally accepts `2h`/`2v` orientations. Unknown
-   * values fall back to single-view.
+   * for backwards compatibility. Both forms accept the same set
+   * of values: `1`, `2`, `2h`, `2v`, `4`. The shorthand `2`
+   * resolves to `2h`. Unknown / missing values default to
+   * single-view (`1`).
    */
   private getInitialLayoutFromUrl(): ViewLayout {
     return parseInitialLayout(window.location.search)

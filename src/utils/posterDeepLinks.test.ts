@@ -347,4 +347,40 @@ describe('applyPosterDeepLinks', () => {
     expect(ctx.loadDataset).not.toHaveBeenCalled()
     expect(ctx.openChatWithQuery).not.toHaveBeenCalled()
   })
+
+  it("awaits the loadDataset callback's full work, including post-load UI sync", async () => {
+    // Locks in the contract main.ts depends on: the loadDataset
+    // callback can do async post-load work (showChatTrigger,
+    // notifyDatasetChanged, setHelpActiveDataset) and the
+    // orchestrator awaits that work before opening chat. If the
+    // orchestrator dropped to a fire-and-forget call, ?tour=...&
+    // orbit=open would once again open chat before the dataset's
+    // help overlay is wired up.
+    setupToolsButtons()
+    history.replaceState({}, '', '/?tour=climate-futures&orbit=open')
+
+    const callOrder: string[] = []
+    const ctx = {
+      catalog: fakeCatalog,
+      loadDataset: vi.fn(async () => {
+        callOrder.push('loadDataset:start')
+        await Promise.resolve()
+        callOrder.push('postLoadUiSync')
+        await Promise.resolve()
+        callOrder.push('loadDataset:resolve')
+      }),
+      openChatWithQuery: vi.fn(() => {
+        callOrder.push('openChat')
+      }),
+    }
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(callOrder).toEqual([
+      'loadDataset:start',
+      'postLoadUiSync',
+      'loadDataset:resolve',
+      'openChat',
+    ])
+  })
 })
