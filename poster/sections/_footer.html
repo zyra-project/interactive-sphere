@@ -125,50 +125,114 @@
       elements.forEach(function (el) { io.observe(el); });
     })();
 
-    // Live demo iframe — lazy load on scroll-into-view, with
-    // a fallback overlay that fades out once the iframe load
-    // event fires. Each .demo-frame[data-default-src] gets
-    // its iframe src populated when it enters the viewport.
+    // Live demo iframes — single-active-instance manager.
+    //
+    // Each section's <div class="demo-frame" data-default-src="...">
+    // has its own iframe co-located with the buttons that drive
+    // it (no cross-section pointers, no scroll jumps). At any
+    // moment exactly one frame holds the SPA: the one most
+    // visible to the user. Others are reset to about:blank so
+    // they cost nothing.
+    //
+    // A frame remembers its last-clicked URL via dataset.currentSrc
+    // so that scrolling away and back resumes whichever state the
+    // visitor last asked for.
     (function () {
       'use strict';
-      var frames = document.querySelectorAll('.demo-frame[data-default-src]');
+      var frames = Array.from(document.querySelectorAll('.demo-frame[data-default-src]'));
       if (!frames.length) return;
 
-      function load(frame) {
-        if (frame.dataset.loaded === 'true') return;
-        frame.dataset.loaded = 'true';
+      var ratios = new WeakMap();
+      var active = null;
+
+      function getSrc(frame) {
+        return frame.dataset.currentSrc || frame.dataset.defaultSrc;
+      }
+
+      function activate(frame) {
+        if (active === frame) return;
+        if (active) deactivate(active);
+        active = frame;
         var iframe = frame.querySelector('.demo-frame__iframe');
         if (!iframe) return;
-        var src = frame.dataset.defaultSrc;
+        frame.dataset.state = 'loading';
+        iframe.src = getSrc(frame);
+      }
+
+      function deactivate(frame) {
+        if (!frame) return;
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
+        iframe.src = 'about:blank';
+        frame.dataset.state = 'loading';
+      }
+
+      // Mark the active frame ready once its iframe finishes
+      // loading the real (non-about:blank) URL.
+      frames.forEach(function (frame) {
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
         iframe.addEventListener('load', function () {
-          // First "load" fires for about:blank; only flip to
-          // ready once we've actually navigated to the embed.
-          if (iframe.src && iframe.src !== 'about:blank') {
+          if (active === frame && iframe.src && iframe.src !== 'about:blank') {
             frame.dataset.state = 'ready';
           }
         }, false);
-        iframe.src = src;
+      });
+
+      function pickBest() {
+        var best = null;
+        var bestRatio = 0;
+        frames.forEach(function (f) {
+          var r = ratios.get(f) || 0;
+          if (r > bestRatio) {
+            bestRatio = r;
+            best = f;
+          }
+        });
+        return { frame: best, ratio: bestRatio };
       }
 
       if ('IntersectionObserver' in window) {
         var io = new IntersectionObserver(function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              load(entry.target);
-              io.unobserve(entry.target);
-            }
-          });
-        }, { threshold: 0.05, rootMargin: '200px 0px' });
+          entries.forEach(function (e) { ratios.set(e.target, e.intersectionRatio); });
+          var pick = pickBest();
+          if (pick.frame && pick.ratio > 0.05) {
+            if (pick.frame !== active) activate(pick.frame);
+          } else if (active) {
+            deactivate(active);
+            active = null;
+          }
+        }, { threshold: [0, 0.05, 0.25, 0.5, 0.75, 1.0] });
         frames.forEach(function (f) { io.observe(f); });
       } else {
-        frames.forEach(load);
+        // No IntersectionObserver — load the first one and
+        // leave the rest at about:blank.
+        activate(frames[0]);
       }
+
+      // Expose a tiny API for the effect-toggle wiring below
+      // so a button click can record a new target URL on a
+      // frame and trigger an immediate reload (without
+      // leaving the iframe pointing at the old src).
+      window.__terravizPosterDemo = {
+        setSrc: function (frame, src) {
+          frame.dataset.currentSrc = src;
+          if (active === frame) {
+            var iframe = frame.querySelector('.demo-frame__iframe');
+            if (!iframe) return;
+            frame.dataset.state = 'loading';
+            iframe.src = src;
+          }
+          // If not active, the new src will be loaded the next
+          // time this frame becomes most-visible.
+        }
+      };
     })();
 
     // Effect-toggle bar — buttons swap an iframe's src to a
     // deep-linked URL. Marks the clicked button .is-active
-    // and resets the frame's state so the loading overlay
-    // reappears until the new src settles.
+    // within its bar and routes the change through the
+    // single-active-instance manager above.
     (function () {
       'use strict';
       var buttons = document.querySelectorAll('.effect-toggle[data-iframe-target][data-iframe-src]');
@@ -177,16 +241,24 @@
         btn.addEventListener('click', function () {
           var frame = document.getElementById(btn.dataset.iframeTarget);
           if (!frame) return;
-          var iframe = frame.querySelector('.demo-frame__iframe');
-          if (!iframe) return;
           var bar = btn.closest('.effect-toggle-bar');
           if (bar) {
             bar.querySelectorAll('.effect-toggle').forEach(function (b) {
               b.classList.toggle('is-active', b === btn);
             });
           }
-          frame.dataset.state = 'loading';
-          iframe.src = btn.dataset.iframeSrc;
+          var demo = window.__terravizPosterDemo;
+          if (demo && demo.setSrc) {
+            demo.setSrc(frame, btn.dataset.iframeSrc);
+          } else {
+            // Fallback if the manager hasn't initialised
+            // (e.g. zero frames found earlier).
+            var iframe = frame.querySelector('.demo-frame__iframe');
+            if (iframe) {
+              frame.dataset.state = 'loading';
+              iframe.src = btn.dataset.iframeSrc;
+            }
+          }
         });
       });
     })();

@@ -190,21 +190,42 @@
         </div>
 
         <h3 class="tours__subhead">Try it</h3>
+
+        <div class="demo-frame"
+             id="tours-demo"
+             data-state="loading"
+             data-default-src="https://terraviz.zyra-project.org/?tour=climate-futures">
+          <button type="button"
+                  class="demo-frame__fullscreen-btn"
+                  data-fullscreen-target="tours-demo"
+                  aria-label="Toggle fullscreen">⤢ Fullscreen</button>
+          <iframe class="demo-frame__iframe"
+                  src="about:blank"
+                  title="Live TerraViz application — tour playback demo"
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <div class="demo-frame__fallback" role="status" aria-live="polite">
+            <p class="demo-frame__fallback-title">Loading the live demo…</p>
+            <p class="demo-frame__fallback-body">If the embed doesn't load within a few seconds, the network may be blocking framed content. Open <a class="demo-frame__fallback-link" href="https://terraviz.zyra-project.org/?tour=climate-futures" target="_blank" rel="noopener">terraviz.zyra-project.org</a> directly in a new tab.</p>
+          </div>
+        </div>
+
         <div class="effect-toggle-bar"
              role="group"
-             aria-label="Tour deep-links — change the §4 demo iframe to start a specific tour">
+             aria-label="Tour deep-links — change this section's demo iframe to start a specific tour">
           <span class="effect-toggle-bar__label">Take a tour</span>
-          <button type="button" class="effect-toggle"
-                  data-iframe-target="globe-demo"
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="tours-demo"
                   data-iframe-src="https://terraviz.zyra-project.org/?tour=climate-futures">Climate Futures · 2100</button>
           <button type="button" class="effect-toggle effect-toggle--cta"
-                  data-iframe-target="globe-demo"
+                  data-iframe-target="tours-demo"
                   data-iframe-src="https://terraviz.zyra-project.org/?orbit=open&amp;prompt=tour"
                   aria-label="Ask Orbit to recommend a tour">Ask Orbit to pick one →</button>
         </div>
 
         <p class="effect-note">
-          Like the §4 effect buttons, these deep-links rely on SPA-side <code>?tour=</code> and <code>?orbit=</code> handlers landing in P12. Until then, clicking a button still loads the live app — you'll see the default view rather than the requested tour. The §4 demo iframe is the target so you don't lose your scroll position.
+          Like the §4 effect buttons, these deep-links rely on SPA-side <code>?tour=</code> and <code>?orbit=</code> handlers landing in P12. Until then, clicking a button still loads the live app — you'll see the default view rather than the requested tour.
         </p>
 
         <p class="tours__refs">
