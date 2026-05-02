@@ -1100,3 +1100,114 @@ code, kbd, pre {
   border-color: var(--navy);
   color: white;
 }
+
+/* =========================================================
+   §5 Multi-globe — architecture cards + camera-lockstep
+   diagram + layout-toggle bar
+   ========================================================= */
+.multiglobe__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.multiglobe__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.multiglobe__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.multiglobe__lede code,
+.multiglobe__stack-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.multiglobe__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.multiglobe__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.multiglobe__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.multiglobe__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .multiglobe__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.multiglobe__diagram {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.multiglobe__diagram svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 640px;
+  width: 100%;
+  height: auto;
+}
+
+.multiglobe__diagram-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+.multiglobe__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.multiglobe__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+}

@@ -1116,6 +1116,117 @@ code, kbd, pre {
   border-color: var(--navy);
   color: white;
 }
+
+/* =========================================================
+   §5 Multi-globe — architecture cards + camera-lockstep
+   diagram + layout-toggle bar
+   ========================================================= */
+.multiglobe__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.multiglobe__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.multiglobe__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.multiglobe__lede code,
+.multiglobe__stack-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.multiglobe__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.multiglobe__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.multiglobe__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.multiglobe__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .multiglobe__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.multiglobe__diagram {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.multiglobe__diagram svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 640px;
+  width: 100%;
+  height: auto;
+}
+
+.multiglobe__diagram-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+.multiglobe__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.multiglobe__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+}
   </style>
 </head>
 <body>
@@ -1515,11 +1626,141 @@ code, kbd, pre {
 
   <!-- sec-05-multiglobe.html -->
     <section id="sec-5-multiglobe"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-5-title">
-      <div class="container">
-        <h2 id="sec-5-title">5. Multi-globe comparison</h2>
-        <p>Section content lands in P4.</p>
+      <div class="multiglobe__container">
+        <p class="section__eyebrow">§5 · Multi-globe comparison</p>
+        <h2 id="sec-5-title" class="multiglobe__title">One drag, every panel — synchronised globes for side-by-side science</h2>
+        <p class="multiglobe__lede">
+          Comparing climate scenarios, hurricane seasons, or sea-ice extents across years is the kind of question a single globe can't answer. <code>viewportManager.ts</code> orchestrates one, two, or four <code>MapRenderer</code> instances inside a CSS grid, mirrors camera state across panels in lockstep, and keeps each panel's dataset clock aligned to a shared real-world calendar. Drag panel 1 — panels 2, 3, and 4 follow.
+        </p>
+
+        <div class="multiglobe__stack-grid">
+          <article class="multiglobe__stack-card">
+            <h3>viewportManager.ts</h3>
+            <p>Creates and destroys <code>MapRenderer</code> instances to match a target layout (<code>1</code>, <code>2h</code>, <code>2v</code>, or <code>4</code>). Tracks a "primary" panel that drives playback, screenshots, and the info panel. Promotion buttons in each non-primary panel's top-left corner let visitors swap which one leads.</p>
+          </article>
+
+          <article class="multiglobe__stack-card">
+            <h3>Camera lockstep</h3>
+            <p>Every renderer's <code>move</code> event mirrors lat / lng / zoom / bearing / pitch to its siblings via <code>jumpTo</code> — instantaneous, no easing, no drift compounding. A <code>syncLock</code> flag breaks the otherwise-infinite recursion that "every sibling fires its own <code>move</code>" would create.</p>
+          </article>
+
+          <article class="multiglobe__stack-card">
+            <h3>Real-world time sync</h3>
+            <p>Time-series datasets sync by <strong>real-world date</strong>, not playback offset. A hurricane in September 2024 on panel 1 lines up with the same week of sea-surface temperature on panel 2 — even when the two animations have different total lengths or framerates. Each panel runs its own clock against a shared calendar.</p>
+          </article>
+        </div>
+
+        <figure class="multiglobe__diagram">
+          <svg viewBox="0 0 720 340"
+               role="img"
+               aria-label="Camera-lockstep diagram. Four panels are arranged in a 2-by-2 grid. Panel 1 (top-left) is highlighted as the active drag source — its globe shows rotation cues. Dashed arrows labeled with the camera-state fields (lat, lng, zoom, bearing, pitch) flow from panel 1 to panels 2, 3, and 4. The non-primary panels mirror the camera state via jumpTo; a syncLock flag prevents the resulting move events from looping back.">
+            <defs>
+              <marker id="arrow-mg" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#4da6ff" />
+              </marker>
+              <style>
+                .mg-panel { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .mg-panel-active { fill: rgba(77, 166, 255, 0.10); stroke: #4da6ff; stroke-width: 1.6; }
+                .mg-globe { fill: #f5f5f5; stroke: #a3a3a3; stroke-width: 1; }
+                .mg-globe-active { fill: rgba(77, 166, 255, 0.22); stroke: #4da6ff; stroke-width: 1.4; }
+                .mg-line { stroke: #a3a3a3; stroke-width: 0.8; fill: none; }
+                .mg-line-active { stroke: #4da6ff; stroke-width: 1; fill: none; }
+                .mg-pill { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1; }
+                .mg-pill-active { fill: #4da6ff; stroke: #4da6ff; stroke-width: 1; }
+                .mg-pill-text { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; font-weight: 700; }
+                .mg-pill-text-active { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #ffffff; font-weight: 700; }
+                .mg-label { font-family: 'Source Sans 3', sans-serif; font-size: 11px; fill: #525252; }
+                .mg-label-active { font-family: 'Source Sans 3', sans-serif; font-size: 11px; fill: #00529E; font-weight: 600; }
+                .mg-tag { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #4da6ff; font-weight: 700; letter-spacing: 0.05em; }
+                .mg-arrow { stroke: #4da6ff; stroke-width: 1.4; fill: none; stroke-dasharray: 4 3; }
+              </style>
+            </defs>
+
+            <!-- Panel 1 (active drag source) -->
+            <g transform="translate(60,30)">
+              <rect class="mg-panel-active" x="0" y="0" width="280" height="120" rx="10" />
+              <rect class="mg-pill-active" x="10" y="10" width="22" height="18" rx="4" />
+              <text class="mg-pill-text-active" x="21" y="23" text-anchor="middle">1</text>
+              <circle class="mg-globe-active" cx="140" cy="64" r="28" />
+              <path class="mg-line-active" d="M112,64 L168,64" />
+              <path class="mg-line-active" d="M140,36 L140,92" />
+              <path class="mg-line-active" d="M120,46 a30 28 0 0 0 0 36" />
+              <path class="mg-line-active" d="M160,46 a30 28 0 0 1 0 36" />
+              <text class="mg-tag" x="200" y="62" text-anchor="start">DRAG</text>
+              <text class="mg-tag" x="200" y="76" text-anchor="start">ME</text>
+              <text class="mg-label-active" x="140" y="108" text-anchor="middle">Panel 1 · primary</text>
+            </g>
+
+            <!-- Panel 2 -->
+            <g transform="translate(380,30)">
+              <rect class="mg-panel" x="0" y="0" width="280" height="120" rx="10" />
+              <rect class="mg-pill" x="10" y="10" width="22" height="18" rx="4" />
+              <text class="mg-pill-text" x="21" y="23" text-anchor="middle">2</text>
+              <circle class="mg-globe" cx="140" cy="64" r="28" />
+              <path class="mg-line" d="M112,64 L168,64" />
+              <path class="mg-line" d="M140,36 L140,92" />
+              <text class="mg-label" x="140" y="108" text-anchor="middle">Panel 2 · follows</text>
+            </g>
+
+            <!-- Panel 3 -->
+            <g transform="translate(60,170)">
+              <rect class="mg-panel" x="0" y="0" width="280" height="120" rx="10" />
+              <rect class="mg-pill" x="10" y="10" width="22" height="18" rx="4" />
+              <text class="mg-pill-text" x="21" y="23" text-anchor="middle">3</text>
+              <circle class="mg-globe" cx="140" cy="64" r="28" />
+              <path class="mg-line" d="M112,64 L168,64" />
+              <path class="mg-line" d="M140,36 L140,92" />
+              <text class="mg-label" x="140" y="108" text-anchor="middle">Panel 3 · follows</text>
+            </g>
+
+            <!-- Panel 4 -->
+            <g transform="translate(380,170)">
+              <rect class="mg-panel" x="0" y="0" width="280" height="120" rx="10" />
+              <rect class="mg-pill" x="10" y="10" width="22" height="18" rx="4" />
+              <text class="mg-pill-text" x="21" y="23" text-anchor="middle">4</text>
+              <circle class="mg-globe" cx="140" cy="64" r="28" />
+              <path class="mg-line" d="M112,64 L168,64" />
+              <path class="mg-line" d="M140,36 L140,92" />
+              <text class="mg-label" x="140" y="108" text-anchor="middle">Panel 4 · follows</text>
+            </g>
+
+            <!-- Camera-state arrows: 1 → 2, 1 → 3, 1 → 4 -->
+            <path class="mg-arrow" d="M340,90 L376,90" marker-end="url(#arrow-mg)" />
+            <path class="mg-arrow" d="M200,150 L200,166" marker-end="url(#arrow-mg)" />
+            <path class="mg-arrow" d="M340,150 C 358,160 376,162 376,170" marker-end="url(#arrow-mg)" />
+
+            <!-- Camera-state field list -->
+            <text class="mg-tag" x="360" y="166" text-anchor="middle">lat · lng · zoom · bearing · pitch</text>
+          </svg>
+          <figcaption class="multiglobe__diagram-caption">
+            CAMERA STATE — MIRRORED VIA jumpTo, GUARDED BY syncLock
+          </figcaption>
+        </figure>
+
+        <h3 class="multiglobe__subhead">Switch the layout</h3>
+        <p class="multiglobe__subhead-hint">
+          The buttons below deep-link the §4 demo iframe to a specific panel layout. Tour authors use the same switch via the <code>setEnvView</code> task (see §6).
+        </p>
+        <div class="effect-toggle-bar"
+             role="group"
+             aria-label="Layout deep-links — change the §4 demo iframe to a specific panel layout">
+          <span class="effect-toggle-bar__label">Layout</span>
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?layout=1">1 globe</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?layout=2">2 globes</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="globe-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?layout=4">4 globes</button>
+        </div>
+
+        <p class="effect-note">
+          Like the §4 effect buttons and the §6 tour launchers, the <code>?layout=</code> deep-link relies on an SPA-side handler landing in P12. Until then, clicking a button still loads the live app — you'll see the default 1-globe view rather than the requested layout.
+        </p>
       </div>
     </section>
 
