@@ -29,6 +29,7 @@
     "db:reset": "tsx scripts/clean-d1-state.ts && npm run db:migrate && npm run db:seed",
     "db:dump-schema": "tsx scripts/dump-catalog-schema.ts",
     "gen:node-key": "tsx scripts/gen-node-key.ts",
+    "check:pages-bindings": "tsx scripts/check-pages-bindings.ts",
     "refresh:sos-snapshot": "tsx scripts/refresh-sos-snapshot.ts",
     "tauri": "tauri",
     "dev:desktop": "tauri dev",

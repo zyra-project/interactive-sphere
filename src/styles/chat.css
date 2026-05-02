@@ -4,6 +4,26 @@
  */
 
 /* --- Chat / Digital Docent --- */
+
+/* Phase 1f/D — Reduced-functionality badge.
+ * Rendered as the first child of #chat-panel by chatUI when the
+ * docent detects Workers AI 4006 / quota_exhausted. Cleared on the
+ * next successful LLM round. Designed to be unobtrusive (small
+ * font, muted accent) so an extended quota dip doesn't dominate
+ * the panel — but always visible so the user knows why
+ * suggestions stopped grounding through real search. */
+.chat-degraded-badge {
+    margin: 0.5rem 0.5rem 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    color: var(--white-o80, rgba(255, 255, 255, 0.8));
+    background: var(--white-o06, rgba(255, 255, 255, 0.06));
+    border: 1px solid var(--white-o12, rgba(255, 255, 255, 0.12));
+    border-left: 3px solid #f0a25b;
+    border-radius: 6px;
+}
+
 /* Standalone trigger: hidden by default, shown when dataset is loaded */
 #chat-trigger {
     position: absolute;

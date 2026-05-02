@@ -10,6 +10,7 @@ import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage
 import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './appleIntelligenceProvider'
 import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
+import { clearDegraded as clearDegradedState, markDegraded as markDegradedState } from './docentDegradedState'
 import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { resolveRegion, boundsToGeoJSON } from '../data/regions'
 import { logger } from '../utils/logger'
@@ -460,42 +461,163 @@ const LIST_FEATURED_MAX_LIMIT = 24
 const CATALOG_API_BASE = '/api'
 
 /**
+ * Per-session LRU cache for pre-search results. Phase 1f/C —
+ * follow-up to 1d/AC restoring the [RELEVANT DATASETS] block.
+ *
+ * The hot path: every discovery turn (intent.type === 'search' /
+ * 'category' / 'related') runs `executeSearchDatasets` to ground
+ * the user message before the LLM stream starts (1d/AC, line 1099
+ * below). Two follow-ups within a turn exchange — "show me
+ * hurricanes" then "any others?" — re-run the same canonicalised
+ * query and re-burn Workers AI embed neurons.
+ *
+ * The cache is module-level (= per-session, since the SPA
+ * re-initialises this module on every page load) with:
+ *   - 16-entry LRU eviction (small enough to keep memory tiny,
+ *     large enough to absorb most multi-turn discovery flows).
+ *   - 5-minute TTL (expires concurrent with the catalog snapshot's
+ *     KV-side cache TTL — same staleness contract).
+ *   - Canonical-query keying: lowercase + collapsed whitespace +
+ *     stripped trailing punctuation. Conservative — no stemming
+ *     or stop-word removal because those change semantics.
+ *
+ * The catalog backend's KV snapshot cache (`functions/api/v1/_lib/
+ * snapshot.ts`) is the precedent for "5-minute staleness is OK
+ * because publish/retract invalidate"; this is the same contract
+ * applied at the docent-client layer, before the request leaves
+ * the SPA.
+ *
+ * Decision-list note (Phase 1f #2 — cache scope): per-session
+ * in-memory was chosen over per-user (localStorage — privacy
+ * surface for raw queries) and per-deploy (CATALOG_KV — would
+ * still re-burn Workers AI without caching the embedding too).
+ * Revisit per-deploy after the cost panel (Commit E) shows
+ * cross-session hot queries.
+ */
+const PRE_SEARCH_CACHE_LIMIT = 16
+const PRE_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000
+
+interface PreSearchCacheEntry {
+  hits: SearchDatasetsHit[]
+  expiresAt: number
+}
+
+const preSearchCache = new Map<string, PreSearchCacheEntry>()
+
+function canonicalisePreSearchQuery(q: string): string {
+  return q.toLowerCase().replace(/\s+/g, ' ').trim().replace(/[.!?,;:]+$/u, '')
+}
+
+function preSearchCacheKey(query: string, limit: number): string {
+  return `${canonicalisePreSearchQuery(query)}|${limit}`
+}
+
+/**
+ * Test hook: drop every cached entry. The SPA never calls this in
+ * production (the cache lives for the lifetime of the page); tests
+ * call it from `beforeEach` to keep cases independent.
+ */
+export function clearPreSearchCache(): void {
+  preSearchCache.clear()
+}
+
+/**
  * Execute a `search_datasets` tool call against the node catalog
  * backend. Returns the result shape the LLM expects to see in a
  * `tool` message reply. On error / unreachable / degraded, returns
  * an empty `{ datasets: [] }` so the LLM can move on (or call the
  * legacy `search_catalog` fallback).
+ *
+ * Phase 1f/C: results pass through the per-session pre-search
+ * cache. The cache key normalises trivial query variations
+ * ("hurricanes" / "Hurricanes  " / "hurricanes!" all hit the same
+ * entry), bounded by limit. Empty results are cached too — a
+ * genuine no-match shouldn't re-burn neurons in the same window.
  */
 export async function executeSearchDatasets(
   args: Record<string, unknown>,
   config: DocentConfig,
 ): Promise<{ datasets: SearchDatasetsHit[] }> {
-  const query = typeof args.query === 'string' ? args.query.trim() : ''
+  // Phase 1f/I — canonicalise once and use the canonical form for
+  // BOTH the cache key and the wire `q=` parameter. Pre-1f/I the
+  // cache keyed off the canonical form but sent the raw query on
+  // the wire, so two queries that canonicalise the same ("Hurricanes!"
+  // and "hurricanes") could produce different server responses but
+  // collide on the cache. Sending the canonical form keeps the
+  // cache contract honest: same canonical key ↔ same server input.
+  const rawQuery = typeof args.query === 'string' ? args.query.trim() : ''
+  const query = canonicalisePreSearchQuery(rawQuery)
   if (!query) return { datasets: [] }
   if (!config.apiUrl) return { datasets: [] }
 
   const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : SEARCH_DATASETS_DEFAULT_LIMIT
   const limit = Math.max(1, Math.min(SEARCH_DATASETS_MAX_LIMIT, Math.floor(limitArg)))
 
+  // `query` is already canonicalised — preSearchCacheKey re-canonicalises
+  // defensively (idempotent on canonical input) so a future caller
+  // that bypasses the canonical-rawQuery normalisation above can't
+  // poison the cache.
+  const cacheKey = preSearchCacheKey(query, limit)
+  const now = Date.now()
+  const cached = preSearchCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    // Touch the entry's LRU position so a long-running session
+    // keeps the active query set hot rather than rotating it out.
+    preSearchCache.delete(cacheKey)
+    preSearchCache.set(cacheKey, cached)
+    return { datasets: cached.hits }
+  }
+
   const url = new URL(`${CATALOG_API_BASE}/v1/search`, window.location.origin)
   url.searchParams.set('q', query)
   url.searchParams.set('limit', String(limit))
 
+  let degradedReason: string | undefined
+  let hits: SearchDatasetsHit[]
   try {
     const res = await fetch(url.toString(), { method: 'GET' })
     if (!res.ok) {
       logger.warn(`[Docent] search_datasets returned ${res.status}`)
+      // Don't cache transient failures — the next turn should retry.
       return { datasets: [] }
     }
     const body = (await res.json()) as { datasets?: SearchDatasetsHit[]; degraded?: string }
     if (body.degraded) {
       logger.info(`[Docent] search_datasets degraded: ${body.degraded}`)
+      degradedReason = body.degraded
+      // Phase 1f/D — quota_exhausted on the search path drives the
+      // same SPA-side badge as the LLM-side detection. Other
+      // degraded reasons (`unconfigured`) are operator-misconfig
+      // cases that surface their own messaging elsewhere.
+      if (body.degraded === 'quota_exhausted') {
+        markDegradedState('quota_exhausted')
+      }
     }
-    return { datasets: Array.isArray(body.datasets) ? body.datasets : [] }
+    hits = Array.isArray(body.datasets) ? body.datasets : []
   } catch (err) {
     logger.warn('[Docent] search_datasets fetch failed:', err)
+    // Network errors are also transient — same as non-OK responses.
     return { datasets: [] }
   }
+
+  // Phase 1f/J — never cache a degraded response. quota_exhausted
+  // is by definition transient (the badge clears as soon as a
+  // subsequent successful round lands), and unconfigured points
+  // at a binding that may get wired up mid-session. Caching either
+  // would lock the same query into the empty result for the full
+  // 5-minute TTL even after the underlying condition clears.
+  if (degradedReason !== undefined) {
+    return { datasets: hits }
+  }
+
+  preSearchCache.set(cacheKey, { hits, expiresAt: now + PRE_SEARCH_CACHE_TTL_MS })
+  if (preSearchCache.size > PRE_SEARCH_CACHE_LIMIT) {
+    // Map iteration order is insertion order; the first key is the
+    // least-recently-touched (since touches re-insert above).
+    const oldest = preSearchCache.keys().next().value
+    if (oldest !== undefined) preSearchCache.delete(oldest)
+  }
+  return { datasets: hits }
 }
 
 /**
@@ -1368,6 +1490,12 @@ export async function* processMessage(
                 logger.warn(`[Docent] LLM error (attempt ${attempt}, round ${round}):`, chunk.message)
                 attemptErrored = true
                 llmProducedText = false
+                // Phase 1f/D — surface the SPA-side degraded badge
+                // when the error is a 4006 quota signal. Other
+                // errors leave the existing fallback path untouched.
+                if (chunk.code === 'quota_exhausted') {
+                  markDegradedState('quota_exhausted')
+                }
                 break toolLoop
 
               case 'done':
@@ -1457,6 +1585,11 @@ export async function* processMessage(
         }
 
         if (!attemptErrored && llmProducedText) {
+          // Phase 1f/D — a successful LLM round means quota is back
+          // (Workers AI accepted the request and produced output).
+          // Self-heal the degraded badge so the user knows
+          // functionality is restored without a manual reload.
+          clearDegradedState()
           yield* emitValidatedActions(accumulatedText, datasets, yieldedIds)
 
           // Safety net: if the LLM mentioned dataset titles from search_catalog

@@ -1,0 +1,296 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/public/api/spec/dashboard.json",
+  "title": "Terraviz — Orbit Cost",
+  "uid": "terraviz-orbit-cost",
+  "tags": [
+    "terraviz",
+    "analytics",
+    "tier-a",
+    "cost"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "custom",
+        "label": "Environment",
+        "query": "production,preview,local",
+        "current": {
+          "text": "production",
+          "value": "production"
+        }
+      },
+      {
+        "name": "internal",
+        "type": "custom",
+        "label": "Internal staff?",
+        "query": "false,true",
+        "current": {
+          "text": "false",
+          "value": "false"
+        }
+      },
+      {
+        "name": "DS_INFINITY",
+        "type": "datasource",
+        "query": "yesoreyeram-infinity-datasource",
+        "label": "Data source"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Turn rounds distribution — direct vs tool-calling",
+      "description": "Phase 1f/E. Splits assistant turns by Phase 1d/Y's turn_rounds telemetry: double7=1 is a direct LLM reply (one Workers AI round), double7≥2 is a tool-calling turn (multiple rounds). The ratio is a leading indicator of per-turn cost — a sustained shift toward tool-calling means more neurons burned per turn.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT toStartOfDay(timestamp) AS day, countIf(double7 = 1) AS direct_replies, countIf(double7 >= 2) AS tool_calling_turns FROM terraviz_events WHERE blob1 = 'orbit_turn' AND blob2 = '$environment' AND blob4 = '$internal' AND blob8 = 'assistant' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY day ORDER BY day",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "day",
+              "text": "day",
+              "type": "timestamp"
+            },
+            {
+              "selector": "direct_replies",
+              "text": "direct_replies",
+              "type": "number"
+            },
+            {
+              "selector": "tool_calling_turns",
+              "text": "tool_calling_turns",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "fillOpacity": 35,
+            "lineWidth": 1
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Total LLM rounds per day",
+      "description": "Phase 1f/E. Sum of turn_rounds (double7) across all assistant turns in the window. This is the raw count of Workers AI invocations — the leading indicator for free-tier neuron exhaustion. Pre-1d/Y events have NULL double7 and don't contribute (double7=0 in the SUM).",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT toStartOfDay(timestamp) AS day, sum(double7) AS llm_rounds, count() AS turns FROM terraviz_events WHERE blob1 = 'orbit_turn' AND blob2 = '$environment' AND blob4 = '$internal' AND blob8 = 'assistant' AND double7 > 0 AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY day ORDER BY day",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "day",
+              "text": "day",
+              "type": "timestamp"
+            },
+            {
+              "selector": "llm_rounds",
+              "text": "llm_rounds",
+              "type": "number"
+            },
+            {
+              "selector": "turns",
+              "text": "turns",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Turn duration p95 — direct vs tool-calling",
+      "description": "Phase 1f/E. p95 of duration_ms (double3) per day, split by direct (turn_rounds=1) and tool-calling (turn_rounds≥2) assistant turns. Tool-calling turns dominate latency; widening gap suggests the LLM is taking more rounds to answer, an early signal of regression in the system prompt or grounding payload.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT toStartOfDay(timestamp) AS day, quantile(0.95)(if(double7 = 1, double3, NULL)) AS direct_p95_ms, quantile(0.95)(if(double7 >= 2, double3, NULL)) AS tool_calling_p95_ms FROM terraviz_events WHERE blob1 = 'orbit_turn' AND blob2 = '$environment' AND blob4 = '$internal' AND blob8 = 'assistant' AND double3 > 0 AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY day ORDER BY day",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "day",
+              "text": "day",
+              "type": "timestamp"
+            },
+            {
+              "selector": "direct_p95_ms",
+              "text": "direct_p95_ms",
+              "type": "number"
+            },
+            {
+              "selector": "tool_calling_p95_ms",
+              "text": "tool_calling_p95_ms",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Top 10 hashed query terms (browse search)",
+      "description": "Phase 1f/E. Frequency of hashed search queries via the browse-side search bar. The docent's query payload is not hashed at emit time — raw user prompts would defeat the privacy contract — so this panel uses browse_search as a proxy for 'topics users are exploring' and surfaces hashed values only. The hash is the same 12-hex-char SHA-256 prefix `src/analytics/hash.ts` produces; pair with manual log-replay (server-side, gated to on-call) when an investigation needs the original term.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT blob5 AS query_hash, count() AS search_count FROM terraviz_events WHERE blob1 = 'browse_search' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY query_hash ORDER BY search_count DESC LIMIT 10",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "query_hash",
+              "text": "query_hash",
+              "type": "string"
+            },
+            {
+              "selector": "search_count",
+              "text": "search_count",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

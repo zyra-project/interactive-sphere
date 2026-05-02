@@ -144,6 +144,27 @@ describe('searchDatasets — early exits', () => {
     const result = await searchDatasets(env, { query: 'hurricane' })
     expect(result).toEqual({ datasets: [], degraded: 'unconfigured' })
   })
+
+  it('flags degraded=quota_exhausted when Workers AI throws a 4006 (1f/D)', async () => {
+    const db = seed([{ id: 'DS001', title: 'Hurricane' }])
+    // Stub AI binding that throws a quota-shaped error for the
+    // embed call. The classifier in `_lib/workers-ai-error.ts`
+    // matches "4006" / "quota exceeded" / etc.; that lets the
+    // search helper translate the throw into a typed degraded
+    // reason instead of a 500.
+    const ai = {
+      run: async () => {
+        throw new Error('Workers AI: 4006 quota exceeded for free tier')
+      },
+    }
+    const env = {
+      CATALOG_DB: asD1(db),
+      AI: ai,
+      MOCK_VECTORIZE: 'true',
+    } as unknown as SearchDatasetsEnv
+    const result = await searchDatasets(env, { query: 'hurricane' })
+    expect(result).toEqual({ datasets: [], degraded: 'quota_exhausted' })
+  })
 })
 
 describe('searchDatasets — happy path', () => {

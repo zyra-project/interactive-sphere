@@ -251,6 +251,22 @@ describe('POST /api/v1/publish/datasets/{id}/publish', () => {
     const body = await readJson<{ errors: Array<{ field: string }> }>(res)
     expect(body.errors.length).toBeGreaterThan(0)
   })
+
+  it('returns 404 not_found as {error, message} (1f/A — envelope audit)', async () => {
+    const { env } = setupEnv()
+    const res = await datasetPublish(
+      ctxWithPublisher<'id'>({ env, method: 'POST', params: { id: 'NOPE' } }),
+    )
+    expect(res.status).toBe(404)
+    // Mirror reindex.ts's 1d/O envelope so the CLI surfaces
+    // top-level `error: 'not_found'` instead of collapsing to
+    // `error: 'http_error'`. The route's pre-check absorbs the
+    // common-case miss; the translation in the route handler covers
+    // the race window between pre-check and mutation lookup.
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('not_found')
+    expect(body.message).toMatch(/not found/i)
+  })
 })
 
 describe('POST /api/v1/publish/datasets/{id}/reindex', () => {
@@ -369,6 +385,17 @@ describe('POST /api/v1/publish/datasets/{id}/retract', () => {
     expect(res.status).toBe(200)
     const body = await readJson<{ dataset: { retracted_at: string | null } }>(res)
     expect(body.dataset.retracted_at).not.toBeNull()
+  })
+
+  it('returns 404 not_found as {error, message} (1f/A — envelope audit)', async () => {
+    const { env } = setupEnv()
+    const res = await datasetRetract(
+      ctxWithPublisher<'id'>({ env, method: 'POST', params: { id: 'NOPE' } }),
+    )
+    expect(res.status).toBe(404)
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('not_found')
+    expect(body.message).toMatch(/not found/i)
   })
 })
 

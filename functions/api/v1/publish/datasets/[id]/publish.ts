@@ -46,6 +46,15 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     new WaitUntilJobQueue(context.env, context.waitUntil.bind(context))
   const result = await publishDataset(context.env, id, { jobQueue })
   if (!result.ok) {
+    // Structural errors collapse to {error, message}; the structured
+    // 400 validateForPublish errors keep {errors} so the CLI surfaces
+    // field/code/message. Mirrors reindex.ts (1d/O) — defensive
+    // against the race window between the pre-check above and the
+    // mutation's row lookup.
+    if (result.status === 404) {
+      const e = result.errors[0]
+      return jsonError(result.status, e.code, e.message)
+    }
     return new Response(JSON.stringify({ errors: result.errors }), {
       status: result.status,
       headers: { 'Content-Type': CONTENT_TYPE },
