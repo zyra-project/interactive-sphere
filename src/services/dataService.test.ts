@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { dataService, HIDDEN_TOUR_IDS } from './dataService'
+import { dataService, HIDDEN_TOUR_IDS, normaliseSourceFormat } from './dataService'
 import type { Dataset } from '../types'
 
 // Helper to build a minimal Dataset
@@ -70,8 +70,51 @@ describe('DataService.isImageDataset', () => {
     expect(dataService.isImageDataset(makeDataset({ format: 'images/jpg' }))).toBe(true)
   })
 
+  it('returns true for image/webp (validator FORMAT_VALUES surface, Phase 1f/M)', () => {
+    // The publisher API's validator accepts image/webp but no
+    // current catalog row uses it. Keeping the gate in sync with
+    // the validator means a future publisher uploading WebP
+    // doesn't get silently dropped from the browse list, the same
+    // class of bug 1f/K caught for canonical JPEG.
+    expect(dataService.isImageDataset(makeDataset({ format: 'image/webp' }))).toBe(true)
+  })
+
   it('returns false for video/mp4', () => {
     expect(dataService.isImageDataset(makeDataset({ format: 'video/mp4' }))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// normaliseSourceFormat (Phase 1f/L)
+// ---------------------------------------------------------------------------
+describe('normaliseSourceFormat', () => {
+  it('rewrites image/jpg to the canonical image/jpeg', () => {
+    const out = normaliseSourceFormat(makeDataset({ format: 'image/jpg' }))
+    expect(out.format).toBe('image/jpeg')
+  })
+
+  it('rewrites the legacy SOS images/jpg double-typo to image/jpeg', () => {
+    const out = normaliseSourceFormat(makeDataset({ format: 'images/jpg' }))
+    expect(out.format).toBe('image/jpeg')
+  })
+
+  it('passes the canonical image/jpeg through unchanged', () => {
+    const ds = makeDataset({ format: 'image/jpeg' })
+    expect(normaliseSourceFormat(ds).format).toBe('image/jpeg')
+  })
+
+  it('passes other formats through unchanged', () => {
+    expect(normaliseSourceFormat(makeDataset({ format: 'video/mp4' })).format).toBe('video/mp4')
+    expect(normaliseSourceFormat(makeDataset({ format: 'image/png' })).format).toBe('image/png')
+    expect(normaliseSourceFormat(makeDataset({ format: 'image/webp' })).format).toBe('image/webp')
+    expect(normaliseSourceFormat(makeDataset({ format: 'tour/json' })).format).toBe('tour/json')
+  })
+
+  it('does not mutate the input object', () => {
+    const ds = makeDataset({ format: 'image/jpg' })
+    const out = normaliseSourceFormat(ds)
+    expect(ds.format).toBe('image/jpg')
+    expect(out).not.toBe(ds)
   })
 })
 
