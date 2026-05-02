@@ -1,15 +1,19 @@
 /**
- * Tests for the poster deep-link parsers.
+ * Tests for the poster deep-link parsers + orchestrator.
  *
- * The DOM-touching parts of `applyPosterDeepLinks` (Tools-menu button
- * clicks, chat-panel opening) are covered by the consuming
- * integration tests in main.test.ts; here we just lock down the pure
- * resolution helpers so a slug rename or a layout-token change can't
- * silently slip through.
+ * Two layers:
+ *   - Pure resolution helpers (`resolveLayout`, `parseInitialLayout`,
+ *     `resolveTourId`, `resolveOrbitPrompt`). These lock down slug
+ *     renames, layout-token changes, the tour-format constraint, and
+ *     the legacyId-fallback semantics.
+ *   - DOM orchestration (`applyPosterDeepLinks`). These exercise the
+ *     button-click + chat-panel dispatch through a jsdom fixture so
+ *     button-id renames or boot-order changes can't slip through.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
+  applyPosterDeepLinks,
   parseInitialLayout,
   resolveLayout,
   resolveOrbitPrompt,
@@ -17,18 +21,29 @@ import {
 } from './posterDeepLinks'
 import type { Dataset } from '../types'
 
-function fakeDataset(id: string, format: Dataset['format']): Dataset {
+function fakeDataset(
+  id: string,
+  format: Dataset['format'],
+  legacyId?: string,
+): Dataset {
   return {
     id,
     title: '',
     format,
     dataLink: '',
+    ...(legacyId ? { legacyId } : {}),
   } as Dataset
 }
 
 const fakeCatalog: readonly Dataset[] = [
   fakeDataset('SAMPLE_TOUR', 'tour/json'),
   fakeDataset('SAMPLE_TOUR_CLIMATE_FUTURES', 'tour/json'),
+  // A tour with a legacy id, so we can verify the legacyId fallback
+  // path used when a bookmark refers to an old INTERNAL_SOS_*-style
+  // identifier that has since been re-keyed to a ULID-style id.
+  fakeDataset('TOUR_LEGACY_TARGET', 'tour/json', 'INTERNAL_SOS_LEGACY_TOUR'),
+  // A non-tour dataset; ?tour=INTERNAL_SOS_42 must NOT resolve to
+  // it because the parameter is documented as tour-only.
   fakeDataset('INTERNAL_SOS_42', 'image/jpg'),
 ]
 
@@ -93,14 +108,29 @@ describe('resolveTourId', () => {
     )
   })
 
-  it('accepts a direct catalog ID as the param value', () => {
-    // Lets the poster (or anything else) pass ?tour=ID without
-    // needing a slug entry in the alias map.
+  it('accepts a direct catalog ID when the row is a tour', () => {
     expect(resolveTourId('SAMPLE_TOUR_CLIMATE_FUTURES', fakeCatalog)).toBe(
       'SAMPLE_TOUR_CLIMATE_FUTURES',
     )
-    expect(resolveTourId('INTERNAL_SOS_42', fakeCatalog)).toBe(
-      'INTERNAL_SOS_42',
+    expect(resolveTourId('TOUR_LEGACY_TARGET', fakeCatalog)).toBe(
+      'TOUR_LEGACY_TARGET',
+    )
+  })
+
+  it('rejects non-tour datasets even when the ID matches exactly', () => {
+    // ?tour= is documented as tour-only. Loading an image dataset
+    // because its ID happened to match would silently give the
+    // visitor a totally different experience from what the URL
+    // advertises.
+    expect(resolveTourId('INTERNAL_SOS_42', fakeCatalog)).toBeNull()
+  })
+
+  it('falls back to legacyId when the raw value is a legacy reference', () => {
+    // dataService.getDatasetById() falls back to legacyId so older
+    // INTERNAL_SOS_* references keep working; resolveTourId mirrors
+    // that. Constraint: the resolved row must still be a tour.
+    expect(resolveTourId('INTERNAL_SOS_LEGACY_TOUR', fakeCatalog)).toBe(
+      'TOUR_LEGACY_TARGET',
     )
   })
 
@@ -115,9 +145,9 @@ describe('resolveTourId', () => {
   })
 
   it("returns null when the slug's mapped target is missing from the catalog", () => {
-    // The alias map can outlive a catalog rev — an alias pointing
-    // at a deleted dataset should NOT resolve, so the deep-link
-    // becomes a silent no-op rather than a broken load attempt.
+    // Alias map can outlive a catalog rev. An alias pointing at a
+    // deleted dataset must NOT resolve, so the deep-link is a
+    // silent no-op rather than a broken load attempt.
     const empty: readonly Dataset[] = []
     expect(resolveTourId('climate-futures', empty)).toBeNull()
   })
@@ -134,5 +164,187 @@ describe('resolveOrbitPrompt', () => {
     expect(resolveOrbitPrompt(null)).toBeUndefined()
     expect(resolveOrbitPrompt('')).toBeUndefined()
     expect(resolveOrbitPrompt('not-a-real-prompt')).toBeUndefined()
+  })
+})
+
+describe('applyPosterDeepLinks', () => {
+  // jsdom shares a single document across tests; reset the fixture
+  // and the URL before each case.
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    history.replaceState({}, '', '/')
+  })
+
+  type ToggleId =
+    | 'tools-menu-terrain'
+    | 'tools-menu-labels'
+    | 'tools-menu-borders'
+    | 'tools-menu-autorotate'
+
+  /**
+   * Build the four Tools-menu toggle buttons jsdom needs and stub
+   * `.click()` to add the `.active` class so the orchestrator's
+   * "skip if already active" branch is exercisable.
+   */
+  function setupToolsButtons(): Record<ToggleId, HTMLButtonElement> {
+    const ids: ToggleId[] = [
+      'tools-menu-terrain',
+      'tools-menu-labels',
+      'tools-menu-borders',
+      'tools-menu-autorotate',
+    ]
+    const out = {} as Record<ToggleId, HTMLButtonElement>
+    for (const id of ids) {
+      const btn = document.createElement('button')
+      btn.id = id
+      btn.click = vi.fn(() => {
+        btn.classList.add('active')
+      })
+      document.body.appendChild(btn)
+      out[id] = btn
+    }
+    return out
+  }
+
+  function makeContext() {
+    return {
+      catalog: fakeCatalog,
+      loadDataset: vi.fn().mockResolvedValue(undefined),
+      openChatWithQuery: vi.fn(),
+    }
+  }
+
+  it('clicks the Tools-menu buttons matching ?<name>=on params', async () => {
+    const buttons = setupToolsButtons()
+    history.replaceState({}, '', '/?terrain=on&borders=on')
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(buttons['tools-menu-terrain'].click).toHaveBeenCalledOnce()
+    expect(buttons['tools-menu-borders'].click).toHaveBeenCalledOnce()
+    expect(buttons['tools-menu-labels'].click).not.toHaveBeenCalled()
+    expect(buttons['tools-menu-autorotate'].click).not.toHaveBeenCalled()
+    expect(ctx.loadDataset).not.toHaveBeenCalled()
+    expect(ctx.openChatWithQuery).not.toHaveBeenCalled()
+  })
+
+  it('skips a Tools-menu button that is already active', async () => {
+    const buttons = setupToolsButtons()
+    buttons['tools-menu-labels'].classList.add('active')
+    history.replaceState({}, '', '/?labels=on')
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(buttons['tools-menu-labels'].click).not.toHaveBeenCalled()
+  })
+
+  it('loads a tour for a known slug', async () => {
+    setupToolsButtons()
+    history.replaceState({}, '', '/?tour=climate-futures')
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(ctx.loadDataset).toHaveBeenCalledOnce()
+    expect(ctx.loadDataset).toHaveBeenCalledWith(
+      'SAMPLE_TOUR_CLIMATE_FUTURES',
+    )
+  })
+
+  it('awaits the tour load before opening the chat panel', async () => {
+    // Composability check: ?tour=climate-futures&orbit=open must
+    // not race. The chat panel has to open AFTER the tour-engine
+    // setup pass, otherwise the tour's startup choreography can
+    // close it again.
+    setupToolsButtons()
+    history.replaceState({}, '', '/?tour=climate-futures&orbit=open')
+
+    const callOrder: string[] = []
+    let resolveLoad: () => void
+    const loadPromise = new Promise<void>((res) => {
+      resolveLoad = () => {
+        callOrder.push('loadDataset:resolved')
+        res()
+      }
+    })
+    const ctx = {
+      catalog: fakeCatalog,
+      loadDataset: vi.fn(() => {
+        callOrder.push('loadDataset:called')
+        return loadPromise
+      }),
+      openChatWithQuery: vi.fn(() => {
+        callOrder.push('openChat:called')
+      }),
+    }
+
+    const dispatchPromise = applyPosterDeepLinks(ctx)
+
+    // The dispatch must be parked on the load promise; chat must
+    // not have opened yet.
+    await Promise.resolve()
+    expect(callOrder).toEqual(['loadDataset:called'])
+    expect(ctx.openChatWithQuery).not.toHaveBeenCalled()
+
+    // Once the load resolves, the orchestrator should run chat next.
+    resolveLoad!()
+    await dispatchPromise
+    expect(callOrder).toEqual([
+      'loadDataset:called',
+      'loadDataset:resolved',
+      'openChat:called',
+    ])
+  })
+
+  it('skips ?tour= when ?dataset= is also set', async () => {
+    setupToolsButtons()
+    // The existing initial-load path handles ?dataset= already; we
+    // must not double-load on top of it.
+    history.replaceState(
+      {},
+      '',
+      '/?tour=climate-futures&dataset=INTERNAL_SOS_42',
+    )
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(ctx.loadDataset).not.toHaveBeenCalled()
+  })
+
+  it('opens the chat panel without a seed when ?orbit=open has no prompt', async () => {
+    setupToolsButtons()
+    history.replaceState({}, '', '/?orbit=open')
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(ctx.openChatWithQuery).toHaveBeenCalledOnce()
+    expect(ctx.openChatWithQuery).toHaveBeenCalledWith(undefined)
+  })
+
+  it('seeds the chat input when ?orbit=open&prompt=tour', async () => {
+    setupToolsButtons()
+    history.replaceState({}, '', '/?orbit=open&prompt=tour')
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(ctx.openChatWithQuery).toHaveBeenCalledWith(
+      'Can you recommend a tour for me?',
+    )
+  })
+
+  it('is a no-op when no poster params are present', async () => {
+    setupToolsButtons()
+    history.replaceState({}, '', '/')
+    const ctx = makeContext()
+
+    await applyPosterDeepLinks(ctx)
+
+    expect(ctx.loadDataset).not.toHaveBeenCalled()
+    expect(ctx.openChatWithQuery).not.toHaveBeenCalled()
   })
 })

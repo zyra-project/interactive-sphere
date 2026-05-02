@@ -90,18 +90,45 @@ export function parseInitialLayout(search: string): ViewLayout {
 }
 
 /**
- * Resolve a `?tour=` value (slug or direct ID) to a catalog dataset
- * ID, or null if no match. Slug lookup is case-insensitive; direct
- * ID lookup is exact (catalog IDs are uppercase).
+ * Resolve a `?tour=` value (slug, current ID, or legacy ID) to a
+ * catalog dataset ID — but only if the resolved row is actually a
+ * tour (`format === 'tour/json'`). Tour resolution mirrors the
+ * fallback semantics of `dataService.getDatasetById()`: try the
+ * canonical id first, then `legacyId` for older `INTERNAL_SOS_*`
+ * references that still appear in the wild. Slug lookup (the alias
+ * map) is case-insensitive; ID/legacy-ID lookups are exact.
+ *
+ * Returning null for non-tour formats is deliberate: `?tour=` is
+ * documented as a tour-only entry point, and silently loading an
+ * image or video dataset because its ID happened to match would
+ * give visitors a different experience from what the URL name
+ * advertises.
  */
 export function resolveTourId(
   raw: string | null,
   catalog: readonly Dataset[],
 ): string | null {
   if (!raw) return null
+  const isTour = (d: Dataset): boolean => d.format === 'tour/json'
+
+  // 1. Slug alias → catalog id (must resolve to a tour).
   const aliased = TOUR_ALIASES[raw.toLowerCase()]
-  if (aliased && catalog.some((d) => d.id === aliased)) return aliased
-  if (catalog.some((d) => d.id === raw)) return raw
+  if (aliased) {
+    const match = catalog.find((d) => d.id === aliased && isTour(d))
+    if (match) return match.id
+  }
+
+  // 2. Direct id match (must be a tour).
+  const direct = catalog.find((d) => d.id === raw && isTour(d))
+  if (direct) return direct.id
+
+  // 3. Legacy id fallback. dataService.getDatasetById() falls back
+  //    to legacyId so older INTERNAL_SOS_* references keep working;
+  //    do the same here so ?tour=<legacy_id> stays consistent with
+  //    how the rest of the app resolves dataset IDs.
+  const legacy = catalog.find((d) => d.legacyId === raw && isTour(d))
+  if (legacy) return legacy.id
+
   return null
 }
 
@@ -123,15 +150,21 @@ export function resolveOrbitPrompt(raw: string | null): string | undefined {
  * Order:
  *   1. `?tour=` — load the requested tour. Skipped if `?dataset=`
  *      is also set, since the existing initial-load path will have
- *      handled that and a second load would clobber it.
+ *      handled that and a second load would clobber it. The load
+ *      is awaited so subsequent dispatches don't race with the
+ *      tour engine's startup choreography (which can close any
+ *      panel that's already open).
  *   2. View toggles (`?terrain=`, `?labels=`, `?borders=`,
  *      `?rotate=`) — clicked through the Tools-menu buttons so the
  *      analytics emit + a11y announce + button-state UI all stay in
  *      sync.
  *   3. `?orbit=open` — open the chat panel, optionally seeded with
- *      a recommendation prompt.
+ *      a recommendation prompt. Runs last so the tour's setup pass
+ *      can't dismiss the panel after we open it.
  */
-export function applyPosterDeepLinks(ctx: PosterDeepLinkContext): void {
+export async function applyPosterDeepLinks(
+  ctx: PosterDeepLinkContext,
+): Promise<void> {
   const params = new URLSearchParams(window.location.search)
 
   // 1. Tour. `?dataset=` takes precedence — the existing initial-load
@@ -141,10 +174,12 @@ export function applyPosterDeepLinks(ctx: PosterDeepLinkContext): void {
   if (tour && !datasetParam) {
     const id = resolveTourId(tour, ctx.catalog)
     if (id) {
-      logger.debug('[PosterDeepLinks] loadTour:', id, '(from "%s")', tour)
-      void ctx.loadDataset(id)
+      logger.debug(`[PosterDeepLinks] loadTour: ${id} (from "${tour}")`)
+      await ctx.loadDataset(id)
     } else {
-      logger.warn('[PosterDeepLinks] unknown tour:', tour)
+      // Conservative on unknowns: silent debug-level no-op, not a
+      // production warning. Drifted bookmarks shouldn't yell.
+      logger.debug(`[PosterDeepLinks] unknown tour slug: "${tour}"`)
     }
   }
 
@@ -181,6 +216,7 @@ function clickToolsMenuIfOff(
       btn.click()
     }
   } else {
-    logger.warn(`[PosterDeepLinks] toggle button missing: ${buttonId}`)
+    // Conservative on unknowns: silent debug-level no-op.
+    logger.debug(`[PosterDeepLinks] toggle button missing: ${buttonId}`)
   }
 }

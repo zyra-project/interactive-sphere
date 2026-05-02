@@ -353,8 +353,10 @@ class InteractiveSphere {
     // after the catalog is loaded and the Tools menu is wired so the
     // dispatch can route through canonical APIs and button click
     // handlers without any race risk. ?layout= and ?dataset= are
-    // already handled by the existing initial-load path above.
-    applyPosterDeepLinks({
+    // already handled by the existing initial-load path above. The
+    // call is awaited so a ?tour= load completes before subsequent
+    // ?orbit=open / view-toggle dispatches run on top of it.
+    await applyPosterDeepLinks({
       catalog: this.appState.datasets,
       loadDataset: (id) => this.loadDataset(id, 'url'),
       openChatWithQuery: (query) => this.openChatWithQuery(query),
