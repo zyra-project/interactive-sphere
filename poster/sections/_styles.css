@@ -1499,3 +1499,419 @@ code, kbd, pre {
   color: var(--neutral-700);
   margin: 0;
 }
+
+/* =========================================================
+   §8 Immersive — AR/VR architecture cards, per-frame loop,
+   Earth-mode diptych, captures grid, compatibility table,
+   reach-beyond-Quest callout, headset CTA
+   ========================================================= */
+.xr__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.xr__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.xr__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.xr__lede code,
+.xr__stack-card code,
+.xr__loop-step code,
+.xr__compat-table code,
+.xr__reach code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.xr__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.xr__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.xr__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.xr__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .xr__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.xr__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.xr__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Per-frame loop — vertical numbered steps */
+.xr__loop-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  counter-reset: xr-step;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.xr__loop-step {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 0.85rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  align-items: start;
+  counter-increment: xr-step;
+}
+
+.xr__loop-step::before {
+  content: counter(xr-step);
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 0.3rem 0;
+  align-self: stretch;
+}
+
+.xr__loop-step--ar {
+  border-left: 3px solid var(--terra-accent);
+}
+
+.xr__loop-name {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  display: block;
+  margin: 0;
+}
+
+.xr__loop-desc {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.45;
+  margin: 0.15rem 0 0;
+}
+
+.xr__loop-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+  border: 1px solid var(--terra-accent);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+/* Earth-modes diptych (no dataset · with dataset) */
+.xr__earth-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+
+.xr__earth-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.xr__earth-mode svg {
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+}
+
+.xr__earth-mode h4 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--cable-blue);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.xr__earth-mode p {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .xr__earth-modes {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Captures grid — placeholders for Quest screenshots / MP4s */
+.xr__captures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+
+.xr__capture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.xr__capture-ph {
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  aspect-ratio: 16 / 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neutral-600);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 0.85rem;
+  line-height: 1.5;
+}
+
+.xr__capture-caption {
+  font-size: 0.85rem;
+  color: var(--neutral-700);
+  margin: 0;
+  text-align: center;
+}
+
+.xr__captures-note {
+  font-size: 0.8rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  margin: 0 0 2.5rem;
+}
+
+@media (max-width: 700px) {
+  .xr__captures {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Compatibility table */
+.xr__compat-wrapper {
+  overflow-x: auto;
+  margin: 0 0 1.5rem;
+}
+
+.xr__compat-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.xr__compat-table th,
+.xr__compat-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--neutral-200);
+  vertical-align: top;
+}
+
+.xr__compat-table thead th {
+  background: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  font-weight: 700;
+}
+
+.xr__compat-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.xr__yes {
+  color: var(--leaf-green);
+  font-weight: 700;
+}
+
+.xr__no {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.xr__pending {
+  color: var(--cable-blue);
+  font-weight: 700;
+}
+
+/* Reach-beyond-Quest callout (model-viewer tile placeholder) */
+.xr__reach {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 2.5rem;
+}
+
+.xr__reach .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.xr__reach h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.xr__reach p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.5rem;
+}
+
+.xr__reach p:last-child {
+  margin-bottom: 0;
+}
+
+.xr__reach-ph {
+  margin-top: 1rem;
+  background: white;
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  line-height: 1.55;
+}
+
+/* Headset CTA — open in new tab to launch XR session */
+.xr__cta {
+  background: var(--navy);
+  color: var(--neutral-100);
+  border-radius: 10px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.xr__cta-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0;
+}
+
+.xr__cta-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+
+.xr__cta-body {
+  font-size: 0.95rem;
+  color: var(--mist);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.xr__cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--terra-accent);
+  border: 0;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.6rem 1.1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.xr__cta-btn:hover {
+  background: #6ab8ff;
+  text-decoration: none;
+}

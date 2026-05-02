@@ -1515,6 +1515,422 @@ code, kbd, pre {
   color: var(--neutral-700);
   margin: 0;
 }
+
+/* =========================================================
+   §8 Immersive — AR/VR architecture cards, per-frame loop,
+   Earth-mode diptych, captures grid, compatibility table,
+   reach-beyond-Quest callout, headset CTA
+   ========================================================= */
+.xr__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.xr__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.xr__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.xr__lede code,
+.xr__stack-card code,
+.xr__loop-step code,
+.xr__compat-table code,
+.xr__reach code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.xr__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.xr__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.xr__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.xr__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .xr__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.xr__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.xr__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Per-frame loop — vertical numbered steps */
+.xr__loop-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  counter-reset: xr-step;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.xr__loop-step {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 0.85rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  align-items: start;
+  counter-increment: xr-step;
+}
+
+.xr__loop-step::before {
+  content: counter(xr-step);
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 0.3rem 0;
+  align-self: stretch;
+}
+
+.xr__loop-step--ar {
+  border-left: 3px solid var(--terra-accent);
+}
+
+.xr__loop-name {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  display: block;
+  margin: 0;
+}
+
+.xr__loop-desc {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.45;
+  margin: 0.15rem 0 0;
+}
+
+.xr__loop-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+  border: 1px solid var(--terra-accent);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+/* Earth-modes diptych (no dataset · with dataset) */
+.xr__earth-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+
+.xr__earth-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.xr__earth-mode svg {
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+}
+
+.xr__earth-mode h4 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--cable-blue);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.xr__earth-mode p {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .xr__earth-modes {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Captures grid — placeholders for Quest screenshots / MP4s */
+.xr__captures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+
+.xr__capture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.xr__capture-ph {
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  aspect-ratio: 16 / 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neutral-600);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 0.85rem;
+  line-height: 1.5;
+}
+
+.xr__capture-caption {
+  font-size: 0.85rem;
+  color: var(--neutral-700);
+  margin: 0;
+  text-align: center;
+}
+
+.xr__captures-note {
+  font-size: 0.8rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  margin: 0 0 2.5rem;
+}
+
+@media (max-width: 700px) {
+  .xr__captures {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Compatibility table */
+.xr__compat-wrapper {
+  overflow-x: auto;
+  margin: 0 0 1.5rem;
+}
+
+.xr__compat-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.xr__compat-table th,
+.xr__compat-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--neutral-200);
+  vertical-align: top;
+}
+
+.xr__compat-table thead th {
+  background: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  font-weight: 700;
+}
+
+.xr__compat-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.xr__yes {
+  color: var(--leaf-green);
+  font-weight: 700;
+}
+
+.xr__no {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.xr__pending {
+  color: var(--cable-blue);
+  font-weight: 700;
+}
+
+/* Reach-beyond-Quest callout (model-viewer tile placeholder) */
+.xr__reach {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 2.5rem;
+}
+
+.xr__reach .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.xr__reach h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.xr__reach p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.5rem;
+}
+
+.xr__reach p:last-child {
+  margin-bottom: 0;
+}
+
+.xr__reach-ph {
+  margin-top: 1rem;
+  background: white;
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  line-height: 1.55;
+}
+
+/* Headset CTA — open in new tab to launch XR session */
+.xr__cta {
+  background: var(--navy);
+  color: var(--neutral-100);
+  border-radius: 10px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.xr__cta-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0;
+}
+
+.xr__cta-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+
+.xr__cta-body {
+  font-size: 0.95rem;
+  color: var(--mist);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.xr__cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--terra-accent);
+  border: 0;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.6rem 1.1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.xr__cta-btn:hover {
+  background: #6ab8ff;
+  text-decoration: none;
+}
   </style>
 </head>
 <body>
@@ -2546,11 +2962,269 @@ code, kbd, pre {
 
   <!-- sec-08-immersive.html -->
     <section id="sec-8-immersive"
-             class="section section--alt section--placeholder fade-in"
+             class="section section--alt fade-in"
              aria-labelledby="sec-8-title">
-      <div class="container">
-        <h2 id="sec-8-title">8. Immersive — AR & VR via WebXR</h2>
-        <p>Section content lands in P7.</p>
+      <div class="xr__container">
+        <p class="section__eyebrow">§8 · Immersive — AR &amp; VR via WebXR</p>
+        <h2 id="sec-8-title" class="xr__title">Two renderers in one DOM. The 2D experience is unchanged when WebXR is absent.</h2>
+        <p class="xr__lede">
+          MapLibre's WebGL canvas can't be reused inside an XR session — its render loop, projection matrices, and viewport are owned. So immersive mode is a parallel <strong>Three.js</strong> renderer, attached to its own canvas, lazy-loaded only on the first <em>Enter AR</em> / <em>Enter VR</em> tap. <code>renderer.xr.setSession()</code> takes over; on session-end the 2D canvas resumes. Browsers without <code>navigator.xr</code> never load the Three.js chunk and see no UI change.
+        </p>
+
+        <div class="xr__stack-grid">
+          <article class="xr__stack-card">
+            <h3>vrSession.ts</h3>
+            <p>Session lifecycle. <code>enterImmersive('ar' | 'vr')</code> requests the session, builds a Three.js renderer + camera, calls <code>renderer.xr.setSession()</code>, drives a separate XR render loop via <code>XRSession.requestAnimationFrame</code>, and yields back to MapLibre on session-end.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3>photorealEarth.ts + vrScene.ts</h3>
+            <p>The Earth stack — diffuse, night lights, specular, atmosphere, clouds, sun, ground shadow — with day/night shading gated on the real UTC sun position. Same factory used on <code>/orbit</code>; here it provides the empty-state planet when no dataset is loaded.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3>vrInteraction.ts</h3>
+            <p>Controller input. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin inertia. Raycast hit routing for the floating HUD's UV regions and the AR Place button.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3>vrPlacement.ts</h3>
+            <p>AR-only. WebXR <code>hit-test</code> + reticle + Place button. Anchors the globe to a real surface; persistent-handle UUIDs in <code>localStorage</code> keep it in the same physical spot across sessions on Quest (Meta Anchors extension).</p>
+          </article>
+        </div>
+
+        <h3 class="xr__subhead">Earth-as-planet · Data-as-surface</h3>
+        <p class="xr__subhead-hint">
+          With no dataset loaded, the photoreal Earth stack runs in full. With a dataset, every Earth-specific decoration (atmosphere, clouds, night lights, specular) is hidden so the data reads uniformly across the sphere. Same camera, same controller, two visual modes.
+        </p>
+
+        <div class="xr__earth-modes">
+          <figure class="xr__earth-mode">
+            <svg viewBox="0 0 200 200" role="img" aria-label="Photoreal Earth — diffuse + night lights + specular + atmosphere + clouds + sun">
+              <defs>
+                <radialGradient id="atm" cx="50%" cy="50%" r="58%">
+                  <stop offset="78%" stop-color="#4da6ff" stop-opacity="0" />
+                  <stop offset="100%" stop-color="#4da6ff" stop-opacity="0.55" />
+                </radialGradient>
+                <radialGradient id="day" cx="38%" cy="36%" r="65%">
+                  <stop offset="0%" stop-color="#4d7eb8" />
+                  <stop offset="60%" stop-color="#1e466b" />
+                  <stop offset="100%" stop-color="#0a1d34" />
+                </radialGradient>
+              </defs>
+              <circle cx="100" cy="100" r="92" fill="url(#atm)" />
+              <circle cx="100" cy="100" r="78" fill="url(#day)" />
+              <!-- Continent silhouettes (illustrative) -->
+              <path d="M 60 78 Q 78 62 92 70 T 110 88 Q 102 100 88 96 T 60 78 Z" fill="#3a6e35" opacity="0.72" />
+              <path d="M 122 92 Q 138 84 142 100 T 132 124 Q 118 122 118 108 Z" fill="#3a6e35" opacity="0.72" />
+              <path d="M 76 130 Q 92 124 100 138 T 88 150 Q 78 146 76 130 Z" fill="#3a6e35" opacity="0.72" />
+              <!-- Specular sun glint (illustrative) -->
+              <ellipse cx="78" cy="80" rx="14" ry="6" fill="white" opacity="0.18" transform="rotate(-30 78 80)" />
+              <!-- Night-side hint -->
+              <path d="M 100 22 A 78 78 0 0 1 100 178 A 50 78 0 0 0 100 22 Z" fill="#000" opacity="0.55" />
+              <!-- Tiny city-light dots on the night side -->
+              <circle cx="138" cy="92" r="0.9" fill="#fff5b8" />
+              <circle cx="142" cy="118" r="0.8" fill="#fff5b8" />
+              <circle cx="148" cy="106" r="0.7" fill="#fff5b8" />
+              <circle cx="134" cy="138" r="0.7" fill="#fff5b8" />
+            </svg>
+            <h4>Earth-as-planet</h4>
+            <p>No dataset · photoreal stack runs in full</p>
+          </figure>
+
+          <figure class="xr__earth-mode">
+            <svg viewBox="0 0 200 200" role="img" aria-label="Data-textured globe — uniform dataset surface, decoration hidden">
+              <defs>
+                <radialGradient id="data" cx="50%" cy="50%" r="60%">
+                  <stop offset="0%" stop-color="#ffd966" />
+                  <stop offset="40%" stop-color="#e07b3f" />
+                  <stop offset="80%" stop-color="#7d2f3a" />
+                  <stop offset="100%" stop-color="#451f33" />
+                </radialGradient>
+              </defs>
+              <circle cx="100" cy="100" r="78" fill="url(#data)" />
+              <!-- Subtle data swirl lines for visual character -->
+              <path d="M 30 100 Q 100 60 170 100" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none" />
+              <path d="M 30 110 Q 100 80 170 110" stroke="rgba(255,255,255,0.14)" stroke-width="1" fill="none" />
+              <path d="M 30 120 Q 100 100 170 120" stroke="rgba(255,255,255,0.10)" stroke-width="1" fill="none" />
+              <path d="M 30 130 Q 100 130 170 130" stroke="rgba(255,255,255,0.08)" stroke-width="1" fill="none" />
+              <!-- Subtle rim shading -->
+              <circle cx="100" cy="100" r="78" fill="none" stroke="#000" stroke-opacity="0.18" stroke-width="2" />
+            </svg>
+            <h4>Data-as-surface</h4>
+            <p>Dataset loaded · decoration hidden so the data reads uniformly</p>
+          </figure>
+        </div>
+
+        <h3 class="xr__subhead">The per-frame loop</h3>
+        <p class="xr__subhead-hint">
+          The XR render loop runs in this order every frame. Steps marked <em>AR only</em> are skipped in VR sessions. Order matters — anchor-pose sync (step 2) must run before scene update (step 6) so the atmosphere and sun track the placed globe.
+        </p>
+
+        <ol class="xr__loop-steps">
+          <li class="xr__loop-step xr__loop-step--ar">
+            <div>
+              <span class="xr__loop-name">Hit-test</span>
+              <span class="xr__loop-tag">AR only</span>
+              <p class="xr__loop-desc">Query the WebXR hit-test source for surface intersections. Drives the placement reticle.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step xr__loop-step--ar">
+            <div>
+              <span class="xr__loop-name">Anchor-pose sync</span>
+              <span class="xr__loop-tag">AR only</span>
+              <p class="xr__loop-desc">If the globe is anchored, read the anchor's current pose and write it into <code>globe.position</code>.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Dataset texture swap</span>
+              <p class="xr__loop-desc">Idempotent no-op in steady state; updates if the dataset changed since the last frame. Reuses the existing <code>&lt;video&gt;</code> via <code>THREE.VideoTexture</code> or the decoded <code>HTMLImageElement</code> — zero re-fetch.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">HUD state update</span>
+              <p class="xr__loop-desc">Debounced. Updates the in-VR floating panel's title, play/pause label, and exit-VR icon as the underlying state changes.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Interaction update</span>
+              <p class="xr__loop-desc">Controller input — rotation, zoom, inertia. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Scene update</span>
+              <p class="xr__loop-desc">Earth-stack tracking — shadow, atmosphere, sun positions follow <code>globe.position</code>. Day/night shader updated against real UTC.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">HUD + Place button position sync</span>
+              <p class="xr__loop-desc">Floating UI follows the globe so the HUD never drifts away from the data the user is looking at.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Loading-scene animation</span>
+              <p class="xr__loop-desc">Orbiting rings + progress bar + status text on the 3D loading scene. Fades out when the dataset is ready.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name"><code>renderer.render(scene, camera)</code></span>
+              <p class="xr__loop-desc">Submit the frame. WebGL2 + the XR session's compositor handle the per-eye projection.</p>
+            </div>
+          </li>
+        </ol>
+
+        <h3 class="xr__subhead">From a Quest</h3>
+        <p class="xr__subhead-hint">
+          Real captures from a Quest 3 are the visual centrepiece — anchored globes on real desks, room-scale photoreal Earth, the in-VR HUD. They drop in alongside the rest of the asset follow-up.
+        </p>
+
+        <div class="xr__captures">
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">AR · globe anchored on a real desk<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">Place the planet on the table next to you. Walk around it.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">AR · cross-session persistence<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">Persistent anchors keep the globe in the same spot the next time you open the app.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">VR · room-scale photoreal Earth<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">PCVR fallback when AR isn't supported. Same Earth stack.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">In-VR HUD floating panel<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">CanvasTexture-backed floating UI. Title, play/pause, exit-VR.</p>
+          </figure>
+        </div>
+        <p class="xr__captures-note">Placeholders. Real captures swap in via a follow-up commit when they're ready.</p>
+
+        <h3 class="xr__subhead">Where it works</h3>
+        <p class="xr__subhead-hint">
+          WebXR support is a moving target. Apple has not shipped a WebXR implementation on iOS Safari, so iPhones can't enter the immersive globe via the same code path that Quest does. The model-viewer fallback below closes that gap (without porting the full app).
+        </p>
+
+        <div class="xr__compat-wrapper">
+          <table class="xr__compat-table">
+            <thead>
+              <tr>
+                <th scope="col">Platform</th>
+                <th scope="col"><code>immersive-ar</code></th>
+                <th scope="col"><code>immersive-vr</code></th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Meta Quest 2 / 3 / Pro</td>
+                <td><span class="xr__yes">✓</span></td>
+                <td><span class="xr__yes">✓</span></td>
+                <td>The primary target. AR-first button.</td>
+              </tr>
+              <tr>
+                <td>Android Chrome (Pixel + recent Samsung)</td>
+                <td><span class="xr__yes">✓</span></td>
+                <td><span class="xr__no">—</span></td>
+                <td>ARCore-backed. Phone AR, not headset.</td>
+              </tr>
+              <tr>
+                <td>PCVR (SteamVR, Index, etc.)</td>
+                <td><span class="xr__no">—</span></td>
+                <td><span class="xr__yes">✓</span></td>
+                <td>Falls back to <code>immersive-vr</code> when <code>immersive-ar</code> is unsupported.</td>
+              </tr>
+              <tr>
+                <td>iOS Safari (any iPhone)</td>
+                <td><span class="xr__no">✗</span></td>
+                <td><span class="xr__no">✗</span></td>
+                <td>Apple has not shipped WebXR. <code>navigator.xr</code> is undefined.</td>
+              </tr>
+              <tr>
+                <td>Other desktop browsers</td>
+                <td><span class="xr__no">—</span></td>
+                <td><span class="xr__no">—</span></td>
+                <td>The XR button hides cleanly. The 2D experience is unchanged.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <aside class="xr__reach" role="note">
+          <p class="section__eyebrow">Reach beyond the headset</p>
+          <h3>Tap to place Earth on your desk — from any phone</h3>
+          <p>
+            For visitors without a Quest, the immersive part of the poster shouldn't be a dead end. Google's <code>&lt;model-viewer&gt;</code> web component handles AR Quick Look on iOS (<code>.usdz</code>) and Scene Viewer on Android (<code>.glb</code>) with a single tag — no app install, no permission prompt beyond what the OS already shows. The Earth model gets exported once from <code>photorealEarth.ts</code> and committed under <code>poster/assets/xr/models/</code>.
+          </p>
+          <p>
+            Honest scope: this is a separate code path from the WebXR session. Visitors get to <em>place a 3D Earth on their desk</em> via OS-native AR — not the full TerraViz globe with controllers and datasets. The asset export + tile wiring lands in a follow-up; the placeholder below shows where it slots in.
+          </p>
+
+          <div class="xr__reach-ph">
+            <code>&lt;model-viewer&gt;</code> tile · "Tap to place Earth"<br>
+            terraviz-earth.glb (Scene Viewer · Android) + terraviz-earth.usdz (AR Quick Look · iOS)<br>
+            asset export and inline embed land in a follow-up commit
+          </div>
+        </aside>
+
+        <div class="xr__cta">
+          <p class="xr__cta-eyebrow">Try it</p>
+          <h3 class="xr__cta-title">Open TerraViz on your headset</h3>
+          <p class="xr__cta-body">
+            WebXR sessions can't reliably launch from inside an embedded iframe — the browser needs the page to be the top-level document. Open the live app on a Quest 2 / 3 / Pro browser (or any WebXR-capable PCVR rig) and the <em>Enter AR</em> / <em>Enter VR</em> button appears in the top-right.
+          </p>
+          <a class="xr__cta-btn"
+             href="https://terraviz.zyra-project.org/"
+             target="_blank"
+             rel="noopener">
+            Open terraviz.zyra-project.org →
+          </a>
+        </div>
       </div>
     </section>
 
