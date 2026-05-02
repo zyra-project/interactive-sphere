@@ -3385,7 +3385,13 @@ code, kbd, pre {
 
     // Scroll-fade reveal.
     // No-op under prefers-reduced-motion; falls back to immediate
-    // reveal if IntersectionObserver isn't available.
+    // reveal if IntersectionObserver isn't available. Threshold
+    // is 0 (any intersection) rather than a fractional value so
+    // very tall sections — which can never satisfy a fractional
+    // threshold on small viewports — still reveal as soon as the
+    // user scrolls into them. A safety timeout reveals anything
+    // still hidden after 4 seconds, in case the observer misses
+    // for any other reason.
     (function () {
       'use strict';
       var elements = document.querySelectorAll('.fade-in');
@@ -3395,10 +3401,14 @@ code, kbd, pre {
         window.matchMedia &&
         window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+      function revealAll() {
         for (var i = 0; i < elements.length; i++) {
           elements[i].classList.add('is-visible');
         }
+      }
+
+      if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+        revealAll();
         return;
       }
 
@@ -3409,9 +3419,22 @@ code, kbd, pre {
             io.unobserve(entry.target);
           }
         });
-      }, { threshold: 0.12, rootMargin: '0px 0px -10% 0px' });
+      }, { threshold: 0, rootMargin: '0px 0px -5% 0px' });
 
       elements.forEach(function (el) { io.observe(el); });
+
+      // Safety net: anything still hidden after 4s gets revealed
+      // unconditionally. Covers tall sections, observer flakes,
+      // and the rare case where layout settles after the IO has
+      // already done its initial pass.
+      window.setTimeout(function () {
+        elements.forEach(function (el) {
+          if (!el.classList.contains('is-visible')) {
+            el.classList.add('is-visible');
+            io.unobserve(el);
+          }
+        });
+      }, 4000);
     })();
 
     // Live demo iframes — single-active-instance manager.
