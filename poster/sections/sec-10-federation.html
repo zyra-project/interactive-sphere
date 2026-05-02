@@ -5,13 +5,13 @@
         <p class="section__eyebrow">§10 · Federated catalog &amp; custom backend</p>
         <h2 id="sec-10-title" class="fed__title">Run your own. Federate with peers. Keep the data at home.</h2>
         <p class="fed__lede">
-          The TerraViz SPA can read its catalog from the public NOAA SOS source <em>or</em> from a self-hosted node-backend on Cloudflare. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the SPA's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.
+          The TerraViz app can read its catalog from the public NOAA SOS source <em>or</em> from a self-hosted node-backend on Cloudflare. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.
         </p>
 
         <div class="fed__stack-grid">
           <article class="fed__stack-card">
             <h3>Pages Functions · /api/v1/*</h3>
-            <p>The HTTP surface — <code>catalog</code>, <code>search</code>, <code>featured</code>, <code>publish</code>, federation pull. Same Cloudflare account as the SPA, same deploy mechanism, same edge.</p>
+            <p>The HTTP surface — <code>catalog</code>, <code>search</code>, <code>featured</code>, <code>publish</code>, federation pull. Same Cloudflare account as the app, same deploy mechanism, same edge.</p>
           </article>
 
           <article class="fed__stack-card">
@@ -38,7 +38,7 @@
         <figure class="fed__arch">
           <svg viewBox="0 0 760 460"
                role="img"
-               aria-label="Federation architecture diagram. The TerraViz SPA fetches /api/v1/catalog from a local node. The local node is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine, and KV cache. The local node advertises itself at /.well-known/terraviz.json with a signed identity. Animated dashed arrows fan out from the local node to three peer nodes (NOAA-GSL, a university deployment, and a self-hosted instance) — each peer sends back its own catalog rows as a federation pull.">
+               aria-label="Federation architecture diagram. The TerraViz app fetches /api/v1/catalog from a local node. The local node is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine, and KV cache. The local node advertises itself at /.well-known/terraviz.json with a signed identity. Animated dashed arrows fan out from the local node to three peer nodes (NOAA-GSL, a university deployment, and a self-hosted instance) — each peer sends back its own catalog rows as a federation pull.">
             <defs>
               <marker id="arrow-fed" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
                 <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
@@ -62,10 +62,10 @@
               </style>
             </defs>
 
-            <!-- TerraViz SPA at top -->
+            <!-- TerraViz app at top -->
             <g transform="translate(320,10)">
               <rect class="fd-box-final" x="0" y="0" width="120" height="40" rx="8" />
-              <text class="fd-text fd-text-light" x="60" y="25" text-anchor="middle">TerraViz SPA</text>
+              <text class="fd-text fd-text-light" x="60" y="25" text-anchor="middle">TerraViz app</text>
             </g>
             <path class="fd-arrow-accent" d="M380,50 L380,90" marker-end="url(#arrow-fed-accent)" />
             <text class="fd-mono-accent" x="395" y="74" text-anchor="start">fetch /api/v1/catalog</text>
@@ -134,7 +134,7 @@
             <text class="fd-mono-mist" x="380" y="436" text-anchor="middle">data sovereign — peers exchange metadata + pointers, never raw assets</text>
           </svg>
           <figcaption class="fed__arch-caption">
-            SPA → /API/V1 → D1 + R2 + AE + KV → /.WELL-KNOWN/TERRAVIZ.JSON → PEER NODES (FEDERATION PULL)
+            APP → /API/V1 → D1 + R2 + AE + KV → /.WELL-KNOWN/TERRAVIZ.JSON → PEER NODES (FEDERATION PULL)
           </figcaption>
         </figure>
 
@@ -154,7 +154,7 @@
               <li>Publisher dev-bypass (<code>.dev.vars</code>) for local iteration</li>
               <li><code>npm run gen:node-key</code> generates the Ed25519 identity</li>
               <li><code>/.well-known/terraviz.json</code> manifest endpoint</li>
-              <li>SPA can flip from SOS S3 to local node via <code>VITE_CATALOG_SOURCE</code></li>
+              <li>app can flip from SOS S3 to local node via <code>VITE_CATALOG_SOURCE</code></li>
             </ul>
           </article>
 
@@ -189,7 +189,7 @@
 <span class="fed__code-line"><span class="fed__code-comment"># 4. Start the Pages Functions runtime.</span></span>
 <span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run dev:functions            </span><span class="fed__code-comment"># → http://localhost:8788</span></span>
 <span class="fed__code-line"></span>
-<span class="fed__code-line"><span class="fed__code-comment"># 5. (Optional) Run the SPA against the local backend.</span></span>
+<span class="fed__code-line"><span class="fed__code-comment"># 5. (Optional) Run the app against the local backend.</span></span>
 <span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">cp .env.example .env.local       </span><span class="fed__code-comment"># VITE_CATALOG_SOURCE=node</span></span>
 <span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run dev</span></span>
 <span class="fed__code-line"></span>
