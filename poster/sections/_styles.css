@@ -832,3 +832,271 @@ code, kbd, pre {
   font-style: italic;
   max-width: 760px;
 }
+
+/* =========================================================
+   §6 Tours — pillars, task strip, task table, callout,
+   forward-direction cards, and the take-a-tour bar
+   ========================================================= */
+.tours__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.tours__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.tours__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.tours__lede code,
+.tours__pillar code,
+.tours__callout code,
+.tours__forward-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.tours__pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.tours__pillar {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 1.2rem 1.3rem;
+}
+
+.tours__pillar h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.tours__pillar p {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0;
+}
+
+.tours__pillar--emph {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.08), rgba(77, 166, 255, 0));
+  border-color: var(--terra-accent);
+  border-left: 3px solid var(--terra-accent);
+}
+
+@media (max-width: 900px) {
+  .tours__pillars {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tours__strip {
+  margin: 0 0 2.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  overflow-x: auto;
+}
+
+.tours__strip svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.tours__strip-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.04em;
+}
+
+.tours__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.tours__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+}
+
+.tours__table-wrapper {
+  overflow-x: auto;
+  margin: 0 0 2rem;
+}
+
+.tours__table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.tours__table th,
+.tours__table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--neutral-200);
+  vertical-align: top;
+}
+
+.tours__table thead th {
+  background: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  font-weight: 700;
+}
+
+.tours__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tours__table tbody tr:hover {
+  background: var(--neutral-50);
+}
+
+.tours__table code {
+  font-size: 0.88em;
+  color: var(--cable-blue);
+}
+
+.tours__table td:first-child {
+  white-space: nowrap;
+}
+
+.tours__callout {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 4px solid var(--ocean-blue);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.tours__callout p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+}
+
+.tours__forward {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.tours__forward-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.tours__forward-card--next {
+  border-color: var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.05), rgba(77, 166, 255, 0));
+}
+
+.tours__forward-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+}
+
+.tours__forward-card--next .tours__forward-tag {
+  color: var(--cable-blue);
+}
+
+.tours__forward-card h4 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.tours__forward-card p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.7rem;
+}
+
+.tours__forward-honest {
+  font-size: 0.78rem !important;
+  font-style: italic;
+  color: var(--neutral-500) !important;
+  margin: 0.5rem 0 0 !important;
+}
+
+@media (max-width: 800px) {
+  .tours__forward {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tours__refs {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  margin: 1.25rem 0 0;
+}
+
+/* Distinct CTA variant of the existing .effect-toggle so the
+   "Ask Orbit" launcher reads as a primary action rather than
+   a sibling of the deep-link buttons. */
+.effect-toggle--cta {
+  background: var(--cable-blue);
+  border-color: var(--cable-blue);
+  color: white;
+}
+.effect-toggle--cta:hover,
+.effect-toggle--cta:focus-visible {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: white;
+}
+.effect-toggle--cta.is-active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: white;
+}
