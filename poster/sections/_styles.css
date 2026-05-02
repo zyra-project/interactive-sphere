@@ -2210,3 +2210,198 @@ code, kbd, pre {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   §9 Multi-platform — branching diagram, platform matrix,
+   on-device LLM forward callout
+   ========================================================= */
+.platforms__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.platforms__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.platforms__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.platforms__lede code,
+.platforms__row code,
+.platforms__forward code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.platforms__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.platforms__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Branching diagram */
+.platforms__branch {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.platforms__branch svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.platforms__branch-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Platform matrix — one row per target */
+.platforms__matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 0 0 2.5rem;
+}
+
+.platforms__row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 1rem 1.25rem;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 0.95rem 1.1rem;
+}
+
+.platforms__row--shipping {
+  border-left: 3px solid var(--leaf-green);
+}
+
+.platforms__row--inflight {
+  border-left: 3px solid var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.04), white);
+}
+
+.platforms__row-target {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  letter-spacing: 0.02em;
+}
+
+.platforms__row-target small {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--neutral-600);
+  letter-spacing: 0;
+  text-transform: uppercase;
+  margin-top: 0.15rem;
+}
+
+.platforms__row-body {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.platforms__row-status {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.platforms__row-status--shipping {
+  background: rgba(44, 103, 12, 0.12);
+  color: var(--leaf-green);
+}
+
+.platforms__row-status--inflight {
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+}
+
+@media (max-width: 700px) {
+  .platforms__row {
+    grid-template-columns: 1fr;
+  }
+  .platforms__row-status {
+    justify-self: start;
+  }
+}
+
+/* Forward callout for on-device LLM */
+.platforms__forward {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.platforms__forward .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.platforms__forward h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.platforms__forward p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.6rem;
+}
+
+.platforms__forward p:last-child {
+  margin-bottom: 0;
+}
+
+.platforms__forward strong {
+  color: var(--neutral-900);
+}

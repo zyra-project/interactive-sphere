@@ -2226,6 +2226,201 @@ code, kbd, pre {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   §9 Multi-platform — branching diagram, platform matrix,
+   on-device LLM forward callout
+   ========================================================= */
+.platforms__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.platforms__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.platforms__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.platforms__lede code,
+.platforms__row code,
+.platforms__forward code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.platforms__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.platforms__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Branching diagram */
+.platforms__branch {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.platforms__branch svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.platforms__branch-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Platform matrix — one row per target */
+.platforms__matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 0 0 2.5rem;
+}
+
+.platforms__row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 1rem 1.25rem;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 0.95rem 1.1rem;
+}
+
+.platforms__row--shipping {
+  border-left: 3px solid var(--leaf-green);
+}
+
+.platforms__row--inflight {
+  border-left: 3px solid var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.04), white);
+}
+
+.platforms__row-target {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  letter-spacing: 0.02em;
+}
+
+.platforms__row-target small {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--neutral-600);
+  letter-spacing: 0;
+  text-transform: uppercase;
+  margin-top: 0.15rem;
+}
+
+.platforms__row-body {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.platforms__row-status {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.platforms__row-status--shipping {
+  background: rgba(44, 103, 12, 0.12);
+  color: var(--leaf-green);
+}
+
+.platforms__row-status--inflight {
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+}
+
+@media (max-width: 700px) {
+  .platforms__row {
+    grid-template-columns: 1fr;
+  }
+  .platforms__row-status {
+    justify-self: start;
+  }
+}
+
+/* Forward callout for on-device LLM */
+.platforms__forward {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.platforms__forward .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.platforms__forward h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.platforms__forward p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.6rem;
+}
+
+.platforms__forward p:last-child {
+  margin-bottom: 0;
+}
+
+.platforms__forward strong {
+  color: var(--neutral-900);
+}
   </style>
 </head>
 <body>
@@ -3525,11 +3720,170 @@ code, kbd, pre {
 
   <!-- sec-09-platforms.html -->
     <section id="sec-9-platforms"
-             class="section section--placeholder fade-in"
+             class="section fade-in"
              aria-labelledby="sec-9-title">
-      <div class="container">
-        <h2 id="sec-9-title">9. One codebase, every platform</h2>
-        <p>Coming soon.</p>
+      <div class="platforms__container">
+        <p class="section__eyebrow">§9 · One codebase, every platform</p>
+        <h2 id="sec-9-title" class="platforms__title">One TypeScript SPA. Five places it runs.</h2>
+        <p class="platforms__lede">
+          The same source tree ships as a web app on Cloudflare Pages, a desktop app on Windows / macOS / Linux, and an iOS / Android mobile app. Tauri v2 wraps the SPA in a native shell and exposes platform-specific capabilities (offline tile cache, OS keychain, local-LLM HTTP allowlist) behind a single runtime gate — <code>window.__TAURI__</code> — so web builds tree-shake every native code path away. Mobile is additive on top of the existing desktop tree; <code>src-tauri/gen/apple/</code> and <code>src-tauri/gen/android/</code> are the generated host projects.
+        </p>
+
+        <h3 class="platforms__subhead">Branching at one runtime gate</h3>
+        <p class="platforms__subhead-hint">
+          The SPA decides at runtime whether it's running in a browser, a desktop window, or a phone app — and lazy-loads the right capability shim. Web builds don't even download the Tauri-only modules.
+        </p>
+
+        <figure class="platforms__branch">
+          <svg viewBox="0 0 760 360"
+               role="img"
+               aria-label="Branching diagram showing one TypeScript SPA at the top, splitting at a runtime gate marked window.__TAURI__ into two paths. The web path goes to Cloudflare Pages (terraviz.zyra-project.org). The native path forks again at the Tauri target axis into a desktop branch (Windows MSI, macOS DMG, Linux AppImage) and a mobile branch (iOS via TestFlight, Android via Play Internal Testing). The desktop branch lists native capabilities — tile cache, OS keychain, local-LLM HTTP allowlist, offline downloads. The mobile branch lists its own capability set — HTTPS only, on-device LLM forthcoming.">
+            <defs>
+              <marker id="arrow-pl" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <style>
+                .pl-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .pl-box-emph { fill: rgba(77, 166, 255, 0.06); stroke: #4da6ff; stroke-width: 1.4; }
+                .pl-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .pl-gate { fill: #ffffff; stroke: #4da6ff; stroke-width: 1.6; stroke-dasharray: 0; }
+                .pl-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; font-weight: 600; }
+                .pl-text-light { fill: #fafafa; }
+                .pl-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .pl-mono-accent { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; font-weight: 700; }
+                .pl-lane { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #737373; font-weight: 700; letter-spacing: 0.1em; }
+                .pl-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+              </style>
+            </defs>
+
+            <!-- Source SPA at top -->
+            <g transform="translate(290,10)">
+              <rect class="pl-box-final" x="0" y="0" width="180" height="50" rx="8" />
+              <text class="pl-text pl-text-light" x="90" y="22" text-anchor="middle">TypeScript SPA</text>
+              <text class="pl-mono" x="90" y="40" text-anchor="middle" fill="#9AB2B1">src/ · one source tree</text>
+            </g>
+
+            <!-- Down to the runtime gate -->
+            <path class="pl-arrow" d="M380,60 L380,90" marker-end="url(#arrow-pl)" />
+
+            <!-- Runtime gate (diamond) -->
+            <g transform="translate(310,90)">
+              <polygon class="pl-gate" points="70,0 140,30 70,60 0,30" />
+              <text class="pl-mono-accent" x="70" y="27" text-anchor="middle">runtime gate</text>
+              <text class="pl-mono" x="70" y="42" text-anchor="middle">window.__TAURI__</text>
+            </g>
+
+            <!-- Branch left (web) -->
+            <path class="pl-arrow" d="M310,120 C 200,140 140,160 100,180" marker-end="url(#arrow-pl)" />
+            <text class="pl-mono" x="180" y="155" text-anchor="middle">false</text>
+
+            <!-- Branch right (native) -->
+            <path class="pl-arrow" d="M450,120 C 560,140 620,160 660,180" marker-end="url(#arrow-pl)" />
+            <text class="pl-mono" x="580" y="155" text-anchor="middle">true</text>
+
+            <!-- Web target -->
+            <text class="pl-lane" x="20" y="190" text-anchor="start">WEB</text>
+            <g transform="translate(20,200)">
+              <rect class="pl-box-emph" x="0" y="0" width="200" height="60" rx="8" />
+              <text class="pl-text" x="100" y="22" text-anchor="middle">Cloudflare Pages</text>
+              <text class="pl-mono-accent" x="100" y="40" text-anchor="middle">terraviz.zyra-project.org</text>
+              <text class="pl-mono" x="100" y="54" text-anchor="middle">any browser · zero install</text>
+            </g>
+
+            <!-- Native side - subgate (desktop / mobile) -->
+            <g transform="translate(560,200)">
+              <rect class="pl-box-emph" x="0" y="0" width="180" height="60" rx="8" />
+              <text class="pl-text" x="90" y="22" text-anchor="middle">Tauri v2 native</text>
+              <text class="pl-mono" x="90" y="40" text-anchor="middle">target axis</text>
+              <text class="pl-mono-accent" x="90" y="54" text-anchor="middle">desktop · mobile</text>
+            </g>
+
+            <!-- Native splits to desktop + mobile -->
+            <path class="pl-arrow" d="M620,260 C 580,280 520,290 480,300" marker-end="url(#arrow-pl)" />
+            <path class="pl-arrow" d="M680,260 C 700,280 720,290 700,300" marker-end="url(#arrow-pl)" />
+
+            <!-- Desktop target -->
+            <text class="pl-lane" x="280" y="312" text-anchor="start">DESKTOP</text>
+            <g transform="translate(280,320)">
+              <rect class="pl-box" x="0" y="0" width="190" height="34" rx="6" />
+              <text class="pl-text" x="95" y="14" text-anchor="middle">Windows · macOS · Linux</text>
+              <text class="pl-mono" x="95" y="28" text-anchor="middle">.msi · .dmg · .AppImage</text>
+            </g>
+
+            <!-- Mobile target -->
+            <text class="pl-lane" x="500" y="312" text-anchor="start">MOBILE</text>
+            <g transform="translate(500,320)">
+              <rect class="pl-box" x="0" y="0" width="240" height="34" rx="6" />
+              <text class="pl-text" x="120" y="14" text-anchor="middle">iOS · Android</text>
+              <text class="pl-mono" x="120" y="28" text-anchor="middle">TestFlight · Play Internal Testing</text>
+            </g>
+          </svg>
+          <figcaption class="platforms__branch-caption">
+            ONE SPA → window.__TAURI__ GATE → WEB · DESKTOP · MOBILE
+          </figcaption>
+        </figure>
+
+        <h3 class="platforms__subhead">Where it ships</h3>
+        <p class="platforms__subhead-hint">
+          A row per target. Native capability call-outs flag what each Tauri build adds on top of the shared SPA.
+        </p>
+
+        <div class="platforms__matrix">
+          <div class="platforms__row platforms__row--shipping">
+            <div class="platforms__row-target">
+              Web
+              <small>any browser</small>
+            </div>
+            <div class="platforms__row-body">
+              The default. Same SPA, served from Cloudflare Pages at <code>terraviz.zyra-project.org</code>. Zero install, every device. Shared TypeScript with the desktop and mobile builds — the rest of the matrix is what gets added on top.
+            </div>
+            <span class="platforms__row-status platforms__row-status--shipping">Shipping</span>
+          </div>
+
+          <div class="platforms__row platforms__row--shipping">
+            <div class="platforms__row-target">
+              Desktop
+              <small>Windows · macOS · Linux</small>
+            </div>
+            <div class="platforms__row-body">
+              Tauri v2 wraps the SPA in a native window. Adds an offline GIBS tile cache (<code>tile_cache.rs</code>, SHA-256 flat-file), an OS keychain for LLM API keys, an HTTP allowlist that lets the webview reach <em>local</em> LLM endpoints (Ollama / LM Studio / llama.cpp / vLLM), and a Tauri-updater channel. Distributed via signed GitHub Releases — <code>.msi</code>, <code>.dmg</code>, <code>.AppImage</code>.
+            </div>
+            <span class="platforms__row-status platforms__row-status--shipping">Shipping</span>
+          </div>
+
+          <div class="platforms__row platforms__row--inflight">
+            <div class="platforms__row-target">
+              iOS
+              <small>iPhone · iPad</small>
+            </div>
+            <div class="platforms__row-body">
+              Same Tauri v2 source tree, generated Swift host project under <code>src-tauri/gen/apple/</code>. Mobile-only capability set restricts to HTTPS (no localhost-LLM allowlist on a phone). Release pipeline signs the IPA and uploads to TestFlight via App Store Connect.
+            </div>
+            <span class="platforms__row-status platforms__row-status--inflight">In flight</span>
+          </div>
+
+          <div class="platforms__row platforms__row--inflight">
+            <div class="platforms__row-target">
+              Android
+              <small>phone · tablet</small>
+            </div>
+            <div class="platforms__row-body">
+              Generated Kotlin host project under <code>src-tauri/gen/android/</code>. Same Tauri-mobile path as iOS. Release pipeline signs the AAB and uploads to the Play Console Internal Testing track via a service account.
+            </div>
+            <span class="platforms__row-status platforms__row-status--inflight">In flight</span>
+          </div>
+        </div>
+
+        <aside class="platforms__forward" role="note">
+          <p class="section__eyebrow">What's next</p>
+          <h3>Orbit on-device, where the OS already ships an LLM</h3>
+          <p>
+            Mobile is the most interesting deployment for the docent. Both Apple and Google now ship system-level LLMs — <strong>Apple Intelligence Foundation Models</strong> on iOS (≥ 18.1 on supported hardware) and <strong>Gemini Nano</strong> via AICore on Android. Bridging Orbit into those means the chat is <em>free, private, and offline-by-default</em> on eligible devices, with no API key, no provider relationship, no network round-trip.
+          </p>
+          <p>
+            The shape is a small Tauri plugin per platform — Swift wrapping <code>FoundationModels</code> on iOS, Kotlin wrapping <code>AICore</code> on Android — surfaced behind the existing <code>llmProvider</code> interface. On hardware too old for system LLMs, the same provider gracefully falls back to the OpenAI-compatible path that web and desktop already use. <em>This is the forward direction, not yet shipped.</em>
+          </p>
+        </aside>
       </div>
     </section>
 
