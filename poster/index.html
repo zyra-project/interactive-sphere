@@ -1461,6 +1461,33 @@ code, kbd, pre {
   margin: 0.5rem 0 0;
 }
 
+/* Research-question callout — the "does the avatar matter"
+   open question + invitation to collaborate */
+.orbit__research-question {
+  margin: 1.25rem 0 2.5rem;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  max-width: 760px;
+}
+
+.orbit__research-question p {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--neutral-800);
+  margin: 0;
+}
+
+.orbit__research-cta {
+  margin-top: 0.7rem !important;
+  color: var(--cable-blue) !important;
+  font-weight: 600;
+  font-size: 0.92rem !important;
+  font-style: italic;
+}
+
 /* Forward callout linking back to §6 */
 .orbit__forward {
   background: linear-gradient(180deg, rgba(77, 166, 255, 0.08), rgba(77, 166, 255, 0));
@@ -2458,9 +2485,19 @@ code, kbd, pre {
           </p>
         </div>
 
-        <h3 class="orbit__subhead">Drive Orbit yourself</h3>
+        <h3 class="orbit__subhead">Does the avatar matter? An open research question.</h3>
         <p class="orbit__subhead-hint">
-          The live app, with the Orbit chat panel ready. Ask whatever you want — the docent will answer and (where relevant) drop datasets or tours onto the globe in front of you.
+          Anthropomorphic interfaces have a long history in education and tutoring software, but the literature is split — sometimes the avatar lifts engagement, sometimes it pulls attention away from the content. We don't yet know which way it falls for environmental data on a globe. The procedural Orbit character — today reachable at <code>/orbit</code> as a standalone test bench — is the artifact for finding out: a six-state behavior machine (idle, listening, thinking, talking, chatting, confused), Bézier flight presets, four palettes, a postMessage bridge, full <code>prefers-reduced-motion</code> handling. Embedding the character inside the chat panel itself is the planned next experiment: A/B-able, instrumented through the Tier-A analytics pipeline (see §11).
+        </p>
+
+        <aside class="orbit__research-question" role="note">
+          <p>Does an anthropomorphic interface improve engagement and comprehension of environmental data — or does it pull attention away from the content?</p>
+          <p class="orbit__research-cta">If you're studying this and want a partner with a real deployment, we'd love to talk.</p>
+        </aside>
+
+        <h3 class="orbit__subhead">Try both surfaces</h3>
+        <p class="orbit__subhead-hint">
+          The <strong>chat surface</strong> is the docent embedded in the live app. The <strong>character surface</strong> is the standalone <code>/orbit</code> page where the procedural avatar runs in isolation. Toggle between them in the iframe below.
         </p>
 
         <div class="demo-frame"
@@ -2473,7 +2510,7 @@ code, kbd, pre {
                   aria-label="Toggle fullscreen">⤢ Fullscreen</button>
           <iframe class="demo-frame__iframe"
                   src="about:blank"
-                  title="Live TerraViz application — Orbit chat demo"
+                  title="Live TerraViz application — Orbit chat and character demo"
                   loading="lazy"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
                   referrerpolicy="strict-origin-when-cross-origin"></iframe>
@@ -2483,8 +2520,20 @@ code, kbd, pre {
           </div>
         </div>
 
+        <div class="effect-toggle-bar"
+             role="group"
+             aria-label="Surface deep-links — toggle the iframe between the chat docent and the standalone procedural character">
+          <span class="effect-toggle-bar__label">Surface</span>
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="orbit-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?orbit=open">Chat surface</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="orbit-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/orbit">Character surface · /orbit</button>
+        </div>
+
         <p class="effect-note">
-          Like the §4, §5, and §6 deep-links, <code>?orbit=open</code> relies on an SPA-side handler landing in P12. Until then, the iframe loads the default app — tap the chat trigger in the lower-right of the embedded view to open the Orbit panel manually.
+          The character surface (<code>/orbit</code>) is a real shipped page — it works today. The chat surface deep-link (<code>?orbit=open</code>) lands in P12 alongside the §4, §5, and §6 deep-links; until then, the iframe loads the default app and you can tap the chat trigger in the lower-right of the embedded view to open the Orbit panel manually.
         </p>
 
         <aside class="orbit__forward">

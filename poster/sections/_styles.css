@@ -1445,6 +1445,33 @@ code, kbd, pre {
   margin: 0.5rem 0 0;
 }
 
+/* Research-question callout — the "does the avatar matter"
+   open question + invitation to collaborate */
+.orbit__research-question {
+  margin: 1.25rem 0 2.5rem;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  max-width: 760px;
+}
+
+.orbit__research-question p {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--neutral-800);
+  margin: 0;
+}
+
+.orbit__research-cta {
+  margin-top: 0.7rem !important;
+  color: var(--cable-blue) !important;
+  font-weight: 600;
+  font-size: 0.92rem !important;
+  font-style: italic;
+}
+
 /* Forward callout linking back to §6 */
 .orbit__forward {
   background: linear-gradient(180deg, rgba(77, 166, 255, 0.08), rgba(77, 166, 255, 0));
