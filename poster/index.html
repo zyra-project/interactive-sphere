@@ -10,6 +10,7 @@
   <meta property="og:title" content="TerraViz — Streaming Earth's Data to Every Device" />
   <meta property="og:description" content="A web-based presentation poster covering TerraViz." />
   <meta property="og:type" content="website" />
+  <meta name="robots" content="index, follow" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&family=Source+Sans+3:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -111,6 +112,30 @@ code, kbd, pre {
   outline: 2px solid var(--terra-accent);
   outline-offset: 2px;
   box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
+}
+
+/* Skip-to-main-content link — only visible on focus.
+   Renders above the sticky timer (z-index: 11000 > 10000)
+   so a keyboard-tab visitor lands on it before any
+   interactive control on the page. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 11000;
+  background: var(--terra-accent);
+  color: white;
+  padding: 0.55rem 1rem;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 700;
+  font-family: var(--font-sans);
+}
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+  outline: 2px solid white;
+  outline-offset: 2px;
 }
 
 /* =========================================================
@@ -2945,6 +2970,8 @@ code, kbd, pre {
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#sec-1-hero">Skip to main content</a>
+
   <!-- Sticky presentation timer.
        Minimized by default per docs/POSTER_PLAN.md §0; the
        expanded/collapsed choice is persisted in localStorage. -->
@@ -4919,12 +4946,12 @@ code, kbd, pre {
     </section>
 
   <!-- sec-14-footer-block.html -->
-    <section id="sec-14-footer-block"
-             class="section section--dark fade-in"
-             aria-labelledby="sec-14-title">
+    <footer id="sec-14-footer-block"
+            class="section section--dark fade-in"
+            aria-labelledby="sec-14-title">
       <div class="footer-block__container">
         <div>
-          <p id="sec-14-title" class="footer-block__title">TerraViz</p>
+          <h2 id="sec-14-title" class="footer-block__title">TerraViz</h2>
           <p class="footer-block__authors">
             <strong>Eric Hackathorn</strong> · NOAA Global Systems Laboratory<br>
             <a href="https://orcid.org/0000-0002-9693-2093" rel="noopener" target="_blank" aria-label="ORCID 0000-0002-9693-2093">ORCID 0000-0002-9693-2093</a>
@@ -4950,7 +4977,7 @@ code, kbd, pre {
           </div>
         </div>
       </div>
-    </section>
+    </footer>
   </main>
 
   <script>

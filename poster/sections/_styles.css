@@ -97,6 +97,30 @@ code, kbd, pre {
   box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
 }
 
+/* Skip-to-main-content link — only visible on focus.
+   Renders above the sticky timer (z-index: 11000 > 10000)
+   so a keyboard-tab visitor lands on it before any
+   interactive control on the page. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 11000;
+  background: var(--terra-accent);
+  color: white;
+  padding: 0.55rem 1rem;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 700;
+  font-family: var(--font-sans);
+}
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
 /* =========================================================
    Section backgrounds — alternating per the series convention
    ========================================================= */

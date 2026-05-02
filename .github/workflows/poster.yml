@@ -27,9 +27,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  drift-check:
+    # Re-runs the poster build script and fails if
+    # poster/index.html doesn't match what the partials
+    # imply. Catches "edited a partial, forgot to re-run
+    # build_poster.py" before it lands. Same shape as the
+    # check:privacy-page guard the SPA already uses.
+    name: Drift guard (build_poster.py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-render poster/index.html
+        run: python3 poster/scripts/build_poster.py
+      - name: Fail if rendered output drifted
+        run: |
+          if ! git diff --exit-code -- poster/index.html; then
+            echo "::error::poster/index.html is out of sync with poster/sections/."
+            echo "::error::Run 'python3 poster/scripts/build_poster.py' locally and commit the result."
+            exit 1
+          fi
+
   deploy:
     name: Deploy poster to Cloudflare Pages
     runs-on: ubuntu-latest
+    needs: [drift-check]
     # Forked-PR builds cannot read repo secrets, so wrangler
     # would fail authentication. Skip deploy on those; the
     # rendered poster is still reviewable on the diff.
