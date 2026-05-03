@@ -600,7 +600,182 @@ Path A + the published CLI is the delivery vehicle for years.
 
 ---
 
-## 7. Open Questions for Eric
+## 7. How this scoping should shape the Phase 4 implementation
+
+The recommendation above is "Hybrid 2 first, then Hybrid 1, never
+Path B-as-designed." The corollary is that **Phase 4 itself should
+not be built as a Cloudflare-only feature that we later try to
+generalise.** It should be built, on day one, as a *reference
+implementation of an open protocol*. Those are different design
+briefs. This section captures what the difference looks like at
+the code level, so the next engineer to pick up Phase 4 has a
+checklist instead of a retrofit.
+
+The cost of working this way is real but bounded: a slightly
+slower first PR, a bit more interface plumbing per route, and the
+discipline of writing the JSON Schema in the same commit as the
+TypeScript. The benefit is that Hybrid 1 ships *as a side-effect*
+of finishing Phase 4 — no separate "now go publish the spec" sprint
+later — and Path B becomes a question of building adapters against
+already-stable interfaces instead of refactoring the whole catalog
+backend.
+
+### Directive 1 — Extract the portability interfaces *during* Phase 4, not after
+
+`CATALOG_BACKEND_PLAN.md:2125-2168` parks the cloud-portability
+layer at Phase 6. That ordering made sense when Phase 4 was just
+a Cloudflare feature; it's the wrong ordering once we accept that
+Phase 4 is the protocol implementation. New federation code should
+depend on interfaces, not bindings, from the first commit.
+
+| Interface | File (per the existing plan) | What Phase 4 federation code consumes |
+|---|---|---|
+| `catalogStore` | `functions/api/v1/_lib/catalog/catalogStore.ts` | `listFederatedRows(since, peer_id, visibility_predicate)`, `upsertFederatedRow`, `tombstone(...)` |
+| `objectStore` | `functions/api/v1/_lib/storage/objectStore.ts` | `presignGet` for federated asset proxy |
+| `authProvider` | `functions/api/v1/_lib/auth/authProvider.ts` | `verifyHmac(signature, body, peer_secret)`, `verifyEd25519(signature, body, peer_pubkey)` |
+| `jobQueue` | `functions/api/v1/_lib/queue/jobQueue.ts` | Federation pull jobs, webhook fan-out |
+
+The Cloudflare implementations (`d1.ts`, `r2.ts`, `cf-access.ts`,
+`cf-queues.ts`) ship alongside in the same PR, but the route
+handler in `functions/api/v1/federation/feed.ts` should never
+import a Cloudflare type directly. This is the single biggest
+architectural lever — once a federation route mentions
+`env.CATALOG_DB.prepare(...)`, the lock-in cost climbs steeply.
+
+The catalog read path (`functions/api/v1/_lib/catalog-store.ts`)
+already has an awkward shape: SQL inline, D1-typed, comments
+acknowledging the federation predicate will diverge by one line
+(`catalog-store.ts:96-109`). Phase 4 is the right moment to lift
+that file behind the interface and make `listPublicDatasets` /
+`listFederatedRows` two predicates over the same store call.
+
+### Directive 2 — Pin the wire format and protocol publicly *as Phase 4 ships*
+
+The federation protocol is the contract third parties will
+implement against. If we write Phase 4 without machine-readable
+specs, the spec gets retrofitted from the implementation later —
+which means whatever the Cloudflare implementation happened to do
+becomes the spec, including the accidents.
+
+In the same PR(s) that land the federation routes:
+
+| Artifact | Where | What it does |
+|---|---|---|
+| `scripts/build-protocol-schemas.ts` | new | Generates JSON Schema from the `WireDataset`, `FederationFeed`, and `WellKnownDoc` TypeScript types (use `ts-json-schema-generator` or equivalent — no new runtime dep). |
+| `docs/protocol/v1/feed.schema.json` | new | Generated, committed, served at a stable URL (`https://terraviz.zyra-project.org/schema/v1/feed.json`). |
+| `docs/protocol/v1/well-known.schema.json` | new | Same treatment for `/.well-known/terraviz.json`. |
+| `docs/protocol/v1/dataset.schema.json` | new | Same treatment for `WireDataset` (with the STAC profile mapping baked in — see Directive 3). |
+| `docs/protocol/CHANGELOG.md` | new | Opens with the Phase 4 entry. Promised at `CATALOG_FEDERATION_PROTOCOL.md:387-390`; create the file with the first entry rather than as a follow-up. |
+| `npm run check:protocol-schemas` | new | CI job that regenerates the schemas and fails the build if they drift from the committed copy. Same pattern as `check:privacy-page` (`package.json:21`). |
+| Optional: OpenAPI 3.1 spec | `docs/protocol/v1/openapi.yaml` | Generated from the route handlers via `tsoa` or hand-written; less critical than the JSON Schemas but a meaningful win for non-TS implementers. |
+
+The pinning has to happen in the same commit as the route, not as
+a follow-up. The discipline this enforces — "if the wire format
+changes, the schema regenerates and CI tells me" — is what keeps
+the protocol honest as the implementation evolves.
+
+### Directive 3 — Land STAC alignment in the wire serializer, not as a follow-up
+
+`CATALOG_BACKEND_PLAN.md:264-309` commits to the wire `Dataset`
+being a valid STAC Item profile. Today
+`functions/api/v1/_lib/dataset-serializer.ts` emits none of the
+required STAC fields (`grep "stac\|STAC"` returns nothing in that
+file). Adding STAC fields to a federation feed *after* third-party
+nodes have started consuming it is a schema break; doing it in the
+Phase 4 PR is additive.
+
+Concretely, the federation feed serializer needs:
+
+- `type: "Feature"`, `stac_version: "1.0.0"` on every Item
+- `bbox`, `geometry` (default to global for full-globe datasets)
+- `properties.datetime` from `start_time` (or
+  `start_datetime`/`end_datetime` for ranges)
+- `assets[]` from existing `data_ref` / `thumbnail_ref` / etc.
+- `links[]` with `self`, `parent`, `derived_from` (origin node)
+- Terraviz extensions namespaced under `properties.terraviz:*`
+
+The catalog response `/api/v1/catalog` should also be valid STAC
+(a Collection with `links[]` pointing to each Item). This is
+zero-cost-extra once the per-Item shape is right.
+
+### Directive 4 — Build the conformance harness next to the routes
+
+`CATALOG_BACKEND_DEVELOPMENT.md` references
+`npm run test:federation` as a "two-Wrangler-instance handshake
+test." That script is not yet in `package.json:9-43`. Phase 4
+should ship it.
+
+Concretely:
+
+| File | Purpose |
+|---|---|
+| `scripts/test-federation.ts` | Spins up two Wrangler instances on different ports, generates two node identities, runs the handshake → feed → tombstone → re-handshake cycle, asserts signature verification. |
+| `tests/federation/conformance.test.ts` | The actual assertions. Imported from a future external runner so a third-party node implementer can run the same assertions against their own node. |
+| `package.json` script: `test:federation` | Wired alongside `test`. CI runs it on every PR that touches `functions/api/v1/federation/**`. |
+
+Designed this way, the conformance suite is *the same code* a
+third-party node implementer downloads to validate their node.
+That is what makes Hybrid 1 real rather than aspirational.
+
+### Directive 5 — Ship the publisher CLI to npm before federation merges
+
+The two-week first step in §6 is: publish `@zyra/terraviz-cli` and
+let one real partner exercise it. The reason this comes *before*
+Phase 4 federation, not as a parallel track, is that the CLI uses
+the same publisher API surface (`/api/v1/publish/**`) that
+federation will lean on for catalog signing, peer-grant minting,
+and audit trails. Real third-party load on the publish API
+surfaces the same auth ergonomics, error envelope, and validation
+gaps that federation will hit — but in a smaller blast radius and
+without a protocol freeze hanging on it.
+
+Concrete sequence:
+
+1. CLI to npm + signed binaries (per
+   `CATALOG_PUBLISHING_TOOLS.md:328-389`). One partner pilot.
+2. Iterate on whatever the pilot reveals — auth flow, error
+   envelope, schema validation, asset-upload edge cases — in the
+   publisher API.
+3. Begin Phase 4 federation against the now-stabilised publisher
+   API and the interfaces from Directive 1.
+
+If the CLI surfaces something architectural (e.g., service-token
+ergonomics are unworkable for partners and we need OIDC), it's
+much cheaper to fix before Phase 4 commits the federation routes
+to the same auth model.
+
+### What this changes about the PR/commit cadence
+
+| Phase 4 PR (per the existing plan) | Phase 4 PR (with these directives) |
+|---|---|
+| Add federation routes against `env.CATALOG_DB` directly | Add federation routes against `catalogStore` interface; ship `cf-d1.ts` adapter alongside |
+| Wire format defined in TypeScript only | Wire format defined in TypeScript *and* JSON Schema, generated in CI |
+| STAC profile deferred to a follow-up | STAC profile lands in the Phase 4 serializer |
+| Conformance test "to be added later" | `npm run test:federation` ships in the same PR |
+| Publisher CLI ships when convenient | Publisher CLI ships *before* Phase 4 begins coding |
+
+The total work isn't dramatically larger. It's reordered, and the
+discipline is enforced by CI (schema drift check, conformance test)
+rather than by hope.
+
+### What this scoping does *not* tell Phase 4 to do
+
+- Build a Postgres or S3 adapter. The interfaces exist, the
+  Cloudflare implementations ship, but a non-Cloudflare adapter
+  waits for proven demand. This is not Phase 6 by accident.
+- Ship a directory service. The discovery directory described in
+  `CATALOG_FEDERATION_PROTOCOL.md:255-294` is explicitly opt-in
+  and ecosystem-driven. We don't run one until we have to.
+- Solve restricted/private grants. That's Phase 5. Phase 4 ships
+  with `visibility='public'` and `'federated'` only.
+- Commit to running multiple `/api/v*` major versions. The plan
+  reserves the right (`CATALOG_BACKEND_PLAN.md:744-862`); Phase 4
+  ships with `/api/v1/` and a clear deprecation policy, nothing
+  else.
+
+---
+
+## 8. Open Questions for Eric
 
 These items couldn't be resolved from the repo alone.
 
