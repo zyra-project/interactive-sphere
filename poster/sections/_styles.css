@@ -2860,6 +2860,43 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   color: var(--neutral-900);
 }
 
+/* Linked chip names — jump to the project's official site or
+   docs in a new tab. Stays styled as the mono chip name
+   until hover, where it gains the cable-blue underline + ↗
+   glyph used elsewhere for off-site jumps. The
+   .stack__item-name a selector handles chips with multiple
+   embedded links (e.g. "Ollama · LM Studio"). */
+a.stack__item-name,
+.stack__item-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.stack__item-name:hover,
+a.stack__item-name:focus-visible,
+.stack__item-name a:hover,
+.stack__item-name a:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
+}
+
+a.stack__item-name::after,
+.stack__item-name a::after {
+  content: "↗";
+  margin-left: 0.2em;
+  font-size: 0.75em;
+  color: var(--neutral-400);
+  vertical-align: super;
+  display: inline-block;
+}
+
+a.stack__item-name:hover::after,
+a.stack__item-name:focus-visible::after,
+.stack__item-name a:hover::after,
+.stack__item-name a:focus-visible::after {
+  color: var(--cable-blue);
+}
+
 .stack__item-blurb {
   font-size: 0.88rem;
   color: var(--neutral-700);
