@@ -407,6 +407,59 @@ describe('openCreditsPanel', () => {
     expect(document.getElementById('credits-panel')).toBeNull()
   })
 
+  it('Tab cycles focus from the last focusable back to the first (focus trap)', () => {
+    const viewports = makeViewports([makeReadOnlyMap({ 'b': { attribution: 'A' } })])
+    openCreditsPanel(viewports)
+
+    const focusables = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '#credits-panel button:not([disabled]), #credits-panel [href], #credits-panel [tabindex]:not([tabindex="-1"])',
+      ),
+    )
+    expect(focusables.length).toBeGreaterThanOrEqual(2)
+
+    const last = focusables[focusables.length - 1]
+    last.focus()
+    expect(document.activeElement).toBe(last)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(focusables[0])
+  })
+
+  it('Shift-Tab cycles focus from the first focusable back to the last (focus trap)', () => {
+    const viewports = makeViewports([makeReadOnlyMap({ 'b': { attribution: 'A' } })])
+    openCreditsPanel(viewports)
+
+    const focusables = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '#credits-panel button:not([disabled]), #credits-panel [href], #credits-panel [tabindex]:not([tabindex="-1"])',
+      ),
+    )
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    first.focus()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(last)
+  })
+
+  it('Escape stops propagation so global ESC handlers above document do not also fire', () => {
+    const viewports = makeViewports([makeReadOnlyMap({ 'b': { attribution: 'A' } })])
+    openCreditsPanel(viewports)
+
+    let outerSawEscape = false
+    const outer = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') outerSawEscape = true
+    }
+    window.addEventListener('keydown', outer)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    window.removeEventListener('keydown', outer)
+    expect(outerSawEscape).toBe(false)
+    expect(isCreditsPanelOpen()).toBe(false)
+  })
+
   it('restores focus to the trigger element when closed', () => {
     const trigger = document.createElement('button')
     document.body.appendChild(trigger)

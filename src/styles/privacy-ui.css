@@ -195,7 +195,10 @@
 .credits-section {
     margin: 0 0 0.85rem;
 }
-.credits-section:last-child {
+/* Use :last-of-type rather than :last-child — .privacy-ui-meta
+   always follows the last credits-section in the rendered DOM,
+   so :last-child would never match the section we want. */
+.credits-section:last-of-type {
     margin-bottom: 0;
 }
 

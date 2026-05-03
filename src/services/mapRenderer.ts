@@ -10,7 +10,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { Map as MaplibreMap, StyleSpecification, CustomLayerInterface } from 'maplibre-gl'
 import { createEarthTileLayer, computeSunLightPosition, type EarthTileLayerControl } from './earthTileLayer'
-import type { GlobeRenderer, MapViewContext, VideoTextureHandle } from '../types'
+import type { Dataset, GlobeRenderer, MapViewContext, VideoTextureHandle } from '../types'
 import { setDatasetCreditsSource } from '../ui/creditsPanel'
 import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
@@ -545,7 +545,7 @@ export class MapRenderer implements GlobeRenderer {
    * rules. Idempotent — calling with the same dataset twice is a
    * no-op beyond the redundant remove/add.
    */
-  setDatasetCredits(dataset: import('../types').Dataset | null): void {
+  setDatasetCredits(dataset: Dataset | null): void {
     setDatasetCreditsSource(this.map, dataset)
   }
 

@@ -39,6 +39,7 @@
 
 import type { Dataset } from '../types'
 import type { ViewportManager } from '../services/viewportManager'
+import { escapeHtml } from './domUtils'
 
 /** Source id used for the phantom dataset-credits source on each
  *  MapRenderer. Single source per map — register replaces, clear
@@ -107,12 +108,6 @@ type AttributionReadableMap = {
   getStyle?: () => { sources?: Record<string, { attribution?: string } | undefined> | undefined } | undefined
 }
 
-/** Source-shaped renderer surface — implemented by MapRenderer.
- *  Read-only here; the panel never mutates sources. */
-type CreditsRenderer = {
-  getMap: () => AttributionReadableMap | null
-}
-
 /** Read every basemap attribution string declared on the map's
  *  current style, dropping the phantom dataset-credits source.
  *  De-duped — if multiple sources share an identical attribution
@@ -161,12 +156,21 @@ function snapshotPanelCredits(viewports: ViewportManager): {
   basemap: string[]
   panels: PanelCreditsSnapshot[]
 } {
-  const renderers = viewports.getAll() as unknown as CreditsRenderer[]
   const basemap = new Set<string>()
   const panels: PanelCreditsSnapshot[] = []
 
-  renderers.forEach((renderer, idx) => {
-    const map = renderer.getMap()
+  // viewports.getAll() returns MapRenderer[]. Each MapRenderer
+  // exposes getMap() returning MaplibreMap. We'd like to pass
+  // the result straight into readBasemapAttributions, but
+  // MapLibre's StyleSpecification.sources is keyed by a
+  // SourceSpecification *discriminated union* — and one variant
+  // (VideoSourceSpecification) has no `attribution` field, so
+  // TypeScript refuses the structural narrowing the helpers want.
+  // Cast at the renderer-by-renderer boundary to a structural
+  // shape that exposes only what we need; runtime access is a
+  // plain optional-chain and is safe regardless of variant.
+  viewports.getAll().forEach((renderer, idx) => {
+    const map = (renderer as unknown as { getMap: () => AttributionReadableMap | null }).getMap()
     for (const text of readBasemapAttributions(map)) {
       basemap.add(text)
     }
@@ -242,17 +246,6 @@ function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCoun
   return backdrop
 }
 
-/** HTML-escape free-text attribution strings. Same shape as the
- *  helper in browseUI; copied here to keep this module standalone. */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
 /** Open the credits panel. Idempotent — a second call while
  *  open is a no-op. The trigger element (typically the Tools
  *  menu item) gets focus restored on close. */
@@ -268,7 +261,12 @@ export function openCreditsPanel(
   const backdrop = buildPanel(snapshot, viewports.getPanelCount())
   document.body.appendChild(backdrop)
 
-  // Wire close affordances: backdrop click, X button, ESC.
+  // Wire close affordances: backdrop click, X button, ESC + Tab
+  // focus trap. ESC stops propagation so global ESC handlers
+  // (e.g. fullscreen exit) don't fire alongside us; Tab cycles
+  // focus between the first and last focusable elements inside
+  // the panel so AT-driven keyboard nav can't escape the modal
+  // while it's open. Mirrors the privacyUI dialog pattern.
   backdrop.addEventListener('click', (ev) => {
     if (ev.target === backdrop) closeCreditsPanel()
   })
@@ -276,7 +274,13 @@ export function openCreditsPanel(
     .getElementById('credits-panel-close')
     ?.addEventListener('click', () => closeCreditsPanel())
   escHandler = (ev: KeyboardEvent) => {
-    if (ev.key === 'Escape') closeCreditsPanel()
+    if (!mounted) return
+    if (ev.key === 'Escape') {
+      ev.stopPropagation()
+      closeCreditsPanel()
+    } else if (ev.key === 'Tab') {
+      trapFocus(ev)
+    }
   }
   document.addEventListener('keydown', escHandler)
 
@@ -284,6 +288,44 @@ export function openCreditsPanel(
   // and the ESC handler captures keys as soon as the user looks
   // at it.
   document.getElementById('credits-panel')?.focus()
+}
+
+/** Return focusable descendants of the credits panel, skipping
+ *  disabled controls. Mirrors privacyUI.getFocusableInPanel. */
+function getFocusableInPanel(): HTMLElement[] {
+  const panel = document.getElementById('credits-panel')
+  if (!panel) return []
+  return Array.from(
+    panel.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  )
+}
+
+/** Cycle Tab / Shift-Tab between the first and last focusable
+ *  elements inside the modal so keyboard focus can't escape to
+ *  the underlying page while the dialog is open. Required by
+ *  `aria-modal="true"`. Mirrors privacyUI.trapFocus. */
+function trapFocus(ev: KeyboardEvent): void {
+  const focusables = getFocusableInPanel()
+  if (focusables.length === 0) return
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  const active = document.activeElement as HTMLElement | null
+  const panel = document.getElementById('credits-panel')
+  const withinPanel = !!(active && panel?.contains(active))
+
+  if (ev.shiftKey) {
+    if (!withinPanel || active === first) {
+      ev.preventDefault()
+      last.focus()
+    }
+  } else {
+    if (!withinPanel || active === last) {
+      ev.preventDefault()
+      first.focus()
+    }
+  }
 }
 
 /** Close the credits panel. Idempotent. Restores focus to the

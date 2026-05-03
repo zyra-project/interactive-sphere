@@ -219,7 +219,7 @@ class InteractiveSphere {
         onSetLayout: (layout) => this.viewports.setLayout(layout),
         onOpenBrowse: () => this.openBrowsePanel(),
         onOpenOrbitSettings: () => openChatSettings(),
-        onOpenCredits: () => openCreditsPanel(this.viewports, document.getElementById('tools-menu-credits')),
+        onOpenCredits: (trigger) => openCreditsPanel(this.viewports, trigger),
         onToggleDatasetInfo: (visible) => this.setDatasetInfoVisible(visible),
         onToggleLegend: (visible) => this.setLegendVisible(visible),
         announce: (msg) => this.announce(msg),

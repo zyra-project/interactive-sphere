@@ -73,8 +73,13 @@ export interface ToolsMenuCallbacks {
   onToggleDatasetInfo?: (visible: boolean) => void
   /** User toggled legend visibility. */
   onToggleLegend?: (visible: boolean) => void
-  /** User clicked Credits — open the credits / attribution dialog. */
-  onOpenCredits?: () => void
+  /** User clicked Credits — open the credits / attribution
+   *  dialog. The Tools menu hands its always-visible toggle
+   *  button as `trigger` so the credits panel can restore focus
+   *  there when it closes (the menu item itself is hidden by
+   *  closePopover() before the dialog opens, so it isn't a
+   *  reliable focus target). */
+  onOpenCredits?: (trigger: HTMLElement) => void
   /** Announce something for screen readers. */
   announce?: (message: string) => void
   /** Get the currently loaded dataset (used by the Share action). */
@@ -367,8 +372,13 @@ export function initToolsMenu(
 
   const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
   creditsBtn?.addEventListener('click', () => {
+    if (!onOpenCredits) return
     closePopover()
-    onOpenCredits?.()
+    // Pass the Tools toggle button (which stays visible as the
+    // popover's anchor) as the credits panel's focus-restore
+    // target. The menu item itself is hidden by closePopover()
+    // above, so it can't reliably receive focus on close.
+    onOpenCredits(toggleBtn)
     announce?.('Credits opened')
   })
 
