@@ -1,0 +1,236 @@
+    <section id="sec-10-federation"
+             class="section section--alt fade-in"
+             aria-labelledby="sec-10-title">
+      <div class="fed__container">
+        <p class="section__eyebrow">§7 · Federated catalog &amp; custom backend</p>
+        <h2 id="sec-10-title" class="fed__title">Run your own. Federate with peers. Keep the data at home.</h2>
+        <p class="fed__lede">
+          The TerraViz app can read its catalog from the public NOAA Science On a Sphere (SOS) source <em>or</em> from a self-hosted node-backend on Cloudflare. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.
+        </p>
+
+        <div class="fed__stack-grid">
+          <article class="fed__stack-card">
+            <h3>Pages Functions · /api/v1/*</h3>
+            <p>The HTTP surface — <code>catalog</code>, <code>search</code>, <code>featured</code>, <code>publish</code>, federation pull. Same Cloudflare account as the app, same deploy mechanism, same edge.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>D1 · catalog DB</h3>
+            <p>SQLite at the edge. Datasets, tours, categories, federation peers, signed identities. Migrations live in <code>migrations/</code>; <code>npm run db:reset</code> seeds ~20 SOS rows for local dev.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>R2 · assets</h3>
+            <p>Object storage for thumbnails, legends, captions, supporting media. Replaces the legacy SOS S3 dependency. Per-instance — your data, your bucket.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Workers Analytics Engine + KV + Access</h3>
+            <p>Telemetry sink (Tier-A and Tier-B events), short-lived caches, and auth for the publisher portal. Cloudflare Access handles staff sign-in; community publisher onboarding is a phased follow-up.</p>
+          </article>
+        </div>
+
+        <h3 class="fed__subhead">The federation flow</h3>
+        <p class="fed__subhead-hint">
+          A node advertises itself at <code>/.well-known/terraviz.json</code> with its signed identity (Ed25519 keypair generated locally via <code>npm run gen:node-key</code>). Peer nodes discover, verify, and pull the published catalog rows — metadata only, never raw assets. The animated arrows below show subscription requests fanning out from one node to its peers.
+        </p>
+
+        <figure class="fed__arch">
+          <svg viewBox="0 0 760 460"
+               role="img"
+               aria-label="Federation architecture diagram. The TerraViz app fetches /api/v1/catalog from a local node. The local node is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine, and KV cache. The local node advertises itself at /.well-known/terraviz.json with a signed identity. Animated dashed arrows fan out from the local node to three peer nodes (NOAA-GSL, a university deployment, and a self-hosted instance) — each peer sends back its own catalog rows as a federation pull.">
+            <defs>
+              <marker id="arrow-fed" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <marker id="arrow-fed-accent" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#4da6ff" />
+              </marker>
+              <style>
+                .fd-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .fd-box-emph { fill: rgba(77, 166, 255, 0.06); stroke: #4da6ff; stroke-width: 1.4; }
+                .fd-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .fd-box-peer { fill: #ffffff; stroke: #4da6ff; stroke-width: 1.4; }
+                .fd-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; font-weight: 600; }
+                .fd-text-light { fill: #fafafa; }
+                .fd-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .fd-mono-accent { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; font-weight: 700; }
+                .fd-mono-mist { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #9AB2B1; }
+                .fd-lane { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #737373; font-weight: 700; letter-spacing: 0.1em; }
+                .fd-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .fd-arrow-accent { stroke: #4da6ff; stroke-width: 1.6; fill: none; }
+              </style>
+            </defs>
+
+            <!-- TerraViz app at top -->
+            <g transform="translate(320,10)">
+              <rect class="fd-box-final" x="0" y="0" width="120" height="40" rx="8" />
+              <text class="fd-text fd-text-light" x="60" y="25" text-anchor="middle">TerraViz app</text>
+            </g>
+            <path class="fd-arrow-accent" d="M380,50 L380,90" marker-end="url(#arrow-fed-accent)" />
+            <text class="fd-mono-accent" x="395" y="74" text-anchor="start">fetch /api/v1/catalog</text>
+
+            <!-- Local node container -->
+            <text class="fd-lane" x="135" y="100" text-anchor="start">LOCAL NODE</text>
+            <rect class="fd-box-emph" x="130" y="108" width="500" height="160" rx="10" />
+
+            <g transform="translate(150,124)">
+              <text class="fd-text" x="0" y="14" text-anchor="start">Pages Functions</text>
+              <text class="fd-mono" x="0" y="32" text-anchor="start">/api/v1/{catalog · search · featured · publish · federation}</text>
+            </g>
+
+            <g transform="translate(150,180)">
+              <rect class="fd-box" x="0" y="0" width="105" height="50" rx="6" />
+              <text class="fd-text" x="52" y="22" text-anchor="middle">D1</text>
+              <text class="fd-mono" x="52" y="40" text-anchor="middle">catalog DB</text>
+            </g>
+            <g transform="translate(265,180)">
+              <rect class="fd-box" x="0" y="0" width="105" height="50" rx="6" />
+              <text class="fd-text" x="52" y="22" text-anchor="middle">R2</text>
+              <text class="fd-mono" x="52" y="40" text-anchor="middle">assets</text>
+            </g>
+            <g transform="translate(380,180)">
+              <rect class="fd-box" x="0" y="0" width="115" height="50" rx="6" />
+              <text class="fd-text" x="58" y="22" text-anchor="middle">AE</text>
+              <text class="fd-mono" x="58" y="40" text-anchor="middle">analytics</text>
+            </g>
+            <g transform="translate(505,180)">
+              <rect class="fd-box" x="0" y="0" width="105" height="50" rx="6" />
+              <text class="fd-text" x="52" y="22" text-anchor="middle">KV + Access</text>
+              <text class="fd-mono" x="52" y="40" text-anchor="middle">cache · auth</text>
+            </g>
+
+            <!-- Federation manifest box -->
+            <text class="fd-lane" x="200" y="246" text-anchor="start">FEDERATION MANIFEST</text>
+            <g transform="translate(200,256)">
+              <rect class="fd-box-emph" x="0" y="0" width="360" height="36" rx="6" />
+              <text class="fd-mono-accent" x="180" y="22" text-anchor="middle">/.well-known/terraviz.json · Ed25519 signed identity</text>
+            </g>
+
+            <!-- Animated dashed lines from manifest down to peers -->
+            <path class="fd-arrow-accent fed-flow-line" d="M260,292 C 220,316 180,326 160,338" marker-end="url(#arrow-fed-accent)" />
+            <path class="fd-arrow-accent fed-flow-line fed-flow-line--delay-1" d="M380,292 L380,338" marker-end="url(#arrow-fed-accent)" />
+            <path class="fd-arrow-accent fed-flow-line fed-flow-line--delay-2" d="M500,292 C 540,316 580,326 600,338" marker-end="url(#arrow-fed-accent)" />
+
+            <!-- Peer nodes -->
+            <text class="fd-lane" x="80" y="330" text-anchor="start">PEER NODES (HTTP-PULL · OPT-IN)</text>
+
+            <g transform="translate(80,340)">
+              <rect class="fd-box-peer" x="0" y="0" width="160" height="62" rx="8" />
+              <text class="fd-text" x="80" y="26" text-anchor="middle">NOAA-GSL</text>
+              <text class="fd-mono" x="80" y="46" text-anchor="middle">noaa-gsl.terraviz.io</text>
+            </g>
+            <g transform="translate(300,340)">
+              <rect class="fd-box-peer" x="0" y="0" width="160" height="62" rx="8" />
+              <text class="fd-text" x="80" y="26" text-anchor="middle">University deployment</text>
+              <text class="fd-mono" x="80" y="46" text-anchor="middle">terraviz.uni.edu</text>
+            </g>
+            <g transform="translate(520,340)">
+              <rect class="fd-box-peer" x="0" y="0" width="160" height="62" rx="8" />
+              <text class="fd-text" x="80" y="26" text-anchor="middle">Self-hosted</text>
+              <text class="fd-mono" x="80" y="46" text-anchor="middle">your-domain.example</text>
+            </g>
+
+            <text class="fd-mono-mist" x="380" y="436" text-anchor="middle">data sovereign — peers exchange metadata + pointers, never raw assets</text>
+          </svg>
+          <figcaption class="fed__arch-caption">
+            APP → /API/V1 → D1 + R2 + AE + KV → /.WELL-KNOWN/TERRAVIZ.JSON → PEER NODES (FEDERATION PULL)
+          </figcaption>
+        </figure>
+
+        <h3 class="fed__subhead">Where it stands</h3>
+        <p class="fed__subhead-hint">
+          The local-node story is shipping. The cross-node federation protocol is drafted; live cross-node operation is the upcoming phase. Honest framing matters here — kiosk visitors shouldn't go hunting for a federation switch that isn't built yet.
+        </p>
+
+        <div class="fed__phase-grid">
+          <article class="fed__phase fed__phase--shipped">
+            <p class="fed__phase-tag">Today · shipped</p>
+            <h3>Local-node backend works</h3>
+            <p>Live in this repo today:</p>
+            <ul>
+              <li>D1 catalog with SOS-seeded rows; migrations checked in</li>
+              <li><code>/api/v1/catalog · /search · /featured</code> Pages Functions serving</li>
+              <li>Publisher dev-bypass (<code>.dev.vars</code>) for local iteration</li>
+              <li><code>npm run gen:node-key</code> generates the Ed25519 identity</li>
+              <li><code>/.well-known/terraviz.json</code> manifest endpoint</li>
+              <li>app can flip from SOS S3 to local node via <code>VITE_CATALOG_SOURCE</code></li>
+            </ul>
+          </article>
+
+          <article class="fed__phase fed__phase--draft">
+            <p class="fed__phase-tag">Forthcoming · drafted</p>
+            <h3>Cross-node federation</h3>
+            <p>The federation protocol is documented; subscriber + publisher logic is the next deliverable:</p>
+            <ul>
+              <li>Subscribe to a peer's manifest by URL</li>
+              <li>Verify the peer's Ed25519 signature on each pull</li>
+              <li>Merge peer-published rows into the local catalog</li>
+              <li>Per-dataset access control (publisher → specific peers)</li>
+              <li>Publisher portal beyond dev-bypass auth</li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 class="fed__subhead">Spin one up locally</h3>
+        <p class="fed__subhead-hint">
+          The README's quickstart works against this repo today. Six commands and a curl smoke test.
+        </p>
+
+        <pre class="fed__code" aria-label="Six-step local-node quickstart from the README"><code><span class="fed__code-line"><span class="fed__code-comment"># 1. Generate the node's Ed25519 identity (~/.terraviz/keys).</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run gen:node-key</span></span>
+<span class="fed__code-line"></span>
+<span class="fed__code-line"><span class="fed__code-comment"># 2. Reset local D1 (apply migrations + seed ~20 SOS rows).</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run db:reset</span></span>
+<span class="fed__code-line"></span>
+<span class="fed__code-line"><span class="fed__code-comment"># 3. Configure the publisher-API dev bypass.</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">cp .dev.vars.example .dev.vars   </span><span class="fed__code-comment"># keep DEV_BYPASS_ACCESS=true</span></span>
+<span class="fed__code-line"></span>
+<span class="fed__code-line"><span class="fed__code-comment"># 4. Start the Pages Functions runtime.</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run dev:functions            </span><span class="fed__code-comment"># → http://localhost:8788</span></span>
+<span class="fed__code-line"></span>
+<span class="fed__code-line"><span class="fed__code-comment"># 5. (Optional) Run the app against the local backend.</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">cp .env.example .env.local       </span><span class="fed__code-comment"># VITE_CATALOG_SOURCE=node</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run dev</span></span>
+<span class="fed__code-line"></span>
+<span class="fed__code-line"><span class="fed__code-comment"># 6. Smoke test.</span></span>
+<span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">curl http://localhost:8788/api/v1/catalog | jq '.datasets | length'</span></span>
+<span class="fed__code-output">20</span></code></pre>
+
+        <h3 class="fed__subhead">Read the docs</h3>
+        <p class="fed__subhead-hint">
+          The architecture, data model, federation protocol, publishing CLI, asset pipeline, and developer walkthrough each live in their own design doc. Tap a card to open it on GitHub.
+        </p>
+
+        <div class="fed__refs">
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_BACKEND_PLAN.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">CATALOG_BACKEND_PLAN.md</span>
+            <span class="fed__refs-blurb">Architecture overview · constraints · phased roadmap</span>
+          </a>
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_DATA_MODEL.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">CATALOG_DATA_MODEL.md</span>
+            <span class="fed__refs-blurb">D1 schema · core tables · federation tables · publishing &amp; access</span>
+          </a>
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_FEDERATION_PROTOCOL.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">CATALOG_FEDERATION_PROTOCOL.md</span>
+            <span class="fed__refs-blurb">/.well-known manifest · signed-pull semantics · subscription lifecycle</span>
+          </a>
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">CATALOG_PUBLISHING_TOOLS.md</span>
+            <span class="fed__refs-blurb">Publisher CLI · manifest validation · asset upload pipeline</span>
+          </a>
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_ASSETS_PIPELINE.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">CATALOG_ASSETS_PIPELINE.md</span>
+            <span class="fed__refs-blurb">R2 layout · thumbnail variants · video transcoding · CDN cache strategy</span>
+          </a>
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_BACKEND_DEVELOPMENT.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">CATALOG_BACKEND_DEVELOPMENT.md</span>
+            <span class="fed__refs-blurb">Dev environment · bindings · migrations · testing &amp; debugging</span>
+          </a>
+          <a href="https://github.com/zyra-project/terraviz/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noopener">
+            <span class="fed__refs-name">SELF_HOSTING.md</span>
+            <span class="fed__refs-blurb">End-to-end Cloudflare setup walkthrough — Pages, D1, AE, KV, Access</span>
+          </a>
+        </div>
+      </div>
+    </section>
