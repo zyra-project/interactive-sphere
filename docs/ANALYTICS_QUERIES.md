@@ -357,6 +357,7 @@ alphabetical layout. Per-event positions:
 | `double4` | `input_tokens` (when present) |
 | `double5` | `output_tokens` (when present) |
 | `double6` | `turn_index` |
+| `double7` | `turn_rounds` (1 = direct reply, ≥2 = tool-calling turn; Phase 1d/Y) |
 
 #### `orbit_tool_call`
 

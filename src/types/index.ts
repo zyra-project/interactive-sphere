@@ -12,9 +12,28 @@ export type DatasetFormat = 'video/mp4' | 'image/png' | 'image/jpg' | 'images/jp
  */
 export interface Dataset {
   id: string
+  /**
+   * Bulk-import provenance set by Phase 1d's `terraviz import-snapshot`
+   * to the SOS snapshot's internal id (e.g. `INTERNAL_SOS_768`).
+   * `getDatasetById` falls back to matching this field when a primary
+   * `id` lookup misses, so tour files and other long-lived references
+   * keyed off the legacy SOS IDs continue to resolve against
+   * post-cutover ULID-keyed rows.
+   */
+  legacyId?: string
   title: string
   format: DatasetFormat
   dataLink: string
+  /**
+   * For `tour/json` rows: the resolved URL the tour engine fetches
+   * the tour document from, bypassing the manifest endpoint
+   * indirection (which only handles `video|image` manifests). Set
+   * by the node-catalog serializer for tour-format rows; the
+   * tour-load path prefers this field over `dataLink` when present
+   * and falls back to `dataLink` for legacy SOS catalog responses
+   * that don't surface it.
+   */
+  tourJsonUrl?: string
   organization?: string
   abstractTxt?: string
   thumbnailLink?: string
@@ -186,6 +205,17 @@ export interface LLMContextSnapshot {
   visionEnabled: boolean
   fallback: boolean
   historyCompressed: boolean
+  /**
+   * Number of LLM round-trips this turn took. 1 for a direct
+   * reply (no tool call); ≥2 when the LLM called search_datasets
+   * / search_catalog / list_featured_datasets and the docent fed
+   * the result back for a second round. Phase 1d/Y plumbed this
+   * through so dashboards can see how often the cutover's
+   * tool-calling path triggers and how that compares to the
+   * pre-cutover single-round `[RELEVANT DATASETS]` injection
+   * cost.
+   */
+  roundsCount?: number
 }
 
 /**
@@ -993,6 +1023,21 @@ export interface OrbitTurnEvent extends TelemetryEventBase {
   input_tokens: number
   output_tokens: number
   content_length: number
+  /**
+   * Number of LLM round-trips this turn took. 1 for a direct
+   * reply (no tool call); ≥2 when discovery tools fired and the
+   * docent fed results back for another round. Useful for
+   * monitoring per-turn cost shifts (Phase 1d/F replaced the
+   * single-round pre-search injection with a tool-calling path
+   * that can take 2+ rounds for tool-using turns). 0 / unset on
+   * the user-side `orbit_turn` and on assistant emits from
+   * pre-1d/Y clients.
+   *
+   * Field name chosen so it sorts after `turn_index`
+   * alphabetically, preserving the existing AE blob/double
+   * positions per the ANALYTICS_CONTRIBUTING.md positional rule.
+   */
+  turn_rounds?: number
 }
 
 export interface OrbitToolCallEvent extends TelemetryEventBase {

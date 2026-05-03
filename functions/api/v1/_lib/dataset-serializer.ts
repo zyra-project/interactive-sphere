@@ -71,7 +71,39 @@ export interface WireDataset {
   createdAt: string
   updatedAt: string
   publishedAt?: string
+  /**
+   * Bulk-import provenance — set by `terraviz import-snapshot` to
+   * the SOS snapshot's internal id (e.g. `INTERNAL_SOS_768`). The
+   * frontend's tour engine matches references to legacy IDs against
+   * post-cutover ULID-keyed rows by falling back to this field
+   * when a primary `id` lookup misses. NULL on rows the publisher
+   * created by hand. Phase 1d/T.
+   */
+  legacyId?: string
+  /**
+   * For `tour/json` rows: the resolved URL the SPA's tour engine
+   * fetches the tour document from, bypassing the manifest endpoint
+   * indirection (which only handles `video|image` manifests).
+   * Surfaced from the row's `data_ref` so the post-1d node-catalog
+   * source matches the pre-cutover legacy SOS path: a tour dataset
+   * carries a fetchable JSON URL, the engine fetches and runs it.
+   * Older clients that don't read this field fall back to
+   * `dataLink` and 415 — the new shape is additive and opt-in.
+   */
+  tourJsonUrl?: string
 }
+
+/**
+ * Pluggable callback that turns a row's `data_ref` (e.g.
+ * `url:https://...`, `r2:tours/foo.json`) into a publicly-readable
+ * URL. Lives outside the serializer so the serializer doesn't have
+ * to import the env or the R2 helper directly; call sites pass a
+ * resolver that closes over the bindings they have on hand. Returns
+ * null when the scheme isn't a directly-fetchable file (e.g.
+ * `vimeo:`, `stream:`, `peer:`) — those formats don't go through
+ * the tour-engine fetch path anyway.
+ */
+export type DataRefResolver = (dataRef: string) => string | null
 
 function nonNull<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
@@ -109,6 +141,7 @@ export function serializeDataset(
   row: DatasetRow,
   decoration: DecorationRows,
   identity: NodeIdentityRow,
+  resolveDataRef?: DataRefResolver,
 ): WireDataset {
   const wire: WireDataset = {
     id: row.id,
@@ -147,6 +180,18 @@ export function serializeDataset(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     publishedAt: nonNull(row.published_at),
+    legacyId: nonNull(row.legacy_id),
+  }
+
+  // Tour rows carry a fetchable JSON URL alongside the manifest
+  // URL, since the manifest endpoint refuses tour formats. The
+  // resolver is optional — a caller that doesn't pass one (e.g.
+  // a unit test) just gets a wire row without `tourJsonUrl`,
+  // which falls back to `dataLink` (and 415s) the same way old
+  // clients do.
+  if (row.format === 'tour/json' && resolveDataRef) {
+    const tourUrl = resolveDataRef(row.data_ref)
+    if (tourUrl) wire.tourJsonUrl = tourUrl
   }
 
   // Enriched fields go under `enriched` to mirror the existing

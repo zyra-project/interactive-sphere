@@ -248,9 +248,187 @@ After the checklist runs clean, you should be able to:
   `<<LOAD:...>>` marker. Asking "What's interesting?" with no
   topic triggers `list_featured_datasets` against
   `/api/v1/featured` instead.
+- (Phase 1d) Bulk-import the legacy SOS catalog and verify the
+  docent answers from real datasets. This is the cutover step —
+  with the catalog populated, `search_datasets` (the post-1d
+  default tool) finds real rows and the frontend's
+  `VITE_CATALOG_SOURCE=node` default points at the same backend.
+  Always walk the dry-run first so you can see what will land:
+  ```bash
+  # Plan only — no writes. Prints a per-reason skip breakdown
+  # (unsupported_format for KML / DDS / TLE rows, duplicate_id
+  # for the upstream catalog's repeated SOS ids).
+  npm run terraviz -- --server http://localhost:8788 \
+    --insecure-local import-snapshot --dry-run
+
+  # Apply. Each row goes through POST /publish/datasets +
+  # POST /publish/datasets/{id}/publish; the Phase 1c/D embed
+  # enqueue fires per publish, so by the end the Vectorize
+  # index covers the catalog. Paced at ~5 rows/sec to stay under
+  # Workers AI quota; ~600 rows takes a few minutes.
+  npm run terraviz -- --server http://localhost:8788 \
+    --insecure-local import-snapshot
+
+  # Re-running is a no-op except for new snapshot rows — the
+  # legacy_id column on `datasets` is the idempotency key.
+  npm run terraviz -- --server http://localhost:8788 \
+    --insecure-local import-snapshot
+  ```
+  → first dry-run reports `new rows to publish: <N>`; first apply
+  reports `imported: <N>`; the second apply reports
+  `already imported: <N>` and `imported: 0`.
+
+  Then verify the docent answers from the real catalog:
+  ```bash
+  npm run dev
+  ```
+  Open `http://localhost:5173`, ask "Show me datasets about
+  hurricanes". The chat panel's network tab shows
+  `/api/v1/search?q=hurricane`; the response feeds the LLM,
+  which proposes a real SOS row by title with a `<<LOAD:...>>`
+  marker. Click the chip — the dataset loads via
+  `/api/v1/datasets/{id}/manifest`, exercising the importer's
+  `vimeo:` / `url:` data_ref pass-through end-to-end.
+
+- (Phase 1d, operator) Backfill the Vectorize index for a catalog
+  that was already populated before Vectorize was wired up, or
+  roll out a future model-version bump:
+  ```bash
+  # Plan only — prints the count of published rows that would be
+  # re-enqueued.
+  npm run terraviz -- --server http://localhost:8788 \
+    --insecure-local import-snapshot --reindex --dry-run
+
+  # Apply.
+  npm run terraviz -- --server http://localhost:8788 \
+    --insecure-local import-snapshot --reindex
+  ```
+  Each row hits `POST /publish/datasets/{id}/reindex`, paced at
+  the same ~5 rows/sec. The route returns 503
+  `embed_unconfigured` if Workers AI / Vectorize bindings are
+  missing — fix the bindings before re-running.
+
+#### Cutover rollback recipe
+
+The Phase 1d cutover (commits 1d/E, 1d/F, 1d/G) is reversible
+without schema or data changes. If a regression surfaces in
+production:
+
+- **Frontend regression** (browse UI / docent UI broken under the
+  node catalog) — set `VITE_CATALOG_SOURCE=legacy` in the Pages
+  build env and redeploy. The SPA falls back to the SOS S3 path
+  immediately; the catalog backend keeps running for
+  CLI / API consumers.
+- **Docent regression** (LLM stops returning chips, or invents
+  dataset titles) — `git revert` the cutover commits in their own
+  PR. The three commits are independent reverts: 1d/E (tool
+  ordering), 1d/F (pre-search injection), 1d/G (frontend default).
+  Reverting just F restores the `[RELEVANT DATASETS]` injection;
+  reverting just E flips the tool list back to search_catalog-first.
+- **Catalog data regression** — the imported rows stay published
+  through any of the above rollbacks. To remove them, retract via
+  `terraviz retract <id>` (per row) or wipe the catalog tables
+  via `npm run db:reset`. The `legacy_id` column means a future
+  re-import is a clean no-op against rows that are still
+  published.
 
 If any of these fail, the troubleshooting matrix in "Local
 debugging" below lists the common causes.
+
+#### Docent troubleshooting — "chat works but Load chips don't render"
+
+The docent's response path depends on three behaviours from the
+configured LLM:
+  1. Calling `search_datasets` (or `search_catalog` as fallback)
+     when the user expresses a discovery intent.
+  2. Copying the resulting `id` strings verbatim into
+     `<<LOAD:...>>` markers.
+  3. Not narrating internal reasoning ("Silently…", "Step 1…",
+     etc.) into the user-visible reply.
+
+When chips don't render despite the chat working, the LLM is
+breaking one of those rules. The `validateAndCleanText` safety
+net (1c/M) strips hallucinated IDs and logs them to the console as
+`[Docent] Stripped hallucinated dataset IDs: [...]` — that log is
+the first place to look.
+
+Diagnostic order:
+
+1. **Check the configured model**
+   (Orbit panel → ⚙ Settings → Model). Any Llama 3.x or 4.x
+   variant exposed by Workers AI supports OpenAI-compatible tool
+   calling. Specific behaviour varies by model and changes across
+   Cloudflare's deploy schedule, so model-by-model verdicts in this
+   doc would rot quickly. Test empirically: ask a clear discovery
+   question ("show me datasets about hurricanes") and watch the
+   browser network tab for the `/api/v1/search?q=...` call. If the
+   call fires and returns real results but the marker IDs come
+   back as hallucinations, suspect the prompt before the model.
+
+2. **Check the system prompt** — `src/services/docentContext.ts`
+   `buildSystemPrompt`. The cutover history (1d/S, 1d/W) is full
+   of cases where a confidently-capable model failed because the
+   prompt example contained narrate-able annotations or a
+   real-looking ID prefix the model would mimic. The prompt itself
+   is the most common cause of "model can't copy IDs" symptoms;
+   it's much more often the bug than model size.
+
+3. **Check the search result shape**. Hit
+   `/api/v1/search?q=hurricane` directly via curl. If it returns
+   `{datasets: [], degraded: 'unconfigured'}`, the embed pipeline
+   isn't wired (Workers AI / Vectorize bindings missing); if it
+   returns real ULIDs, the LLM has what it needs and the issue is
+   prompt-side.
+
+The intuition "smaller models hallucinate more" is broadly true,
+but during cutover the prompt was responsible for confabulation
+patterns that affected every model. Don't assume the model is the
+floor without verifying the prompt isn't.
+
+#### Cost model — what changed at the cutover
+
+The cutover went through two iterations on this question:
+
+**1d/F (initial cutover)** removed the `[RELEVANT DATASETS]`
+injection from the docent's user-message build entirely, on the
+assumption that the LLM would tool-call `search_datasets` itself
+when it needed grounded IDs. Live testing on llama-4-scout (and
+sometimes llama-3.1-70b) showed mid-tier models confabulate
+id-shaped strings rather than reliably calling the tool, which
+the validator strips — chips silently disappeared.
+
+**1d/AC (corrected)** restored the per-turn injection, this time
+sourced from the Vectorize-backed `search_datasets` instead of
+the legacy in-memory keyword scan. The injection runs server-side
+before the LLM call for discovery-intent queries; the LLM sees
+real ULIDs in `[RELEVANT DATASETS]` and produces chips reliably
+without needing to tool-call.
+
+| Turn shape | Pre-1d cost | Post-1d/AC cost | Δ |
+|---|---|---|---|
+| User asks a knowledge question (`hello`, `explain this`) | inject 500–1000 tokens for non-discovery? Actually no — the gate skipped these | nothing extra, 1 round | **same** |
+| User asks a discovery question, LLM uses [RELEVANT DATASETS] without tool-calling | inject 500–1000 tokens (in-memory keyword scan), 1 LLM round | inject 1000–1500 tokens (Vectorize results, slightly richer with abstract_snippet), 1 LLM round | **+~500 tokens, no extra round** |
+| User asks a follow-up the [RELEVANT DATASETS] block doesn't cover, LLM tool-calls `search_datasets` | inject 500–1000 + tool round-trip 1000–1500, 2 rounds | inject 1000–1500 + tool round-trip 1000–1500, 2 rounds | **+~500 tokens for the same round count** |
+
+So 1d/AC is modestly more expensive per discovery-intent turn
+than the pre-cutover regime (Vectorize results carry abstract
+snippets the in-memory scan didn't), but the architectural shift
+to a single Vectorize-backed search source of truth is preserved
+and the docent's chip-render reliability matches pre-cutover.
+
+`MAX_TOOL_CALL_ROUNDS` in `src/services/docentService.ts` caps
+tool-call chains at 5 per turn so a runaway model can't burn
+unbounded rounds. The `turn_rounds` analytics field (1d/Y)
+records the actual round count per turn for empirical
+measurement; operators investigating quota burn can compare
+`turn_rounds` distributions in Grafana against the cap to spot
+chains that hit the ceiling.
+
+Phase 1d/Y plumbs `turn_rounds` through to the `orbit_turn`
+analytics event. Grafana panel filters can compare pre/post
+distributions and answer "what fraction of turns are
+tool-calling now?" empirically. Field positions:
+[`docs/ANALYTICS_QUERIES.md` § `orbit_turn`](ANALYTICS_QUERIES.md#orbit_turn).
 
 ### Account-level setup (production-leaning)
 
@@ -309,11 +487,237 @@ preparing a deploy environment, not running locally:
   that pins the (model × text shape × pooling) tuple. The
   Workers AI binding (`AI`) is already provisioned for the
   analytics + chat path; the embedding pipeline reuses it.
+- (Phase 1d) Import the legacy SOS catalog so the deployment has
+  rows to surface. With Vectorize bound and the publisher API
+  reachable, run the bulk importer once per fresh deploy:
+  ```bash
+  # Always dry-run first.
+  npm run terraviz -- --server https://terraviz.example.org \
+    --client-id "$CF_ACCESS_CLIENT_ID" \
+    --client-secret "$CF_ACCESS_CLIENT_SECRET" \
+    import-snapshot --dry-run
+
+  # Apply. The embed pipeline fires per publish, so by the end
+  # the Vectorize index covers the catalog and the docent's
+  # search_datasets tool returns useful results.
+  npm run terraviz -- --server https://terraviz.example.org \
+    --client-id "$CF_ACCESS_CLIENT_ID" \
+    --client-secret "$CF_ACCESS_CLIENT_SECRET" \
+    import-snapshot
+  ```
+  The importer is idempotent — re-running is a no-op on rows
+  already imported (the `legacy_id` column on `datasets` is the
+  key). For an existing catalog where Vectorize was bound after
+  the rows were published, the same CLI binary handles the
+  backfill via `--reindex`. The "What good looks like" section
+  has the per-step verification.
 
 The self-hosting walkthrough at
 [`docs/SELF_HOSTING.md`](SELF_HOSTING.md) is the more thorough
 reference for the full deploy story; the section above is the
 minimum a contributor needs to know.
+
+### Production deployment checklist — first-deploy walkthrough
+
+The Account-level setup above is a topical reference. This
+subsection is the same material organised as a sequence, because
+the order matters and several steps don't take effect until later
+ones run. Working through it in order from a fresh fork avoids the
+recurring "503 binding_missing on the production hostname even
+though everything looks configured" gotcha.
+
+#### Step 1 — Apply catalog migrations to the production D1
+
+The `migrations/catalog/` files create the `datasets`,
+`publishers`, `node_identity`, `featured_datasets`,
+`asset_uploads`, `audit_events`, and decoration tables. Until they
+run against the production D1, every catalog endpoint 5xx's.
+
+Two paths:
+
+- **Wrangler CLI**:
+  ```
+  wrangler d1 migrations apply CATALOG_DB --remote
+  ```
+  Requires `wrangler login` to have completed against an account
+  that owns the D1.
+- **Cloudflare dashboard → Workers & Pages → D1 → `sphere-feedback`
+  → Console**: paste each migration file's contents in order
+  (`0001_init.sql` through `0008_legacy_id.sql` as of Phase 1d).
+  Slower but works when CLI auth fails.
+
+Verify with:
+```sql
+SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;
+```
+The catalog tables (`datasets`, `dataset_categories`, etc.) plus
+the existing feedback tables should be present.
+
+#### Step 2 — Provision `node_identity`
+
+The catalog backend needs exactly one `node_identity` row before
+any read or write endpoint will serve. The `gen-node-key` script
+generates a keypair locally and writes to local D1 only; the
+production row has to be inserted manually.
+
+1. Run `npm run gen:node-key` locally — produces
+   `node-public-key.txt` (wire-format `ed25519:<base64>`) and
+   writes the private half to `.dev.vars`.
+2. Set the private half as a Wrangler/Pages secret:
+   `npx wrangler pages secret put NODE_ID_PRIVATE_KEY_PEM`, OR via
+   dashboard env vars (mark as Secret).
+3. Insert the public-half row via the D1 console:
+   ```sql
+   INSERT INTO node_identity
+     (node_id, display_name, base_url, contact_email, public_key, created_at)
+   VALUES
+     ('NODE-YOUR-PROD-001', 'Your Node', 'https://your-domain',
+      'you@example.com', 'ed25519:<paste from node-public-key.txt>',
+      '2026-01-01T00:00:00.000Z');
+   ```
+4. Verify: `curl https://your-domain/.well-known/terraviz.json`
+   should return your real `node_id`, `display_name`, and
+   `public_key`.
+
+#### Step 3 — Configure Cloudflare Access for the publisher API
+
+`/api/v1/publish/**` is gated by Cloudflare Access. Without an
+Access app, the middleware refuses with `503 access_unconfigured`.
+
+1. **Zero Trust → Access → Applications → Add → Self-hosted**
+2. Application name: `Terraviz Publisher API`
+3. Destinations covering every hostname the API will be reached on:
+   `*.your-pages-domain.pages.dev/api/v1/publish/*`,
+   `your-domain/api/v1/publish/*`, etc. The wildcard subdomain
+   covers all preview branches.
+4. Two policies, in this order:
+   - `Service Token` policy, **Action: Service Auth**, Include →
+     Service Token → the token you'll create next. (`Service Auth`
+     is a distinct action from `Allow`; only Service Auth bypasses
+     interactive SSO for token-only callers.)
+   - `Staff` policy, **Action: Allow**, Include → Emails ending
+     in → your-org.org. (Use the suffix matcher, not the
+     exact-match selector.)
+5. **Service Auth → Service Tokens → Create Service Token** named
+   `terraviz-cli`. Copy the Client ID + Client Secret immediately
+   — the secret is shown once.
+6. From the Access app's Overview tab, copy the **Application
+   Audience (AUD) Tag** (64-char hex).
+
+#### Step 4 — Set Pages env vars and bindings (Production AND Preview)
+
+Both environments need separate toggles in the dashboard. The
+publisher middleware fail-closes when either of `ACCESS_TEAM_DOMAIN`
+/ `ACCESS_AUD` is missing, and the catalog endpoint 503s when
+`CATALOG_DB` is missing — same shape as forgetting to copy the
+config.
+
+**Cloudflare dashboard → Workers & Pages → terraviz → Settings →
+Variables and Bindings**:
+
+| Type | Name | Value |
+|---|---|---|
+| Plaintext | `ACCESS_TEAM_DOMAIN` | `your-team.cloudflareaccess.com` (no protocol) |
+| Plaintext | `ACCESS_AUD` | the AUD tag from Step 3 |
+| Secret | `NODE_ID_PRIVATE_KEY_PEM` | the base64 PKCS8 from Step 2 |
+| Binding (D1) | `CATALOG_DB` | `sphere-feedback` (or your DB) |
+| Binding (KV) | `CATALOG_KV` | namespace created via `wrangler kv namespace create CATALOG_KV` |
+| Binding (R2) | `CATALOG_R2` | `terraviz-assets` bucket |
+| Binding (Workers AI) | `AI` | (auto-detected) |
+| Binding (Vectorize) | `CATALOG_VECTORIZE` | `terraviz-datasets` index |
+
+**For each row, verify the Environment column shows "Production,
+Preview"** — the dashboard offers a separate toggle per
+environment and forgetting either one is the most common cause of
+"works on preview, breaks on production" reports.
+
+#### Step 5 — Trigger a production redeploy
+
+Adding bindings via the dashboard does **not** retro-fit them onto
+running deployments. Either:
+
+- Push a commit to the production branch (`main` by default), which
+  triggers an auto-build with current bindings in scope.
+- **Deployments tab → most recent Production row → ⋯ → Retry
+  deployment** to rebuild the same commit with current bindings.
+
+The redeploy is what activates Steps 1-4's configuration. Until
+this happens, the running production deployment carries whatever
+binding set existed at its original deploy time.
+
+#### Step 6 — Smoke test the publisher API
+
+```
+curl -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+     -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+     https://your-domain/api/v1/publish/me
+```
+
+Expected: 200 with the JIT-provisioned publisher row keyed off
+`<client-id>.access@service.local`. If the response 401s with
+`Invalid or expired Access assertion`, the JWT verification path
+isn't satisfied — usually `ACCESS_AUD` mismatch or the deployment
+didn't pick up the env vars (re-run Step 5).
+
+#### Step 7 — Run the snapshot import
+
+```
+npm run terraviz -- import-snapshot \
+  --server https://your-domain \
+  --client-id $CF_ACCESS_CLIENT_ID \
+  --client-secret $CF_ACCESS_CLIENT_SECRET \
+  --dry-run
+```
+
+Inspect the plan, then drop `--dry-run` to land 192 rows
+(approximate; varies with snapshot revisions). The import is
+idempotent via the `legacy_id` column — re-running is a no-op on
+rows already imported.
+
+#### Step 8 — Verify the public surface
+
+```
+curl https://your-domain/api/v1/catalog | jq '.datasets | length'
+```
+Expected: ~167 (192 imported minus ~25 with `is_hidden=1`).
+
+```
+curl 'https://your-domain/api/v1/search?q=hurricane' | jq '.datasets[0]'
+```
+Expected: a real dataset hit with a ULID `id` and a relevance
+`score`.
+
+#### Account context — Workers AI billing pitfall
+
+Workers AI usage is billed against the account that **owns the
+Pages project**, not the account whose dashboard a user is
+currently viewing. In a multi-account org this leads to a
+confusing sequence:
+
+1. Run `terraviz import-snapshot` against production.
+2. Get a `502 4006: you have used up your daily free allocation
+   of 10,000 neurons` error.
+3. Check the Workers AI dashboard, see "Neurons used today: 0/10k"
+   and assume Cloudflare is broken.
+
+The dashboard shown is for the currently-selected account
+(top-left dropdown). The Pages project's neuron usage is on the
+owning account's counter, which may be a different account. Switch
+the dropdown to the account that contains the `terraviz` Pages
+project; that's the counter the enforcer is honouring.
+
+#### Free-tier quota awareness
+
+Workers AI free tier is 10,000 neurons per UTC day. Tool-calling
+turns in the docent are 2 LLM rounds (one to call the tool, one to
+consume the result), so an aggressive testing day can exhaust the
+quota faster than expected. **Workers Paid ($5/month base, plus
+~$0.011 per 1k neurons)** is the realistic plan for any deploy
+that's exercising the chat surface beyond a smoke test.
+
+The Pages-owning account's subscription is what counts; upgrading
+a personal account doesn't help if the Pages project lives under
+an org. Settings → Billing → Subscriptions on the right account.
 
 ## Stack
 

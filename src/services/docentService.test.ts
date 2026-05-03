@@ -329,17 +329,51 @@ describe('processMessage — LLM path', () => {
   })
 })
 
-describe('processMessage — auto-inject Load buttons', () => {
-  it('auto-injects action when LLM mentions a pre-search title without markers', async () => {
-    // Regression test: the auto-inject safety net should emit a load-dataset
-    // action when the LLM mentions a dataset title from the pre-search results
-    // in its prose but doesn't include a <<LOAD:...>> marker for it.
+describe('processMessage — pre-search injection (1d/AC)', () => {
+  it('injects [RELEVANT DATASETS] from search_datasets results for discovery intents', async () => {
+    // The pre-search safety net (1d/F removed it, 1d/AC restored
+    // it sourced from Vectorize). For a discovery-intent query the
+    // server-side runs search_datasets BEFORE calling the LLM and
+    // inlines the results into the user message so the LLM has
+    // grounded IDs without having to tool-call. This closes the
+    // chip-render reliability gap on small/mid LLMs that
+    // confabulate id-shaped strings.
     const { streamChat } = await import('./llmProvider')
     const mockedStream = vi.mocked(streamChat)
 
-    // LLM response mentions the dataset by title but NO <<LOAD:...>> marker
-    mockedStream.mockImplementation(async function* () {
-      yield { type: 'delta' as const, text: 'Here is a great dataset: Sea Surface Temperature — it shows global ocean temperatures.' }
+    // Stub the /api/v1/search call to return one real-looking ULID hit.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        return new Response(
+          JSON.stringify({
+            datasets: [
+              {
+                id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+                title: 'Hurricane Season - 2024',
+                abstract_snippet: 'Atlantic hurricane track animation.',
+                categories: ['Tropical Cyclones'],
+                peer_id: 'local',
+                score: 0.91,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    let userMessageContent = ''
+    mockedStream.mockImplementation(async function* (msgs) {
+      const userMsg = msgs.find(m => m.role === 'user')
+      if (userMsg) {
+        userMessageContent =
+          typeof userMsg.content === 'string'
+            ? userMsg.content
+            : JSON.stringify(userMsg.content)
+      }
+      yield { type: 'delta' as const, text: 'Reply.' }
       yield { type: 'done' as const }
     })
 
@@ -353,8 +387,123 @@ describe('processMessage — auto-inject Load buttons', () => {
     }
 
     const chunks: DocentStreamChunk[] = []
-    // Query "sea surface temperature" triggers pre-search which returns
-    // the SST dataset. The LLM mentions it by title but skips the marker.
+    for await (const chunk of processMessage('show me datasets about hurricanes', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // The user message that reached the LLM should contain the
+    // [RELEVANT DATASETS] block with the real ULID.
+    expect(userMessageContent).toContain('[RELEVANT DATASETS')
+    expect(userMessageContent).toContain('01KQFFCEE4Q7NQGJNFB0Z042MC')
+    expect(userMessageContent).toContain('Hurricane Season - 2024')
+  })
+
+  it('does not inject [RELEVANT DATASETS] for non-discovery (knowledge) queries', async () => {
+    // Knowledge questions ("what are hurricanes") shouldn't burn
+    // the pre-search round-trip. parseIntent classifies them as
+    // 'search' too (anything with content is search by default),
+    // but greetings / explanations of the current view should
+    // skip the injection. This test pins the gate.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let userMessageContent = ''
+    let searchFetchCount = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        searchFetchCount++
+        return new Response(JSON.stringify({ datasets: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    mockedStream.mockImplementation(async function* (msgs) {
+      const userMsg = msgs.find(m => m.role === 'user')
+      if (userMsg) {
+        userMessageContent =
+          typeof userMsg.content === 'string'
+            ? userMsg.content
+            : JSON.stringify(userMsg.content)
+      }
+      yield { type: 'delta' as const, text: 'Hi!' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('hello', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // 'hello' classifies as a greeting; no pre-search should fire,
+    // and the injected block should not appear.
+    expect(searchFetchCount).toBe(0)
+    expect(userMessageContent).not.toContain('[RELEVANT DATASETS')
+  })
+})
+
+describe('processMessage — auto-inject Load buttons', () => {
+  it('auto-injects action when LLM mentions a tool-result title without markers', async () => {
+    // Regression test: when the LLM calls a discovery tool, gets a
+    // result, and then mentions a dataset title from that result in
+    // prose without an accompanying <<LOAD:...>> marker, the
+    // auto-inject safety net should emit a load-dataset action. This
+    // catches the failure mode where small models drop markers under
+    // pressure but still recommend the right dataset.
+    //
+    // Pre-1d/F this test seeded `searchResultsThisAttempt` via the
+    // [RELEVANT DATASETS] pre-search injection; with that injection
+    // removed the seed has to come from a tool call instead.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let callCount = 0
+    mockedStream.mockImplementation(async function* () {
+      callCount++
+      if (callCount === 1) {
+        // Round 1: LLM calls search_catalog to discover the SST dataset.
+        yield {
+          type: 'tool_call' as const,
+          call: {
+            id: 'call_search_1',
+            name: 'search_catalog',
+            arguments: { query: 'sea surface temperature' },
+          },
+        }
+        yield { type: 'done' as const }
+      } else {
+        // Round 2: LLM has the search result and mentions the dataset
+        // by title but forgets the <<LOAD:...>> marker.
+        yield {
+          type: 'delta' as const,
+          text: 'Here is a great dataset: Sea Surface Temperature — it shows global ocean temperatures.',
+        }
+        yield { type: 'done' as const }
+      }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
     for await (const chunk of processMessage('sea surface temperature', [], datasets, null, config)) {
       chunks.push(chunk)
     }
@@ -497,6 +646,18 @@ describe('validateAndCleanText', () => {
     expect(invalidIds.has('INTERNAL_FAKE_OCEAN')).toBe(true)
   })
 
+  it('strips bare invalid INTERNAL_ IDs case-insensitively (1d/AD)', () => {
+    // 1d/Z added the `i` flag to detection but the strip pass kept
+    // the case-sensitive form, so lowercase invalid mentions like
+    // `internal_sos_123` were detected and added to invalidIds but
+    // not removed from the user-visible prose. Detection and
+    // stripping now both run case-insensitively.
+    const text = 'Check out internal_fake_ocean for ocean data'
+    const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).not.toContain('internal_fake_ocean')
+    expect(invalidIds.has('internal_fake_ocean')).toBe(true)
+  })
+
   it('keeps bare valid INTERNAL_ IDs in prose', () => {
     const ds = [makeDataset({ id: 'INTERNAL_SST_001' })]
     const text = 'Check out INTERNAL_SST_001 for SST data'
@@ -589,6 +750,84 @@ describe('validateAndCleanText', () => {
     const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
     expect(cleanedText).toBe(text)
     expect(invalidIds.size).toBe(0)
+  })
+
+  it('resolves <<LOAD:legacy_id>> to the canonical ULID via legacyId fallback (1d/U)', () => {
+    // Post-cutover the catalog's primary id is a ULID, but tour
+    // files and LLM responses sometimes carry the row's bulk-import
+    // provenance id (e.g. INTERNAL_SOS_768). The marker validator
+    // should resolve those rather than stripping them, mirroring
+    // the dataService.getDatasetById fallback added in 1d/T.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        legacyId: 'INTERNAL_SOS_768',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = 'Here you go.\n<<LOAD:INTERNAL_SOS_768>>\n'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+    // The marker payload gets rewritten to the canonical ULID so
+    // the chat UI's [[LOAD:...]] round-trip stays consistent.
+    expect(cleanedText).toContain('<<LOAD:01KQFFCEE4Q7NQGJNFB0Z042MC>>')
+    expect(cleanedText).not.toContain('INTERNAL_SOS_768')
+  })
+
+  it('resolves bare INTERNAL_* mentions in prose via legacyId fallback (1d/U)', () => {
+    // The bare-INTERNAL pattern at the bottom of validateAndCleanText
+    // also gains the legacyId fallback so an LLM that mentions a
+    // legacy id outside a marker still resolves to the right
+    // dataset.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        legacyId: 'INTERNAL_SOS_768',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = 'See INTERNAL_SOS_768 for more.\n'
+    const { validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+  })
+
+  it('resolves lowercase marker IDs by case-normalising before lookup (1d/Z)', () => {
+    // Llama-4-scout (and other models) sometimes lowercase the id
+    // when emitting a marker — `<<LOAD:internal_sos_476>>` for a row
+    // whose canonical legacy_id is `INTERNAL_SOS_476`. Pre-1d/Z the
+    // exact case-sensitive lookup stripped these as hallucinated.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCXXXXXXXXXXXXXXXXXX1',
+        legacyId: 'INTERNAL_SOS_476',
+        title: 'Demo Dataset',
+      }),
+    ]
+    const text = '<<LOAD:internal_sos_476>>\n'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCXXXXXXXXXXXXXXXXXX1')).toBe(true)
+    // Marker payload rewritten to the canonical ULID so the chat UI
+    // round-trip stays consistent.
+    expect(cleanedText).toContain('<<LOAD:01KQFFCXXXXXXXXXXXXXXXXXX1>>')
+  })
+
+  it('resolves lowercase ULID markers by case-normalising before lookup (1d/Z)', () => {
+    // Same case-insensitivity needed for ULIDs themselves — Crockford
+    // base32 is uppercase canonical but small models sometimes
+    // lowercase the entire id.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = '<<LOAD:01kqffcee4q7nqgjnfb0z042mc>>\n'
+    const { cleanedText, validIds } = validateAndCleanText(text, ds)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+    expect(cleanedText).toContain('<<LOAD:01KQFFCEE4Q7NQGJNFB0Z042MC>>')
   })
 
   it('extracts <<FLY:lat,lon>> markers', () => {
@@ -1713,7 +1952,12 @@ describe('processMessage — backend tool round-trip', () => {
     const datasetsResp = [
       { id: 'DS_HURR', title: 'Atlantic Hurricane Tracks', abstract_snippet: 'A.', categories: ['Atmosphere'], peer_id: 'local', score: 0.9 },
     ]
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    // mockImplementation rather than mockResolvedValue — each fetch
+    // call gets a fresh Response. Pre-search injection (1d/AC) now
+    // calls /api/v1/search before the LLM does too, so a stale
+    // Response object whose body was already consumed would leave
+    // the tool-call-dispatch round with `{datasets:[]}`.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(JSON.stringify({ datasets: datasetsResp }), { status: 200 }),
     )
 
@@ -1759,7 +2003,9 @@ describe('processMessage — backend tool round-trip', () => {
     const featuredResp = [
       { id: 'DS_FEAT', title: 'Climate Reanalysis 2024', abstract_snippet: 'F.', thumbnail_url: null, categories: ['Climate'], position: 0 },
     ]
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    // 1d/AC — see the search_datasets tool round-trip test for why
+    // mockImplementation is required instead of mockResolvedValue.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       new Response(JSON.stringify({ datasets: featuredResp }), { status: 200 }),
     )
 

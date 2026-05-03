@@ -582,6 +582,29 @@ function resolveMarkerToDataset(
   if (datasetIdSet.has(id)) return id
   if (id.length === 0) return null
 
+  // Phase 1d/Z — case-insensitive id fallback. ULIDs are
+  // Crockford base32 (uppercase canonical) and legacy_ids are
+  // `INTERNAL_*` (uppercase). Llama-4-scout (and other models)
+  // sometimes lowercase the id when emitting markers; an exact
+  // case-sensitive lookup misses these. Re-try with the
+  // upper-cased form before falling through to the legacy / title
+  // / token-overlap heuristics.
+  const idUpper = id.toUpperCase()
+  if (idUpper !== id && datasetIdSet.has(idUpper)) return idUpper
+
+  // Phase 1d/U — legacy_id fallback. Tour files and LLM responses
+  // sometimes carry the row's bulk-import provenance id (e.g.
+  // `INTERNAL_SOS_768`) instead of the post-cutover ULID. Resolve
+  // those to the dataset's primary id before falling through to the
+  // title-overlap heuristics; mirrors `dataService.getDatasetById`'s
+  // legacyId fallback. The caller rewrites the marker payload to
+  // `dataset.id` so the chat UI's marker round-trip works. 1d/Z
+  // makes the comparison case-insensitive too.
+  const byLegacy = datasets.find(
+    d => d.legacyId === id || (d.legacyId && d.legacyId === idUpper),
+  )
+  if (byLegacy) return byLegacy
+
   const idLower = id.toLowerCase()
 
   // Existing exact / startsWith bidirectional fallback.
@@ -667,6 +690,11 @@ export function validateAndCleanText(
     const resolved = resolveMarkerToDataset(id, datasetIdSet, datasets)
     if (typeof resolved === 'string') {
       validIds.add(resolved)
+      // 1d/Z — when the resolver case-normalised the id (e.g. the
+      // LLM emitted lowercase but the canonical form is uppercase),
+      // record the rewrite so the marker payload in the cleaned
+      // text matches the canonical id the chat UI expects.
+      if (id !== resolved) markerRewrites.set(id, resolved)
     } else if (resolved) {
       // Title or token-overlap match.
       validIds.add(resolved.id)
@@ -675,14 +703,28 @@ export function validateAndCleanText(
       invalidIds.add(id)
     }
   }
-  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/g)) {
+  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/gi)) {
     const id = match[0]
     // Skip IDs already captured via markers
     if (validIds.has(id) || invalidIds.has(id)) continue
-    if (datasetIdSet.has(id)) {
-      validIds.add(id)
+    // Phase 1d/Z — `i` flag added so the bare-mention path catches
+    // lowercase emissions too (some LLMs lowercase identifiers).
+    // The legacy_id fallback also normalises to uppercase before
+    // comparing so `internal_sos_768` resolves to the
+    // `INTERNAL_SOS_768`-keyed row.
+    const idUpper = id.toUpperCase()
+    if (datasetIdSet.has(id) || datasetIdSet.has(idUpper)) {
+      validIds.add(datasetIdSet.has(id) ? id : idUpper)
+      if (id !== idUpper) markerRewrites.set(id, idUpper)
     } else {
-      invalidIds.add(id)
+      // Phase 1d/U — same legacy_id fallback the marker path uses.
+      const byLegacy = datasets.find(d => d.legacyId === idUpper)
+      if (byLegacy) {
+        validIds.add(byLegacy.id)
+        markerRewrites.set(id, byLegacy.id)
+      } else {
+        invalidIds.add(id)
+      }
     }
   }
 
@@ -807,8 +849,12 @@ export function validateAndCleanText(
     return match
   })
 
-  // Strip bare invalid INTERNAL_... IDs from prose
-  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/g, (id) => {
+  // Strip bare invalid INTERNAL_... IDs from prose. Case-insensitive
+  // to match the detection regex above (1d/Z added the `i` flag for
+  // detection but the strip pass kept the case-sensitive form, so
+  // lowercase invalid mentions like `internal_sos_123` were detected
+  // and reported but left in the user-visible text — 1d/AD).
+  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/gi, (id) => {
     if (invalidIds.has(id)) return ''
     return id
   })
@@ -1025,45 +1071,47 @@ export async function* processMessage(
       ? `[GLOBE STATE: "${currentDataset.title}" is currently loaded on the globe.${currentTime ? ` Showing: ${currentTime}.` : ''}]\n`
       : '[GLOBE STATE: No dataset is loaded. The globe shows the default Earth view.]\n'
 
-    // Phase 3 discovery: pre-search the catalog locally and inject the top
-    // results into the user message as [RELEVANT DATASETS] context. This is
-    // the primary discovery path — it works on every model regardless of
-    // function-calling support. The system prompt tells the LLM to prefer
-    // these pre-searched results and only call `search_catalog` as a
-    // fallback for follow-up queries on a different topic.
+    // Pre-search injection — Phase 1d/AC.
     //
-    // Strip punctuation and common question/stop words so the scoring in
-    // searchDatasets isn't diluted. "What datasets show sea level rise?" →
-    // search query "sea level rise", which scores well against real titles.
-    const PRE_SEARCH_STOP_WORDS = new Set([
-      'what', 'which', 'show', 'me', 'about', 'tell', 'the', 'a', 'an',
-      'is', 'are', 'do', 'does', 'did', 'can', 'how', 'where', 'when',
-      'why', 'i', 'my', 'your', 'you', 'we', 'us', 'it', 'its', 'of',
-      'in', 'on', 'for', 'to', 'and', 'or', 'with', 'this', 'that',
-      'some', 'any', 'have', 'has', 'there', 'here', 'please', 'thanks',
-      'datasets', 'dataset', 'data', 'find', 'search', 'look', 'give',
-      'want', 'like', 'need', 'related', 'something', 'anything',
-    ])
-    const preSearchQuery = input
-      .replace(/[?!.,;:'"()[\]{}]/g, '')
-      .split(/\s+/)
-      .filter(w => w.length > 1 && !PRE_SEARCH_STOP_WORDS.has(w.toLowerCase()))
-      .join(' ')
-    // Only pre-search for intents that actually need dataset discovery.
-    // Greetings, help, explain-current, and what-is-this don't benefit
-    // from injecting a [RELEVANT DATASETS] block and would just add
-    // noise tokens + risk steering the model toward irrelevant recs.
-    const needsPreSearch = intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
-    const preSearchCatalogResults = needsPreSearch
-      ? executeSearchCatalog({ query: preSearchQuery || input, limit: 5 }, datasets)
+    // Re-introduced after 1d/F's removal because the cutover's
+    // tool-call-only grounding path turned out to be unreliable
+    // on small/mid LLMs (llama-4-scout, sometimes 70b): when the
+    // LLM short-circuits and doesn't call search_datasets, it
+    // confabulates id-shaped strings the validator strips, and
+    // the user sees prose without chips.
+    //
+    // 1d/F removed an in-memory keyword-scan injection; 1d/AC
+    // restores the same SHAPE of injection but sources results
+    // from the Vectorize-backed `search_datasets` instead.
+    // Architectural cleanup of 1d (Vectorize as the single source
+    // of search truth, no in-memory legacy keyword scan in the
+    // primary path) is preserved; only the grounding mechanism
+    // reverts to "hand the LLM real IDs in the user message".
+    //
+    // The `search_datasets` LLM tool stays in the tool list so the
+    // model can refine for follow-up queries — it's no longer the
+    // only path to grounded IDs.
+    const needsPreSearch =
+      intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
+    const preSearchQuery =
+      intent.type === 'search' ? intent.query : intent.type === 'category' ? intent.category : input
+    const preSearchHits = needsPreSearch
+      ? (await executeSearchDatasets({ query: preSearchQuery, limit: 5 }, cfg)).datasets
       : []
 
     let preSearchContext = ''
-    if (preSearchCatalogResults.length > 0) {
-      const lines = preSearchCatalogResults.map(r =>
-        `- ${r.id} | ${r.title}${r.isTour ? ' [Tour]' : ''} | ${r.categories.join(', ')} | ${r.description}`
-      )
-      preSearchContext = `[RELEVANT DATASETS for your query:\n${lines.join('\n')}\nRefer to these by exact title and include <<LOAD:ID>> markers.]\n`
+    if (preSearchHits.length > 0) {
+      const lines = preSearchHits.map(h => {
+        const cats = h.categories.join(', ')
+        const snippet = h.abstract_snippet
+          ? h.abstract_snippet.length > 200
+            ? h.abstract_snippet.slice(0, 200) + '…'
+            : h.abstract_snippet
+          : ''
+        return `- ${h.id} | ${h.title} | ${cats} | ${snippet}`
+      })
+      preSearchContext =
+        `[RELEVANT DATASETS for your query:\n${lines.join('\n')}\nRefer to these by exact title and copy the id field verbatim into <<LOAD:ID>> markers.]\n`
     }
 
     const userMessage: LLMMessage = visionActive
@@ -1078,20 +1126,27 @@ export async function* processMessage(
       ...buildCompressedHistory(history),
       userMessage,
     ]
-    // search_catalog runs first because it scans the in-memory legacy
-    // catalog and always returns valid IDs the marker validator
-    // recognises. search_datasets / list_featured_datasets are wired
-    // up but listed AFTER — they hit the node catalog backend, which
-    // may not be provisioned yet on a given deploy. If the LLM picks
-    // the new tools first and gets an empty result, it sometimes
-    // hallucinates IDs that get stripped by validateAndCleanText
-    // (Load chips disappear from prose). Putting search_catalog first
-    // restores the pre-1c default; once Vectorize is provisioned in
-    // production, swap the order back as part of the cutover.
+    // Tool ordering — Phase 1d cutover (catalog(1d/E)).
+    //
+    // search_datasets ranks first now that the catalog backend is
+    // provisioned and the SOS snapshot has been imported (1d/B).
+    // Semantic vector search is the primary discovery tool; the
+    // empty-result fallback to search_catalog stays in the prompt
+    // for self-hosting deploys that haven't wired Vectorize yet.
+    // list_featured_datasets is the cold-start path. search_catalog
+    // (legacy in-memory keyword scan) stays in the tool list as a
+    // graceful-degradation fallback, but is no longer the default.
+    //
+    // 1c/L pinned search_catalog first to avoid the
+    // unwired-Vectorize hallucination path; with the cutover in
+    // place that mitigation is unnecessary. A regression here —
+    // empty Vectorize, search_datasets first — would surface as
+    // missing Load chips and is reverted by `git revert` of this
+    // commit.
     const tools = [
-      getSearchCatalogTool(),
       getSearchDatasetsTool(),
       getListFeaturedDatasetsTool(),
+      getSearchCatalogTool(),
       getLoadDatasetTool(),
       getFlyToTool(),
       getSetTimeTool(),
@@ -1136,13 +1191,18 @@ export async function* processMessage(
       // Track all datasets returned by discovery tools across rounds in
       // this attempt so we can auto-inject Load buttons for any the LLM
       // mentions by title but forgets to tag with <<LOAD:...>> markers.
-      // Seed with pre-search results so the auto-inject safety net can
-      // match dataset titles in the LLM's prose even when the model
-      // doesn't call any discovery tool. Any tool-call results are
-      // appended later — both legacy `search_catalog` results and Phase
-      // 1c `search_datasets` / `list_featured_datasets` results land
-      // here, normalised to the same minimal shape (id + title).
-      const searchResultsThisAttempt: CatalogSearchResult[] = [...preSearchCatalogResults]
+      // Tool-call results (search_datasets / list_featured_datasets /
+      // legacy search_catalog) land here, normalised to the same minimal
+      // shape. catalog(1d/AC) seeds with the pre-search results so the
+      // safety net catches title-mentions when the LLM doesn't call a
+      // tool (which post-1d/AC is the common case for discovery
+      // intents — they're already grounded via [RELEVANT DATASETS]).
+      const searchResultsThisAttempt: CatalogSearchResult[] = preSearchHits.map(h => ({
+        id: h.id,
+        title: h.title,
+        categories: h.categories,
+        description: h.abstract_snippet,
+      }))
 
       try {
         toolLoop: while (round < MAX_TOOL_CALL_ROUNDS) {
@@ -1435,7 +1495,11 @@ export async function* processMessage(
             }
           }
 
-          yield { type: 'done', fallback: false, llmContext }
+          yield {
+            type: 'done',
+            fallback: false,
+            llmContext: { ...llmContext, roundsCount: round },
+          }
           return
         }
 
