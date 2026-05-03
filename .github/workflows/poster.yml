@@ -46,6 +46,13 @@ jobs:
             echo "::error::Run 'python3 poster/scripts/build_poster.py' locally and commit the result."
             exit 1
           fi
+      - name: Validate source-code links
+        # Catches file renames / moves before they ship as broken
+        # links from the poster to GitHub. The poster intentionally
+        # links filenames in §4-style cards directly to source so
+        # visitors can dive into the technical details — this guard
+        # keeps that promise honest as the codebase evolves.
+        run: python3 poster/scripts/check_source_links.py
 
   deploy:
     name: Deploy poster to Cloudflare Pages

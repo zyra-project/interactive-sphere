@@ -686,6 +686,36 @@ code, kbd, pre {
   font-size: 0.85em;
 }
 
+/* Source-code link in the card heading: discreet, inherits the
+   mono filename styling, gains color + underline on hover. The
+   trailing ↗ glyph signals "external link to the source on
+   GitHub" without being noisy. */
+.globe__stack-card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.globe__stack-card h3 a:hover,
+.globe__stack-card h3 a:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
+}
+
+.globe__stack-card h3 a::after {
+  content: "↗";
+  margin-left: 0.3em;
+  font-size: 0.75em;
+  color: var(--neutral-400);
+  vertical-align: super;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.globe__stack-card h3 a:hover::after,
+.globe__stack-card h3 a:focus-visible::after {
+  color: var(--cable-blue);
+}
+
 @media (max-width: 700px) {
   .globe__stack-grid {
     grid-template-columns: 1fr;
@@ -3309,22 +3339,22 @@ code, kbd, pre {
 
         <div class="globe__stack-grid">
           <article class="globe__stack-card">
-            <h3>mapRenderer.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/mapRenderer.ts" target="_blank" rel="noopener">mapRenderer.ts</a></h3>
             <p>MapLibre globe projection. Owns navigation, markers, labels, country borders, terrain (3D elevation tiles), and region highlighting. Loads Blue Marble (day) and Black Marble (night-lights) GIBS tile sources on startup.</p>
           </article>
 
           <article class="globe__stack-card">
-            <h3>earthTileLayer.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/earthTileLayer.ts" target="_blank" rel="noopener">earthTileLayer.ts</a></h3>
             <p>A MapLibre <code>CustomLayerInterface</code> running multi-pass WebGL2: day/night blend gated on real UTC sun position, framebuffer-captured city lights, specular sun glint, real-time clouds, starfield skybox.</p>
           </article>
 
           <article class="globe__stack-card">
-            <h3>tilePreloader.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/tilePreloader.ts" target="_blank" rel="noopener">tilePreloader.ts</a></h3>
             <p>Eagerly fetches low-zoom GIBS tiles into the browser cache on startup, so the first interaction lands on a fully-painted globe rather than a checkerboard of pending tile requests.</p>
           </article>
 
           <article class="globe__stack-card">
-            <h3>datasetLoader.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/datasetLoader.ts" target="_blank" rel="noopener">datasetLoader.ts</a></h3>
             <p>Hands a dataset to the globe: progressive image fallback (4096 → 2048 → 1024) for stills, HLS streaming with adaptive bitrate for video, attached as a live texture either way — same display path.</p>
           </article>
         </div>

@@ -663,6 +663,36 @@ code, kbd, pre {
   font-size: 0.85em;
 }
 
+/* Source-code link in the card heading: discreet, inherits the
+   mono filename styling, gains color + underline on hover. The
+   trailing ↗ glyph signals "external link to the source on
+   GitHub" without being noisy. */
+.globe__stack-card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.globe__stack-card h3 a:hover,
+.globe__stack-card h3 a:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
+}
+
+.globe__stack-card h3 a::after {
+  content: "↗";
+  margin-left: 0.3em;
+  font-size: 0.75em;
+  color: var(--neutral-400);
+  vertical-align: super;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.globe__stack-card h3 a:hover::after,
+.globe__stack-card h3 a:focus-visible::after {
+  color: var(--cable-blue);
+}
+
 @media (max-width: 700px) {
   .globe__stack-grid {
     grid-template-columns: 1fr;
