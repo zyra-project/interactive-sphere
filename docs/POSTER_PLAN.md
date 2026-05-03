@@ -841,27 +841,29 @@ param hasn't taken effect after a 2 s grace period.
 
 ## Build phases
 
-Each phase is a single commit (DCO-signed) on
-`claude/create-presentation-poster-4sqyF`. We commit each phase
+Each phase shipped as a single DCO-signed commit on
+`claude/create-presentation-poster-4sqyF` (the poster work) or
+on a dedicated branch off `main` (the SPA-side work in P12 and
+the catalog fix that unblocked P12). We commit each phase
 before starting the next to keep edits bounded — same rule the
 catalog plan files follow.
 
-| Phase | Deliverable |
-|---|---|
-| **P1** | Scaffold: `poster/sections/{_head,_styles.css,_body-open,_footer}.html`, `poster/sections/sec-01-hero.html`, empty placeholder partials for sec-02..sec-13, `poster/scripts/build_poster.py`, `poster/README.md`, design tokens, Source Sans 3 + Source Code Pro fonts, sticky timer (minimized by default). First run of the build script produces `poster/index.html` with the hero rendered and remaining sections as empty anchored placeholders — committed alongside the partials. |
-| **P2** | §2 Mission + §3 feature gallery (links to anchors only). |
-| **P3** | §4 globe section, including live demo iframe + `/health` probe + fallback. |
-| **P4** | §5 multi-globe section — lockstep mechanics, layout-toggle buttons (with screenshot fallback if `?layout=` isn't live yet). |
-| **P5** | §6 tours section — pitch, task table, "Orbit drives the app" architecture callout, tour-launcher buttons, "Ask Orbit for a tour" button, annotated tour-task strip SVG. |
-| **P6** | §7 Orbit section, sequence diagram SVG, mock chat bubble (with the tours forward-link wired). |
-| **P7** | §8 immersive section. Placeholder image boxes if Quest captures aren't ready; swap-in commit later. |
-| **P8** | §9 multi-platform section + download badges. |
-| **P9** | §10 federation section + architecture diagram SVG + CSS keyframe. |
-| **P10** | §11 analytics + §12 tech stack + §13 CTA + §14 footer. |
-| **P11** | Polish pass: a11y audit (axe), reduced-motion check, mobile breakpoint, link audit, Lighthouse run, plus the optional CI drift guard that re-runs `build_poster.py` and fails on any uncommitted diff in `poster/index.html`. |
-| **P12** | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open` (and the `&prompt=tour` variant), `?dataset={id}` (already supported). Lands as a regular SPA PR off `main`, not on the poster branch. |
-| **P12.5** | "Tap to place Earth" model-viewer tile: export `terraviz-earth.glb` + `terraviz-earth.usdz` from `photorealEarth.ts`, commit under `poster/assets/xr/models/`, wire up the `<model-viewer>` tag in §8. Optional — ships in a follow-up commit if asset export turns out to be more than one commit's worth. |
-| **P13** | Deploy hand-off: confirm production-domain (`poster.terraviz.zyra-project.org` — already wired up) is serving the final content, update `poster/README.md` + the main repo `README.md` with the live URL, and add a short link from `MISSION.md` if appropriate. The Pages project, custom domain, and CI workflow are already in place at this point — P13 is documentation, not infrastructure. |
+| Phase | Status | Deliverable |
+|---|---|---|
+| **P1** | ✅ shipped | Scaffold: `poster/sections/{_head,_styles.css,_body-open,_footer}.html`, `poster/sections/sec-01-hero.html`, empty placeholder partials for sec-02..sec-14, `poster/scripts/build_poster.py`, `poster/README.md`, design tokens, Source Sans 3 + Source Code Pro fonts, sticky timer (minimized by default). First run of the build script produces `poster/index.html` with the hero rendered and remaining sections as empty anchored placeholders — committed alongside the partials. |
+| **P2** | ✅ shipped | §2 Mission + §3 feature gallery (links to anchors only). |
+| **P3** | ✅ shipped | §4 globe section, including live demo iframe and the per-section iframe single-active-instance manager. |
+| **P4** | ✅ shipped | §5 multi-globe section — lockstep mechanics, layout-toggle buttons. |
+| **P5** | ✅ shipped | §6 tours section — pitch, task table, "Orbit drives the app" architecture callout, tour-launcher buttons, "Ask Orbit for a tour" button, annotated tour-task strip SVG. |
+| **P6** | ✅ shipped | §7 Orbit section, sequence diagram SVG, mock chat bubble (with the tours forward-link wired) + the "does the avatar matter?" research callout. |
+| **P7** | ✅ shipped | §8 immersive section. Placeholder image boxes for Quest captures (asset swap is a follow-up commit). |
+| **P8** | ✅ shipped | §9 multi-platform section + download badges. |
+| **P9** | ✅ shipped | §10 federation section + architecture diagram SVG + CSS keyframe. |
+| **P10** | ✅ shipped | §11 analytics + §12 tech stack + §13 CTA + §14 footer. |
+| **P11** | ✅ shipped | Polish pass: semantic landmarks (`<footer>`), heading hierarchy, skip-to-content link, robots meta, plus the CI drift guard that re-runs `build_poster.py` and fails on any uncommitted diff in `poster/index.html`. Browser-side a11y / Lighthouse / reduced-motion / mobile-breakpoint passes are still a user-side follow-up. |
+| **P12** | ✅ shipped (#63) | SPA URL-param handlers for poster deep-links: terrain / labels / borders / auto-rotate toggles, `?layout={1,2,4}`, `?tour={id}`, `?orbit=open` (and the `&prompt=tour` variant). Landed as a regular SPA PR off `main`, not on the poster branch. PR #65 followed up to fix `tour/json` 415s under the node catalog source — same end-to-end path. |
+| **P12.5** | ⏳ wiring shipped, binaries pending | "Tap to place Earth" model-viewer tile in §8. The `<model-viewer>` tag, asset paths, CDN-loaded runtime, and AR-button styling all shipped; the GLB + USDZ binaries themselves require a local export run because sandbox CI doesn't have outbound network to the SOS CDN. Pipeline documented in `poster/assets/xr/models/README.md`. |
+| **P13** | ✅ shipped | Deploy hand-off: production at `poster.terraviz.zyra-project.org`, `poster/README.md` + main `README.md` updated with the live URL, badge added to the main repo header. Pages project, custom domain, and CI workflow were already in place — P13 was documentation, not infrastructure. |
 
 ## Risks & tradeoffs
 
