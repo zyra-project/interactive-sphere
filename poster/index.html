@@ -4467,7 +4467,7 @@ a.stack__item-name:focus-visible::after,
               <rect class="arch-box" x="0" y="0" width="190" height="76" rx="8" />
               <text class="arch-text" x="95" y="24" text-anchor="middle">Federation peers</text>
               <text class="arch-mono" x="95" y="44" text-anchor="middle">cross-instance catalog</text>
-              <text class="arch-mono" x="95" y="56" text-anchor="middle">pulls (Phase 4)</text>
+              <text class="arch-mono" x="95" y="56" text-anchor="middle">pulls (drafted)</text>
               <text class="arch-mono-accent" x="95" y="70" text-anchor="middle">→ §7 federation</text>
             </g>
           </svg>
@@ -4797,7 +4797,7 @@ a.stack__item-name:focus-visible::after,
 
         <h3 class="tours__subhead">The task surface</h3>
         <p class="tours__subhead-hint">
-          A representative subset of what <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/tourEngine.ts" target="_blank" rel="noopener"><code>tourEngine.ts</code></a> already supports today (Phases 1 and 2 shipped).
+          A representative subset of what <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/tourEngine.ts" target="_blank" rel="noopener"><code>tourEngine.ts</code></a> already supports today.
         </p>
 
         <div class="tours__table-wrapper">
@@ -6001,7 +6001,7 @@ a.stack__item-name:focus-visible::after,
 
           <article class="fed__stack-card">
             <h3>Semantic search</h3>
-            <p>Cloudflare Vectorize stores a 768-dim embedding per dataset. The docent's <code>search_datasets</code> LLM tool queries it directly today (used by Orbit when a visitor asks "show me something about hurricanes"); the public <code>/api/v1/search</code> URL swaps from D1 <code>LIKE</code> to Vectorize semantic in Phase 1b behind the same path. Federated rows reindex locally on sync, so each node owns its own search experience without phoning home.</p>
+            <p>Cloudflare Vectorize stores a 768-dim embedding per dataset. The docent's <code>search_datasets</code> LLM tool queries it directly today (used by Orbit when a visitor asks "show me something about hurricanes"); a follow-on swaps the public <code>/api/v1/search</code> URL from D1 <code>LIKE</code> to Vectorize semantic behind the same path. Federated rows reindex locally on sync, so each node owns its own search experience without phoning home.</p>
           </article>
         </div>
 
@@ -6037,7 +6037,7 @@ a.stack__item-name:focus-visible::after,
               <text class="pub-text" x="80" y="62" text-anchor="middle">portal · CLI</text>
               <text class="pub-mono" x="80" y="84" text-anchor="middle">/publish (Access)</text>
               <text class="pub-mono" x="80" y="98" text-anchor="middle">terraviz publish ...</text>
-              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted · Phase 3</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted</text>
             </g>
 
             <path class="pub-arrow" d="M180,100 L200,100" marker-end="url(#arrow-pub)" />
@@ -6063,7 +6063,7 @@ a.stack__item-name:focus-visible::after,
               <text class="pub-text" x="80" y="62" text-anchor="middle">decimate · variant</text>
               <text class="pub-mono" x="80" y="84" text-anchor="middle">Stream (video)</text>
               <text class="pub-mono" x="80" y="98" text-anchor="middle">Images (variants)</text>
-              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted · Phase 1b</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted</text>
             </g>
 
             <path class="pub-arrow" d="M540,100 L560,100" marker-end="url(#arrow-pub)" />
@@ -6125,18 +6125,18 @@ a.stack__item-name:focus-visible::after,
             <p class="fed__phase-tag">Forthcoming · drafted</p>
             <h3>Portal, pipeline, public search</h3>
             <ul>
-              <li>Publisher portal UI behind Cloudflare Access (Phase 3)</li>
-              <li>Tour creator capture mode (Phase 4)</li>
+              <li>Publisher portal UI behind staff SSO</li>
+              <li>Tour creator capture mode</li>
               <li>Stream + Images cutover, replacing the Vimeo proxy and the hand-rolled image ladder</li>
-              <li>Public <code>/api/v1/search</code> swaps D1 <code>LIKE</code> → Vectorize semantic (Phase 1b)</li>
-              <li>Authoring CLI with signed binaries + npm package (Phase 1b)</li>
+              <li>Public <code>/api/v1/search</code> swaps D1 <code>LIKE</code> → Vectorize semantic behind the same path</li>
+              <li>Authoring CLI with signed binaries + npm package</li>
             </ul>
           </article>
         </div>
 
         <h3 class="fed__subhead">Try the portal</h3>
         <p class="fed__subhead-hint">
-          An interactive publisher dashboard will live here once the portal UI ships behind Cloudflare Access — mock the dataset-entry form, run a draft preview against the live globe, watch the asset pipeline transcode in real time. Until then, the full form spec, validation rules, and CLI surface live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+          An interactive publisher dashboard will live here once the portal UI ships behind staff SSO — mock the dataset-entry form, run a draft preview against the live globe, watch the asset pipeline transcode in real time. Until then, the full form spec, validation rules, and CLI surface live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
         </p>
 
         <figure class="pub__demo" aria-labelledby="pub-demo-caption">
@@ -6149,7 +6149,7 @@ a.stack__item-name:focus-visible::after,
             </div>
             <div class="pub__demo-body">
               <div class="pub__demo-label">Interactive publisher dashboard</div>
-              <div class="pub__demo-tag">embed pending · Phase 3 deliverable</div>
+              <div class="pub__demo-tag">embed pending · drafted</div>
             </div>
           </div>
           <figcaption id="pub-demo-caption" class="pub__demo-caption">
