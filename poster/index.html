@@ -2171,6 +2171,18 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   line-height: 1.6;
 }
 
+/* Inline aside that follows the federation lede with a smaller,
+   muted footnote about the deprecated legacy catalog source.
+   Reads as context for the reader who remembers the SOS S3
+   path, not load-bearing copy. */
+.fed__lede-aside {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--neutral-500);
+  line-height: 1.5;
+}
+
 .fed__lede code,
 .fed__stack-card code,
 .fed__phase code,
@@ -5172,7 +5184,7 @@ a.stack__item-name:focus-visible::after,
         <p class="section__eyebrow">§7 · Federated catalog &amp; custom backend</p>
         <h2 id="sec-10-title" class="fed__title">Run your own. Federate with peers. Keep the data at home.</h2>
         <p class="fed__lede">
-          The TerraViz app can read its catalog from the public NOAA Science On a Sphere (SOS) source <em>or</em> from a self-hosted node-backend on Cloudflare. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.
+          TerraViz reads its catalog from a self-hosted node-backend by default. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.<br><small class="fed__lede-aside">The legacy NOAA Science On a Sphere (SOS) S3 catalog is the system the cutover replaces — kept behind the <code>VITE_CATALOG_SOURCE=legacy</code> env-var as a rollback hatch during the stabilisation window, scheduled for removal once node-backed deployments have soaked.</small>
         </p>
 
         <div class="fed__stack-grid">
@@ -5383,7 +5395,7 @@ a.stack__item-name:focus-visible::after,
               <li>Publisher dev-bypass (<code>.dev.vars</code>) for local iteration</li>
               <li><code>npm run gen:node-key</code> generates the Ed25519 identity</li>
               <li><code>/.well-known/terraviz.json</code> manifest endpoint</li>
-              <li>app can flip from SOS S3 to local node via <code>VITE_CATALOG_SOURCE</code></li>
+              <li>node-backed catalog is the default (<code>VITE_CATALOG_SOURCE=node</code>); legacy SOS S3 path opt-in for rollback only</li>
             </ul>
           </article>
 

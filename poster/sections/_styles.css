@@ -2148,6 +2148,18 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   line-height: 1.6;
 }
 
+/* Inline aside that follows the federation lede with a smaller,
+   muted footnote about the deprecated legacy catalog source.
+   Reads as context for the reader who remembers the SOS S3
+   path, not load-bearing copy. */
+.fed__lede-aside {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--neutral-500);
+  line-height: 1.5;
+}
+
 .fed__lede code,
 .fed__stack-card code,
 .fed__phase code,
