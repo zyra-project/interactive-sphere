@@ -321,17 +321,25 @@ class InteractiveSphere {
         this.setLoading(false)
         // Render the browse panel (populates category filters and
         // dataset cards) then decide whether to leave it visible.
-        // On mobile (≤768px) the panel is full-width and would hide
-        // the globe entirely — start closed on that breakpoint and
-        // pulse the Browse button briefly so users notice where
-        // datasets live. Desktop keeps the existing side-panel UX.
+        // - Multi-viewport mode: the visitor explicitly chose
+        //   multiple globes (via ?layout= or the layout picker).
+        //   Don't cover one of them with the browse panel by
+        //   default — collapse it and pulse the Browse button so
+        //   they notice where to click. Mirrors the same decision
+        //   in the dataset-from-URL branch above.
+        // - Mobile single-view: panel is full-width and would
+        //   hide the globe entirely; start hidden and pulse.
+        // - Desktop single-view: keep the existing side-panel UX
+        //   so the visitor sees the catalog by default.
         showBrowseUI(this.appState.datasets, {
           onSelectDataset: (id) => this.selectDatasetFromBrowse(id),
           announce: (msg) => this.announce(msg),
           isMobile: this.isMobile,
           onOpenChat: (query) => this.openChatWithQuery(query),
         })
-        if (window.matchMedia('(max-width: 768px)').matches) {
+        if (this.viewports.getPanelCount() > 1) {
+          collapseBrowseUI()
+        } else if (window.matchMedia('(max-width: 768px)').matches) {
           hideBrowseUI()
         }
         pulseBrowseButton()
