@@ -30,6 +30,68 @@
           </article>
         </div>
 
+        <h3 class="fed__subhead">Cloud-agnostic by design</h3>
+        <p class="fed__subhead-hint">
+          TerraViz was designed around Cloudflare's edge primitives because that's where it ships today — same account as the app, single deploy mechanism, no vendor sprawl. The architecture is deliberately portable, though: every dependency above maps to a generic primitive an operator can swap to AWS, GCP, Fly.io, on-prem, or hybrid setups without touching the data model, federation protocol, asset pipeline, or any of the published API contracts.
+        </p>
+
+        <div class="fed__portability">
+          <table class="fed__portability-table">
+            <thead>
+              <tr>
+                <th scope="col">Cloudflare today</th>
+                <th scope="col">Generic primitive</th>
+                <th scope="col">Drop-in alternatives</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Pages Functions</code></td>
+                <td>Edge / serverless compute</td>
+                <td class="fed__portability-alts">AWS Lambda · Fly Machines · Vercel · Deno Deploy</td>
+              </tr>
+              <tr>
+                <td><code>D1</code></td>
+                <td>SQL database</td>
+                <td class="fed__portability-alts">Postgres · Turso · PlanetScale · plain SQLite</td>
+              </tr>
+              <tr>
+                <td><code>R2</code></td>
+                <td>S3-compatible object storage</td>
+                <td class="fed__portability-alts">AWS S3 · Backblaze B2 · MinIO (self-host)</td>
+              </tr>
+              <tr>
+                <td><code>KV</code></td>
+                <td>Edge cache · key-value</td>
+                <td class="fed__portability-alts">Redis · DynamoDB · Memcached</td>
+              </tr>
+              <tr>
+                <td><code>Vectorize</code></td>
+                <td>Vector database</td>
+                <td class="fed__portability-alts">pgvector · Qdrant · Pinecone · Weaviate</td>
+              </tr>
+              <tr>
+                <td><code>Workers AI</code></td>
+                <td>OpenAI-compatible LLM</td>
+                <td class="fed__portability-alts">OpenAI · Ollama · LM Studio · vLLM · llama.cpp</td>
+              </tr>
+              <tr>
+                <td><code>Stream</code> + <code>Images</code></td>
+                <td>Video transcoding · image variants</td>
+                <td class="fed__portability-alts">AWS MediaConvert + S3 · ffmpeg + sharp · Mux</td>
+              </tr>
+              <tr>
+                <td><code>Cloudflare Access</code></td>
+                <td>SSO / identity provider</td>
+                <td class="fed__portability-alts">Okta · Auth0 · Keycloak · any OIDC provider</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="fed__portability-note">
+            The catalog plan, federation protocol, and asset pipeline docs (linked below) describe each contract in primitive terms — D1 as "SQLite-compatible", R2 as "S3-compatible", Vectorize as "vector DB". The runtime swap is a port-shaped task; the API surface and on-disk format don't move.
+          </p>
+        </div>
+
         <h3 class="fed__subhead">The federation flow</h3>
         <p class="fed__subhead-hint">
           A node advertises itself at <code>/.well-known/terraviz.json</code> with its signed identity (Ed25519 keypair generated locally via <code>npm run gen:node-key</code>). Peer nodes discover, verify, and pull the published catalog rows — metadata only, never raw assets. The animated arrows below show subscription requests fanning out from one node to its peers.

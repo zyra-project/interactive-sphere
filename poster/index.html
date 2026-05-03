@@ -2281,6 +2281,95 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   animation-delay: -1s;
 }
 
+/* Cloud-agnostic portability table — three columns mapping
+   today's Cloudflare service to the generic primitive it
+   represents and a few drop-in alternatives. Visually muted
+   so it reads as "context for the operator" rather than
+   competing with the federation flow diagram below. */
+.fed__portability {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__portability-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.fed__portability-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  font-weight: 700;
+  padding: 0.4rem 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.fed__portability-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--neutral-100);
+  vertical-align: top;
+  color: var(--neutral-700);
+  line-height: 1.45;
+}
+
+.fed__portability-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fed__portability-table code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+.fed__portability-alts {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+}
+
+.fed__portability-note {
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  margin: 0.85rem 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .fed__portability-table thead {
+    display: none;
+  }
+  .fed__portability-table,
+  .fed__portability-table tbody,
+  .fed__portability-table tr,
+  .fed__portability-table td {
+    display: block;
+    width: 100%;
+  }
+  .fed__portability-table tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--neutral-200);
+  }
+  .fed__portability-table tr:last-child {
+    border-bottom: none;
+  }
+  .fed__portability-table td {
+    padding: 0.15rem 0;
+    border: none;
+  }
+}
+
 /* Phase status — "today" + "forthcoming" diptych */
 .fed__phase-grid {
   display: grid;
@@ -2855,6 +2944,37 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   color: var(--cable-blue);
   font-weight: 700;
   margin: 0 0 0.6rem;
+}
+
+/* "Today's stack — portable by design" pill that sits beside
+   the Cloud group title, signalling that the brands listed are
+   the current deploy and not an architectural lock-in. Links
+   to §7 for the portability table. */
+.stack__group-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--neutral-600);
+  background: var(--neutral-100);
+  border: 1px solid var(--neutral-200);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.stack__group-pill a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.stack__group-pill a:hover,
+.stack__group-pill a:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
 }
 
 .stack__items {
@@ -3473,7 +3593,7 @@ a.stack__item-name:focus-visible::after,
             <p class="feature-card__anchor">§7</p>
             <h3 class="feature-card__title">Federated catalog</h3>
             <p class="feature-card__desc">
-              Self-host your own catalog on Cloudflare — D1, R2, Workers Analytics, Access. Federation across peer nodes is drafted, with live cross-node operation coming next.
+              Self-host your own catalog. SQL DB, object storage, edge cache, and SSO behind a versioned API — Cloudflare today (D1, R2, KV, Access), portable by design. Federation across peer nodes is drafted, with live cross-node operation coming next.
             </p>
             <span class="feature-card__cta">Run your own</span>
           </a>
@@ -3544,7 +3664,7 @@ a.stack__item-name:focus-visible::after,
             <p class="feature-card__anchor">§10</p>
             <h3 class="feature-card__title">Tech stack</h3>
             <p class="feature-card__desc">
-              Vanilla TypeScript. MapLibre + Three.js (lazy) for the globe. Tauri v2 for desktop. Cloudflare Pages, D1, R2, Workers AI for the backend. Boring picks where they buy reliability.
+              Vanilla TypeScript. MapLibre + Three.js (lazy) for the globe. Tauri v2 for desktop. Cloudflare Pages, D1, R2, Workers AI for the backend (today's stack — portable by design). Boring picks where they buy reliability.
             </p>
             <span class="feature-card__cta">See the choices</span>
           </a>
@@ -5077,6 +5197,68 @@ a.stack__item-name:focus-visible::after,
           </article>
         </div>
 
+        <h3 class="fed__subhead">Cloud-agnostic by design</h3>
+        <p class="fed__subhead-hint">
+          TerraViz was designed around Cloudflare's edge primitives because that's where it ships today — same account as the app, single deploy mechanism, no vendor sprawl. The architecture is deliberately portable, though: every dependency above maps to a generic primitive an operator can swap to AWS, GCP, Fly.io, on-prem, or hybrid setups without touching the data model, federation protocol, asset pipeline, or any of the published API contracts.
+        </p>
+
+        <div class="fed__portability">
+          <table class="fed__portability-table">
+            <thead>
+              <tr>
+                <th scope="col">Cloudflare today</th>
+                <th scope="col">Generic primitive</th>
+                <th scope="col">Drop-in alternatives</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Pages Functions</code></td>
+                <td>Edge / serverless compute</td>
+                <td class="fed__portability-alts">AWS Lambda · Fly Machines · Vercel · Deno Deploy</td>
+              </tr>
+              <tr>
+                <td><code>D1</code></td>
+                <td>SQL database</td>
+                <td class="fed__portability-alts">Postgres · Turso · PlanetScale · plain SQLite</td>
+              </tr>
+              <tr>
+                <td><code>R2</code></td>
+                <td>S3-compatible object storage</td>
+                <td class="fed__portability-alts">AWS S3 · Backblaze B2 · MinIO (self-host)</td>
+              </tr>
+              <tr>
+                <td><code>KV</code></td>
+                <td>Edge cache · key-value</td>
+                <td class="fed__portability-alts">Redis · DynamoDB · Memcached</td>
+              </tr>
+              <tr>
+                <td><code>Vectorize</code></td>
+                <td>Vector database</td>
+                <td class="fed__portability-alts">pgvector · Qdrant · Pinecone · Weaviate</td>
+              </tr>
+              <tr>
+                <td><code>Workers AI</code></td>
+                <td>OpenAI-compatible LLM</td>
+                <td class="fed__portability-alts">OpenAI · Ollama · LM Studio · vLLM · llama.cpp</td>
+              </tr>
+              <tr>
+                <td><code>Stream</code> + <code>Images</code></td>
+                <td>Video transcoding · image variants</td>
+                <td class="fed__portability-alts">AWS MediaConvert + S3 · ffmpeg + sharp · Mux</td>
+              </tr>
+              <tr>
+                <td><code>Cloudflare Access</code></td>
+                <td>SSO / identity provider</td>
+                <td class="fed__portability-alts">Okta · Auth0 · Keycloak · any OIDC provider</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="fed__portability-note">
+            The catalog plan, federation protocol, and asset pipeline docs (linked below) describe each contract in primitive terms — D1 as "SQLite-compatible", R2 as "S3-compatible", Vectorize as "vector DB". The runtime swap is a port-shaped task; the API surface and on-disk format don't move.
+          </p>
+        </div>
+
         <h3 class="fed__subhead">The federation flow</h3>
         <p class="fed__subhead-hint">
           A node advertises itself at <code>/.well-known/terraviz.json</code> with its signed identity (Ed25519 keypair generated locally via <code>npm run gen:node-key</code>). Peer nodes discover, verify, and pull the published catalog rows — metadata only, never raw assets. The animated arrows below show subscription requests fanning out from one node to its peers.
@@ -5290,13 +5472,13 @@ a.stack__item-name:focus-visible::after,
         <p class="section__eyebrow">§8 · Publishing &amp; search</p>
         <h2 id="sec-11-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
         <p class="fed__lede">
-          Adding a dataset to a TerraViz node, building a tour, getting it indexed for search — one of two paths handles all of it. The publisher portal at <code>/publish</code> is the staff-side answer: a single-form workflow that covers dataset entry, tour authoring, asset upload, semantic-search indexing, and federation visibility, all behind Cloudflare Access. An authoring CLI is drafted alongside it for scripted pipelines and CI. Both paths run through the same Pages Functions + D1 + R2 backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+          Adding a dataset to a TerraViz node, building a tour, getting it indexed for search — one of two paths handles all of it. The publisher portal at <code>/publish</code> is the staff-side answer: a single-form workflow that covers dataset entry, tour authoring, asset upload, semantic-search indexing, and federation visibility, all behind staff SSO. An authoring CLI is drafted alongside it for scripted pipelines and CI. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
         </p>
 
         <div class="fed__stack-grid">
           <article class="fed__stack-card">
             <h3>Publisher portal</h3>
-            <p>A single-form workflow at <code>/publish</code> behind Cloudflare Access. Title, slug, abstract, asset upload, thumbnail, captions, time range, categories, license, visibility. <strong>Preview</strong> opens the app in a new tab against the draft row — same renderer, same playback, same chat — so publishers see exactly what visitors will see before pressing <strong>Publish</strong>. Lazy-loaded the same way Three.js is; non-publisher visitors never pay the bundle cost.</p>
+            <p>A single-form workflow at <code>/publish</code> behind staff SSO (Cloudflare Access today). Title, slug, abstract, asset upload, thumbnail, captions, time range, categories, license, visibility. <strong>Preview</strong> opens the app in a new tab against the draft row — same renderer, same playback, same chat — so publishers see exactly what visitors will see before pressing <strong>Publish</strong>. Lazy-loaded the same way Three.js is; non-publisher visitors never pay the bundle cost.</p>
           </article>
 
           <article class="fed__stack-card">
@@ -5322,7 +5504,7 @@ a.stack__item-name:focus-visible::after,
 
         <h3 class="fed__subhead">The publish path</h3>
         <p class="fed__subhead-hint">
-          A dataset goes through five steps from a publisher's upload to a visitor's search hit. Each step is owned by a different Cloudflare service; the whole chain runs on the same edge.
+          A dataset goes through five steps from a publisher's upload to a visitor's search hit. Each step is owned by a different cloud primitive (Cloudflare today — see <a href="#sec-10-federation">§7</a> for the portability story); the whole chain runs on the same edge.
         </p>
 
         <figure class="fed__arch">
@@ -5630,7 +5812,7 @@ a.stack__item-name:focus-visible::after,
         </div>
 
         <div class="stack__group">
-          <h3 class="stack__group-title">Cloud</h3>
+          <h3 class="stack__group-title">Cloud<span class="stack__group-pill"><a href="#sec-10-federation">today's stack — portable by design ↗</a></span></h3>
           <ul class="stack__items">
             <li class="stack__item"><a class="stack__item-name" href="https://developers.cloudflare.com/pages/" target="_blank" rel="noopener">Cloudflare Pages</a><span class="stack__item-blurb">Static + Pages Functions on the same edge, same deploy.</span></li>
             <li class="stack__item"><a class="stack__item-name" href="https://developers.cloudflare.com/d1/" target="_blank" rel="noopener">D1</a><span class="stack__item-blurb">SQLite at the edge. The catalog database.</span></li>
