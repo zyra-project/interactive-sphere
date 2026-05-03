@@ -6008,6 +6008,29 @@ a.stack__item-name:focus-visible::after,
           Adding a dataset to a TerraViz node, building a tour, getting it indexed for search — one of two paths handles all of it. The publisher portal at <code>/publish</code> is the staff-side answer: a single-form workflow that covers dataset entry, tour authoring, asset upload, semantic-search indexing, and federation visibility, all behind staff SSO. An authoring CLI is drafted alongside it for scripted pipelines and CI. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
         </p>
 
+        <h3 class="fed__subhead">Try the portal</h3>
+        <p class="fed__subhead-hint">
+          An interactive publisher dashboard will live here once the portal UI ships behind staff SSO — mock the dataset-entry form, run a draft preview against the live globe, watch the asset pipeline transcode in real time. Until then, the full form spec, validation rules, and CLI surface live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+        </p>
+
+        <figure class="pub__demo" aria-labelledby="pub-demo-caption">
+          <div class="pub__demo-frame">
+            <div class="pub__demo-chrome">
+              <span class="pub__demo-dot pub__demo-dot--r"></span>
+              <span class="pub__demo-dot pub__demo-dot--y"></span>
+              <span class="pub__demo-dot pub__demo-dot--g"></span>
+              <span class="pub__demo-url"><code>terraviz.zyra-project.org/publish</code></span>
+            </div>
+            <div class="pub__demo-body">
+              <div class="pub__demo-label">Interactive publisher dashboard</div>
+              <div class="pub__demo-tag">embed pending · drafted</div>
+            </div>
+          </div>
+          <figcaption id="pub-demo-caption" class="pub__demo-caption">
+            What lands here: a sandboxed embed of the publisher portal that lets visitors fill out a draft dataset entry, click <strong>Preview</strong> to see it on the globe, then walk through how the same payload reaches D1 + R2 + Vectorize via the publish path below. No real publish (read-only sandbox); same form, same validation, same preview.
+          </figcaption>
+        </figure>
+
         <div class="fed__stack-grid">
           <article class="fed__stack-card">
             <h3>Publisher portal</h3>
@@ -6163,29 +6186,6 @@ a.stack__item-name:focus-visible::after,
             </ul>
           </article>
         </div>
-
-        <h3 class="fed__subhead">Try the portal</h3>
-        <p class="fed__subhead-hint">
-          An interactive publisher dashboard will live here once the portal UI ships behind staff SSO — mock the dataset-entry form, run a draft preview against the live globe, watch the asset pipeline transcode in real time. Until then, the full form spec, validation rules, and CLI surface live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
-        </p>
-
-        <figure class="pub__demo" aria-labelledby="pub-demo-caption">
-          <div class="pub__demo-frame">
-            <div class="pub__demo-chrome">
-              <span class="pub__demo-dot pub__demo-dot--r"></span>
-              <span class="pub__demo-dot pub__demo-dot--y"></span>
-              <span class="pub__demo-dot pub__demo-dot--g"></span>
-              <span class="pub__demo-url"><code>terraviz.zyra-project.org/publish</code></span>
-            </div>
-            <div class="pub__demo-body">
-              <div class="pub__demo-label">Interactive publisher dashboard</div>
-              <div class="pub__demo-tag">embed pending · drafted</div>
-            </div>
-          </div>
-          <figcaption id="pub-demo-caption" class="pub__demo-caption">
-            What lands here: a sandboxed embed of the publisher portal that lets visitors fill out a draft dataset entry, click <strong>Preview</strong> to see it on the globe, then walk through how the same payload reaches D1 + R2 + Vectorize via the publish path above. No real publish (read-only sandbox); same form, same validation, same preview.
-          </figcaption>
-        </figure>
       </div>
     </section>
 
