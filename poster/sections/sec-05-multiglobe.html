@@ -153,7 +153,7 @@
         </div>
 
         <p class="effect-note">
-          Like the §4 effect buttons and the §6 tour launchers, the <code>?layout=</code> deep-link is awaiting its app-side handler. Until that lands, clicking a button loads the live app at its default 1-globe view rather than the requested layout.
+          Each button reloads the embedded app with <code>?layout=</code> set; the app reads the parameter on boot and creates the matching grid before any dataset loads. Drag any panel afterwards — the others follow in lockstep.
         </p>
       </div>
     </section>

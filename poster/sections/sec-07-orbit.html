@@ -220,7 +220,7 @@
         </div>
 
         <p class="effect-note">
-          The character surface (<code>/orbit</code>) is a real shipped page — it works today. The chat surface deep-link (<code>?orbit=open</code>) is awaiting its app-side handler, alongside the §4, §5, and §6 deep-links. Until it lands, the iframe loads the default app; tap the chat trigger in the lower-right of the embedded view to open the Orbit panel manually.
+          The <strong>chat surface</strong> reloads the embedded app with <code>?orbit=open</code> so the chat panel is already open when the page paints. The <strong>character surface</strong> swaps the iframe to the standalone <code>/orbit</code> page — the procedural avatar runs there in isolation, with no chat alongside it.
         </p>
 
         <aside class="orbit__forward">
