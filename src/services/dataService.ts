@@ -63,6 +63,14 @@ interface WireDataset {
   runTourOnLoad?: string
   tags?: string[]
   enriched?: EnrichedMetadata
+  /**
+   * Set by the node-catalog serializer for tour rows: the resolved
+   * URL the tour engine fetches the tour document from. Bypasses
+   * the manifest endpoint (which 415s tour formats). Older catalog
+   * responses don't carry this field; the tour-load path falls
+   * back to `dataLink`.
+   */
+  tourJsonUrl?: string
 }
 
 /**
@@ -230,6 +238,7 @@ export class DataService {
       runTourOnLoad: d.runTourOnLoad,
       tags: d.tags,
       enriched: d.enriched,
+      tourJsonUrl: d.tourJsonUrl,
     }))
 
     fromNode.push(...sampleTourBuiltins())

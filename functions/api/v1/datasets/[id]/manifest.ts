@@ -83,12 +83,14 @@ function jsonError(status: number, error: string, message: string): Response {
  * Split `vimeo:123` / `url:https://...` into `{ scheme, value }`.
  * Returns null on a malformed `data_ref` so the caller can produce
  * a typed 500 rather than blowing up the JSON body.
+ *
+ * Re-exported from the shared `_lib/data-ref` module so the
+ * catalog read path can use the same splitter without pulling in
+ * this file (and its transitive image/video deps). New callers
+ * should import directly from `_lib/data-ref`.
  */
-export function parseDataRef(ref: string): { scheme: string; value: string } | null {
-  const idx = ref.indexOf(':')
-  if (idx < 1) return null
-  return { scheme: ref.slice(0, idx), value: ref.slice(idx + 1) }
-}
+import { parseDataRef } from '../../_lib/data-ref'
+export { parseDataRef }
 
 /**
  * Build the progressive-resolution variant ladder for an image
