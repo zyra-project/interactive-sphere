@@ -2886,6 +2886,102 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   letter-spacing: 0.05em;
 }
 
+/* Dashboards section — 2x2 grid mixing inline SVG mock charts
+   (visual filler that ships now) with placeholder boxes that
+   swap in real Grafana captures later. Each tile has a dark
+   panel header to read as a Grafana dashboard tile rather
+   than a generic figure. */
+.analytics__dashboards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.analytics__dash {
+  background: #11151a;
+  border: 1px solid #2a3340;
+  border-radius: 8px;
+  margin: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics__dash-title {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: #d6dde6;
+  background: #0a0e13;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid #2a3340;
+}
+
+.analytics__dash-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.analytics__dash-ph {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--neutral-400);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #11151a,
+      #11151a 8px,
+      #161b22 8px,
+      #161b22 16px
+    );
+  min-height: 160px;
+  padding: 1.5rem;
+}
+
+.analytics__dash-caption {
+  font-size: 0.82rem;
+  color: var(--neutral-500);
+  line-height: 1.5;
+  background: white;
+  padding: 0.7rem 0.85rem;
+  border-top: 1px solid #2a3340;
+}
+
+.analytics__dash-caption code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+}
+
+.analytics__dash-caption em {
+  color: var(--neutral-600);
+  font-style: italic;
+}
+
+.analytics__dashboards-note {
+  font-size: 0.88rem;
+  color: var(--neutral-600);
+  margin: 0 0 1.75rem;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+@media (max-width: 760px) {
+  .analytics__dashboards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .analytics__refs {
   font-size: 0.95rem;
   color: var(--neutral-700);
