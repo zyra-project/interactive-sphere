@@ -3,9 +3,9 @@
              aria-labelledby="sec-4-title">
       <div class="globe__container">
         <p class="section__eyebrow">§4 · The globe under the hood</p>
-        <h2 id="sec-4-title" class="globe__title">A custom WebGL2 layer over MapLibre, not a planetarium hack</h2>
+        <h2 id="sec-4-title" class="globe__title">Photoreal Earth, layered onto a map engine</h2>
         <p class="globe__lede">
-          The globe is MapLibre GL JS in globe-projection mode with a hand-written <code>CustomLayerInterface</code> sitting on top. NASA's GIBS tile services supply Earth imagery; a multi-pass WebGL2 shader composites day, night, clouds, sun, and a starfield in real time per frame. No external WebGL globe library, no framework runtime — vanilla TypeScript and shaders, sized for phones up through desktop.
+          There are two common ways to build a 3D Earth on the web. A scene-graph engine like Cesium gives you a full globe runtime; a map engine like MapLibre gives you tile streaming, vector borders, and navigation but no photoreal Earth. TerraViz picked the map-engine side — NASA's GIBS Earth-imagery service speaks WMTS, which MapLibre reads natively; country borders, labels, and 3D terrain are commodity vector and raster-DEM tiles you compose as style layers; and the runtime is ~200 KB gzipped, light enough for a phone. The photoreal half is hand-built: a WebGL2 layer hooked into MapLibre's <code>CustomLayerInterface</code> extension point composites a day-night terminator, real-time clouds, specular sun glint, and a starfield every frame, on the same canvas as the tiles. No external globe library, no framework runtime.
         </p>
 
         <div class="globe__stack-grid">
