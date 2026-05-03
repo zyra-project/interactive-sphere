@@ -483,6 +483,30 @@ code, kbd, pre {
   font-size: 1.1rem;
 }
 
+/* Quiet CTA below the iconic mission close — links to the
+   full MISSION.md doc on GitHub. Styled small enough not
+   to compete with "Same data — no museum required" but
+   discoverable for readers who want the longer form. */
+.mission__copy p.mission__link-row {
+  margin-top: 0.85rem;
+  font-size: 0.95rem;
+}
+
+.mission__link {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cable-blue);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.mission__link:hover,
+.mission__link:focus-visible {
+  text-decoration: underline;
+}
+
 .mission__visual {
   margin: 0;
   display: flex;
