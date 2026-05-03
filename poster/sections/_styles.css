@@ -508,25 +508,37 @@ code, kbd, pre {
 }
 
 .feature-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   padding: 1.5rem;
   background: white;
   border: 1px solid var(--neutral-200);
+  border-top: 3px solid var(--card-accent, var(--terra-accent));
   border-radius: 10px;
   text-decoration: none;
   color: inherit;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Keep the foreground content above the faded section icon
+   that lives in .feature-card__bg. The wallpaper element is
+   absolutely-positioned with z-index:0; everything else floats
+   above it on z-index:1. */
+.feature-card > :not(.feature-card__bg) {
+  position: relative;
+  z-index: 1;
+}
+
 .feature-card:hover,
 .feature-card:focus-visible {
   transform: translateY(-2px);
-  border-color: var(--terra-accent);
+  border-color: var(--card-accent, var(--terra-accent));
   box-shadow:
     0 8px 24px -12px rgba(0, 0, 0, 0.18),
-    0 0 0 1px rgba(77, 166, 255, 0.15);
+    0 0 0 1px var(--card-accent-bg, rgba(77, 166, 255, 0.15));
   text-decoration: none;
 }
 
@@ -536,8 +548,8 @@ code, kbd, pre {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--terra-accent-bg);
-  color: var(--cable-blue);
+  background: var(--card-accent-bg, var(--terra-accent-bg));
+  color: var(--card-accent, var(--cable-blue));
   border-radius: 10px;
   flex-shrink: 0;
   margin-bottom: 0.25rem;
@@ -552,7 +564,7 @@ code, kbd, pre {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   letter-spacing: 0.05em;
-  color: var(--terra-accent);
+  color: var(--card-accent, var(--terra-accent));
   font-weight: 600;
   text-transform: uppercase;
   margin: 0;
@@ -578,13 +590,58 @@ code, kbd, pre {
   padding-top: 0.75rem;
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--cable-blue);
+  color: var(--card-accent, var(--cable-blue));
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .feature-card__cta::after {
   content: " →";
+}
+
+/* Faded section icon as background art — anchored bottom-right,
+   inherits --card-accent, sits below text. Lifts opacity
+   slightly on hover to reinforce interactivity. */
+.feature-card__bg {
+  position: absolute;
+  right: -30px;
+  bottom: -30px;
+  width: 200px;
+  height: 200px;
+  color: var(--card-accent, var(--terra-accent));
+  opacity: 0.07;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 0.2s ease;
+}
+
+.feature-card__bg svg {
+  width: 100%;
+  height: 100%;
+}
+
+.feature-card:hover .feature-card__bg,
+.feature-card:focus-visible .feature-card__bg {
+  opacity: 0.12;
+}
+
+/* Per-card palette. Each hue is muted enough to coexist on the
+   page; the soft -bg variant tints the icon plate and hover
+   ring. Keep these in sync with sec-03-features.html's modifier
+   classes. */
+.feature-card--globe       { --card-accent: #4da6ff; --card-accent-bg: rgba(77, 166, 255, 0.10); }
+.feature-card--multiglobe  { --card-accent: #26a69a; --card-accent-bg: rgba(38, 166, 154, 0.10); }
+.feature-card--tours       { --card-accent: #e09537; --card-accent-bg: rgba(224, 149, 55, 0.10); }
+.feature-card--orbit       { --card-accent: #7e57c2; --card-accent-bg: rgba(126, 87, 194, 0.10); }
+.feature-card--immersive   { --card-accent: #d05a99; --card-accent-bg: rgba(208, 90, 153, 0.10); }
+.feature-card--platforms   { --card-accent: #43a047; --card-accent-bg: rgba(67, 160, 71, 0.10); }
+.feature-card--federation  { --card-accent: #5c6bc0; --card-accent-bg: rgba(92, 107, 192, 0.10); }
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-card,
+  .feature-card__bg {
+    transition: none;
+  }
 }
 
 @media (max-width: 900px) {
