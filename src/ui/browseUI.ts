@@ -537,6 +537,16 @@ export function showBrowseUI(
 
   renderCards()
   updateDownloadButtons()
+
+  // Mark the overlay as initialized so subsequent show requests
+  // (e.g. openBrowsePanel) can skip re-running this function and
+  // avoid duplicating the click / input / sort listeners wired
+  // above. The check on the read side lives in main.ts'
+  // openBrowsePanel — keeping the marker set here means every
+  // call site is covered automatically (boot path, go-home,
+  // tools-menu re-show), not just the ones that remembered to
+  // set it themselves.
+  overlay.dataset.browseInitialized = 'true'
 }
 
 /** Hide the browse overlay entirely (aside becomes `display: none`). */

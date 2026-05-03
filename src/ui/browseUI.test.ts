@@ -106,6 +106,19 @@ describe('showBrowseUI', () => {
     expect(overlay.classList.contains('hidden')).toBe(false)
   })
 
+  it('marks the overlay as initialized so re-show paths skip duplicate listener wiring', () => {
+    const overlay = document.getElementById('browse-overlay')!
+    expect(overlay.dataset.browseInitialized).toBeUndefined()
+
+    showBrowseUI([], makeCallbacks())
+
+    // openBrowsePanel in main.ts checks this exact flag to decide
+    // whether to re-call showBrowseUI. Setting it inside
+    // showBrowseUI itself means every call site is covered, not
+    // just the ones that remembered to set it externally.
+    expect(overlay.dataset.browseInitialized).toBe('true')
+  })
+
   it('filters out hidden datasets', () => {
     const datasets = [
       makeDataset({ id: 'visible', title: 'Visible' }),
