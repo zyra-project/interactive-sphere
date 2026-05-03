@@ -3,32 +3,35 @@
              aria-labelledby="sec-8-title">
       <div class="xr__container">
         <p class="section__eyebrow">§5 · Immersive — AR &amp; VR via WebXR</p>
-        <h2 id="sec-8-title" class="xr__title">Two renderers in one DOM. The 2D experience is unchanged when WebXR is absent.</h2>
+        <h2 id="sec-8-title" class="xr__title">AR puts the planet on your desk. VR puts you next to it.</h2>
         <p class="xr__lede">
-          MapLibre's WebGL canvas can't be reused inside an XR session — its render loop, projection matrices, and viewport are owned. So immersive mode is a parallel <strong>Three.js</strong> renderer, attached to its own canvas, lazy-loaded only on the first <em>Enter AR</em> / <em>Enter VR</em> tap. <code>renderer.xr.setSession()</code> takes over; on session-end the 2D canvas resumes. Browsers without <code>navigator.xr</code> never load the Three.js chunk and see no UI change.
+          Tap <em>Enter AR</em> on a Quest 3 and the photoreal Earth lands on your desk — anchored to a real surface, walkable around, persistent across sessions thanks to Meta Anchors. Tap <em>Enter VR</em> on PCVR and the same planet drops in front of you at room scale. Both modes share the same dataset textures the 2D app already loaded, so switching in costs you nothing extra.
         </p>
 
-        <div class="xr__stack-grid">
-          <article class="xr__stack-card">
-            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrSession.ts" target="_blank" rel="noopener">vrSession.ts</a></h3>
-            <p>Session lifecycle. <code>enterImmersive('ar' | 'vr')</code> requests the session, builds a Three.js renderer + camera, calls <code>renderer.xr.setSession()</code>, drives a separate XR render loop via <code>XRSession.requestAnimationFrame</code>, and yields back to MapLibre on session-end.</p>
-          </article>
+        <h3 class="xr__subhead">From a Quest</h3>
+        <p class="xr__subhead-hint">
+          Real captures from a Quest 3 are the visual centrepiece — anchored globes on real desks, room-scale photoreal Earth, the in-VR HUD. They drop in alongside the rest of the asset follow-up.
+        </p>
 
-          <article class="xr__stack-card">
-            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/photorealEarth.ts" target="_blank" rel="noopener">photorealEarth.ts</a> + <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrScene.ts" target="_blank" rel="noopener">vrScene.ts</a></h3>
-            <p>The Earth stack — diffuse, night lights, specular, atmosphere, clouds, sun, ground shadow — with day/night shading gated on the real UTC sun position. Same factory used on <code>/orbit</code>; here it provides the empty-state planet when no dataset is loaded.</p>
-          </article>
-
-          <article class="xr__stack-card">
-            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrInteraction.ts" target="_blank" rel="noopener">vrInteraction.ts</a></h3>
-            <p>Controller input. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin inertia. Raycast hit routing for the floating HUD's UV regions and the AR Place button.</p>
-          </article>
-
-          <article class="xr__stack-card">
-            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrPlacement.ts" target="_blank" rel="noopener">vrPlacement.ts</a></h3>
-            <p>AR-only. WebXR <code>hit-test</code> + reticle + Place button. Anchors the globe to a real surface; persistent-handle UUIDs in <code>localStorage</code> keep it in the same physical spot across sessions on Quest (Meta Anchors extension).</p>
-          </article>
+        <div class="xr__captures">
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">AR · globe anchored on a real desk<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">Place the planet on the table next to you. Walk around it.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">AR · cross-session persistence<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">Persistent anchors keep the globe in the same spot the next time you open the app.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">VR · room-scale photoreal Earth<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">PCVR fallback when AR isn't supported. Same Earth stack.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">In-VR HUD floating panel<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">CanvasTexture-backed floating UI. Title, play/pause, exit-VR.</p>
+          </figure>
         </div>
+        <p class="xr__captures-note">Placeholders. Real captures swap in via a follow-up commit when they're ready.</p>
 
         <h3 class="xr__subhead">Earth-as-planet · Data-as-surface</h3>
         <p class="xr__subhead-hint">
@@ -91,6 +94,33 @@
             <h4>Data-as-surface</h4>
             <p>Dataset loaded · decoration hidden so the data reads uniformly</p>
           </figure>
+        </div>
+
+        <h3 class="xr__subhead">How it works · two renderers, one DOM</h3>
+        <p class="xr__subhead-hint">
+          MapLibre's WebGL canvas can't be reused inside an XR session — its render loop, projection matrices, and viewport are owned. So immersive mode is a parallel <strong>Three.js</strong> renderer, attached to its own canvas, lazy-loaded only on the first <em>Enter AR</em> / <em>Enter VR</em> tap. <code>renderer.xr.setSession()</code> takes over; on session-end the 2D canvas resumes. Browsers without <code>navigator.xr</code> never load the Three.js chunk and see no UI change.
+        </p>
+
+        <div class="xr__stack-grid">
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrSession.ts" target="_blank" rel="noopener">vrSession.ts</a></h3>
+            <p>Session lifecycle. <code>enterImmersive('ar' | 'vr')</code> requests the session, builds a Three.js renderer + camera, calls <code>renderer.xr.setSession()</code>, drives a separate XR render loop via <code>XRSession.requestAnimationFrame</code>, and yields back to MapLibre on session-end.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/photorealEarth.ts" target="_blank" rel="noopener">photorealEarth.ts</a> + <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrScene.ts" target="_blank" rel="noopener">vrScene.ts</a></h3>
+            <p>The Earth stack — diffuse, night lights, specular, atmosphere, clouds, sun, ground shadow — with day/night shading gated on the real UTC sun position. Same factory used on <code>/orbit</code>; here it provides the empty-state planet when no dataset is loaded.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrInteraction.ts" target="_blank" rel="noopener">vrInteraction.ts</a></h3>
+            <p>Controller input. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin inertia. Raycast hit routing for the floating HUD's UV regions and the AR Place button.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrPlacement.ts" target="_blank" rel="noopener">vrPlacement.ts</a></h3>
+            <p>AR-only. WebXR <code>hit-test</code> + reticle + Place button. Anchors the globe to a real surface; persistent-handle UUIDs in <code>localStorage</code> keep it in the same physical spot across sessions on Quest (Meta Anchors extension).</p>
+          </article>
         </div>
 
         <h3 class="xr__subhead">The per-frame loop</h3>
@@ -156,31 +186,6 @@
             </div>
           </li>
         </ol>
-
-        <h3 class="xr__subhead">From a Quest</h3>
-        <p class="xr__subhead-hint">
-          Real captures from a Quest 3 are the visual centrepiece — anchored globes on real desks, room-scale photoreal Earth, the in-VR HUD. They drop in alongside the rest of the asset follow-up.
-        </p>
-
-        <div class="xr__captures">
-          <figure class="xr__capture">
-            <div class="xr__capture-ph">AR · globe anchored on a real desk<br>(Quest 3 capture to land)</div>
-            <p class="xr__capture-caption">Place the planet on the table next to you. Walk around it.</p>
-          </figure>
-          <figure class="xr__capture">
-            <div class="xr__capture-ph">AR · cross-session persistence<br>(Quest 3 capture to land)</div>
-            <p class="xr__capture-caption">Persistent anchors keep the globe in the same spot the next time you open the app.</p>
-          </figure>
-          <figure class="xr__capture">
-            <div class="xr__capture-ph">VR · room-scale photoreal Earth<br>(Quest 3 capture to land)</div>
-            <p class="xr__capture-caption">PCVR fallback when AR isn't supported. Same Earth stack.</p>
-          </figure>
-          <figure class="xr__capture">
-            <div class="xr__capture-ph">In-VR HUD floating panel<br>(Quest 3 capture to land)</div>
-            <p class="xr__capture-caption">CanvasTexture-backed floating UI. Title, play/pause, exit-VR.</p>
-          </figure>
-        </div>
-        <p class="xr__captures-note">Placeholders. Real captures swap in via a follow-up commit when they're ready.</p>
 
         <h3 class="xr__subhead">Where it works</h3>
         <p class="xr__subhead-hint">
