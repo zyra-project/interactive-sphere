@@ -1977,10 +1977,43 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   text-align: center;
 }
 
-.xr__earth-mode svg {
+.xr__earth-mode svg,
+.xr__earth-mode img {
   width: 100%;
-  max-width: 200px;
+  max-width: 240px;
   height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+/* Placeholder slot — diagonal-stripe square that holds layout
+   stable until a real TerraViz screenshot drops in. Same
+   visual language as the §1 globe photoreal slot and the §5
+   Quest captures grid. */
+.xr__earth-mode-ph {
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-100),
+      var(--neutral-100) 8px,
+      var(--neutral-200) 8px,
+      var(--neutral-200) 16px
+    );
+  border: 1px dashed var(--neutral-300);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  padding: 1rem;
+  line-height: 1.4;
 }
 
 .xr__earth-mode h4 {

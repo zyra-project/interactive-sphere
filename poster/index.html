@@ -2000,10 +2000,43 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   text-align: center;
 }
 
-.xr__earth-mode svg {
+.xr__earth-mode svg,
+.xr__earth-mode img {
   width: 100%;
-  max-width: 200px;
+  max-width: 240px;
   height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+/* Placeholder slot — diagonal-stripe square that holds layout
+   stable until a real TerraViz screenshot drops in. Same
+   visual language as the §1 globe photoreal slot and the §5
+   Quest captures grid. */
+.xr__earth-mode-ph {
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-100),
+      var(--neutral-100) 8px,
+      var(--neutral-200) 8px,
+      var(--neutral-200) 16px
+    );
+  border: 1px dashed var(--neutral-300);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  padding: 1rem;
+  line-height: 1.4;
 }
 
 .xr__earth-mode h4 {
@@ -5031,58 +5064,29 @@ a.stack__item-name:focus-visible::after,
         </p>
 
         <div class="xr__earth-modes">
-          <figure class="xr__earth-mode">
-            <svg viewBox="0 0 200 200" role="img" aria-label="Photoreal Earth — diffuse + night lights + specular + atmosphere + clouds + sun">
-              <defs>
-                <radialGradient id="atm" cx="50%" cy="50%" r="58%">
-                  <stop offset="78%" stop-color="#4da6ff" stop-opacity="0" />
-                  <stop offset="100%" stop-color="#4da6ff" stop-opacity="0.55" />
-                </radialGradient>
-                <radialGradient id="day" cx="38%" cy="36%" r="65%">
-                  <stop offset="0%" stop-color="#4d7eb8" />
-                  <stop offset="60%" stop-color="#1e466b" />
-                  <stop offset="100%" stop-color="#0a1d34" />
-                </radialGradient>
-              </defs>
-              <circle cx="100" cy="100" r="92" fill="url(#atm)" />
-              <circle cx="100" cy="100" r="78" fill="url(#day)" />
-              <!-- Continent silhouettes (illustrative) -->
-              <path d="M 60 78 Q 78 62 92 70 T 110 88 Q 102 100 88 96 T 60 78 Z" fill="#3a6e35" opacity="0.72" />
-              <path d="M 122 92 Q 138 84 142 100 T 132 124 Q 118 122 118 108 Z" fill="#3a6e35" opacity="0.72" />
-              <path d="M 76 130 Q 92 124 100 138 T 88 150 Q 78 146 76 130 Z" fill="#3a6e35" opacity="0.72" />
-              <!-- Specular sun glint (illustrative) -->
-              <ellipse cx="78" cy="80" rx="14" ry="6" fill="white" opacity="0.18" transform="rotate(-30 78 80)" />
-              <!-- Night-side hint -->
-              <path d="M 100 22 A 78 78 0 0 1 100 178 A 50 78 0 0 0 100 22 Z" fill="#000" opacity="0.55" />
-              <!-- Tiny city-light dots on the night side -->
-              <circle cx="138" cy="92" r="0.9" fill="#fff5b8" />
-              <circle cx="142" cy="118" r="0.8" fill="#fff5b8" />
-              <circle cx="148" cy="106" r="0.7" fill="#fff5b8" />
-              <circle cx="134" cy="138" r="0.7" fill="#fff5b8" />
-            </svg>
+          <!-- TerraViz screenshot lands here:
+               `poster/assets/screenshots/xr-earth-as-planet.{jpg,png,webp}`
+               Capture the empty-state photoreal globe (no
+               dataset loaded) — atmosphere bloom, day-night
+               terminator, clouds, city lights at the night
+               side, specular ocean glint. Single-element swap. -->
+          <figure class="xr__earth-mode xr__earth-mode--placeholder">
+            <div class="xr__earth-mode-ph">TerraViz screenshot · photoreal Earth pending</div>
             <h4>Earth-as-planet</h4>
             <p>No dataset · photoreal stack runs in full</p>
           </figure>
 
-          <figure class="xr__earth-mode">
-            <svg viewBox="0 0 200 200" role="img" aria-label="Data-textured globe — uniform dataset surface, decoration hidden">
-              <defs>
-                <radialGradient id="data" cx="50%" cy="50%" r="60%">
-                  <stop offset="0%" stop-color="#ffd966" />
-                  <stop offset="40%" stop-color="#e07b3f" />
-                  <stop offset="80%" stop-color="#7d2f3a" />
-                  <stop offset="100%" stop-color="#451f33" />
-                </radialGradient>
-              </defs>
-              <circle cx="100" cy="100" r="78" fill="url(#data)" />
-              <!-- Subtle data swirl lines for visual character -->
-              <path d="M 30 100 Q 100 60 170 100" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none" />
-              <path d="M 30 110 Q 100 80 170 110" stroke="rgba(255,255,255,0.14)" stroke-width="1" fill="none" />
-              <path d="M 30 120 Q 100 100 170 120" stroke="rgba(255,255,255,0.10)" stroke-width="1" fill="none" />
-              <path d="M 30 130 Q 100 130 170 130" stroke="rgba(255,255,255,0.08)" stroke-width="1" fill="none" />
-              <!-- Subtle rim shading -->
-              <circle cx="100" cy="100" r="78" fill="none" stroke="#000" stroke-opacity="0.18" stroke-width="2" />
-            </svg>
+          <!-- TerraViz screenshot lands here:
+               `poster/assets/screenshots/xr-data-as-surface.{jpg,png,webp}`
+               Capture the dataset-loaded state — pick a
+               visually-strong dataset (sea-surface temperature
+               or a hurricane sequence), framed at the same
+               camera distance as the empty-state capture so
+               the diptych reads cleanly. Decoration is
+               deliberately hidden in this mode. Single-element
+               swap. -->
+          <figure class="xr__earth-mode xr__earth-mode--placeholder">
+            <div class="xr__earth-mode-ph">TerraViz screenshot · dataset-loaded globe pending</div>
             <h4>Data-as-surface</h4>
             <p>Dataset loaded · decoration hidden so the data reads uniformly</p>
           </figure>
