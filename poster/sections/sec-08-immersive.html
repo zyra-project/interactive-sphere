@@ -2,7 +2,7 @@
              class="section section--alt fade-in"
              aria-labelledby="sec-8-title">
       <div class="xr__container">
-        <p class="section__eyebrow">§8 · Immersive — AR &amp; VR via WebXR</p>
+        <p class="section__eyebrow">§5 · Immersive — AR &amp; VR via WebXR</p>
         <h2 id="sec-8-title" class="xr__title">Two renderers in one DOM. The 2D experience is unchanged when WebXR is absent.</h2>
         <p class="xr__lede">
           MapLibre's WebGL canvas can't be reused inside an XR session — its render loop, projection matrices, and viewport are owned. So immersive mode is a parallel <strong>Three.js</strong> renderer, attached to its own canvas, lazy-loaded only on the first <em>Enter AR</em> / <em>Enter VR</em> tap. <code>renderer.xr.setSession()</code> takes over; on session-end the 2D canvas resumes. Browsers without <code>navigator.xr</code> never load the Three.js chunk and see no UI change.

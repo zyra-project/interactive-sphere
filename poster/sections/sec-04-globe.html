@@ -2,7 +2,7 @@
              class="section section--alt fade-in"
              aria-labelledby="sec-4-title">
       <div class="globe__container">
-        <p class="section__eyebrow">§4 · The globe under the hood</p>
+        <p class="section__eyebrow">§1 · The globe under the hood</p>
         <h2 id="sec-4-title" class="globe__title">Photoreal Earth, layered onto a map engine</h2>
         <p class="globe__lede">
           There are two common ways to build a 3D Earth on the web. A scene-graph engine like Cesium gives you a full globe runtime; a map engine like MapLibre gives you tile streaming, vector borders, and navigation but no photoreal Earth. TerraViz picked the map-engine side — NASA's GIBS Earth-imagery service speaks WMTS, which MapLibre reads natively; country borders, labels, and 3D terrain are commodity vector and raster-DEM tiles you compose as style layers; and the runtime is ~200 KB gzipped, light enough for a phone. The photoreal half is hand-built: a WebGL2 layer hooked into MapLibre's <code>CustomLayerInterface</code> extension point composites a day-night terminator, real-time clouds, specular sun glint, and a starfield every frame, on the same canvas as the tiles. No external globe library, no framework runtime.
@@ -121,7 +121,7 @@
         <figure class="globe__diagram">
           <svg viewBox="0 0 920 590"
                role="img"
-               aria-label="TerraViz architecture diagram, three horizontal bands. The top band, CLIENT, lists Browser, Quest, iOS, Android, and Desktop. A single HTTPS arrow drops down into the middle band, CLOUDFLARE EDGE. The first tier inside the edge band is the CDN edge cache — every request lands there first, with per-route Cache-Control directives and ETag-driven 304s. On a cache miss the request fans out to TerraViz web app (Pages) on the left or Pages Functions on the right, which exposes /api/v1/* (catalog, search, featured, manifest, publish, ingest, federation), /api/chat/* (completions, models), /api/feedback, /api/tile, and /api/legend. Pages Functions binds to a LIVE row of seven services — D1 catalog, R2 assets, KV cache, Workers Analytics Engine telemetry, Cloudflare Access auth, Workers AI for Orbit's LLM and dataset embeddings, and Vectorize for semantic search. Below that, a PLANNED row of four dashed boxes — Stream for video, Images for variants, Queues for async jobs, Durable Objects for federation coordination. The bottom band, DIRECT-FETCH ENDPOINTS, lists four boxes: NASA GIBS (tiles, fetched directly by the client for cache locality), Vimeo proxy (today's video host, with a planned migration to Cloudflare Stream), BYO LLM provider (when a visitor configures their own OpenAI-compatible endpoint instead of Workers AI), and Federation peers (cross-instance catalog pulls — see section 10 for the full diagram).">
+               aria-label="TerraViz architecture diagram, three horizontal bands. The top band, CLIENT, lists Browser, Quest, iOS, Android, and Desktop. A single HTTPS arrow drops down into the middle band, CLOUDFLARE EDGE. The first tier inside the edge band is the CDN edge cache — every request lands there first, with per-route Cache-Control directives and ETag-driven 304s. On a cache miss the request fans out to TerraViz web app (Pages) on the left or Pages Functions on the right, which exposes /api/v1/* (catalog, search, featured, manifest, publish, ingest, federation), /api/chat/* (completions, models), /api/feedback, /api/tile, and /api/legend. Pages Functions binds to a LIVE row of seven services — D1 catalog, R2 assets, KV cache, Workers Analytics Engine telemetry, Cloudflare Access auth, Workers AI for Orbit's LLM and dataset embeddings, and Vectorize for semantic search. Below that, a PLANNED row of four dashed boxes — Stream for video, Images for variants, Queues for async jobs, Durable Objects for federation coordination. The bottom band, DIRECT-FETCH ENDPOINTS, lists four boxes: NASA GIBS (tiles, fetched directly by the client for cache locality), Vimeo proxy (today's video host, with a planned migration to Cloudflare Stream), BYO LLM provider (when a visitor configures their own OpenAI-compatible endpoint instead of Workers AI), and Federation peers (cross-instance catalog pulls — see section 7 for the full diagram).">
             <defs>
               <marker id="arrow-arch" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
                 <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
@@ -334,7 +334,7 @@
               <text class="arch-text" x="95" y="24" text-anchor="middle">Federation peers</text>
               <text class="arch-mono" x="95" y="44" text-anchor="middle">cross-instance catalog</text>
               <text class="arch-mono" x="95" y="56" text-anchor="middle">pulls (Phase 4)</text>
-              <text class="arch-mono-accent" x="95" y="70" text-anchor="middle">→ §10 federation</text>
+              <text class="arch-mono-accent" x="95" y="70" text-anchor="middle">→ §7 federation</text>
             </g>
           </svg>
           <p class="globe__diagram-caption">CLIENT → CLOUDFLARE EDGE → DIRECT-FETCH ENDPOINTS</p>

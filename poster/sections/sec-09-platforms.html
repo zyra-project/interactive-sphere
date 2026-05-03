@@ -2,7 +2,7 @@
              class="section fade-in"
              aria-labelledby="sec-9-title">
       <div class="platforms__container">
-        <p class="section__eyebrow">§9 · One codebase, every platform</p>
+        <p class="section__eyebrow">§6 · One codebase, every platform</p>
         <h2 id="sec-9-title" class="platforms__title">One TypeScript codebase. Five places it runs.</h2>
         <p class="platforms__lede">
           The same source tree ships as a web app on Cloudflare Pages, a desktop app on Windows / macOS / Linux, and an iOS / Android mobile app. Tauri v2 wraps the app in a native shell and exposes platform-specific capabilities (offline tile cache, OS keychain, local-LLM HTTP allowlist) behind a single runtime gate — <code>window.__TAURI__</code> — so web builds tree-shake every native code path away. Mobile is additive on top of the existing desktop tree; <code>src-tauri/gen/apple/</code> and <code>src-tauri/gen/android/</code> are the generated host projects.

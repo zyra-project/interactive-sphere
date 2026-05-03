@@ -2,7 +2,7 @@
              class="section section--alt fade-in"
              aria-labelledby="sec-10-title">
       <div class="fed__container">
-        <p class="section__eyebrow">§10 · Federated catalog &amp; custom backend</p>
+        <p class="section__eyebrow">§7 · Federated catalog &amp; custom backend</p>
         <h2 id="sec-10-title" class="fed__title">Run your own. Federate with peers. Keep the data at home.</h2>
         <p class="fed__lede">
           The TerraViz app can read its catalog from the public NOAA SOS source <em>or</em> from a self-hosted node-backend on Cloudflare. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.
