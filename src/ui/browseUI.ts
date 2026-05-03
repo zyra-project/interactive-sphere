@@ -166,26 +166,29 @@ export function showBrowseUI(
       .map(cat => `<button class="browse-chip${cat === 'All' ? ' active' : ''}" data-cat="${escapeAttr(cat)}" aria-pressed="${cat === 'All'}">${escapeHtml(cat)}</button>`)
       .join('')
 
-    chipBar.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest('.browse-chip') as HTMLElement | null
-      if (!btn) return
-      activeCategory = btn.dataset.cat ?? 'All'
-      activeSubCategory = null
-      chipBar.querySelectorAll('.browse-chip').forEach(c => {
-        c.classList.remove('active')
-        c.setAttribute('aria-pressed', 'false')
+    if (!chipBar.dataset.wired) {
+      chipBar.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('.browse-chip') as HTMLElement | null
+        if (!btn) return
+        activeCategory = btn.dataset.cat ?? 'All'
+        activeSubCategory = null
+        chipBar.querySelectorAll('.browse-chip').forEach(c => {
+          c.classList.remove('active')
+          c.setAttribute('aria-pressed', 'false')
+        })
+        btn.classList.add('active')
+        btn.setAttribute('aria-pressed', 'true')
+        renderSubChips()
+        renderCards()
+        const cardCount = document.querySelectorAll('#browse-grid .browse-card').length
+        emit({
+          event_type: 'browse_filter',
+          category: activeCategory,
+          result_count_bucket: bucketResultCount(cardCount),
+        })
       })
-      btn.classList.add('active')
-      btn.setAttribute('aria-pressed', 'true')
-      renderSubChips()
-      renderCards()
-      const cardCount = document.querySelectorAll('#browse-grid .browse-card').length
-      emit({
-        event_type: 'browse_filter',
-        category: activeCategory,
-        result_count_bucket: bucketResultCount(cardCount),
-      })
-    })
+      chipBar.dataset.wired = 'true'
+    }
   }
 
   // Sub-category chip bar
@@ -202,7 +205,7 @@ export function showBrowseUI(
       .map(s => `<button class="browse-subchip${activeSubCategory === s ? ' active' : ''}" data-sub="${escapeAttr(s)}" aria-pressed="${activeSubCategory === s}">${escapeHtml(s)}</button>`)
       .join('')
   }
-  if (subChipBar) {
+  if (subChipBar && !subChipBar.dataset.wired) {
     subChipBar.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('.browse-subchip') as HTMLElement | null
       if (!btn) return
@@ -211,6 +214,7 @@ export function showBrowseUI(
       renderSubChips()
       renderCards()
     })
+    subChipBar.dataset.wired = 'true'
   }
 
   // Search input + clear button
@@ -251,17 +255,20 @@ export function showBrowseUI(
     }, BROWSE_SEARCH_DEBOUNCE_MS)
   }
   if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      searchQuery = searchInput.value.trim().toLowerCase()
-      updateSearchClear()
-      renderCards()
-      scheduleSearchEmit(searchQuery)
-    })
+    if (!searchInput.dataset.wired) {
+      searchInput.addEventListener('input', () => {
+        searchQuery = searchInput.value.trim().toLowerCase()
+        updateSearchClear()
+        renderCards()
+        scheduleSearchEmit(searchQuery)
+      })
+      searchInput.dataset.wired = 'true'
+    }
     if (!callbacks.isMobile) {
       setTimeout(() => searchInput.focus(), SEARCH_FOCUS_DELAY_MS)
     }
   }
-  if (searchClear && searchInput) {
+  if (searchClear && searchInput && !searchClear.dataset.wired) {
     searchClear.addEventListener('click', () => {
       searchInput.value = ''
       searchQuery = ''
@@ -274,6 +281,7 @@ export function showBrowseUI(
       searchEmitTimer = null
       searchEmitToken++
     })
+    searchClear.dataset.wired = 'true'
   }
 
   // Sort controls
@@ -287,18 +295,21 @@ export function showBrowseUI(
     sortBar.innerHTML = sortOptions
       .map(o => `<button class="browse-sort-btn${o.key === activeSort ? ' active' : ''}" data-sort="${o.key}" aria-pressed="${o.key === activeSort}">${o.label}</button>`)
       .join('')
-    sortBar.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest('.browse-sort-btn') as HTMLElement | null
-      if (!btn || !btn.dataset.sort) return
-      activeSort = btn.dataset.sort as SortKey
-      sortBar.querySelectorAll('.browse-sort-btn').forEach(b => {
-        b.classList.remove('active')
-        b.setAttribute('aria-pressed', 'false')
+    if (!sortBar.dataset.wired) {
+      sortBar.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('.browse-sort-btn') as HTMLElement | null
+        if (!btn || !btn.dataset.sort) return
+        activeSort = btn.dataset.sort as SortKey
+        sortBar.querySelectorAll('.browse-sort-btn').forEach(b => {
+          b.classList.remove('active')
+          b.setAttribute('aria-pressed', 'false')
+        })
+        btn.classList.add('active')
+        btn.setAttribute('aria-pressed', 'true')
+        renderCards()
       })
-      btn.classList.add('active')
-      btn.setAttribute('aria-pressed', 'true')
-      renderCards()
-    })
+      sortBar.dataset.wired = 'true'
+    }
   }
 
   // Update download button states after render

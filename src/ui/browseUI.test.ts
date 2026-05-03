@@ -119,6 +119,43 @@ describe('showBrowseUI', () => {
     expect(overlay.dataset.browseInitialized).toBe('true')
   })
 
+  it('does not double-wire container listeners when called twice (e.g. goHome path)', () => {
+    // goHome and any other re-show path that calls showBrowseUI
+    // directly (instead of going through openBrowsePanel's
+    // browseInitialized check) would otherwise stack a fresh
+    // listener on each container element. Per-element dataset.wired
+    // guards keep the wiring idempotent so each click fires
+    // exactly one handler — and emits exactly one browse_filter
+    // event — no matter how many times the panel has been re-shown.
+    localStorage.clear()
+    resetForTests()
+    setTier('research')
+
+    const datasets = [
+      makeDataset({
+        id: 'a', title: 'A',
+        enriched: { categories: { 'Atmosphere': ['Temperature'] } },
+      }),
+      makeDataset({
+        id: 'b', title: 'B',
+        enriched: { categories: { 'Ocean': ['Currents'] } },
+      }),
+    ]
+
+    showBrowseUI(datasets, makeCallbacks())
+    showBrowseUI(datasets, makeCallbacks())
+    showBrowseUI(datasets, makeCallbacks())
+
+    // Click a category chip once — the click handler should fire
+    // exactly once even though showBrowseUI ran three times.
+    const atmoChip = Array.from(document.querySelectorAll('.browse-chip'))
+      .find(el => el.textContent === 'Atmosphere') as HTMLElement
+    atmoChip.click()
+
+    const filterEvents = __peek().filter((e) => e.event_type === 'browse_filter')
+    expect(filterEvents).toHaveLength(1)
+  })
+
   it('filters out hidden datasets', () => {
     const datasets = [
       makeDataset({ id: 'visible', title: 'Visible' }),
