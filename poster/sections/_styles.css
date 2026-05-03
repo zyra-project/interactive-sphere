@@ -2451,6 +2451,112 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   animation-delay: -1s;
 }
 
+/* §8 publisher dashboard placeholder — frames the slot like a
+   browser window (faux chrome bar + traffic lights + URL) so
+   it visually telegraphs "interactive embed pending" rather
+   than reading as a generic image placeholder. When the real
+   portal ships behind Access, this becomes a sandbox-attribute
+   <iframe> with no markup churn beyond the body element. */
+.pub__demo {
+  margin: 0 0 1rem;
+}
+
+.pub__demo-frame {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.pub__demo-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.55rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pub__demo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.pub__demo-dot--r { background: #ff5f57; }
+.pub__demo-dot--y { background: #febc2e; }
+.pub__demo-dot--g { background: #28c840; }
+
+.pub__demo-url {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--neutral-600);
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  margin: 0 1rem;
+}
+
+.pub__demo-url code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.pub__demo-body {
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(175, 180, 43, 0.12), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-50, #fafafa),
+      var(--neutral-50, #fafafa) 10px,
+      var(--neutral-100) 10px,
+      var(--neutral-100) 20px
+    );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+}
+
+.pub__demo-label {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--neutral-700);
+  letter-spacing: 0.02em;
+}
+
+.pub__demo-tag {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  background: white;
+  border: 1px dashed var(--neutral-400);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+
+.pub__demo-caption {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0.85rem 0 0;
+  max-width: 760px;
+}
+
 /* Conceptual federation topology — small hook diagram between
    the lede and the architecture stack-grid. Distinct from the
    detailed .fed__arch diagram below (which shows the local
