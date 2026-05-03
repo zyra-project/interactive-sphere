@@ -284,51 +284,67 @@ code, kbd, pre {
   z-index: 1;
 }
 
-/* Decorative Earth backdrop — sits behind .hero__container.
-   Anchored to the right edge, partially off-screen for a
-   "breaking the frame" feel that doesn't compete with the
-   title. Real screenshot swap target: this is the only
-   element to replace when a Blue Marble / TerraViz capture
-   lands. */
+/* Hero Earth backdrop slot — full-bleed behind .hero__container.
+   When a real capture lands, set background-image on this
+   element (or replace --hero-earth-bg-image). The placeholder
+   modifier renders a neutral "asset pending" tag so the slot
+   is visible during review. */
 .hero__earth-bg {
   position: absolute;
-  top: 50%;
-  right: -12%;
-  transform: translateY(-50%);
-  width: 620px;
-  height: 620px;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 60%;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.32;
-  filter: blur(0.4px);
+  background-image: var(--hero-earth-bg-image, none);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+  /* Mask the right-anchored image so it fades into the
+     hero gradient on its left edge — keeps the title's
+     contrast high. */
+  mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  opacity: 0.55;
 }
 
-.hero__earth-bg svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+.hero__earth-bg--placeholder {
+  background:
+    radial-gradient(circle at 80% 50%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.02),
+      rgba(255, 255, 255, 0.02) 8px,
+      rgba(255, 255, 255, 0.04) 8px,
+      rgba(255, 255, 255, 0.04) 16px
+    );
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-@media (max-width: 1100px) {
-  .hero__earth-bg {
-    width: 480px;
-    height: 480px;
-    right: -18%;
-    opacity: 0.25;
-  }
+.hero__earth-bg-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed var(--neutral-500);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
 }
 
 @media (max-width: 700px) {
   .hero__earth-bg {
-    /* On phones the hero stacks single-column and the
-       Earth would crowd the title — push it further off
-       and dim more. Optional: hide entirely with display:
-       none if the visual conflict gets worse with real
-       screenshots. */
-    width: 360px;
-    height: 360px;
-    right: -30%;
-    opacity: 0.20;
+    /* On phones the hero stacks single-column; dim the
+       backdrop further so it doesn't compete with the
+       title. Real captures should still read fine. */
+    width: 100%;
+    opacity: 0.35;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
   }
 }
 
@@ -743,11 +759,39 @@ code, kbd, pre {
   justify-content: center;
 }
 
+.globe__hero-earth img,
 .globe__hero-earth svg {
   width: 100%;
   max-width: 360px;
   height: auto;
   display: block;
+  border-radius: 8px;
+}
+
+.globe__hero-earth-ph {
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-100),
+      var(--neutral-100) 8px,
+      var(--neutral-200) 8px,
+      var(--neutral-200) 16px
+    );
+  border: 1px dashed var(--neutral-300);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  padding: 1rem;
+  line-height: 1.4;
 }
 
 .globe__hero-earth-caption {
@@ -765,7 +809,9 @@ code, kbd, pre {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
-  .globe__hero-earth svg {
+  .globe__hero-earth img,
+  .globe__hero-earth svg,
+  .globe__hero-earth-ph {
     max-width: 260px;
   }
 }

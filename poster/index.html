@@ -307,51 +307,67 @@ code, kbd, pre {
   z-index: 1;
 }
 
-/* Decorative Earth backdrop — sits behind .hero__container.
-   Anchored to the right edge, partially off-screen for a
-   "breaking the frame" feel that doesn't compete with the
-   title. Real screenshot swap target: this is the only
-   element to replace when a Blue Marble / TerraViz capture
-   lands. */
+/* Hero Earth backdrop slot — full-bleed behind .hero__container.
+   When a real capture lands, set background-image on this
+   element (or replace --hero-earth-bg-image). The placeholder
+   modifier renders a neutral "asset pending" tag so the slot
+   is visible during review. */
 .hero__earth-bg {
   position: absolute;
-  top: 50%;
-  right: -12%;
-  transform: translateY(-50%);
-  width: 620px;
-  height: 620px;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 60%;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.32;
-  filter: blur(0.4px);
+  background-image: var(--hero-earth-bg-image, none);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+  /* Mask the right-anchored image so it fades into the
+     hero gradient on its left edge — keeps the title's
+     contrast high. */
+  mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  opacity: 0.55;
 }
 
-.hero__earth-bg svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+.hero__earth-bg--placeholder {
+  background:
+    radial-gradient(circle at 80% 50%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.02),
+      rgba(255, 255, 255, 0.02) 8px,
+      rgba(255, 255, 255, 0.04) 8px,
+      rgba(255, 255, 255, 0.04) 16px
+    );
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-@media (max-width: 1100px) {
-  .hero__earth-bg {
-    width: 480px;
-    height: 480px;
-    right: -18%;
-    opacity: 0.25;
-  }
+.hero__earth-bg-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed var(--neutral-500);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
 }
 
 @media (max-width: 700px) {
   .hero__earth-bg {
-    /* On phones the hero stacks single-column and the
-       Earth would crowd the title — push it further off
-       and dim more. Optional: hide entirely with display:
-       none if the visual conflict gets worse with real
-       screenshots. */
-    width: 360px;
-    height: 360px;
-    right: -30%;
-    opacity: 0.20;
+    /* On phones the hero stacks single-column; dim the
+       backdrop further so it doesn't compete with the
+       title. Real captures should still read fine. */
+    width: 100%;
+    opacity: 0.35;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
   }
 }
 
@@ -766,11 +782,39 @@ code, kbd, pre {
   justify-content: center;
 }
 
+.globe__hero-earth img,
 .globe__hero-earth svg {
   width: 100%;
   max-width: 360px;
   height: auto;
   display: block;
+  border-radius: 8px;
+}
+
+.globe__hero-earth-ph {
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-100),
+      var(--neutral-100) 8px,
+      var(--neutral-200) 8px,
+      var(--neutral-200) 16px
+    );
+  border: 1px dashed var(--neutral-300);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  padding: 1rem;
+  line-height: 1.4;
 }
 
 .globe__hero-earth-caption {
@@ -788,7 +832,9 @@ code, kbd, pre {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
-  .globe__hero-earth svg {
+  .globe__hero-earth img,
+  .globe__hero-earth svg,
+  .globe__hero-earth-ph {
     max-width: 260px;
   }
 }
@@ -3546,53 +3592,16 @@ a.stack__item-name:focus-visible::after,
 
   <!-- sec-01-hero.html -->
     <section id="sec-1-hero" class="hero" aria-labelledby="hero-title">
-      <!-- Decorative Earth backdrop. Stylized SVG until a real
-           Blue Marble / TerraViz capture lands; the swap is
-           one element, no layout disturbance. Marked
-           aria-hidden so screen readers ignore it — the real
-           subject is the title and author below. -->
-      <div class="hero__earth-bg" aria-hidden="true">
-        <svg viewBox="0 0 480 480" preserveAspectRatio="xMidYMid meet">
-          <defs>
-            <radialGradient id="hero-atm" cx="50%" cy="50%" r="60%">
-              <stop offset="72%" stop-color="#4da6ff" stop-opacity="0" />
-              <stop offset="92%" stop-color="#4da6ff" stop-opacity="0.55" />
-              <stop offset="100%" stop-color="#4da6ff" stop-opacity="0" />
-            </radialGradient>
-            <radialGradient id="hero-day" cx="38%" cy="34%" r="68%">
-              <stop offset="0%" stop-color="#5a8fc6" />
-              <stop offset="48%" stop-color="#244c75" />
-              <stop offset="100%" stop-color="#091a30" />
-            </radialGradient>
-          </defs>
-          <!-- Atmosphere bloom -->
-          <circle cx="240" cy="240" r="232" fill="url(#hero-atm)" />
-          <!-- Earth disc -->
-          <circle cx="240" cy="240" r="190" fill="url(#hero-day)" />
-          <!-- Continent silhouettes (stylized — north america,
-               south america, africa, eurasia, australia hint) -->
-          <path d="M 130 158 Q 156 130 192 142 T 232 178 Q 220 208 188 204 T 152 192 T 130 158 Z" fill="#3a6e35" opacity="0.78" />
-          <path d="M 168 240 Q 188 232 200 256 T 196 308 Q 178 320 168 296 T 168 240 Z" fill="#3a6e35" opacity="0.78" />
-          <path d="M 248 196 Q 290 184 308 220 T 296 286 Q 274 296 264 268 T 248 196 Z" fill="#3a6e35" opacity="0.78" />
-          <path d="M 312 156 Q 358 142 378 174 T 360 220 Q 332 224 322 198 T 312 156 Z" fill="#3a6e35" opacity="0.78" />
-          <path d="M 332 304 Q 360 296 372 318 T 358 348 Q 338 348 332 332 T 332 304 Z" fill="#3a6e35" opacity="0.74" />
-          <!-- Specular sun glint on ocean -->
-          <ellipse cx="184" cy="184" rx="36" ry="14" fill="white" opacity="0.18" transform="rotate(-30 184 184)" />
-          <!-- Night-side terminator -->
-          <path d="M 240 50 A 190 190 0 0 1 240 430 A 130 190 0 0 0 240 50 Z" fill="#000" opacity="0.5" />
-          <!-- City lights on the night side -->
-          <circle cx="338" cy="200" r="1.4" fill="#fff5b8" />
-          <circle cx="346" cy="232" r="1.2" fill="#fff5b8" />
-          <circle cx="354" cy="218" r="1.0" fill="#fff5b8" />
-          <circle cx="332" cy="270" r="1.1" fill="#fff5b8" />
-          <circle cx="346" cy="288" r="0.9" fill="#fff5b8" />
-          <circle cx="358" cy="252" r="0.9" fill="#fff5b8" />
-          <circle cx="324" cy="320" r="1.0" fill="#fff5b8" />
-          <!-- Cloud wisps -->
-          <path d="M 156 218 Q 196 210 230 224 T 270 232" stroke="white" stroke-width="2" stroke-opacity="0.10" fill="none" />
-          <path d="M 174 280 Q 218 272 254 288" stroke="white" stroke-width="2" stroke-opacity="0.08" fill="none" />
-          <path d="M 200 328 Q 246 322 286 340" stroke="white" stroke-width="2" stroke-opacity="0.07" fill="none" />
-        </svg>
+      <!-- TerraViz capture lands here as a background image:
+           `poster/assets/screenshots/hero-globe.{jpg,png,webp}`
+           rendered behind the 3-column hero content. Wide
+           composition — Earth filling most of the frame, dark
+           space backdrop already provided by the hero gradient,
+           ideally a screenshot showing day-night terminator,
+           clouds, atmosphere glow. Until then this slot is a
+           plain space gradient so the layout is stable. -->
+      <div class="hero__earth-bg hero__earth-bg--placeholder" aria-hidden="true">
+        <span class="hero__earth-bg-label">TerraViz capture · hero backdrop pending</span>
       </div>
 
       <div class="hero__container">
@@ -3944,51 +3953,16 @@ a.stack__item-name:focus-visible::after,
               There are two common ways to build a 3D Earth on the web. A scene-graph engine like Cesium gives you a full globe runtime; a map engine like MapLibre gives you tile streaming, vector borders, and navigation but no photoreal Earth. TerraViz picked the map-engine side — NASA's GIBS Earth-imagery service speaks WMTS, which MapLibre reads natively; country borders, labels, and 3D terrain are commodity vector and raster-DEM tiles you compose as style layers; and the runtime is ~200 KB gzipped, light enough for a phone. The photoreal half is hand-built: a WebGL2 layer hooked into MapLibre's <code>CustomLayerInterface</code> extension point composites a day-night terminator, real-time clouds, specular sun glint, and a starfield every frame, on the same canvas as the tiles. No external globe library, no framework runtime.
             </p>
           </div>
-          <!-- Stylized photoreal Earth visual. Until a real
-               TerraViz capture lands this is an illustrative SVG;
-               swapping it is one element, no layout disturbance.
-               aria-hidden — the lede above carries the meaning. -->
-          <figure class="globe__hero-earth" aria-hidden="true">
-            <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
-              <defs>
-                <radialGradient id="globe-hero-halo" cx="50%" cy="50%" r="62%">
-                  <stop offset="74%" stop-color="#4da6ff" stop-opacity="0" />
-                  <stop offset="92%" stop-color="#4da6ff" stop-opacity="0.42" />
-                  <stop offset="100%" stop-color="#4da6ff" stop-opacity="0" />
-                </radialGradient>
-                <radialGradient id="globe-hero-day" cx="36%" cy="34%" r="70%">
-                  <stop offset="0%" stop-color="#5c92c8" />
-                  <stop offset="46%" stop-color="#1f4a73" />
-                  <stop offset="100%" stop-color="#08182d" />
-                </radialGradient>
-              </defs>
-              <!-- Atmosphere halo -->
-              <circle cx="160" cy="160" r="156" fill="url(#globe-hero-halo)" />
-              <!-- Earth disc -->
-              <circle cx="160" cy="160" r="128" fill="url(#globe-hero-day)" />
-              <!-- Continent silhouettes -->
-              <path d="M 80 110 Q 102 88 132 100 T 158 132 Q 146 156 124 152 T 96 142 T 80 110 Z" fill="#3a6e35" opacity="0.78" />
-              <path d="M 110 168 Q 128 162 138 184 T 134 222 Q 118 232 110 212 T 110 168 Z" fill="#3a6e35" opacity="0.78" />
-              <path d="M 174 134 Q 208 124 222 152 T 212 200 Q 192 210 184 188 T 174 134 Z" fill="#3a6e35" opacity="0.78" />
-              <path d="M 222 102 Q 260 92 274 116 T 258 150 Q 234 154 226 134 T 222 102 Z" fill="#3a6e35" opacity="0.78" />
-              <path d="M 232 220 Q 254 214 264 232 T 252 254 Q 236 254 232 240 T 232 220 Z" fill="#3a6e35" opacity="0.74" />
-              <!-- Specular sun glint -->
-              <ellipse cx="124" cy="122" rx="26" ry="10" fill="white" opacity="0.20" transform="rotate(-30 124 122)" />
-              <!-- Night-side terminator -->
-              <path d="M 160 32 A 128 128 0 0 1 160 288 A 86 128 0 0 0 160 32 Z" fill="#000" opacity="0.45" />
-              <!-- City lights -->
-              <circle cx="226" cy="138" r="1.2" fill="#fff5b8" />
-              <circle cx="234" cy="160" r="1.0" fill="#fff5b8" />
-              <circle cx="242" cy="148" r="0.9" fill="#fff5b8" />
-              <circle cx="222" cy="186" r="1.0" fill="#fff5b8" />
-              <circle cx="232" cy="204" r="0.9" fill="#fff5b8" />
-              <circle cx="244" cy="174" r="0.8" fill="#fff5b8" />
-              <circle cx="220" cy="222" r="0.9" fill="#fff5b8" />
-              <!-- Cloud wisps -->
-              <path d="M 88 150 Q 124 144 152 156 T 184 164" stroke="white" stroke-width="1.6" stroke-opacity="0.14" fill="none" />
-              <path d="M 102 196 Q 142 190 174 204" stroke="white" stroke-width="1.6" stroke-opacity="0.11" fill="none" />
-              <path d="M 122 232 Q 162 226 198 244" stroke="white" stroke-width="1.6" stroke-opacity="0.09" fill="none" />
-            </svg>
+          <!-- TerraViz screenshot lands here:
+               `poster/assets/screenshots/globe-photoreal.{jpg,png,webp}`
+               A close-in capture from the live web app showing
+               the photoreal stack at work — day-night terminator
+               sweeping the disc, city lights along the night
+               side, clouds, specular glint on ocean. The framing
+               should feel "from orbit" rather than "world map".
+               Swap is single-element. -->
+          <figure class="globe__hero-earth globe__hero-earth--placeholder" aria-hidden="true">
+            <div class="globe__hero-earth-ph">TerraViz screenshot · photoreal globe pending</div>
             <figcaption class="globe__hero-earth-caption">
               Composited frame · diffuse · clouds · specular · day-night
             </figcaption>
