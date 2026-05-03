@@ -10,17 +10,17 @@
 
         <div class="orbit__stack-grid">
           <article class="orbit__stack-card">
-            <h3>docentService.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/docentService.ts" target="_blank" rel="noopener">docentService.ts</a></h3>
             <p>Orchestrator. <code>processMessage()</code> races the local <code>docentEngine</code> match (instant, offline) against the LLM stream. If the LLM fails, the local result is used. If the LLM succeeds, its stream is the sole source of dataset and tour recommendations.</p>
           </article>
 
           <article class="orbit__stack-card">
-            <h3>docentContext.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/docentContext.ts" target="_blank" rel="noopener">docentContext.ts</a></h3>
             <p>System-prompt builder. Turn-aware — full catalog (ID, title, categories) on turn 0; compact catalog (ID, title) thereafter. Last 3 exchanges sent verbatim; older history summarised. Keeps per-turn cost bounded as a chat grows.</p>
           </article>
 
           <article class="orbit__stack-card">
-            <h3>llmProvider.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/llmProvider.ts" target="_blank" rel="noopener">llmProvider.ts</a></h3>
             <p>Provider-agnostic OpenAI-compatible SSE client. Works against OpenAI, Ollama, LM Studio, Cloudflare AI Gateway, llama.cpp, vLLM. On desktop the API key lives in the OS keychain (Windows Credential Manager / macOS Keychain) instead of <code>localStorage</code>.</p>
           </article>
         </div>

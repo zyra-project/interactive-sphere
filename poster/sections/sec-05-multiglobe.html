@@ -5,12 +5,12 @@
         <p class="section__eyebrow">§5 · Multi-globe comparison</p>
         <h2 id="sec-5-title" class="multiglobe__title">One drag, every panel — synchronised globes for side-by-side science</h2>
         <p class="multiglobe__lede">
-          Comparing climate scenarios, hurricane seasons, or sea-ice extents across years is the kind of question a single globe can't answer. <code>viewportManager.ts</code> orchestrates one, two, or four <code>MapRenderer</code> instances inside a CSS grid, mirrors camera state across panels in lockstep, and keeps each panel's dataset clock aligned to a shared real-world calendar. Drag panel 1 — panels 2, 3, and 4 follow.
+          Comparing climate scenarios, hurricane seasons, or sea-ice extents across years is the kind of question a single globe can't answer. <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/viewportManager.ts" target="_blank" rel="noopener"><code>viewportManager.ts</code></a> orchestrates one, two, or four <code>MapRenderer</code> instances inside a CSS grid, mirrors camera state across panels in lockstep, and keeps each panel's dataset clock aligned to a shared real-world calendar. Drag panel 1 — panels 2, 3, and 4 follow.
         </p>
 
         <div class="multiglobe__stack-grid">
           <article class="multiglobe__stack-card">
-            <h3>viewportManager.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/viewportManager.ts" target="_blank" rel="noopener">viewportManager.ts</a></h3>
             <p>Creates and destroys <code>MapRenderer</code> instances to match a target layout (<code>1</code>, <code>2h</code>, <code>2v</code>, or <code>4</code>). Tracks a "primary" panel that drives playback, screenshots, and the info panel. Promotion buttons in each non-primary panel's top-left corner let visitors swap which one leads.</p>
           </article>
 

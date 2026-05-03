@@ -686,34 +686,34 @@ code, kbd, pre {
   font-size: 0.85em;
 }
 
-/* Source-code link in the card heading: discreet, inherits the
-   mono filename styling, gains color + underline on hover. The
-   trailing ↗ glyph signals "external link to the source on
-   GitHub" without being noisy. */
-.globe__stack-card h3 a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.globe__stack-card h3 a:hover,
-.globe__stack-card h3 a:focus-visible {
-  color: var(--cable-blue);
-  text-decoration: underline;
-}
-
-.globe__stack-card h3 a::after {
+/* Source-code links — every <a> pointing at a file on main
+   carries a discreet ↗ glyph signaling the off-site jump.
+   Heading-level links additionally inherit the heading color
+   until hover, so card titles read as titles, not as a wall of
+   blue. Validated against renames by check_source_links.py. */
+a[href*="github.com/zyra-project/terraviz/blob/"]::after {
   content: "↗";
   margin-left: 0.3em;
   font-size: 0.75em;
   color: var(--neutral-400);
   vertical-align: super;
-  text-decoration: none;
   display: inline-block;
 }
 
-.globe__stack-card h3 a:hover::after,
-.globe__stack-card h3 a:focus-visible::after {
+a[href*="github.com/zyra-project/terraviz/blob/"]:hover::after,
+a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible::after {
   color: var(--cable-blue);
+}
+
+h3 a[href*="github.com/zyra-project/terraviz/blob/"] {
+  color: inherit;
+  text-decoration: none;
+}
+
+h3 a[href*="github.com/zyra-project/terraviz/blob/"]:hover,
+h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
 }
 
 @media (max-width: 700px) {
@@ -3733,12 +3733,12 @@ code, kbd, pre {
         <p class="section__eyebrow">§5 · Multi-globe comparison</p>
         <h2 id="sec-5-title" class="multiglobe__title">One drag, every panel — synchronised globes for side-by-side science</h2>
         <p class="multiglobe__lede">
-          Comparing climate scenarios, hurricane seasons, or sea-ice extents across years is the kind of question a single globe can't answer. <code>viewportManager.ts</code> orchestrates one, two, or four <code>MapRenderer</code> instances inside a CSS grid, mirrors camera state across panels in lockstep, and keeps each panel's dataset clock aligned to a shared real-world calendar. Drag panel 1 — panels 2, 3, and 4 follow.
+          Comparing climate scenarios, hurricane seasons, or sea-ice extents across years is the kind of question a single globe can't answer. <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/viewportManager.ts" target="_blank" rel="noopener"><code>viewportManager.ts</code></a> orchestrates one, two, or four <code>MapRenderer</code> instances inside a CSS grid, mirrors camera state across panels in lockstep, and keeps each panel's dataset clock aligned to a shared real-world calendar. Drag panel 1 — panels 2, 3, and 4 follow.
         </p>
 
         <div class="multiglobe__stack-grid">
           <article class="multiglobe__stack-card">
-            <h3>viewportManager.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/viewportManager.ts" target="_blank" rel="noopener">viewportManager.ts</a></h3>
             <p>Creates and destroys <code>MapRenderer</code> instances to match a target layout (<code>1</code>, <code>2h</code>, <code>2v</code>, or <code>4</code>). Tracks a "primary" panel that drives playback, screenshots, and the info panel. Promotion buttons in each non-primary panel's top-left corner let visitors swap which one leads.</p>
           </article>
 
@@ -3992,7 +3992,7 @@ code, kbd, pre {
 
         <h3 class="tours__subhead">The task surface</h3>
         <p class="tours__subhead-hint">
-          A representative subset of what <code>tourEngine.ts</code> already supports today (Phases 1 and 2 shipped).
+          A representative subset of what <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/tourEngine.ts" target="_blank" rel="noopener"><code>tourEngine.ts</code></a> already supports today (Phases 1 and 2 shipped).
         </p>
 
         <div class="tours__table-wrapper">
@@ -4136,17 +4136,17 @@ code, kbd, pre {
 
         <div class="orbit__stack-grid">
           <article class="orbit__stack-card">
-            <h3>docentService.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/docentService.ts" target="_blank" rel="noopener">docentService.ts</a></h3>
             <p>Orchestrator. <code>processMessage()</code> races the local <code>docentEngine</code> match (instant, offline) against the LLM stream. If the LLM fails, the local result is used. If the LLM succeeds, its stream is the sole source of dataset and tour recommendations.</p>
           </article>
 
           <article class="orbit__stack-card">
-            <h3>docentContext.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/docentContext.ts" target="_blank" rel="noopener">docentContext.ts</a></h3>
             <p>System-prompt builder. Turn-aware — full catalog (ID, title, categories) on turn 0; compact catalog (ID, title) thereafter. Last 3 exchanges sent verbatim; older history summarised. Keeps per-turn cost bounded as a chat grows.</p>
           </article>
 
           <article class="orbit__stack-card">
-            <h3>llmProvider.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/llmProvider.ts" target="_blank" rel="noopener">llmProvider.ts</a></h3>
             <p>Provider-agnostic OpenAI-compatible SSE client. Works against OpenAI, Ollama, LM Studio, Cloudflare AI Gateway, llama.cpp, vLLM. On desktop the API key lives in the OS keychain (Windows Credential Manager / macOS Keychain) instead of <code>localStorage</code>.</p>
           </article>
         </div>
@@ -4370,22 +4370,22 @@ code, kbd, pre {
 
         <div class="xr__stack-grid">
           <article class="xr__stack-card">
-            <h3>vrSession.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrSession.ts" target="_blank" rel="noopener">vrSession.ts</a></h3>
             <p>Session lifecycle. <code>enterImmersive('ar' | 'vr')</code> requests the session, builds a Three.js renderer + camera, calls <code>renderer.xr.setSession()</code>, drives a separate XR render loop via <code>XRSession.requestAnimationFrame</code>, and yields back to MapLibre on session-end.</p>
           </article>
 
           <article class="xr__stack-card">
-            <h3>photorealEarth.ts + vrScene.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/photorealEarth.ts" target="_blank" rel="noopener">photorealEarth.ts</a> + <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrScene.ts" target="_blank" rel="noopener">vrScene.ts</a></h3>
             <p>The Earth stack — diffuse, night lights, specular, atmosphere, clouds, sun, ground shadow — with day/night shading gated on the real UTC sun position. Same factory used on <code>/orbit</code>; here it provides the empty-state planet when no dataset is loaded.</p>
           </article>
 
           <article class="xr__stack-card">
-            <h3>vrInteraction.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrInteraction.ts" target="_blank" rel="noopener">vrInteraction.ts</a></h3>
             <p>Controller input. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin inertia. Raycast hit routing for the floating HUD's UV regions and the AR Place button.</p>
           </article>
 
           <article class="xr__stack-card">
-            <h3>vrPlacement.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrPlacement.ts" target="_blank" rel="noopener">vrPlacement.ts</a></h3>
             <p>AR-only. WebXR <code>hit-test</code> + reticle + Place button. Anchors the globe to a real surface; persistent-handle UUIDs in <code>localStorage</code> keep it in the same physical spot across sessions on Quest (Meta Anchors extension).</p>
           </article>
         </div>
@@ -4772,7 +4772,7 @@ code, kbd, pre {
               <small>Windows · macOS · Linux</small>
             </div>
             <div class="platforms__row-body">
-              Tauri v2 wraps the app in a native window. Adds an offline GIBS tile cache (<code>tile_cache.rs</code>, SHA-256 flat-file), an OS keychain for LLM API keys, an HTTP allowlist that lets the webview reach <em>local</em> LLM endpoints (Ollama / LM Studio / llama.cpp / vLLM), and a Tauri-updater channel. Distributed via signed GitHub Releases — <code>.msi</code>, <code>.dmg</code>, <code>.AppImage</code>.
+              Tauri v2 wraps the app in a native window. Adds an offline GIBS tile cache (<a href="https://github.com/zyra-project/terraviz/blob/main/src-tauri/src/tile_cache.rs" target="_blank" rel="noopener"><code>tile_cache.rs</code></a>, SHA-256 flat-file), an OS keychain for LLM API keys, an HTTP allowlist that lets the webview reach <em>local</em> LLM endpoints (Ollama / LM Studio / llama.cpp / vLLM), and a Tauri-updater channel. Distributed via signed GitHub Releases — <code>.msi</code>, <code>.dmg</code>, <code>.AppImage</code>.
             </div>
             <span class="platforms__row-status platforms__row-status--shipping">Shipping</span>
           </div>

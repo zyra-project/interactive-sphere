@@ -663,34 +663,34 @@ code, kbd, pre {
   font-size: 0.85em;
 }
 
-/* Source-code link in the card heading: discreet, inherits the
-   mono filename styling, gains color + underline on hover. The
-   trailing ↗ glyph signals "external link to the source on
-   GitHub" without being noisy. */
-.globe__stack-card h3 a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.globe__stack-card h3 a:hover,
-.globe__stack-card h3 a:focus-visible {
-  color: var(--cable-blue);
-  text-decoration: underline;
-}
-
-.globe__stack-card h3 a::after {
+/* Source-code links — every <a> pointing at a file on main
+   carries a discreet ↗ glyph signaling the off-site jump.
+   Heading-level links additionally inherit the heading color
+   until hover, so card titles read as titles, not as a wall of
+   blue. Validated against renames by check_source_links.py. */
+a[href*="github.com/zyra-project/terraviz/blob/"]::after {
   content: "↗";
   margin-left: 0.3em;
   font-size: 0.75em;
   color: var(--neutral-400);
   vertical-align: super;
-  text-decoration: none;
   display: inline-block;
 }
 
-.globe__stack-card h3 a:hover::after,
-.globe__stack-card h3 a:focus-visible::after {
+a[href*="github.com/zyra-project/terraviz/blob/"]:hover::after,
+a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible::after {
   color: var(--cable-blue);
+}
+
+h3 a[href*="github.com/zyra-project/terraviz/blob/"] {
+  color: inherit;
+  text-decoration: none;
+}
+
+h3 a[href*="github.com/zyra-project/terraviz/blob/"]:hover,
+h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
 }
 
 @media (max-width: 700px) {

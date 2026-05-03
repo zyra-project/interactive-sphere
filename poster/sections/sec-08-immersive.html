@@ -10,22 +10,22 @@
 
         <div class="xr__stack-grid">
           <article class="xr__stack-card">
-            <h3>vrSession.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrSession.ts" target="_blank" rel="noopener">vrSession.ts</a></h3>
             <p>Session lifecycle. <code>enterImmersive('ar' | 'vr')</code> requests the session, builds a Three.js renderer + camera, calls <code>renderer.xr.setSession()</code>, drives a separate XR render loop via <code>XRSession.requestAnimationFrame</code>, and yields back to MapLibre on session-end.</p>
           </article>
 
           <article class="xr__stack-card">
-            <h3>photorealEarth.ts + vrScene.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/photorealEarth.ts" target="_blank" rel="noopener">photorealEarth.ts</a> + <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrScene.ts" target="_blank" rel="noopener">vrScene.ts</a></h3>
             <p>The Earth stack — diffuse, night lights, specular, atmosphere, clouds, sun, ground shadow — with day/night shading gated on the real UTC sun position. Same factory used on <code>/orbit</code>; here it provides the empty-state planet when no dataset is loaded.</p>
           </article>
 
           <article class="xr__stack-card">
-            <h3>vrInteraction.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrInteraction.ts" target="_blank" rel="noopener">vrInteraction.ts</a></h3>
             <p>Controller input. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin inertia. Raycast hit routing for the floating HUD's UV regions and the AR Place button.</p>
           </article>
 
           <article class="xr__stack-card">
-            <h3>vrPlacement.ts</h3>
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrPlacement.ts" target="_blank" rel="noopener">vrPlacement.ts</a></h3>
             <p>AR-only. WebXR <code>hit-test</code> + reticle + Place button. Anchors the globe to a real surface; persistent-handle UUIDs in <code>localStorage</code> keep it in the same physical spot across sessions on Quest (Meta Anchors extension).</p>
           </article>
         </div>
