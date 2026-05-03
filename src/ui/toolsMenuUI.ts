@@ -73,6 +73,8 @@ export interface ToolsMenuCallbacks {
   onToggleDatasetInfo?: (visible: boolean) => void
   /** User toggled legend visibility. */
   onToggleLegend?: (visible: boolean) => void
+  /** User clicked Credits — open the credits / attribution dialog. */
+  onOpenCredits?: () => void
   /** Announce something for screen readers. */
   announce?: (message: string) => void
   /** Get the currently loaded dataset (used by the Share action). */
@@ -101,7 +103,7 @@ export function initToolsMenu(
 
   const gateMeetOrbit = isTauri()
 
-  const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, announce } = callbacks
+  const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, onOpenCredits, announce } = callbacks
   const currentLayout = viewports.getLayout()
 
   container.classList.remove('hidden')
@@ -179,8 +181,12 @@ export function initToolsMenu(
           <span class="tools-menu-item-label">Meet Orbit&nbsp;&rarr;</span>
         </a>`}
       </section>
-      <section class="tools-menu-section" aria-label="Privacy">
-        <h4 class="tools-menu-section-title">Privacy</h4>
+      <section class="tools-menu-section" aria-label="About">
+        <h4 class="tools-menu-section-title">About</h4>
+        <button type="button" class="tools-menu-item" id="tools-menu-credits">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Credits&hellip;</span>
+        </button>
         <button type="button" class="tools-menu-item" id="tools-menu-privacy">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Privacy settings&hellip;</span>
@@ -357,6 +363,13 @@ export function initToolsMenu(
   orbitSettingsBtn.addEventListener('click', () => {
     closePopover()
     onOpenOrbitSettings?.()
+  })
+
+  const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
+  creditsBtn?.addEventListener('click', () => {
+    closePopover()
+    onOpenCredits?.()
+    announce?.('Credits opened')
   })
 
   const privacyBtn = document.getElementById('tools-menu-privacy') as HTMLButtonElement | null

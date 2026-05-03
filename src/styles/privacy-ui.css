@@ -187,6 +187,57 @@
     color: var(--color-success-soft);
 }
 
+/* --- Credits panel ---
+   Reuses .privacy-ui-panel / .privacy-ui-backdrop / .privacy-ui-header
+   for the dialog skeleton; adds Credits-specific section styling
+   on top. See src/ui/creditsPanel.ts for the design. */
+
+.credits-section {
+    margin: 0 0 0.85rem;
+}
+.credits-section:last-child {
+    margin-bottom: 0;
+}
+
+.credits-section-title {
+    margin: 0 0 0.35rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    font-weight: 700;
+}
+
+.credits-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.credits-list li {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--color-text-secondary);
+}
+
+.credits-dataset {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--color-text-secondary);
+}
+
+.credits-empty {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
 /* --- Disclosure banner --- */
 
 .disclosure-banner {

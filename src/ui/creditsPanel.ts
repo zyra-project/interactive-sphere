@@ -3,202 +3,355 @@
  *
  * Single canonical surface for every attribution TerraViz needs to
  * display: basemap providers (NASA GIBS, OpenMapTiles, OSM,
- * terrain) and per-dataset developer / source / license credits.
- *
- * STATUS · STUB. This file currently holds the design only. The
- * implementation lands in follow-up commits to this PR after the
- * design is reviewed.
- *
- * ─────────────────────────────────────────────────────────────────
- * Why a panel
- * ─────────────────────────────────────────────────────────────────
- *
- * Today each MapRenderer instance carries a stock MapLibre
- * AttributionControl in compact mode, which renders as an "i" pill
- * with the basemap attributions. In multi-globe layouts that pill
- * appears once per panel, eating layout in the small-viewport /
- * embedded-iframe contexts that the §1 globe demo lives in.
- *
- * The stock control also has no way to surface dataset-level
- * credits — a dataset's `developers` / `organization` /
- * `source_url` / `license` fields stay buried in the Dataset info
- * panel. That contradicts the publisher-side framing in
- * MISSION.md ("research groups sharing visualizations") — if
- * publishers' work appears on screen, their credits should too.
- *
- * Tools → Credits replaces the per-panel pills with a single
- * discoverable entry shared across all panels. Mirrors Mapbox's
- * "i" attribution dialog, Apple Maps' "Legal", and Google Maps'
- * Settings → Credits patterns — accepted as legally compliant
- * with OSM ODbL ("attribution in a manner reasonable to the
- * medium").
- *
- * ─────────────────────────────────────────────────────────────────
- * Data flow — phantom sources
- * ─────────────────────────────────────────────────────────────────
+ * terrain) and per-dataset developer / source credits.
  *
  * Both kinds of credit ride the same MapLibre channel: source
  * `attribution` strings, read at render time from
  * `map.getStyle().sources[…].attribution`.
  *
- * Basemap sources (Blue Marble, Black Marble, OpenMapTiles, etc.)
- * already declare `attribution` in mapRenderer.ts's style spec —
- * no change needed there.
+ *   - Basemap sources already declare `attribution` in
+ *     mapRenderer.ts's style spec; nothing changes there.
+ *   - Dataset loads register a phantom GeoJSON source named
+ *     `__dataset-credits` whose only payload is the attribution
+ *     string. The source carries no features and no layers
+ *     reference it; it exists only to feed its attribution into
+ *     MapLibre's source-attribution pipeline. Unload removes it.
  *
- * Dataset loads add a phantom GeoJSON source per dataset:
+ * The panel walks `map.getStyle().sources` for every viewport,
+ * groups dataset attributions per panel and merges basemap
+ * attributions across panels (they're the same on every panel
+ * today). No subscription to viewportManager state — the
+ * MapLibre source map IS the source of truth.
  *
- *     map.addSource(`__dataset-credits-${id}`, {
- *       type: 'geojson',
- *       data: { type: 'FeatureCollection', features: [] },
- *       attribution: composeDatasetAttribution(dataset),
- *     })
+ * Visual / interaction shape mirrors privacyUI: dark glass
+ * surface, escape-to-close, focus-trap, click-out-to-close,
+ * ARIA labelled.
  *
- * The source carries no features and no layers reference it; it
- * exists only to feed its attribution string into MapLibre's
- * source-attribution pipeline. Unload removes the source; the
- * attribution disappears with it.
- *
- * Result: this panel never tracks a "loaded datasets" set or
- * subscribes to viewportManager state. It walks
- * `map.getStyle().sources` for each viewport at render time and
- * de-dupes. Single source of truth = MapLibre's source map.
- *
- * Operator forks that swap basemap providers or wire in custom
- * overlays just set `attribution` on their source the same way —
- * the panel reflects the change automatically. No panel-side code
- * touches dataset or basemap specifics.
- *
- * ─────────────────────────────────────────────────────────────────
- * Layout
- * ─────────────────────────────────────────────────────────────────
- *
- *     ┌─ Credits ──────────────────────────────────┐
- *     │                                            │
- *     │ Basemap                                    │
- *     │ • NASA Blue Marble · Black Marble — public │
- *     │   domain                                   │
- *     │ • © OpenMapTiles · © OpenStreetMap         │
- *     │   contributors — ODbL                      │
- *     │ • Mapzen Terrain — open-data               │
- *     │                                            │
- *     │ Loaded — Panel 1                           │
- *     │ Sea-Surface Temperature (1981–2023)        │
- *     │ • Data: NOAA NCEI                          │
- *     │ • Visualization: Eric Hackathorn (NOAA GSL)│
- *     │ • License: CC BY 4.0                       │
- *     │                                            │
- *     │ Loaded — Panel 2                           │
- *     │ ...                                        │
- *     └────────────────────────────────────────────┘
- *
- * Reactive — sections appear / disappear as datasets load /
- * unload across panels.
- *
- * Visual / interaction shape mirrors the existing privacyUI panel:
- * dark glass surface, escape-to-close, focus-trap, click-out-to-
- * close, ARIA labelled. The Credits panel reuses the privacy
- * dialog's CSS skeleton (`.privacy-ui-panel` etc.) with a Credits-
- * specific class hierarchy on top.
- *
- * ─────────────────────────────────────────────────────────────────
- * Multi-globe
- * ─────────────────────────────────────────────────────────────────
- *
- * Each MapRenderer owns its own style + sources. The panel
- * iterates viewportManager's panels, walks each map's sources,
- * and groups dataset credits under per-panel headings (Loaded —
- * Panel 1 / Loaded — Panel 2 / ...). Basemap sources merge
- * across panels (they're the same on every panel today; if a
- * future feature lets a panel show a different basemap, the
- * Basemap section grows accordingly).
- *
- * ─────────────────────────────────────────────────────────────────
- * Removal of stock AttributionControl
- * ─────────────────────────────────────────────────────────────────
- *
- * mapRenderer.ts currently constructs the map with
- * `attributionControl: { compact: true }`. This PR sets it to
- * `false` and adds a Tools → Credits entry instead. The
- * `attribution` strings on each source stay — they're still the
- * data source for the new panel. An operator who forks TerraViz
- * and wants the stock control back just sets the option back to
- * `{ compact: true }` and skips the Credits menu entry; one-line
- * revert.
- *
- * ─────────────────────────────────────────────────────────────────
- * Legal posture
- * ─────────────────────────────────────────────────────────────────
- *
- *   - OSM ODbL: "© OpenStreetMap contributors" remains visible
- *     in a credit dialog discoverable from the menu, the same
- *     standard Mapbox / Apple / Google use.
- *   - NASA: "appreciated" credit stays visible.
- *   - OpenMapTiles, Mapzen, others: same.
- *   - Dataset-level attribution becomes systematic for the first
- *     time — directly supports the publisher-credit framing in
- *     MISSION.md.
- *
- * ─────────────────────────────────────────────────────────────────
- * Implementation outline (what lands once the design is approved)
- * ─────────────────────────────────────────────────────────────────
- *
- *   1. composeDatasetAttribution(dataset: Dataset): string
- *      - Pure function, fed Dataset metadata.
- *      - Output shape: `${title} — Data: ${...} · Vis: ${...} ·
- *        ${license_label}`. Skips fields that aren't populated.
- *      - Tested independently with synthetic Dataset rows.
- *
- *   2. registerDatasetCreditsSource(map, dataset)
- *      - Adds the phantom GeoJSON source on dataset load.
- *      - Called from datasetLoader.ts in both the
- *        loadVideoDataset and loadImageDataset paths.
- *
- *   3. unregisterDatasetCreditsSource(map, datasetId)
- *      - Removes the phantom source on dataset unload / replace.
- *      - Called from the same datasetLoader.ts unload paths.
- *
- *   4. openCreditsPanel() / closeCreditsPanel() — main exports
- *      - Build the panel DOM (or unhide a pre-rendered shell).
- *      - Walk every viewport's map, collect sources, group by
- *        panel for dataset attributions and merge for basemap.
- *      - Render. Wire close handlers (ESC, click-out, X button).
- *
- *   5. Tools menu entry
- *      - toolsMenuUI.ts gets a "Credits" item; click calls
- *        openCreditsPanel().
- *
- *   6. mapRenderer.ts changes
- *      - `attributionControl: { compact: true }` → `false`.
- *      - No other source / style changes.
- *
- *   7. Tests
- *      - Unit · composeDatasetAttribution covers
- *        title-only / data-only / full fields / missing license.
- *      - Unit · registerDatasetCreditsSource adds + carries
- *        the right attribution string.
- *      - Integration · openCreditsPanel reads sources from a
- *        mocked MapRenderer and renders both Basemap and Loaded
- *        sections.
- *      - Integration · multi-panel dataset credits group under
- *        the right panel heading.
- *      - A11y · panel uses the same focus-trap / ESC pattern as
- *        privacyUI; Tools → Credits keyboard-navigable.
- *
- * ─────────────────────────────────────────────────────────────────
- * Out of scope for this PR
- * ─────────────────────────────────────────────────────────────────
- *
- *   - Publisher-portal forms that collect the dataset metadata
- *     this panel renders. Drafted under
- *     docs/CATALOG_PUBLISHING_TOOLS.md; that work proceeds
- *     independently. SOS-imported rows that lack `developers`
- *     etc. simply render with a shorter credit — fields the
- *     panel doesn't have, it doesn't show.
- *   - Localised attribution strings. Today everything's
- *     English-only — same posture as the rest of the app.
- *   - Per-dataset link-out targets (clickable affiliation URLs).
- *     Trivial follow-up once the panel ships.
+ * Design note vs the original PR description: the PR proposed
+ * id-suffixed phantom sources (`__dataset-credits-${id}`) so that
+ * a future multi-overlay-per-panel feature could carry several
+ * attributions on one map. Each MapRenderer today renders at most
+ * one dataset, so a single non-suffixed source per panel is
+ * simpler — register replaces, clear removes — and the migration
+ * to id-suffixed would be a localised one-file change inside this
+ * module if the requirement materialises.
  */
 
-// Implementation TBD pending design review on this PR.
-export {}
+import type { Dataset } from '../types'
+import type { ViewportManager } from '../services/viewportManager'
+
+/** Source id used for the phantom dataset-credits source on each
+ *  MapRenderer. Single source per map — register replaces, clear
+ *  removes. The double-underscore prefix marks it as
+ *  internal/non-rendering. */
+export const DATASET_CREDITS_SOURCE_ID = '__dataset-credits'
+
+/** Source ids that should be excluded from the basemap section.
+ *  Today only the phantom dataset-credits source needs filtering;
+ *  a future feature might add more internal sources to skip. */
+const NON_BASEMAP_SOURCE_IDS = new Set<string>([DATASET_CREDITS_SOURCE_ID])
+
+// ---------------------------------------------------------------------------
+// composeDatasetAttribution — assemble the credit string for one Dataset
+// ---------------------------------------------------------------------------
+
+/**
+ * Compose a one-line attribution string for a Dataset, used as the
+ * `attribution` field of the phantom dataset-credits source.
+ *
+ * The string is assembled from whichever metadata fields the
+ * dataset actually carries — fields that aren't populated are
+ * omitted rather than rendered as empty placeholders.
+ *
+ * Output shape (parts joined by " · "):
+ *   - title (always)
+ *   - "Data: <provider>" — `enriched.datasetDeveloper.name` if
+ *     present, otherwise `organization`
+ *   - "Vis: <name>" — `enriched.visDeveloper.name` if present
+ *   - "Source: <url>" — `websiteLink` if present, otherwise
+ *     `enriched.catalogUrl`
+ *
+ * The panel renders this string as a single line in the dataset's
+ * "Loaded — Panel N" section. Future structured credits
+ * (clickable affiliation URLs, per-line layout, license badges)
+ * are an opt-in follow-up; for now MapLibre's flat string surface
+ * keeps the model simple.
+ *
+ * Pure — no DOM access, no globals. Tested independently.
+ */
+export function composeDatasetAttribution(dataset: Dataset): string {
+  const parts: string[] = [dataset.title]
+
+  const dataDev = dataset.enriched?.datasetDeveloper?.name?.trim()
+  const dataOrg = dataset.organization?.trim()
+  const dataProvider = dataDev || dataOrg
+  if (dataProvider) parts.push(`Data: ${dataProvider}`)
+
+  const visDev = dataset.enriched?.visDeveloper?.name?.trim()
+  if (visDev) parts.push(`Vis: ${visDev}`)
+
+  const sourceUrl = dataset.websiteLink?.trim() || dataset.enriched?.catalogUrl?.trim()
+  if (sourceUrl) parts.push(`Source: ${sourceUrl}`)
+
+  return parts.join(' · ')
+}
+
+// ---------------------------------------------------------------------------
+// Reading attributions back out of MapLibre
+// ---------------------------------------------------------------------------
+
+/** Minimal MapLibre map shape we depend on — just enough to read
+ *  source attributions. Avoids a hard dependency on `maplibre-gl`
+ *  in this module so unit tests can mock with plain objects. */
+type AttributionReadableMap = {
+  getStyle?: () => { sources?: Record<string, { attribution?: string } | undefined> | undefined } | undefined
+}
+
+/** Source-shaped renderer surface — implemented by MapRenderer.
+ *  Read-only here; the panel never mutates sources. */
+type CreditsRenderer = {
+  getMap: () => AttributionReadableMap | null
+}
+
+/** Read every basemap attribution string declared on the map's
+ *  current style, dropping the phantom dataset-credits source.
+ *  De-duped — if multiple sources share an identical attribution
+ *  (as Blue Marble + Black Marble might if they were ever combined),
+ *  the panel shows it once. */
+export function readBasemapAttributions(map: AttributionReadableMap | null): string[] {
+  if (!map) return []
+  const sources = map.getStyle?.()?.sources
+  if (!sources) return []
+  const out = new Set<string>()
+  for (const [id, src] of Object.entries(sources)) {
+    if (NON_BASEMAP_SOURCE_IDS.has(id)) continue
+    const text = src?.attribution?.trim()
+    if (text) out.add(text)
+  }
+  return Array.from(out)
+}
+
+/** Read the phantom dataset-credits source's attribution string,
+ *  or null if no dataset is loaded on this panel. */
+export function readDatasetAttribution(map: AttributionReadableMap | null): string | null {
+  if (!map) return null
+  const src = map.getStyle?.()?.sources?.[DATASET_CREDITS_SOURCE_ID]
+  return src?.attribution?.trim() || null
+}
+
+// ---------------------------------------------------------------------------
+// The Credits panel UI
+// ---------------------------------------------------------------------------
+
+let mounted = false
+let lastTrigger: HTMLElement | null = null
+let escHandler: ((ev: KeyboardEvent) => void) | null = null
+
+/** Per-panel snapshot used to render the "Loaded" sections. */
+interface PanelCreditsSnapshot {
+  /** 1-based panel number for display ("Loaded — Panel 1"). */
+  panelLabel: number
+  /** Dataset attribution string, or null if the panel is empty. */
+  datasetAttribution: string | null
+}
+
+/** Snapshot every panel's current credit state at render time.
+ *  Pure read against MapLibre styles; no subscriptions. */
+function snapshotPanelCredits(viewports: ViewportManager): {
+  basemap: string[]
+  panels: PanelCreditsSnapshot[]
+} {
+  const renderers = viewports.getAll() as unknown as CreditsRenderer[]
+  const basemap = new Set<string>()
+  const panels: PanelCreditsSnapshot[] = []
+
+  renderers.forEach((renderer, idx) => {
+    const map = renderer.getMap()
+    for (const text of readBasemapAttributions(map)) {
+      basemap.add(text)
+    }
+    panels.push({
+      panelLabel: idx + 1,
+      datasetAttribution: readDatasetAttribution(map),
+    })
+  })
+
+  return { basemap: Array.from(basemap), panels }
+}
+
+/** Build the panel DOM. Returns the backdrop element so callers
+ *  can add it to the document. */
+function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCount: number): HTMLElement {
+  const backdrop = document.createElement('div')
+  backdrop.id = 'credits-backdrop'
+  backdrop.className = 'privacy-ui-backdrop'
+
+  const panel = document.createElement('section')
+  panel.id = 'credits-panel'
+  panel.className = 'privacy-ui-panel'
+  panel.setAttribute('role', 'dialog')
+  panel.setAttribute('aria-modal', 'true')
+  panel.setAttribute('aria-labelledby', 'credits-panel-title')
+  panel.tabIndex = -1
+
+  const basemapHtml = snapshot.basemap.length
+    ? snapshot.basemap.map(t => `<li>${escapeHtml(t)}</li>`).join('')
+    : '<li class="credits-empty">No basemap sources declared.</li>'
+
+  // Hide empty per-panel sections in the single-panel case so the
+  // "Loaded — Panel 1" header doesn't read as overkill. With
+  // multiple panels the per-panel headings carry useful structure
+  // even when individual panels are empty.
+  const loadedHtml = snapshot.panels
+    .map(p => {
+      if (!p.datasetAttribution) {
+        return panelCount > 1
+          ? `<section class="credits-section">
+               <h3 class="credits-section-title">Loaded — Panel ${p.panelLabel}</h3>
+               <p class="credits-empty">No dataset loaded.</p>
+             </section>`
+          : ''
+      }
+      const heading = panelCount > 1 ? `Loaded — Panel ${p.panelLabel}` : 'Loaded dataset'
+      return `<section class="credits-section">
+                <h3 class="credits-section-title">${heading}</h3>
+                <p class="credits-dataset">${escapeHtml(p.datasetAttribution)}</p>
+              </section>`
+    })
+    .join('')
+
+  panel.innerHTML = `
+    <div class="privacy-ui-header">
+      <h2 id="credits-panel-title">Credits</h2>
+      <button type="button" id="credits-panel-close" class="privacy-ui-close" aria-label="Close credits">×</button>
+    </div>
+    <p class="privacy-ui-desc">
+      Where the imagery and data on screen come from.
+    </p>
+    <section class="credits-section">
+      <h3 class="credits-section-title">Basemap</h3>
+      <ul class="credits-list">${basemapHtml}</ul>
+    </section>
+    ${loadedHtml}
+    <div class="privacy-ui-meta">
+      <a class="privacy-ui-policy-link" href="https://github.com/zyra-project/terraviz/blob/main/MISSION.md" target="_blank" rel="noopener">About TerraViz →</a>
+    </div>
+  `
+
+  backdrop.appendChild(panel)
+  return backdrop
+}
+
+/** HTML-escape free-text attribution strings. Same shape as the
+ *  helper in browseUI; copied here to keep this module standalone. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** Open the credits panel. Idempotent — a second call while
+ *  open is a no-op. The trigger element (typically the Tools
+ *  menu item) gets focus restored on close. */
+export function openCreditsPanel(
+  viewports: ViewportManager,
+  trigger: HTMLElement | null = null,
+): void {
+  if (mounted) return
+  mounted = true
+  lastTrigger = trigger
+
+  const snapshot = snapshotPanelCredits(viewports)
+  const backdrop = buildPanel(snapshot, viewports.getPanelCount())
+  document.body.appendChild(backdrop)
+
+  // Wire close affordances: backdrop click, X button, ESC.
+  backdrop.addEventListener('click', (ev) => {
+    if (ev.target === backdrop) closeCreditsPanel()
+  })
+  document
+    .getElementById('credits-panel-close')
+    ?.addEventListener('click', () => closeCreditsPanel())
+  escHandler = (ev: KeyboardEvent) => {
+    if (ev.key === 'Escape') closeCreditsPanel()
+  }
+  document.addEventListener('keydown', escHandler)
+
+  // Focus the panel itself so screen readers announce the dialog
+  // and the ESC handler captures keys as soon as the user looks
+  // at it.
+  document.getElementById('credits-panel')?.focus()
+}
+
+/** Close the credits panel. Idempotent. Restores focus to the
+ *  element that opened it. */
+export function closeCreditsPanel(): void {
+  if (!mounted) return
+  mounted = false
+  document.getElementById('credits-backdrop')?.remove()
+  if (escHandler) {
+    document.removeEventListener('keydown', escHandler)
+    escHandler = null
+  }
+  if (lastTrigger instanceof HTMLElement) {
+    lastTrigger.focus()
+  }
+  lastTrigger = null
+}
+
+/** True when the credits panel is open. Exported for tests and
+ *  for the Tools menu's open/close state. */
+export function isCreditsPanelOpen(): boolean {
+  return mounted
+}
+
+/** Tear down. Idempotent. Exposed for tests. */
+export function disposeCreditsPanel(): void {
+  closeCreditsPanel()
+}
+
+// ---------------------------------------------------------------------------
+// Phantom-source helpers (called from MapRenderer)
+// ---------------------------------------------------------------------------
+//
+// MapRenderer.setDatasetCredits(dataset) calls these to register
+// or clear the phantom source. They live here (rather than
+// inline in MapRenderer) so the source-id constant, attribution
+// composition, and the read paths above all stay in one module.
+
+type MutableMap = {
+  getSource: (id: string) => unknown
+  removeSource: (id: string) => void
+  addSource: (id: string, source: {
+    type: 'geojson'
+    data: { type: 'FeatureCollection'; features: [] }
+    attribution: string
+  }) => void
+}
+
+/** Register or replace the dataset-credits phantom source on a
+ *  map. If `dataset` is null, removes any existing credits source.
+ *  Otherwise builds the attribution string and sets the source.
+ *  Idempotent — calling with the same dataset twice is a no-op
+ *  beyond the redundant remove/add. */
+export function setDatasetCreditsSource(
+  map: MutableMap | null,
+  dataset: Dataset | null,
+): void {
+  if (!map) return
+  // Always clear first so swapping datasets doesn't pile up
+  // sources or leak stale attributions.
+  if (map.getSource(DATASET_CREDITS_SOURCE_ID)) {
+    map.removeSource(DATASET_CREDITS_SOURCE_ID)
+  }
+  if (dataset) {
+    map.addSource(DATASET_CREDITS_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+      attribution: composeDatasetAttribution(dataset),
+    })
+  }
+}
