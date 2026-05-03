@@ -3414,13 +3414,13 @@ code, kbd, pre {
 
         <h3 class="demo-section__title">Where the bytes come from</h3>
         <p class="demo-section__hint">
-          Most of TerraViz's serving lives on Cloudflare today — the catalog database, the asset store, the docent's LLM, the semantic-search index, telemetry, auth. A small set of endpoints live elsewhere by design: NASA GIBS for tile-cache locality, the legacy Vimeo proxy as a transitional video host (Stream replaces it), and a configurable bring-your-own-LLM path for visitors who prefer their own provider over Workers AI. Solid boxes are live in production today; <span class="globe__arch-planned-pill">PLANNED</span> dashed boxes are drafted in the catalog backend docs but not yet bound.
+          Most of TerraViz's serving lives on Cloudflare today — the catalog database, the asset store, the docent's LLM, the semantic-search index, telemetry, auth, and the CDN edge cache that sits in front of all of it. A small set of endpoints live elsewhere by design: NASA GIBS for tile-cache locality, the legacy Vimeo proxy as a transitional video host (Stream replaces it), and a configurable bring-your-own-LLM path for visitors who prefer their own provider over Workers AI. Solid boxes are live in production today; <span class="globe__arch-planned-pill">PLANNED</span> dashed boxes are drafted in the catalog backend docs but not yet bound.
         </p>
 
         <figure class="globe__diagram">
-          <svg viewBox="0 0 920 540"
+          <svg viewBox="0 0 920 590"
                role="img"
-               aria-label="TerraViz architecture diagram, three horizontal bands. The top band, CLIENT, lists Browser, Quest, iOS, Android, and Desktop. A single arrow drops down into the middle band, CLOUDFLARE EDGE. Inside the edge band: TerraViz web app (Pages) on the left feeds into Pages Functions on the right, which exposes /api/v1/* (catalog, search, featured, manifest, publish, ingest, federation), /api/chat/* (completions, models), /api/feedback, /api/tile, and /api/legend. Pages Functions binds to a LIVE row of seven services — D1 catalog, R2 assets, KV cache, Workers Analytics Engine telemetry, Cloudflare Access auth, Workers AI for Orbit's LLM and dataset embeddings, and Vectorize for semantic search. Below that, a PLANNED row of four dashed boxes — Stream for video, Images for variants, Queues for async jobs, Durable Objects for federation coordination. The bottom band, DIRECT-FETCH ENDPOINTS, lists four boxes: NASA GIBS (tiles, fetched directly by the client for cache locality), Vimeo proxy (today's video host, with a planned migration to Cloudflare Stream), BYO LLM provider (when a visitor configures their own OpenAI-compatible endpoint instead of Workers AI), and Federation peers (cross-instance catalog pulls — see section 10 for the full diagram).">
+               aria-label="TerraViz architecture diagram, three horizontal bands. The top band, CLIENT, lists Browser, Quest, iOS, Android, and Desktop. A single HTTPS arrow drops down into the middle band, CLOUDFLARE EDGE. The first tier inside the edge band is the CDN edge cache — every request lands there first, with per-route Cache-Control directives and ETag-driven 304s. On a cache miss the request fans out to TerraViz web app (Pages) on the left or Pages Functions on the right, which exposes /api/v1/* (catalog, search, featured, manifest, publish, ingest, federation), /api/chat/* (completions, models), /api/feedback, /api/tile, and /api/legend. Pages Functions binds to a LIVE row of seven services — D1 catalog, R2 assets, KV cache, Workers Analytics Engine telemetry, Cloudflare Access auth, Workers AI for Orbit's LLM and dataset embeddings, and Vectorize for semantic search. Below that, a PLANNED row of four dashed boxes — Stream for video, Images for variants, Queues for async jobs, Durable Objects for federation coordination. The bottom band, DIRECT-FETCH ENDPOINTS, lists four boxes: NASA GIBS (tiles, fetched directly by the client for cache locality), Vimeo proxy (today's video host, with a planned migration to Cloudflare Stream), BYO LLM provider (when a visitor configures their own OpenAI-compatible endpoint instead of Workers AI), and Federation peers (cross-instance catalog pulls — see section 10 for the full diagram).">
             <defs>
               <marker id="arrow-arch" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
                 <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
@@ -3479,17 +3479,32 @@ code, kbd, pre {
             <text class="arch-tag" x="468" y="68" text-anchor="start">HTTPS</text>
 
             <!-- ─── Band 2: CLOUDFLARE EDGE ─── -->
-            <rect class="arch-band-cf" x="20" y="92" width="880" height="296" rx="10" />
+            <rect class="arch-band-cf" x="20" y="92" width="880" height="346" rx="10" />
             <text class="arch-band-label-cf" x="40" y="110">CLOUDFLARE EDGE</text>
 
-            <!-- Top of CF band: TerraViz web app + Pages Functions -->
+            <!-- Tier 0 inside CF band: CDN edge cache. Every request
+                 lands here first; on miss it fans out to Pages /
+                 Pages Functions below. -->
             <g transform="translate(50,124)">
+              <rect class="arch-box-emph" x="0" y="0" width="820" height="44" rx="8" />
+              <text class="arch-text" x="410" y="20" text-anchor="middle">Edge cache · CDN tier</text>
+              <text class="arch-mono" x="410" y="36" text-anchor="middle">per-route Cache-Control · stale-while-revalidate · ETag → 304</text>
+            </g>
+
+            <!-- Cache → Pages / Pages Functions (on miss) -->
+            <path class="arch-arrow" d="M170,168 L170,184" marker-end="url(#arrow-arch)" />
+            <text class="arch-tag" x="178" y="180" text-anchor="start">miss</text>
+            <path class="arch-arrow" d="M600,168 L600,184" marker-end="url(#arrow-arch)" />
+            <text class="arch-tag" x="608" y="180" text-anchor="start">miss</text>
+
+            <!-- Pages web app + Pages Functions, below the cache -->
+            <g transform="translate(50,184)">
               <rect class="arch-box-emph" x="0" y="0" width="240" height="60" rx="8" />
               <text class="arch-text" x="120" y="24" text-anchor="middle">Pages — TerraViz web app</text>
               <text class="arch-mono" x="120" y="42" text-anchor="middle">static bundle</text>
               <text class="arch-mono" x="120" y="54" text-anchor="middle">terraviz.zyra-project.org</text>
             </g>
-            <g transform="translate(330,124)">
+            <g transform="translate(330,184)">
               <rect class="arch-box-emph" x="0" y="0" width="540" height="60" rx="8" />
               <text class="arch-text" x="270" y="22" text-anchor="middle">Pages Functions</text>
               <text class="arch-mono" x="270" y="38" text-anchor="middle">/api/v1/{catalog · search · featured · manifest · publish · ingest · federation}</text>
@@ -3497,99 +3512,99 @@ code, kbd, pre {
             </g>
 
             <!-- Web app → Functions short link -->
-            <path class="arch-arrow" d="M290,154 L330,154" marker-end="url(#arrow-arch)" />
+            <path class="arch-arrow" d="M290,214 L330,214" marker-end="url(#arrow-arch)" />
 
             <!-- Functions → live-services rail -->
-            <path class="arch-arrow-accent" d="M600,184 L600,206" marker-end="url(#arrow-arch-accent)" />
-            <text class="arch-band-label-cf" x="40" y="220">LIVE</text>
-            <line class="arch-rail" x1="124" y1="216" x2="796" y2="216" />
+            <path class="arch-arrow-accent" d="M600,244 L600,266" marker-end="url(#arrow-arch-accent)" />
+            <text class="arch-band-label-cf" x="40" y="280">LIVE</text>
+            <line class="arch-rail" x1="124" y1="276" x2="796" y2="276" />
 
             <!-- LIVE row: 7 services. Stems from rail down into each. -->
-            <line class="arch-rail" x1="124" y1="216" x2="124" y2="232" />
-            <g transform="translate(74,232)">
+            <line class="arch-rail" x1="124" y1="276" x2="124" y2="292" />
+            <g transform="translate(74,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">D1</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">catalog DB</text>
             </g>
 
-            <line class="arch-rail" x1="236" y1="216" x2="236" y2="232" />
-            <g transform="translate(186,232)">
+            <line class="arch-rail" x1="236" y1="276" x2="236" y2="292" />
+            <g transform="translate(186,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">R2</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">assets</text>
             </g>
 
-            <line class="arch-rail" x1="348" y1="216" x2="348" y2="232" />
-            <g transform="translate(298,232)">
+            <line class="arch-rail" x1="348" y1="276" x2="348" y2="292" />
+            <g transform="translate(298,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">KV</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">cache</text>
             </g>
 
-            <line class="arch-rail" x1="460" y1="216" x2="460" y2="232" />
-            <g transform="translate(410,232)">
+            <line class="arch-rail" x1="460" y1="276" x2="460" y2="292" />
+            <g transform="translate(410,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">Workers AE</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">analytics</text>
             </g>
 
-            <line class="arch-rail" x1="572" y1="216" x2="572" y2="232" />
-            <g transform="translate(522,232)">
+            <line class="arch-rail" x1="572" y1="276" x2="572" y2="292" />
+            <g transform="translate(522,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">Access</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">staff auth</text>
             </g>
 
-            <line class="arch-rail" x1="684" y1="216" x2="684" y2="232" />
-            <g transform="translate(634,232)">
+            <line class="arch-rail" x1="684" y1="276" x2="684" y2="292" />
+            <g transform="translate(634,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">Workers AI</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">Orbit + embed</text>
             </g>
 
-            <line class="arch-rail" x1="796" y1="216" x2="796" y2="232" />
-            <g transform="translate(746,232)">
+            <line class="arch-rail" x1="796" y1="276" x2="796" y2="292" />
+            <g transform="translate(746,292)">
               <rect class="arch-box" x="0" y="0" width="100" height="50" rx="6" />
               <text class="arch-text" x="50" y="22" text-anchor="middle">Vectorize</text>
               <text class="arch-mono" x="50" y="38" text-anchor="middle">semantic search</text>
             </g>
 
             <!-- PLANNED row: 4 dashed boxes -->
-            <text class="arch-band-label-cf" x="40" y="306">PLANNED</text>
-            <line class="arch-rail-dashed" x1="200" y1="302" x2="720" y2="302" />
-            <line class="arch-rail-dashed" x1="200" y1="302" x2="200" y2="318" />
-            <g transform="translate(124,318)">
+            <text class="arch-band-label-cf" x="40" y="366">PLANNED</text>
+            <line class="arch-rail-dashed" x1="200" y1="362" x2="720" y2="362" />
+            <line class="arch-rail-dashed" x1="200" y1="362" x2="200" y2="378" />
+            <g transform="translate(124,378)">
               <rect class="arch-box-planned" x="0" y="0" width="152" height="50" rx="6" />
               <text class="arch-text" x="76" y="22" text-anchor="middle">Stream</text>
               <text class="arch-mono-accent" x="76" y="38" text-anchor="middle">video · replaces Vimeo</text>
             </g>
 
-            <line class="arch-rail-dashed" x1="374" y1="302" x2="374" y2="318" />
-            <g transform="translate(298,318)">
+            <line class="arch-rail-dashed" x1="374" y1="362" x2="374" y2="378" />
+            <g transform="translate(298,378)">
               <rect class="arch-box-planned" x="0" y="0" width="152" height="50" rx="6" />
               <text class="arch-text" x="76" y="22" text-anchor="middle">Images</text>
               <text class="arch-mono-accent" x="76" y="38" text-anchor="middle">variants · replaces ladder</text>
             </g>
 
-            <line class="arch-rail-dashed" x1="548" y1="302" x2="548" y2="318" />
-            <g transform="translate(472,318)">
+            <line class="arch-rail-dashed" x1="548" y1="362" x2="548" y2="378" />
+            <g transform="translate(472,378)">
               <rect class="arch-box-planned" x="0" y="0" width="152" height="50" rx="6" />
               <text class="arch-text" x="76" y="22" text-anchor="middle">Queues</text>
               <text class="arch-mono-accent" x="76" y="38" text-anchor="middle">async jobs</text>
             </g>
 
-            <line class="arch-rail-dashed" x1="722" y1="302" x2="722" y2="318" />
-            <g transform="translate(646,318)">
+            <line class="arch-rail-dashed" x1="722" y1="362" x2="722" y2="378" />
+            <g transform="translate(646,378)">
               <rect class="arch-box-planned" x="0" y="0" width="152" height="50" rx="6" />
               <text class="arch-text" x="76" y="22" text-anchor="middle">Durable Objects</text>
               <text class="arch-mono-accent" x="76" y="38" text-anchor="middle">federation coord.</text>
             </g>
 
             <!-- ─── Band 3: DIRECT-FETCH / EXTERNAL ─── -->
-            <text class="arch-band-label" x="20" y="412">DIRECT-FETCH ENDPOINTS</text>
-            <rect class="arch-band-ext" x="20" y="418" width="880" height="112" rx="10" />
+            <text class="arch-band-label" x="20" y="462">DIRECT-FETCH ENDPOINTS</text>
+            <rect class="arch-band-ext" x="20" y="468" width="880" height="112" rx="10" />
 
-            <g transform="translate(44,438)">
+            <g transform="translate(44,488)">
               <rect class="arch-box" x="0" y="0" width="190" height="76" rx="8" />
               <text class="arch-text" x="95" y="24" text-anchor="middle">NASA GIBS</text>
               <text class="arch-mono" x="95" y="44" text-anchor="middle">tiles · Blue Marble +</text>
@@ -3597,7 +3612,7 @@ code, kbd, pre {
               <text class="arch-mono-mist" x="95" y="70" text-anchor="middle">from client (cache locality)</text>
             </g>
 
-            <g transform="translate(258,438)">
+            <g transform="translate(258,488)">
               <rect class="arch-box" x="0" y="0" width="190" height="76" rx="8" />
               <text class="arch-text" x="95" y="24" text-anchor="middle">Vimeo proxy</text>
               <text class="arch-mono" x="95" y="44" text-anchor="middle">video · transitional</text>
@@ -3605,7 +3620,7 @@ code, kbd, pre {
               <text class="arch-mono-mist" x="95" y="70" text-anchor="middle">from client today</text>
             </g>
 
-            <g transform="translate(472,438)">
+            <g transform="translate(472,488)">
               <rect class="arch-box" x="0" y="0" width="190" height="76" rx="8" />
               <text class="arch-text" x="95" y="24" text-anchor="middle">BYO LLM</text>
               <text class="arch-mono" x="95" y="44" text-anchor="middle">OpenAI · Ollama ·</text>
@@ -3613,7 +3628,7 @@ code, kbd, pre {
               <text class="arch-mono-mist" x="95" y="70" text-anchor="middle">overrides Workers AI</text>
             </g>
 
-            <g transform="translate(686,438)">
+            <g transform="translate(686,488)">
               <rect class="arch-box" x="0" y="0" width="190" height="76" rx="8" />
               <text class="arch-text" x="95" y="24" text-anchor="middle">Federation peers</text>
               <text class="arch-mono" x="95" y="44" text-anchor="middle">cross-instance catalog</text>
