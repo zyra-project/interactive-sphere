@@ -2,11 +2,64 @@
              class="section section--alt fade-in"
              aria-labelledby="sec-4-title">
       <div class="globe__container">
-        <p class="section__eyebrow">§1 · The globe under the hood</p>
-        <h2 id="sec-4-title" class="globe__title">Photoreal Earth, layered onto a map engine</h2>
-        <p class="globe__lede">
-          There are two common ways to build a 3D Earth on the web. A scene-graph engine like Cesium gives you a full globe runtime; a map engine like MapLibre gives you tile streaming, vector borders, and navigation but no photoreal Earth. TerraViz picked the map-engine side — NASA's GIBS Earth-imagery service speaks WMTS, which MapLibre reads natively; country borders, labels, and 3D terrain are commodity vector and raster-DEM tiles you compose as style layers; and the runtime is ~200 KB gzipped, light enough for a phone. The photoreal half is hand-built: a WebGL2 layer hooked into MapLibre's <code>CustomLayerInterface</code> extension point composites a day-night terminator, real-time clouds, specular sun glint, and a starfield every frame, on the same canvas as the tiles. No external globe library, no framework runtime.
-        </p>
+        <div class="globe__hero">
+          <div class="globe__hero-text">
+            <p class="section__eyebrow">§1 · The globe under the hood</p>
+            <h2 id="sec-4-title" class="globe__title">Photoreal Earth, layered onto a map engine</h2>
+            <p class="globe__lede">
+              There are two common ways to build a 3D Earth on the web. A scene-graph engine like Cesium gives you a full globe runtime; a map engine like MapLibre gives you tile streaming, vector borders, and navigation but no photoreal Earth. TerraViz picked the map-engine side — NASA's GIBS Earth-imagery service speaks WMTS, which MapLibre reads natively; country borders, labels, and 3D terrain are commodity vector and raster-DEM tiles you compose as style layers; and the runtime is ~200 KB gzipped, light enough for a phone. The photoreal half is hand-built: a WebGL2 layer hooked into MapLibre's <code>CustomLayerInterface</code> extension point composites a day-night terminator, real-time clouds, specular sun glint, and a starfield every frame, on the same canvas as the tiles. No external globe library, no framework runtime.
+            </p>
+          </div>
+          <!-- Stylized photoreal Earth visual. Until a real
+               TerraViz capture lands this is an illustrative SVG;
+               swapping it is one element, no layout disturbance.
+               aria-hidden — the lede above carries the meaning. -->
+          <figure class="globe__hero-earth" aria-hidden="true">
+            <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
+              <defs>
+                <radialGradient id="globe-hero-halo" cx="50%" cy="50%" r="62%">
+                  <stop offset="74%" stop-color="#4da6ff" stop-opacity="0" />
+                  <stop offset="92%" stop-color="#4da6ff" stop-opacity="0.42" />
+                  <stop offset="100%" stop-color="#4da6ff" stop-opacity="0" />
+                </radialGradient>
+                <radialGradient id="globe-hero-day" cx="36%" cy="34%" r="70%">
+                  <stop offset="0%" stop-color="#5c92c8" />
+                  <stop offset="46%" stop-color="#1f4a73" />
+                  <stop offset="100%" stop-color="#08182d" />
+                </radialGradient>
+              </defs>
+              <!-- Atmosphere halo -->
+              <circle cx="160" cy="160" r="156" fill="url(#globe-hero-halo)" />
+              <!-- Earth disc -->
+              <circle cx="160" cy="160" r="128" fill="url(#globe-hero-day)" />
+              <!-- Continent silhouettes -->
+              <path d="M 80 110 Q 102 88 132 100 T 158 132 Q 146 156 124 152 T 96 142 T 80 110 Z" fill="#3a6e35" opacity="0.78" />
+              <path d="M 110 168 Q 128 162 138 184 T 134 222 Q 118 232 110 212 T 110 168 Z" fill="#3a6e35" opacity="0.78" />
+              <path d="M 174 134 Q 208 124 222 152 T 212 200 Q 192 210 184 188 T 174 134 Z" fill="#3a6e35" opacity="0.78" />
+              <path d="M 222 102 Q 260 92 274 116 T 258 150 Q 234 154 226 134 T 222 102 Z" fill="#3a6e35" opacity="0.78" />
+              <path d="M 232 220 Q 254 214 264 232 T 252 254 Q 236 254 232 240 T 232 220 Z" fill="#3a6e35" opacity="0.74" />
+              <!-- Specular sun glint -->
+              <ellipse cx="124" cy="122" rx="26" ry="10" fill="white" opacity="0.20" transform="rotate(-30 124 122)" />
+              <!-- Night-side terminator -->
+              <path d="M 160 32 A 128 128 0 0 1 160 288 A 86 128 0 0 0 160 32 Z" fill="#000" opacity="0.45" />
+              <!-- City lights -->
+              <circle cx="226" cy="138" r="1.2" fill="#fff5b8" />
+              <circle cx="234" cy="160" r="1.0" fill="#fff5b8" />
+              <circle cx="242" cy="148" r="0.9" fill="#fff5b8" />
+              <circle cx="222" cy="186" r="1.0" fill="#fff5b8" />
+              <circle cx="232" cy="204" r="0.9" fill="#fff5b8" />
+              <circle cx="244" cy="174" r="0.8" fill="#fff5b8" />
+              <circle cx="220" cy="222" r="0.9" fill="#fff5b8" />
+              <!-- Cloud wisps -->
+              <path d="M 88 150 Q 124 144 152 156 T 184 164" stroke="white" stroke-width="1.6" stroke-opacity="0.14" fill="none" />
+              <path d="M 102 196 Q 142 190 174 204" stroke="white" stroke-width="1.6" stroke-opacity="0.11" fill="none" />
+              <path d="M 122 232 Q 162 226 198 244" stroke="white" stroke-width="1.6" stroke-opacity="0.09" fill="none" />
+            </svg>
+            <figcaption class="globe__hero-earth-caption">
+              Composited frame · diffuse · clouds · specular · day-night
+            </figcaption>
+          </figure>
+        </div>
 
         <div class="globe__stack-grid">
           <article class="globe__stack-card">

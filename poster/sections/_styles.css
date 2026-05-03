@@ -281,6 +281,55 @@ code, kbd, pre {
   gap: 2.5rem;
   align-items: center;
   position: relative;
+  z-index: 1;
+}
+
+/* Decorative Earth backdrop — sits behind .hero__container.
+   Anchored to the right edge, partially off-screen for a
+   "breaking the frame" feel that doesn't compete with the
+   title. Real screenshot swap target: this is the only
+   element to replace when a Blue Marble / TerraViz capture
+   lands. */
+.hero__earth-bg {
+  position: absolute;
+  top: 50%;
+  right: -12%;
+  transform: translateY(-50%);
+  width: 620px;
+  height: 620px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.32;
+  filter: blur(0.4px);
+}
+
+.hero__earth-bg svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (max-width: 1100px) {
+  .hero__earth-bg {
+    width: 480px;
+    height: 480px;
+    right: -18%;
+    opacity: 0.25;
+  }
+}
+
+@media (max-width: 700px) {
+  .hero__earth-bg {
+    /* On phones the hero stacks single-column and the
+       Earth would crowd the title — push it further off
+       and dim more. Optional: hide entirely with display:
+       none if the visual conflict gets worse with real
+       screenshots. */
+    width: 360px;
+    height: 360px;
+    right: -30%;
+    opacity: 0.20;
+  }
 }
 
 .hero__logos,
@@ -666,6 +715,59 @@ code, kbd, pre {
 .globe__container {
   max-width: var(--container-max);
   margin: 0 auto;
+}
+
+/* Split header for §1 globe — title + lede on the left,
+   illustrative photoreal Earth visual on the right. The
+   stack-grid and the rest of the section continue
+   single-column below. Stylized SVG today; swap target for
+   a real TerraViz capture later (one element, no layout
+   reshape). */
+.globe__hero {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  margin: 0 0 2.5rem;
+}
+
+.globe__hero-text {
+  /* eyebrow + title + lede inherit existing styling. */
+}
+
+.globe__hero-earth {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.globe__hero-earth svg {
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  display: block;
+}
+
+.globe__hero-earth-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin-top: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .globe__hero {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .globe__hero-earth svg {
+    max-width: 260px;
+  }
 }
 
 .globe__title {
