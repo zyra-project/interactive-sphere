@@ -23,7 +23,7 @@
  */
 
 import type { CatalogEnv } from './env'
-import { parseDataRef } from '../datasets/[id]/manifest'
+import { parseDataRef } from './data-ref'
 import { resolveR2PublicUrl } from './r2-public-url'
 import type { DataRefResolver } from './dataset-serializer'
 
