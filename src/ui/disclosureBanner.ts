@@ -16,12 +16,31 @@
  * The banner does not block the app — it's a non-modal strip at the
  * top of the viewport with `aria-live="polite"` so screen readers
  * announce it without stealing focus.
+ *
+ * On small viewports (≤ 600 px wide OR ≤ 480 px tall — typical for
+ * embedded iframe demos and phones) the full banner would dominate
+ * the available real estate and obscure the globe. In that case we
+ * render a small pulsing shield badge in the top-left corner instead;
+ * tapping the badge expands to the full banner content. The choice
+ * is made once at show time — no resize listener — to keep the
+ * behaviour predictable.
  */
 
 import { emit } from '../analytics'
 import { openPrivacyUI } from './privacyUI'
 
 const STORAGE_KEY = 'sos-disclosure-seen'
+
+/** Below either of these dimensions, render the badge instead of
+ *  the full banner. Picked to match the existing privacy-ui.css
+ *  ≤ 600 px breakpoint plus a height check that catches embedded
+ *  demos with short aspect ratios. */
+const SMALL_VIEWPORT_WIDTH = 600
+const SMALL_VIEWPORT_HEIGHT = 480
+
+/** How long the badge pulses before settling into a quiet rest
+ *  state. Pulse is for attention on first appearance, not nagging. */
+const PULSE_DURATION_MS = 6000
 
 let mounted = false
 
@@ -46,7 +65,16 @@ function markSeen(): void {
   }
 }
 
-/** Build + attach the banner DOM. */
+/** True when the viewport is small enough that the full banner
+ *  would obscure most of the app. Exported for tests. */
+export function isSmallViewport(): boolean {
+  return (
+    window.innerWidth <= SMALL_VIEWPORT_WIDTH ||
+    window.innerHeight <= SMALL_VIEWPORT_HEIGHT
+  )
+}
+
+/** Build + attach the full banner DOM. */
 function buildBanner(): HTMLElement {
   const banner = document.createElement('section')
   banner.id = 'disclosure-banner'
@@ -84,31 +112,28 @@ function buildBanner(): HTMLElement {
   return banner
 }
 
-/** Dismiss: persist, emit, remove DOM. */
-function dismiss(): void {
-  markSeen()
-  emit({
-    event_type: 'settings_changed',
-    key: 'disclosure_seen',
-    value_class: 'dismissed',
-  })
-  const banner = document.getElementById('disclosure-banner')
-  banner?.remove()
-  mounted = false
+/** Build + attach the small-viewport badge (pulsing shield icon).
+ *  Click expands to the full banner. */
+function buildBadge(): HTMLElement {
+  const badge = document.createElement('button')
+  badge.id = 'disclosure-badge'
+  badge.type = 'button'
+  badge.className = 'disclosure-badge disclosure-badge--pulse'
+  badge.setAttribute('aria-label', 'Privacy notice — tap for details')
+  badge.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2 L4 5 V12 C4 17 7.5 21 12 22 C16.5 21 20 17 20 12 V5 L12 2 Z" fill="currentColor" />
+      <path d="M8.5 12 L11 14.5 L15.5 9.5" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+  `
+  document.body.appendChild(badge)
+  return badge
 }
 
-/**
- * Show the banner if the user has not already dismissed it.
- * Idempotent — a second call while the banner is visible is a no-op.
- * Returns true when the banner was actually rendered (useful for
- * tests and for log lines).
- */
-export function showDisclosureBannerIfNeeded(): boolean {
-  if (mounted) return false
-  if (hasSeenDisclosure()) return false
-  mounted = true
-  buildBanner()
-
+/** Wire the standard banner buttons (dismiss + settings shortcut).
+ *  Used both when the banner renders directly on a large viewport
+ *  AND when it expands from the small-viewport badge on click. */
+function wireBannerHandlers(): void {
   document
     .getElementById('disclosure-banner-dismiss')
     ?.addEventListener('click', () => dismiss(), { once: true })
@@ -122,14 +147,63 @@ export function showDisclosureBannerIfNeeded(): boolean {
       dismiss()
       openPrivacyUI(trigger)
     }, { once: true })
+}
+
+/** Tear down the badge and render the full banner in its place.
+ *  Triggered by the user tapping the badge. */
+function expandBadgeToBanner(): void {
+  document.getElementById('disclosure-badge')?.remove()
+  buildBanner()
+  wireBannerHandlers()
+}
+
+/** Dismiss: persist, emit, remove DOM. Tolerates either form
+ *  (banner or badge) being live. */
+function dismiss(): void {
+  markSeen()
+  emit({
+    event_type: 'settings_changed',
+    key: 'disclosure_seen',
+    value_class: 'dismissed',
+  })
+  document.getElementById('disclosure-banner')?.remove()
+  document.getElementById('disclosure-badge')?.remove()
+  mounted = false
+}
+
+/**
+ * Show the banner if the user has not already dismissed it.
+ * Idempotent — a second call while the banner is visible is a no-op.
+ * Returns true when the banner (or badge) was actually rendered.
+ */
+export function showDisclosureBannerIfNeeded(): boolean {
+  if (mounted) return false
+  if (hasSeenDisclosure()) return false
+  mounted = true
+
+  if (isSmallViewport()) {
+    const badge = buildBadge()
+    badge.addEventListener('click', () => expandBadgeToBanner(), { once: true })
+    // Settle the pulse after a few seconds even if the user
+    // doesn't tap — pulse is for attention on first appearance,
+    // not for steady nagging.
+    setTimeout(() => {
+      document
+        .getElementById('disclosure-badge')
+        ?.classList.remove('disclosure-badge--pulse')
+    }, PULSE_DURATION_MS)
+  } else {
+    buildBanner()
+    wireBannerHandlers()
+  }
 
   return true
 }
 
 /** Tear down. Idempotent. Exposed for tests. */
 export function disposeDisclosureBanner(): void {
-  const banner = document.getElementById('disclosure-banner')
-  banner?.remove()
+  document.getElementById('disclosure-banner')?.remove()
+  document.getElementById('disclosure-badge')?.remove()
   mounted = false
 }
 

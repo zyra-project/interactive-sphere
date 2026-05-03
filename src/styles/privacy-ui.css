@@ -285,3 +285,76 @@
         justify-content: flex-end;
     }
 }
+
+/* --- Disclosure badge (small-viewport collapsed form) --- */
+/* Renders instead of the full banner when the viewport is too
+   small to host the banner without obscuring content (≤ 600 px
+   wide OR ≤ 480 px tall — typical for embedded iframe demos and
+   phone screens). Click expands to the full banner. */
+
+.disclosure-badge {
+    position: fixed;
+    top: calc(0.5rem + var(--safe-top));
+    left: calc(0.5rem + var(--safe-left));
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    color: var(--color-accent);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 850;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, background 0.15s;
+}
+
+.disclosure-badge svg {
+    width: 24px;
+    height: 24px;
+    display: block;
+}
+
+.disclosure-badge:hover,
+.disclosure-badge:focus-visible {
+    transform: scale(1.08);
+    background: var(--color-surface-hover);
+}
+
+.disclosure-badge:focus-visible {
+    outline: 2px solid var(--accent-o70);
+    outline-offset: 2px;
+}
+
+@keyframes disclosure-badge-pulse {
+    0% {
+        box-shadow:
+            0 0 0 0 rgba(77, 166, 255, 0.55),
+            0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+    70% {
+        box-shadow:
+            0 0 0 14px rgba(77, 166, 255, 0),
+            0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+    100% {
+        box-shadow:
+            0 0 0 0 rgba(77, 166, 255, 0),
+            0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+}
+
+.disclosure-badge--pulse {
+    animation: disclosure-badge-pulse 1.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .disclosure-badge--pulse {
+        animation: none;
+    }
+}

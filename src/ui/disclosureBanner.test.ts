@@ -5,10 +5,18 @@ import {
   hasSeenDisclosure,
   disposeDisclosureBanner,
   resetDisclosureForTests,
+  isSmallViewport,
 } from './disclosureBanner'
 import { disposePrivacyUI, isPrivacyUIOpen } from './privacyUI'
 import { resetForTests, __peek } from '../analytics/emitter'
 import { setTier } from '../analytics/config'
+
+/** Force the window to a viewport size for the duration of the test.
+ *  Restored automatically by vi.restoreAllMocks() in afterEach. */
+function setViewport(width: number, height: number): void {
+  vi.stubGlobal('innerWidth', width)
+  vi.stubGlobal('innerHeight', height)
+}
 
 beforeEach(() => {
   document.body.innerHTML = ''
@@ -18,12 +26,16 @@ beforeEach(() => {
   disposeDisclosureBanner()
   disposePrivacyUI()
   setTier('essential')
+  // Default to a comfortably large viewport so existing tests
+  // hit the full-banner branch.
+  setViewport(1280, 800)
 })
 
 afterEach(() => {
   disposeDisclosureBanner()
   disposePrivacyUI()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -104,5 +116,98 @@ describe('disclosureBanner — a11y shape', () => {
     expect(link.getAttribute('href')).toBe('/privacy')
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toContain('noopener')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Small-viewport collapsed form
+// ---------------------------------------------------------------------------
+describe('disclosureBanner — small-viewport badge', () => {
+  it('isSmallViewport reports true at narrow widths', () => {
+    setViewport(500, 800)
+    expect(isSmallViewport()).toBe(true)
+  })
+
+  it('isSmallViewport reports true at short heights', () => {
+    setViewport(1280, 400)
+    expect(isSmallViewport()).toBe(true)
+  })
+
+  it('isSmallViewport reports false on a comfortable desktop viewport', () => {
+    setViewport(1280, 800)
+    expect(isSmallViewport()).toBe(false)
+  })
+
+  it('renders the badge instead of the banner on a small viewport', () => {
+    setViewport(500, 400)
+
+    expect(showDisclosureBannerIfNeeded()).toBe(true)
+
+    expect(document.getElementById('disclosure-banner')).toBeNull()
+    const badge = document.getElementById('disclosure-badge')
+    expect(badge).not.toBeNull()
+    expect(badge!.classList.contains('disclosure-badge--pulse')).toBe(true)
+    expect(badge!.getAttribute('aria-label')).toMatch(/privacy/i)
+  })
+
+  it('clicking the badge expands to the full banner content', () => {
+    setViewport(500, 400)
+    showDisclosureBannerIfNeeded()
+
+    const badge = document.getElementById('disclosure-badge') as HTMLButtonElement
+    badge.click()
+
+    expect(document.getElementById('disclosure-badge')).toBeNull()
+    const banner = document.getElementById('disclosure-banner')
+    expect(banner).not.toBeNull()
+    // Same buttons as the desktop banner — Privacy settings,
+    // Read policy, Got it.
+    expect(document.getElementById('disclosure-banner-settings')).not.toBeNull()
+    expect(document.getElementById('disclosure-banner-policy')).not.toBeNull()
+    expect(document.getElementById('disclosure-banner-dismiss')).not.toBeNull()
+  })
+
+  it('dismissing from the expanded banner persists and removes everything', () => {
+    setViewport(500, 400)
+    showDisclosureBannerIfNeeded()
+
+    const badge = document.getElementById('disclosure-badge') as HTMLButtonElement
+    badge.click()
+
+    const dismiss = document.getElementById('disclosure-banner-dismiss') as HTMLButtonElement
+    dismiss.click()
+
+    expect(document.getElementById('disclosure-banner')).toBeNull()
+    expect(document.getElementById('disclosure-badge')).toBeNull()
+    expect(hasSeenDisclosure()).toBe(true)
+
+    // Subsequent shows are a no-op even with a small viewport.
+    expect(showDisclosureBannerIfNeeded()).toBe(false)
+  })
+
+  it('emits the same dismissal event whether dismissed from the banner or the expanded badge', () => {
+    setViewport(500, 400)
+    showDisclosureBannerIfNeeded();
+    (document.getElementById('disclosure-badge') as HTMLButtonElement).click();
+    (document.getElementById('disclosure-banner-dismiss') as HTMLButtonElement).click()
+
+    const evs = __peek()
+    const dismissed = evs.find(
+      (e): e is Extract<typeof e, { event_type: 'settings_changed' }> =>
+        e.event_type === 'settings_changed' && e.key === 'disclosure_seen',
+    )
+    expect(dismissed).toBeTruthy()
+    expect(dismissed?.value_class).toBe('dismissed')
+  })
+
+  it('disposeDisclosureBanner cleans up the badge as well as the banner', () => {
+    setViewport(500, 400)
+    showDisclosureBannerIfNeeded()
+    expect(document.getElementById('disclosure-badge')).not.toBeNull()
+
+    disposeDisclosureBanner()
+    expect(document.getElementById('disclosure-badge')).toBeNull()
+    // After disposing, mounted resets so a fresh show works again.
+    expect(showDisclosureBannerIfNeeded()).toBe(true)
   })
 })
