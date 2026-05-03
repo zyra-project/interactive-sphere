@@ -636,6 +636,8 @@ code, kbd, pre {
 .feature-card--immersive   { --card-accent: #d05a99; --card-accent-bg: rgba(208, 90, 153, 0.10); }
 .feature-card--platforms   { --card-accent: #43a047; --card-accent-bg: rgba(67, 160, 71, 0.10); }
 .feature-card--federation  { --card-accent: #5c6bc0; --card-accent-bg: rgba(92, 107, 192, 0.10); }
+.feature-card--analytics   { --card-accent: #bf6b78; --card-accent-bg: rgba(191, 107, 120, 0.10); }
+.feature-card--techstack   { --card-accent: #607d8b; --card-accent-bg: rgba(96, 125, 139, 0.10); }
 
 @media (prefers-reduced-motion: reduce) {
   .feature-card,
