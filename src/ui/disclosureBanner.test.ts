@@ -12,14 +12,19 @@ import { resetForTests, __peek } from '../analytics/emitter'
 import { setTier } from '../analytics/config'
 
 /** Force the window to a viewport size for the duration of the test.
- *  Restored automatically by vi.restoreAllMocks() in afterEach. */
+ *  The stubs are torn down by `vi.unstubAllGlobals()` in afterEach
+ *  (vi.restoreAllMocks alone does NOT reset stubGlobal stubs). */
 function setViewport(width: number, height: number): void {
   vi.stubGlobal('innerWidth', width)
   vi.stubGlobal('innerHeight', height)
 }
 
 beforeEach(() => {
-  document.body.innerHTML = ''
+  // The badge path looks up #a11y-announcer to push a polite
+  // announcement when it mounts. Provide one in the test DOM
+  // so that path runs (and is testable). Tests that care about
+  // the announcement assert on its textContent after rAF.
+  document.body.innerHTML = '<div id="a11y-announcer" aria-live="polite" aria-atomic="true"></div>'
   localStorage.clear()
   resetForTests()
   resetDisclosureForTests()
@@ -209,6 +214,21 @@ describe('disclosureBanner — small-viewport badge', () => {
     expect(document.getElementById('disclosure-badge')).toBeNull()
     // After disposing, mounted resets so a fresh show works again.
     expect(showDisclosureBannerIfNeeded()).toBe(true)
+  })
+
+  it('mounts a polite announcement to #a11y-announcer so AT users discover the badge', async () => {
+    setViewport(500, 400)
+
+    // jsdom runs requestAnimationFrame synchronously via setTimeout(0),
+    // so the announcement lands on the next microtask tick.
+    showDisclosureBannerIfNeeded()
+
+    // Allow the rAF callback inside announcePolite to run.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+    const live = document.getElementById('a11y-announcer')!
+    expect(live.textContent).toMatch(/privacy notice/i)
+    expect(live.textContent).toMatch(/shield/i)
   })
 
   it('expanding the badge moves focus to the dismiss button so keyboard users do not lose context', () => {
