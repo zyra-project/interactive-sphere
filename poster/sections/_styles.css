@@ -693,6 +693,40 @@ code, kbd, pre {
   letter-spacing: 0.05em;
 }
 
+.globe__arch-planned-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+  border: 1px dashed var(--terra-accent);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  vertical-align: 0.05em;
+}
+
+.globe__arch-footnote {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  text-align: center;
+  margin: -1.25rem auto 2.5rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+.globe__arch-footnote code {
+  font-style: normal;
+  background: var(--neutral-100);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--neutral-700);
+  font-size: 0.85em;
+}
+
 /* Demo iframe + effect bar */
 .demo-section__title {
   font-size: 1.15rem;
