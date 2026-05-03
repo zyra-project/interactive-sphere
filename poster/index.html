@@ -659,6 +659,7 @@ code, kbd, pre {
 .feature-card--immersive   { --card-accent: #d05a99; --card-accent-bg: rgba(208, 90, 153, 0.10); }
 .feature-card--platforms   { --card-accent: #43a047; --card-accent-bg: rgba(67, 160, 71, 0.10); }
 .feature-card--federation  { --card-accent: #5c6bc0; --card-accent-bg: rgba(92, 107, 192, 0.10); }
+.feature-card--publishing  { --card-accent: #afb42b; --card-accent-bg: rgba(175, 180, 43, 0.12); }
 .feature-card--analytics   { --card-accent: #bf6b78; --card-accent-bg: rgba(191, 107, 120, 0.10); }
 .feature-card--techstack   { --card-accent: #607d8b; --card-accent-bg: rgba(96, 125, 139, 0.10); }
 
@@ -3292,7 +3293,7 @@ a.stack__item-name:focus-visible::after,
              aria-labelledby="sec-3-title">
       <div class="features__container">
         <p class="section__eyebrow">What you can do</p>
-        <h2 id="sec-3-title" class="features__title">Nine things to know about TerraViz</h2>
+        <h2 id="sec-3-title" class="features__title">Ten things to know about TerraViz</h2>
         <p class="features__intro">
           Plenty of ground to cover, and you don't have to read it in order. Each card jumps straight to the section that takes that topic apart — sections stand on their own, so start wherever catches your eye, and double back if a cross-reference points somewhere new.
         </p>
@@ -3477,6 +3478,29 @@ a.stack__item-name:focus-visible::after,
             <span class="feature-card__cta">Run your own</span>
           </a>
 
+          <a class="feature-card feature-card--publishing" href="#sec-11-publishing">
+            <span class="feature-card__bg" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 17v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3" />
+                <polyline points="8 9 12 5 16 9" />
+                <line x1="12" y1="5" x2="12" y2="16" />
+              </svg>
+            </span>
+            <span class="feature-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 17v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3" />
+                <polyline points="8 9 12 5 16 9" />
+                <line x1="12" y1="5" x2="12" y2="16" />
+              </svg>
+            </span>
+            <p class="feature-card__anchor">§8</p>
+            <h3 class="feature-card__title">Publishing &amp; search</h3>
+            <p class="feature-card__desc">
+              Publisher portal, tour creator, asset / decimation pipeline (Stream + Images), authoring CLI, and the Vectorize-backed semantic search index. How content gets into a node, before it ever federates.
+            </p>
+            <span class="feature-card__cta">Add your data</span>
+          </a>
+
           <a class="feature-card feature-card--analytics" href="#sec-11-analytics">
             <span class="feature-card__bg" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -3494,7 +3518,7 @@ a.stack__item-name:focus-visible::after,
                 <rect x="16" y="5" width="3" height="15" />
               </svg>
             </span>
-            <p class="feature-card__anchor">§8</p>
+            <p class="feature-card__anchor">§9</p>
             <h3 class="feature-card__title">Privacy-first analytics</h3>
             <p class="feature-card__desc">
               Two-tier consent — Essential events on by default for usage shape; Research events opt-in for deeper signals. No IP storage, no User-Agent, search queries hashed before they leave the device.
@@ -3517,7 +3541,7 @@ a.stack__item-name:focus-visible::after,
                 <rect x="3" y="16" width="18" height="4" rx="1" />
               </svg>
             </span>
-            <p class="feature-card__anchor">§9</p>
+            <p class="feature-card__anchor">§10</p>
             <h3 class="feature-card__title">Tech stack</h3>
             <p class="feature-card__desc">
               Vanilla TypeScript. MapLibre + Three.js (lazy) for the globe. Tauri v2 for desktop. Cloudflare Pages, D1, R2, Workers AI for the backend. Boring picks where they buy reliability.
@@ -4502,7 +4526,7 @@ a.stack__item-name:focus-visible::after,
 
         <h3 class="orbit__subhead">Does the avatar matter? An open research question.</h3>
         <p class="orbit__subhead-hint">
-          Anthropomorphic interfaces have a long history in education and tutoring software, but the literature is split — sometimes the avatar lifts engagement, sometimes it pulls attention away from the content. We don't yet know which way it falls for environmental data on a globe. The procedural Orbit character — today reachable at <code>/orbit</code> as a standalone test bench — is the artifact for finding out: a six-state behavior machine (idle, listening, thinking, talking, chatting, confused), Bézier flight presets, four palettes, a postMessage bridge, full <code>prefers-reduced-motion</code> handling. Embedding the character inside the chat panel itself is the planned next experiment: A/B-able, instrumented through the Tier-A analytics pipeline (see §8).
+          Anthropomorphic interfaces have a long history in education and tutoring software, but the literature is split — sometimes the avatar lifts engagement, sometimes it pulls attention away from the content. We don't yet know which way it falls for environmental data on a globe. The procedural Orbit character — today reachable at <code>/orbit</code> as a standalone test bench — is the artifact for finding out: a six-state behavior machine (idle, listening, thinking, talking, chatting, confused), Bézier flight presets, four palettes, a postMessage bridge, full <code>prefers-reduced-motion</code> handling. Embedding the character inside the chat panel itself is the planned next experiment: A/B-able, instrumented through the Tier-A analytics pipeline (see §9).
         </p>
 
         <aside class="orbit__research-question" role="note">
@@ -5258,12 +5282,181 @@ a.stack__item-name:focus-visible::after,
       </div>
     </section>
 
+  <!-- sec-10b-publishing.html -->
+    <section id="sec-11-publishing"
+             class="section fade-in"
+             aria-labelledby="sec-11-title">
+      <div class="fed__container">
+        <p class="section__eyebrow">§8 · Publishing &amp; search</p>
+        <h2 id="sec-11-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
+        <p class="fed__lede">
+          Running your own node (<a href="#sec-10-federation">§7</a>) is half the story; the other half is how content gets into it. The publisher portal at <code>/publish</code> is the staff-side answer — a single-form workflow that handles dataset entry, tour authoring, asset upload, semantic-search indexing, and federation visibility, all behind Cloudflare Access. An authoring CLI is drafted alongside it for organizations that prefer scripted publishing pipelines. Both paths lean on the same Pages Functions + D1 + R2 backend the federated catalog already uses, so adding a publisher doesn't add a moving part. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+        </p>
+
+        <div class="fed__stack-grid">
+          <article class="fed__stack-card">
+            <h3>Publisher portal</h3>
+            <p>A single-form workflow at <code>/publish</code> behind Cloudflare Access. Title, slug, abstract, asset upload, thumbnail, captions, time range, categories, license, visibility. <strong>Preview</strong> opens the app in a new tab against the draft row — same renderer, same playback, same chat — so publishers see exactly what visitors will see before pressing <strong>Publish</strong>. Lazy-loaded the same way Three.js is; non-publisher visitors never pay the bundle cost.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Tour creator</h3>
+            <p>Capture-mode UI: hit <em>Record</em>, fly the camera, swap layouts, drop in captions, and the recorder emits <code>flyTo</code> / <code>loadDataset</code> / <code>setEnvView</code> / <code>showRect</code> / <code>pauseForInput</code> tasks into a <code>tour.json</code> the existing engine plays back identically. Same format Science On a Sphere's tour-builder produces — tours authored elsewhere import unchanged.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Asset &amp; decimation pipeline</h3>
+            <p>Cloudflare Stream transcodes uploaded video into the rendition ladder (replaces today's Vimeo proxy). Cloudflare Images derives the 4096 → 2048 → 1024 image variants on demand instead of the hand-rolled fallback ladder. Sphere thumbnails auto-generate at upload time as 2:1 equirectangular crops. Content-addressed R2 keys so revisions never invalidate caches. Full flow lives in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_ASSETS_PIPELINE.md" target="_blank" rel="noopener"><code>CATALOG_ASSETS_PIPELINE.md</code></a>.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Authoring CLI</h3>
+            <p>Alternative to the portal for research orgs running scheduled visualization pipelines, CI jobs, or anyone who'd rather script than click. Hits the same publisher API as the portal, with server-side validation as the source of truth. Distributed as signed standalone binaries plus an npm package; verification keys checked into the repo so downstreams can audit the supply chain.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Semantic search</h3>
+            <p>Cloudflare Vectorize stores a 768-dim embedding per dataset. The docent's <code>search_datasets</code> LLM tool queries it directly today (used by Orbit when a visitor asks "show me something about hurricanes"); the public <code>/api/v1/search</code> URL swaps from D1 <code>LIKE</code> to Vectorize semantic in Phase 1b behind the same path. Federated rows reindex locally on sync, so each node owns its own search experience without phoning home.</p>
+          </article>
+        </div>
+
+        <h3 class="fed__subhead">The publish path</h3>
+        <p class="fed__subhead-hint">
+          A dataset goes through five steps from a publisher's upload to a visitor's search hit. Each step is owned by a different Cloudflare service; the whole chain runs on the same edge.
+        </p>
+
+        <figure class="fed__arch">
+          <svg viewBox="0 0 920 240"
+               role="img"
+               aria-label="Publish-path diagram, five steps left to right. Step 1: Publisher portal or CLI accepts the form submission and the asset upload. Step 2: Pages Functions validate fields, write the draft row to D1, and stage the asset upload. Step 3: The asset pipeline routes video to Cloudflare Stream for transcoding and images to Cloudflare Images for variants, returning content-addressed URLs. Step 4: Workers AI generates a 768-dim embedding from the dataset's text fields and writes it to Vectorize. Step 5: The dataset is now reachable via the public catalog API, the public search endpoint, the docent's search_datasets LLM tool, and the federation manifest.">
+            <defs>
+              <marker id="arrow-pub" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <style>
+                .pub-step       { fill: rgba(175, 180, 43, 0.08); stroke: #afb42b; stroke-width: 1.4; }
+                .pub-step-out   { fill: rgba(77, 166, 255, 0.06); stroke: #4da6ff; stroke-width: 1.4; }
+                .pub-text       { font-family: 'Source Sans 3', sans-serif; font-size: 12px; fill: #171717; font-weight: 700; }
+                .pub-mono       { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #525252; }
+                .pub-tag        { font-family: 'Source Code Pro', monospace; font-size: 9px; fill: #737373; text-transform: uppercase; letter-spacing: 0.06em; }
+                .pub-arrow      { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .pub-num        { font-family: 'Source Code Pro', monospace; font-size: 11px; font-weight: 700; fill: #afb42b; }
+              </style>
+            </defs>
+
+            <!-- Step 1 · Publisher portal / CLI -->
+            <g transform="translate(20,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">01</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Publisher</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">portal · CLI</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">/publish (Access)</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">terraviz publish ...</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted · Phase 3</text>
+            </g>
+
+            <path class="pub-arrow" d="M180,100 L200,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 2 · Pages Functions validate + stage -->
+            <g transform="translate(200,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">02</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Pages Functions</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">validate · stage</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">/api/v1/publish</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">/api/v1/ingest</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">live (dev-bypass)</text>
+            </g>
+
+            <path class="pub-arrow" d="M360,100 L380,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 3 · Asset pipeline -->
+            <g transform="translate(380,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">03</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Asset pipeline</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">decimate · variant</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">Stream (video)</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">Images (variants)</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted · Phase 1b</text>
+            </g>
+
+            <path class="pub-arrow" d="M540,100 L560,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 4 · Embeddings -->
+            <g transform="translate(560,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">04</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Workers AI</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">embed · index</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">768-dim vector</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">→ Vectorize</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">live (Orbit tool)</text>
+            </g>
+
+            <path class="pub-arrow" d="M720,100 L740,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 5 · Reachable -->
+            <g transform="translate(740,40)">
+              <rect class="pub-step-out" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">05</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Reachable</text>
+              <text class="pub-mono" x="80" y="68" text-anchor="middle">/api/v1/catalog</text>
+              <text class="pub-mono" x="80" y="82" text-anchor="middle">/api/v1/search</text>
+              <text class="pub-mono" x="80" y="96" text-anchor="middle">search_datasets()</text>
+              <text class="pub-mono" x="80" y="110" text-anchor="middle">.well-known/...</text>
+            </g>
+
+            <!-- Caption row at bottom -->
+            <text class="pub-tag" x="100" y="200" text-anchor="middle">PUBLISHER</text>
+            <text class="pub-tag" x="280" y="200" text-anchor="middle">VALIDATE</text>
+            <text class="pub-tag" x="460" y="200" text-anchor="middle">DECIMATE</text>
+            <text class="pub-tag" x="640" y="200" text-anchor="middle">INDEX</text>
+            <text class="pub-tag" x="820" y="200" text-anchor="middle">REACHABLE</text>
+          </svg>
+          <figcaption class="fed__arch-caption">
+            Five steps from upload to reachable. Step 2 is live behind a dev-bypass; step 4's Vectorize index is live and powers Orbit's search tool today; the portal UI (step 1), the Stream / Images cutover (step 3), and the public <code>/api/v1/search</code> swap (step 5) are drafted and phased.
+          </figcaption>
+        </figure>
+
+        <h3 class="fed__subhead">Where it stands</h3>
+        <p class="fed__subhead-hint">
+          The shape is drafted across the catalog plan docs; pieces are landing in phases. Mirrors §7's federation cadence — work the model first, then the auth, then the UI.
+        </p>
+
+        <div class="fed__phase-grid">
+          <article class="fed__phase fed__phase--shipped">
+            <p class="fed__phase-tag">Today · shipped</p>
+            <h3>Backend, dev-bypass, search index</h3>
+            <ul>
+              <li>Publisher API endpoints in Pages Functions (<code>/api/v1/publish</code>, <code>/api/v1/ingest</code>)</li>
+              <li>Publisher dev-bypass via <code>.dev.vars</code> for local iteration</li>
+              <li>Vectorize index live; drives Orbit's <code>search_datasets</code> LLM tool</li>
+              <li>D1 schema covers <code>publishers</code>, <code>publisher_keys</code>, <code>publish_audit</code> — see <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_DATA_MODEL.md" target="_blank" rel="noopener"><code>CATALOG_DATA_MODEL.md</code></a></li>
+            </ul>
+          </article>
+
+          <article class="fed__phase fed__phase--draft">
+            <p class="fed__phase-tag">Forthcoming · drafted</p>
+            <h3>Portal, pipeline, public search</h3>
+            <ul>
+              <li>Publisher portal UI behind Cloudflare Access (Phase 3)</li>
+              <li>Tour creator capture mode (Phase 4)</li>
+              <li>Stream + Images cutover, replacing the Vimeo proxy and the hand-rolled image ladder</li>
+              <li>Public <code>/api/v1/search</code> swaps D1 <code>LIKE</code> → Vectorize semantic (Phase 1b)</li>
+              <li>Authoring CLI with signed binaries + npm package (Phase 1b)</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
   <!-- sec-11-analytics.html -->
     <section id="sec-11-analytics"
              class="section fade-in"
              aria-labelledby="sec-11-title">
       <div class="analytics__container">
-        <p class="section__eyebrow">§8 · Privacy-first analytics</p>
+        <p class="section__eyebrow">§9 · Privacy-first analytics</p>
         <h2 id="sec-11-title" class="analytics__title">We measure to make it better. We measure as little as possible.</h2>
         <p class="analytics__lede">
           TerraViz emits product telemetry on a two-tier consent model. <strong>Essential</strong> events are on by default — they cover broad usage shape (sessions, datasets viewed, layer toggles, performance samples, errors). <strong>Research</strong> events are opt-in and unlock the deeper signals an instance operator might want for studies (chat dwell, attention zones, captured search queries — hashed). Visitors control the tier from <em>Tools → Privacy</em> in the live app.
@@ -5399,7 +5592,7 @@ a.stack__item-name:focus-visible::after,
              class="section section--alt fade-in"
              aria-labelledby="sec-12-title">
       <div class="stack__container">
-        <p class="section__eyebrow">§9 · Tech stack</p>
+        <p class="section__eyebrow">§10 · Tech stack</p>
         <h2 id="sec-12-title" class="stack__title">Boring picks where they buy boring reliability. Sharp picks where they buy reach.</h2>
         <p class="stack__lede">
           The choices below all share a common bias: small surface area, mature tooling, no proprietary dependencies for any single piece. Replace any one of them and the rest still works.
@@ -5465,7 +5658,7 @@ a.stack__item-name:focus-visible::after,
              class="section fade-in"
              aria-labelledby="sec-13-title">
       <div class="cta__container">
-        <p class="section__eyebrow">§10 · Try it · get involved</p>
+        <p class="section__eyebrow">§11 · Try it · get involved</p>
         <h2 id="sec-13-title" class="cta__title">No login. No paywall. Open source.</h2>
         <p class="cta__lede">
           Scan to load TerraViz on your phone. Grab the desktop build for offline-friendly use. Self-host your own node if you want full control of the data path. Read the source. Fork it. Run your own.
