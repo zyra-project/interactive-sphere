@@ -1882,6 +1882,64 @@ code, kbd, pre {
   line-height: 1.55;
 }
 
+.xr__model-viewer {
+  display: block;
+  width: 100%;
+  height: 360px;
+  margin: 1rem 0 0;
+  background: var(--navy);
+  border-radius: 10px;
+  overflow: hidden;
+  --poster-color: var(--navy);
+}
+
+.xr__model-ar-btn {
+  position: absolute;
+  bottom: 0.85rem;
+  right: 0.85rem;
+  background: var(--terra-accent);
+  color: white;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.3);
+}
+
+.xr__model-ar-btn:hover {
+  background: #6ab8ff;
+}
+
+.xr__model-poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--navy);
+  color: var(--mist);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.xr__model-poster-label {
+  padding: 0.85rem 1.5rem;
+  border: 1px dashed var(--surface-border-hover);
+  border-radius: 6px;
+}
+
+.xr__reach-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  line-height: 1.55;
+}
+
 /* Headset CTA — open in new tab to launch XR session */
 .xr__cta {
   background: var(--navy);

@@ -236,17 +236,36 @@
           <p class="section__eyebrow">Reach beyond the headset</p>
           <h3>Tap to place Earth on your desk — from any phone</h3>
           <p>
-            For visitors without a Quest, the immersive part of the poster shouldn't be a dead end. Google's <code>&lt;model-viewer&gt;</code> web component handles AR Quick Look on iOS (<code>.usdz</code>) and Scene Viewer on Android (<code>.glb</code>) with a single tag — no app install, no permission prompt beyond what the OS already shows. The Earth model gets exported once from <code>photorealEarth.ts</code> and committed under <code>poster/assets/xr/models/</code>.
-          </p>
-          <p>
-            Honest scope: this is a separate code path from the WebXR session. Visitors get to <em>place a 3D Earth on their desk</em> via OS-native AR — not the full TerraViz globe with controllers and datasets. The asset export + tile wiring lands in a follow-up; the placeholder below shows where it slots in.
+            For visitors without a Quest, the immersive part of the poster shouldn't be a dead end. Google's <code>&lt;model-viewer&gt;</code> web component handles AR Quick Look on iOS (<code>.usdz</code>) and Scene Viewer on Android (<code>.glb</code>) with a single tag — no app install, no permission prompt beyond what the OS already shows. The Earth model is a static, baked export — Blue Marble continents on a sphere — not the dynamic photoreal stack with day/night and atmosphere. It's the right scope for a hand-held AR moment.
           </p>
 
-          <div class="xr__reach-ph">
-            <code>&lt;model-viewer&gt;</code> tile · "Tap to place Earth"<br>
-            terraviz-earth.glb (Scene Viewer · Android) + terraviz-earth.usdz (AR Quick Look · iOS)<br>
-            asset export and inline embed land in a follow-up commit
-          </div>
+          <model-viewer
+            class="xr__model-viewer"
+            src="assets/xr/models/terraviz-earth.glb"
+            ios-src="assets/xr/models/terraviz-earth.usdz"
+            alt="3D model of Earth — Blue Marble continents on a sphere; tap the AR icon to place it on your desk"
+            ar
+            ar-modes="webxr scene-viewer quick-look"
+            ar-scale="auto"
+            camera-controls
+            touch-action="pan-y"
+            auto-rotate
+            auto-rotate-delay="3000"
+            shadow-intensity="0.6"
+            exposure="1"
+            loading="lazy"
+            reveal="auto">
+            <button slot="ar-button" class="xr__model-ar-btn" type="button">
+              View in your space
+            </button>
+            <div slot="poster" class="xr__model-poster">
+              <span class="xr__model-poster-label">3D Earth — asset export pending</span>
+            </div>
+          </model-viewer>
+
+          <p class="xr__reach-note">
+            On iPhone the AR icon launches AR Quick Look. On Pixel and other ARCore-capable Android phones it launches Scene Viewer. On desktop the model rotates inline as a 3D preview. The component lazy-loads — non-XR pages never download the runtime.
+          </p>
         </aside>
 
         <div class="xr__cta">

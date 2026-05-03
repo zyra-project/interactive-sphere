@@ -14,6 +14,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&family=Source+Sans+3:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Google's <model-viewer> web component for the §8 phone-AR
+       tile (Trim 2: GLB + USDZ, ~7 MB). The script is type="module"
+       so it imports asynchronously without blocking initial paint;
+       browsers that don't support <model-viewer> (or visitors who
+       never scroll to §8) just see the slot=poster fallback. -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
   <style>
 /* =========================================================
    TerraViz Poster — design tokens and base styles.
@@ -1895,6 +1901,64 @@ code, kbd, pre {
   text-align: center;
   font-family: var(--font-mono);
   font-size: 0.78rem;
+  color: var(--neutral-600);
+  line-height: 1.55;
+}
+
+.xr__model-viewer {
+  display: block;
+  width: 100%;
+  height: 360px;
+  margin: 1rem 0 0;
+  background: var(--navy);
+  border-radius: 10px;
+  overflow: hidden;
+  --poster-color: var(--navy);
+}
+
+.xr__model-ar-btn {
+  position: absolute;
+  bottom: 0.85rem;
+  right: 0.85rem;
+  background: var(--terra-accent);
+  color: white;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.3);
+}
+
+.xr__model-ar-btn:hover {
+  background: #6ab8ff;
+}
+
+.xr__model-poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--navy);
+  color: var(--mist);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.xr__model-poster-label {
+  padding: 0.85rem 1.5rem;
+  border: 1px dashed var(--surface-border-hover);
+  border-radius: 6px;
+}
+
+.xr__reach-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.85rem;
   color: var(--neutral-600);
   line-height: 1.55;
 }
@@ -4237,17 +4301,36 @@ code, kbd, pre {
           <p class="section__eyebrow">Reach beyond the headset</p>
           <h3>Tap to place Earth on your desk — from any phone</h3>
           <p>
-            For visitors without a Quest, the immersive part of the poster shouldn't be a dead end. Google's <code>&lt;model-viewer&gt;</code> web component handles AR Quick Look on iOS (<code>.usdz</code>) and Scene Viewer on Android (<code>.glb</code>) with a single tag — no app install, no permission prompt beyond what the OS already shows. The Earth model gets exported once from <code>photorealEarth.ts</code> and committed under <code>poster/assets/xr/models/</code>.
-          </p>
-          <p>
-            Honest scope: this is a separate code path from the WebXR session. Visitors get to <em>place a 3D Earth on their desk</em> via OS-native AR — not the full TerraViz globe with controllers and datasets. The asset export + tile wiring lands in a follow-up; the placeholder below shows where it slots in.
+            For visitors without a Quest, the immersive part of the poster shouldn't be a dead end. Google's <code>&lt;model-viewer&gt;</code> web component handles AR Quick Look on iOS (<code>.usdz</code>) and Scene Viewer on Android (<code>.glb</code>) with a single tag — no app install, no permission prompt beyond what the OS already shows. The Earth model is a static, baked export — Blue Marble continents on a sphere — not the dynamic photoreal stack with day/night and atmosphere. It's the right scope for a hand-held AR moment.
           </p>
 
-          <div class="xr__reach-ph">
-            <code>&lt;model-viewer&gt;</code> tile · "Tap to place Earth"<br>
-            terraviz-earth.glb (Scene Viewer · Android) + terraviz-earth.usdz (AR Quick Look · iOS)<br>
-            asset export and inline embed land in a follow-up commit
-          </div>
+          <model-viewer
+            class="xr__model-viewer"
+            src="assets/xr/models/terraviz-earth.glb"
+            ios-src="assets/xr/models/terraviz-earth.usdz"
+            alt="3D model of Earth — Blue Marble continents on a sphere; tap the AR icon to place it on your desk"
+            ar
+            ar-modes="webxr scene-viewer quick-look"
+            ar-scale="auto"
+            camera-controls
+            touch-action="pan-y"
+            auto-rotate
+            auto-rotate-delay="3000"
+            shadow-intensity="0.6"
+            exposure="1"
+            loading="lazy"
+            reveal="auto">
+            <button slot="ar-button" class="xr__model-ar-btn" type="button">
+              View in your space
+            </button>
+            <div slot="poster" class="xr__model-poster">
+              <span class="xr__model-poster-label">3D Earth — asset export pending</span>
+            </div>
+          </model-viewer>
+
+          <p class="xr__reach-note">
+            On iPhone the AR icon launches AR Quick Look. On Pixel and other ARCore-capable Android phones it launches Scene Viewer. On desktop the model rotates inline as a 3D preview. The component lazy-loads — non-XR pages never download the runtime.
+          </p>
         </aside>
 
         <div class="xr__cta">

@@ -14,5 +14,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&family=Source+Sans+3:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Google's <model-viewer> web component for the §8 phone-AR
+       tile (Trim 2: GLB + USDZ, ~7 MB). The script is type="module"
+       so it imports asynchronously without blocking initial paint;
+       browsers that don't support <model-viewer> (or visitors who
+       never scroll to §8) just see the slot=poster fallback. -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
   <!-- INLINE_CSS -->
 </head>
