@@ -43,6 +43,19 @@ const SMALL_VIEWPORT_HEIGHT = 480
 const PULSE_DURATION_MS = 6000
 
 let mounted = false
+/** Tracks the badge's pulse-settle setTimeout so dispose / dismiss
+ *  / expand paths can cancel it. Without this, a stale callback
+ *  from a previous show could later fire after a new badge has
+ *  been mounted and silently strip its pulse. */
+let pulseTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Cancel any pending pulse-settle timer. Idempotent. */
+function clearPulseTimer(): void {
+  if (pulseTimer != null) {
+    clearTimeout(pulseTimer)
+    pulseTimer = null
+  }
+}
 
 /** Has the user already dismissed the banner? */
 export function hasSeenDisclosure(): boolean {
@@ -150,16 +163,28 @@ function wireBannerHandlers(): void {
 }
 
 /** Tear down the badge and render the full banner in its place.
- *  Triggered by the user tapping the badge. */
+ *  Triggered by the user tapping the badge.
+ *
+ *  Focus management: the user just clicked a button (the badge)
+ *  that no longer exists in the DOM, so the browser would drop
+ *  focus to <body> by default — bad for keyboard / screen-reader
+ *  users. Move focus to the dismiss button so the next Tab /
+ *  Enter has a sensible target. */
 function expandBadgeToBanner(): void {
+  clearPulseTimer()
   document.getElementById('disclosure-badge')?.remove()
   buildBanner()
   wireBannerHandlers()
+  const focusTarget = document.getElementById('disclosure-banner-dismiss')
+  if (focusTarget instanceof HTMLElement) {
+    focusTarget.focus()
+  }
 }
 
 /** Dismiss: persist, emit, remove DOM. Tolerates either form
  *  (banner or badge) being live. */
 function dismiss(): void {
+  clearPulseTimer()
   markSeen()
   emit({
     event_type: 'settings_changed',
@@ -186,11 +211,15 @@ export function showDisclosureBannerIfNeeded(): boolean {
     badge.addEventListener('click', () => expandBadgeToBanner(), { once: true })
     // Settle the pulse after a few seconds even if the user
     // doesn't tap — pulse is for attention on first appearance,
-    // not for steady nagging.
-    setTimeout(() => {
-      document
-        .getElementById('disclosure-badge')
-        ?.classList.remove('disclosure-badge--pulse')
+    // not for steady nagging. Capture the badge in the closure so
+    // a stale callback can never strip the pulse class from a
+    // *different* badge mounted later (after dispose / re-show).
+    // We also store the timer id at module scope so dispose paths
+    // can cancel it eagerly.
+    clearPulseTimer()
+    pulseTimer = setTimeout(() => {
+      pulseTimer = null
+      badge.classList.remove('disclosure-badge--pulse')
     }, PULSE_DURATION_MS)
   } else {
     buildBanner()
@@ -202,6 +231,7 @@ export function showDisclosureBannerIfNeeded(): boolean {
 
 /** Tear down. Idempotent. Exposed for tests. */
 export function disposeDisclosureBanner(): void {
+  clearPulseTimer()
   document.getElementById('disclosure-banner')?.remove()
   document.getElementById('disclosure-badge')?.remove()
   mounted = false
