@@ -2474,6 +2474,40 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   animation-delay: -1s;
 }
 
+/* Conceptual federation topology — small hook diagram between
+   the lede and the architecture stack-grid. Distinct from the
+   detailed .fed__arch diagram below (which shows the local
+   node's stack + signed-pull mechanics); this one just lends
+   the idea — a mesh of peer nodes with a client searching
+   across them. */
+.fed__topology {
+  margin: 0 0 2.25rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.fed__topology svg {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  display: block;
+}
+
+.fed__topology-caption {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  text-align: center;
+  max-width: 640px;
+  margin: 0;
+}
+
 /* Cloud-agnostic portability table — three columns mapping
    today's Cloudflare service to the generic primitive it
    represents and a few drop-in alternatives. Visually muted
@@ -5464,6 +5498,79 @@ a.stack__item-name:focus-visible::after,
         <p class="fed__lede">
           TerraViz reads its catalog from a self-hosted node-backend by default. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.<br><small class="fed__lede-aside">The legacy NOAA Science On a Sphere (SOS) S3 catalog is the system the cutover replaces — kept behind the <code>VITE_CATALOG_SOURCE=legacy</code> env-var as a rollback hatch during the stabilisation window, scheduled for removal once node-backed deployments have soaked.</small>
         </p>
+
+        <figure class="fed__topology" aria-labelledby="fed-topology-caption">
+          <svg viewBox="0 0 640 220"
+               role="img"
+               aria-label="Conceptual federation topology. A client device connects to one node via a search query; that node is part of a small mesh of peer nodes connected to each other. The query fans out across the mesh; results merge back through the home node to the client.">
+            <defs>
+              <radialGradient id="ft-node-grad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#7fc4ff" />
+                <stop offset="100%" stop-color="#4da6ff" />
+              </radialGradient>
+              <radialGradient id="ft-home-grad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#5fb8ff" />
+                <stop offset="100%" stop-color="#0066cc" />
+              </radialGradient>
+              <style>
+                .ft-edge       { stroke: #4da6ff; stroke-width: 1.4; fill: none; opacity: 0.30; }
+                .ft-edge-pulse { stroke: #4da6ff; stroke-width: 1.8; fill: none; stroke-dasharray: 6 6; }
+                .ft-client     { fill: white; stroke: #525252; stroke-width: 1.4; }
+                .ft-client-line { stroke: #525252; stroke-width: 1.4; fill: none; }
+                .ft-label      { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #737373; letter-spacing: 0.04em; text-transform: uppercase; }
+                .ft-home-label { fill: #00529E; font-weight: 700; }
+              </style>
+            </defs>
+
+            <!-- Mesh edges (faint) — every peer pair connected -->
+            <line class="ft-edge" x1="320" y1="160" x2="160" y2="80"  />
+            <line class="ft-edge" x1="320" y1="160" x2="480" y2="80"  />
+            <line class="ft-edge" x1="320" y1="160" x2="540" y2="170" />
+            <line class="ft-edge" x1="160" y1="80"  x2="480" y2="80"  />
+            <line class="ft-edge" x1="160" y1="80"  x2="540" y2="170" />
+            <line class="ft-edge" x1="480" y1="80"  x2="540" y2="170" />
+
+            <!-- Animated pulses from home node out to each peer
+                 (dash offset travels along the line so it reads
+                 as "query fanning out across the federation"). -->
+            <line class="ft-edge-pulse" x1="320" y1="160" x2="160" y2="80">
+              <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="1.8s" repeatCount="indefinite" />
+            </line>
+            <line class="ft-edge-pulse" x1="320" y1="160" x2="480" y2="80">
+              <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="2.2s" repeatCount="indefinite" />
+            </line>
+            <line class="ft-edge-pulse" x1="320" y1="160" x2="540" y2="170">
+              <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="2.0s" repeatCount="indefinite" />
+            </line>
+
+            <!-- Peer nodes -->
+            <circle cx="160" cy="80"  r="14" fill="url(#ft-node-grad)" />
+            <circle cx="480" cy="80"  r="14" fill="url(#ft-node-grad)" />
+            <circle cx="540" cy="170" r="14" fill="url(#ft-node-grad)" />
+
+            <!-- Home node (slightly larger, deeper accent) -->
+            <circle cx="320" cy="160" r="20" fill="url(#ft-home-grad)" />
+            <text class="ft-label ft-home-label" x="320" y="200" text-anchor="middle">your node</text>
+
+            <!-- Client device (small browser-shaped rect) -->
+            <g transform="translate(40,40)">
+              <rect class="ft-client" x="0" y="0" width="80" height="50" rx="6" />
+              <line class="ft-client-line" x1="6"  y1="14" x2="74" y2="14" />
+              <circle cx="11" cy="9" r="1.4" fill="#737373" />
+              <circle cx="17" cy="9" r="1.4" fill="#737373" />
+              <text class="ft-label" x="40" y="40" text-anchor="middle">client</text>
+            </g>
+
+            <!-- Curved arrow from client to home node -->
+            <path class="ft-client-line"
+                  d="M120,75 Q200,140 304,158"
+                  fill="none" />
+            <text class="ft-label" x="170" y="120" text-anchor="start">search</text>
+          </svg>
+          <figcaption id="fed-topology-caption" class="fed__topology-caption">
+            Each node hosts its own catalog. Subscribe to peers — their datasets surface in your search; data stays on their hardware.
+          </figcaption>
+        </figure>
 
         <div class="fed__stack-grid">
           <article class="fed__stack-card">

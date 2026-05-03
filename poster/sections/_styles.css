@@ -2451,6 +2451,40 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   animation-delay: -1s;
 }
 
+/* Conceptual federation topology — small hook diagram between
+   the lede and the architecture stack-grid. Distinct from the
+   detailed .fed__arch diagram below (which shows the local
+   node's stack + signed-pull mechanics); this one just lends
+   the idea — a mesh of peer nodes with a client searching
+   across them. */
+.fed__topology {
+  margin: 0 0 2.25rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.fed__topology svg {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  display: block;
+}
+
+.fed__topology-caption {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  text-align: center;
+  max-width: 640px;
+  margin: 0;
+}
+
 /* Cloud-agnostic portability table — three columns mapping
    today's Cloudflare service to the generic primitive it
    represents and a few drop-in alternatives. Visually muted
