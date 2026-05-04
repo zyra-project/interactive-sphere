@@ -863,58 +863,157 @@ rather than by hope.
 
 ---
 
-## 8. Open Questions for Eric
+## 8. Resolved planning decisions
 
-These items couldn't be resolved from the repo alone.
+Captured during a scoping interview with Eric on 2026-05-04.
+Each item replaces the corresponding "open question" the draft
+originally listed. Cross-doc updates implied by these decisions
+are summarised at the end of the section.
 
-1. **Who is federation actually for?** `MISSION.md` and
-   `ROADMAP.md` describe an end-user product. `docs/CATALOG_*.md`
-   describe a publisher-and-operator platform. Federation appears
-   in the platform doc, not the public roadmap. **Is there a real
-   partner asking to run a Terraviz node, or is federation a
-   capability we want to *be ready for* but not lead with?** The
-   answer changes everything below.
-2. **Is "fork the monorepo" still acceptable for Phase 1d
-   operators?** The current SELF_HOSTING.md path works for
-   Cloudflare-friendly partners with platform engineers. If we
-   are seeing partners bounce off it, that's signal Path A needs
-   investment. If not, Hybrid 2 + Hybrid 1 is enough.
-3. **Cloudflare lock-in tolerance.** Are we comfortable telling
-   partners "Terraviz nodes run on Cloudflare; if you can't run
-   on Cloudflare, you can't run a node — but you can still
-   publish to ours via the CLI"? That's the honest position
-   today. Confirming or rejecting it sets the priority of the
-   cloud-portability layer.
-4. **Is the publisher CLI really shippable today?** The CLI is in
-   `cli/terraviz.ts`, has tests, and is documented as Phase 1a.
-   But it auths via Cloudflare Access service tokens, which mean
-   a partner publishing to our node needs *us* to mint them a
-   service token. Does that flow work today, or is there an
-   onboarding gap before the CLI becomes a real on-ramp?
-5. **STAC alignment status.** The plan commits to a STAC Item
-   profile (`CATALOG_BACKEND_PLAN.md:264-309`). The serializer
-   does not implement it. Is that pending Phase 4, or has it
-   slipped? The answer affects how third-party tools (Google
-   Dataset Search, scientific catalogs) consume our data.
-6. **Headcount for Phase 4 federation.** The plan does not
-   commit to timelines, but Path B's recommendation depends on
-   federation actually shipping. What is the realistic ETA?
-   Quarters or years?
-7. **What's the "directory" story?** The federation protocol
-   contemplates an opt-in directory (`CATALOG_FEDERATION_PROTOCOL.md:255-294`)
-   without committing to running one. If we ship Hybrid 1, do we
-   stand up a reference directory, or wait for one to emerge?
-8. **Trademark and identity.** A fork ships as "Terraviz" by
-   default (`package.json:2`, `bin/terraviz.cjs`, the desktop app
-   bundle). At what point does a partner running their fork as
-   their own brand need a renaming story? `package.json` has no
-   guidance for this today.
-9. **"Restricted" and "private" visibility states are in the
-   schema** (`migrations/catalog/0001_init.sql:57-58`) **but
-   gated behind grants that are Phase 5 work.** Are partner
-   agencies likely to need restricted federation (sharing with
-   specific peers only) before Phase 5? If so, that's a higher
-   priority than Path B-as-designed.
+### 1. Who is federation actually for?
+
+**A + B, focus on B.** Federation serves both partner agencies
+(NOAA, NASA, university research orgs) publishing their own data
+*and* institutional operators (science museums, planetariums,
+visitor centers like Amazon's two SOS-equipped sites) hosting
+their own nodes. **B is the harder problem and the priority** —
+museums and visitor centers typically lack platform engineering,
+so the architecture has to make low-burden node hosting realistic.
+Cohort A is mostly served by the publisher CLI (Tier 0); cohort B
+is served by Tiers 1–3 and is the cohort that justifies the
+investment in Tier 1.
+
+### 2. Is "fork the monorepo" still acceptable?
+
+**Both paths matter; we accept the maintenance cost of supporting
+both.** Partners with platform-engineering capacity fork the
+canonical Cloudflare implementation (Tier 2/3). Partners without
+it use the low-burden install (Tier 1, the read-only peer
+appliance). This makes Tier 1 a first-class committed deliverable,
+not an optional follow-on.
+
+### 3. Cloudflare lock-in tolerance
+
+**Cloudflare-canonical for full nodes; runtime-agnostic for the
+lightweight peer.** Zyra's full-node reference implementation is
+and stays Cloudflare-only. The Tier 1 read-only peer appliance is
+deliberately built without Cloudflare dependencies — small
+container, runnable anywhere, in any common stack. Zyra builds
+zero non-Cloudflare adapters for full nodes; partners that need
+non-Cloudflare full-node deployment write their own implementation
+against the published spec (Tier 3). The "must not depend on
+Cloudflare" constraint on the Tier 1 appliance is the same
+discipline §7 advocates anyway, just enforced by a second build
+target rather than by review discipline alone.
+
+### 4. Is the publisher CLI shippable today?
+
+**Pre-launch — no external user yet, still in development.**
+Shipping `@zyra/terraviz-cli` to npm and running the first
+partner pilot is genuinely first-contact discovery, not polish.
+The viability of the Cloudflare Access service-token flow as the
+partner-onboarding step is **unanswered until a real partner
+tries it**. If service tokens prove to be a bottleneck during
+the pilot, alternative auth (OIDC, magic-link signup, bearer
+tokens) becomes a Phase 4 prerequisite rather than a future
+nice-to-have. Treat the CLI launch as a discovery exercise that
+informs subsequent design — not as a delivery milestone with a
+known-good shape.
+
+### 5. STAC alignment status
+
+**Still planned for Phase 4 — §7 Directive 3 stands enforceable.**
+The wire `Dataset` lands as a STAC Item profile in the same PR as
+the federation feed, not as a follow-up.
+
+### 6. Headcount and ETA for Phase 4 federation
+
+**Targeting ~1 quarter out.** This keeps §6's "ship CLI now,
+Phase 4 follows naturally, Tier 1 lightweight peer is a near-term
+follow-on" sequence valid as written. If Phase 4 slips past two
+quarters, the recommendation should be revisited — Tier 1 may
+need to be brought forward as the only on-ramp shipping in the
+near-to-mid term.
+
+### 7. Directory story
+
+**No Zyra-run directory.** NOAA SOS already serves as the de
+facto dataset directory for the SOS-pedigreed subset of cohort A,
+which covers most current discovery needs. **Node discovery** —
+a separate, narrower question that only matters once cohort B
+starts running their own nodes — is deferred at launch:
+peer-of-peer browsing handles the first wave. If demand emerges,
+a partner consortium (NOAA SOS itself, a museum network, a
+university consortium) operates a node directory using the
+published directory-format spec; Zyra never runs one. Worth
+distinguishing in the doc:
+
+| Type of discovery | Status | Who runs it |
+|---|---|---|
+| **Dataset discovery** (find a dataset to load) | Solved today | NOAA SOS |
+| **Node discovery** (find a peer to subscribe to) | Deferred at launch; partner-consortium-operable post-Phase-4 | Not Zyra |
+
+### 8. Trademark and identity for forks
+
+**Mozilla/Firefox model: free code, restrictive trademark.**
+Forks may freely rebrand at any time — Path A polish includes an
+`npm run fork:rename` (or `terraviz fork init --name=...`) script
+that flips package name, binary name, and desktop bundle ID in
+one shot (S effort). Forks that *keep* the "Terraviz" name agree
+to a published trademark policy (`docs/TRADEMARK_POLICY.md`,
+P1 doc work, drafted by Zyra leadership) with disqualifying
+clauses: no hate content, no adult content, no malware
+distribution, must retain protocol compatibility, must attribute
+upstream. Enforcement is legal/social via the trademark, not
+technical via the code. Worst-case scenario (a fork running
+disallowed content under the Terraviz name) is handled by a
+takedown notice on the *name* use — the code keeps running, just
+not under the Terraviz brand.
+
+### 9. Restricted federation: needed before Phase 5?
+
+**Defer.** Phase 4 ships public-only federation
+(`visibility='public'` + `'federated'`); restricted and private
+visibility wait for Phase 5 as currently planned. If a real
+cohort B partner blocks on restricted-sharing during onboarding,
+accelerate Phase 5 at that point. We do not pull restricted into
+Phase 4 speculatively.
+
+### Cross-doc updates implied by these decisions
+
+The resolutions above tighten the recommendation but also imply
+small follow-up edits to other sections of this doc and to
+adjacent planning docs. Captured here for the next pass; not yet
+applied:
+
+- **§3 Path A — required code changes** gains: `npm run fork:rename`
+  script (S). From decision 8.
+- **§3 Path A — required documentation changes** gains:
+  `docs/TRADEMARK_POLICY.md` (P1, drafted by Zyra leadership, not
+  engineering work). From decision 8.
+- **§5 Hybrid 3 ("lightweight peer appliance")** gets promoted
+  from "third option to keep on the table" to "the committed Tier 1
+  reference implementation per resolved decision 3." Build target:
+  small container, no Cloudflare deps, well-known + feed
+  consumption + read-only catalog API only.
+- **`docs/CATALOG_BACKEND_PLAN.md` Phasing table** needs updating
+  per §7 Directives 1–4 (portability interfaces in Phase 4, JSON
+  Schema + CHANGELOG in Phase 4 exit criteria, conformance suite
+  in Phase 4). The Cloud-portability layer section needs reframing
+  per Goal 2 (the spec is the portable artifact, not adapters
+  Zyra maintains).
+- **`ROADMAP.md`** needs a federation row (or an explicit
+  "intentionally deferred" note) — currently mentions nothing
+  about catalog backend or federation despite Phase 4 being a
+  near-term target.
+- **`docs/CATALOG_FEDERATION_PROTOCOL.md`** node-discovery section
+  should be updated to reflect decision 7 — call out that NOAA SOS
+  is the dataset-directory equivalent today, distinguish from
+  node directories, drop the "we might run a directory" framing.
+
+These edits should ride on a follow-up PR rather than this one.
+This doc is the *scoping* artifact; the catalog plan updates are
+the *operational* changes that flow from it.
 
 ---
 
