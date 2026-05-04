@@ -3533,6 +3533,16 @@ a.stack__item-name:focus-visible::after,
   margin: 0 0 0.85rem;
 }
 
+.cta__audience {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--neutral-500);
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
 .cta__qrs {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

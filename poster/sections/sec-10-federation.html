@@ -105,7 +105,7 @@
 
         <h3 class="fed__subhead">Cloud-agnostic by design</h3>
         <p class="fed__subhead-hint">
-          TerraViz was designed around Cloudflare's edge primitives because that's where it ships today — same account as the app, single deploy mechanism, no vendor sprawl. The architecture is deliberately portable, though: every dependency above maps to a generic primitive an operator can swap to AWS, GCP, Fly.io, on-prem, or hybrid setups without touching the data model, federation protocol, asset pipeline, or any of the published API contracts.
+          TerraViz was designed around Cloudflare's edge primitives because that's where it ships today — same account as the app, single deploy mechanism, no vendor sprawl. A node runs at ~$5/month on Cloudflare's Workers Paid plan (the Analytics Engine threshold); D1, R2, and Pages stay inside the free tier for typical educational traffic, and usage-based services scale linearly above it. The architecture is deliberately portable, though: every dependency above maps to a generic primitive an operator can swap to AWS, GCP, Fly.io, on-prem, or hybrid setups without touching the data model, federation protocol, asset pipeline, or any of the published API contracts.
         </p>
 
         <div class="fed__portability">
@@ -290,6 +290,7 @@
               <li><code>npm run gen:node-key</code> generates the Ed25519 identity</li>
               <li><code>/.well-known/terraviz.json</code> manifest endpoint</li>
               <li>node-backed catalog is the default (<code>VITE_CATALOG_SOURCE=node</code>); legacy SOS S3 path opt-in for rollback only</li>
+              <li>Apache 2.0 licensed; D1 is plain SQLite, R2 is S3-compatible — no proprietary lock-in, exit on your terms</li>
             </ul>
           </article>
 
