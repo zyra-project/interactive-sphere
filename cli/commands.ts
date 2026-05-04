@@ -639,6 +639,19 @@ Commands:
                                       when a token is set. --skip-publish-checks
                                       forces public-only.
 
+  migrate-videos [--dry-run] [--limit=N] [--id=<id>] [--pace-ms=N]
+                                      One-shot operator pump that migrates legacy
+                                      vimeo:<id> data_refs to stream:<uid> by
+                                      re-uploading the source MP4 to Cloudflare
+                                      Stream. Requires STREAM_ACCOUNT_ID +
+                                      STREAM_API_TOKEN in the environment.
+                                      Idempotent — re-running skips rows already
+                                      on stream:. Always run --dry-run first.
+                                      Sequential, paced (default 5 s between
+                                      rows). See CATALOG_BACKEND_DEVELOPMENT.md
+                                      "Migrating legacy Vimeo data refs to
+                                      Stream".
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

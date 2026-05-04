@@ -1,0 +1,413 @@
+/**
+ * `terraviz migrate-videos` — migrate legacy `vimeo:<id>` data_refs
+ * to `stream:<uid>` by re-uploading the source MP4 into Cloudflare
+ * Stream.
+ *
+ * Phase 2 commit C. Drives the helpers from `lib/vimeo-fetch.ts`
+ * (commit A) and `lib/stream-upload.ts` (commit B) plus the
+ * existing publisher-API client.
+ *
+ * Per-row pipeline:
+ *   1. Resolve the `vimeo:<id>` to a streaming MP4 + duration via
+ *      the video-proxy.
+ *   2. Pump the bytes into Cloudflare Stream via TUS.
+ *   3. PATCH the dataset's `data_ref` to `stream:<new-uid>` —
+ *      *this* is the migration's commit point. Failures before
+ *      this step leave the row untouched on `vimeo:` and the
+ *      manifest endpoint keeps proxying through Vimeo as before.
+ *      Failures *at* this step leave an orphan Stream UID logged
+ *      for manual cleanup; the row is still on `vimeo:` so the
+ *      next run will re-resolve from scratch.
+ *   4. Emit a `migration_video` telemetry event so the Grafana
+ *      progress panel (commit G) updates without a D1 query.
+ *
+ * Idempotency: re-running `terraviz migrate-videos` is a no-op on
+ * any row whose `data_ref` already starts with `stream:`. The walker
+ * skips those rows before doing any per-row work. This means the
+ * operator can interrupt the run (`^C`) at any point and resume
+ * by re-invoking — already-uploaded rows skip naturally.
+ *
+ * Pacing (Decision 3 in the brief): sequential, 5 s default between
+ * rows, overridable via `--pace-ms`. Sequential keeps failure
+ * attribution sharp and avoids tripping Vimeo's per-IP throttle.
+ *
+ * Flags:
+ *   --dry-run        Print the plan and exit 0 without uploading.
+ *   --limit=N        Cap the number of rows migrated this run.
+ *   --id=<dataset>   Target a single dataset id; skips list paging.
+ *   --pace-ms=N      Override the inter-row pace (default 5000).
+ *
+ * `--max-minutes=N` (the cost guard rail) is added by commit D.
+ *
+ * Telemetry: the emit hook is dependency-injected here so tests can
+ * record calls without a network round-trip. Commit E swaps in the
+ * real ingest-endpoint client.
+ *
+ * Stream credentials: `STREAM_ACCOUNT_ID` and `STREAM_API_TOKEN`
+ * are read from `process.env` — same names the publisher API
+ * binding uses. The migration is operator-driven, so the
+ * credentials are already present in the operator's shell when
+ * they run the command.
+ */
+
+import { resolveVimeo as resolveVimeoLib } from './lib/vimeo-fetch'
+import { uploadToStream as uploadToStreamLib, type StreamUploadConfig } from './lib/stream-upload'
+import type { CommandContext } from './commands'
+import { getString, getNumber, getBool } from './lib/args'
+
+/** A single row of the publisher list response, narrowed to the
+ * fields the migration cares about. */
+interface PublisherDatasetRow {
+  id: string
+  legacy_id: string | null
+  title: string
+  format: string
+  data_ref: string
+  published_at: string | null
+}
+
+interface DatasetListEnvelope {
+  datasets: PublisherDatasetRow[]
+  next_cursor: string | null
+}
+
+interface DatasetGetEnvelope {
+  dataset: PublisherDatasetRow
+}
+
+interface DatasetUpdateEnvelope {
+  dataset: { id: string; slug: string }
+}
+
+const LIST_PAGE_LIMIT = 200
+const DEFAULT_PACE_MS = 5_000
+
+/** Outcome enum. Mirrors the `migration_video` telemetry event's
+ * `outcome` field (commit E) — keep these in sync. */
+export type MigrationOutcome =
+  | 'ok'
+  | 'vimeo_fetch_failed'
+  | 'stream_upload_failed'
+  | 'data_ref_patch_failed'
+
+export interface MigrationResult {
+  datasetId: string
+  legacyId: string
+  vimeoId: string
+  streamUid: string
+  bytesUploaded: number
+  durationMs: number
+  outcome: MigrationOutcome
+  /** Operator-facing error message; '' on `outcome === 'ok'`. */
+  errorMessage: string
+}
+
+export interface MigrateVideoDeps {
+  /** DI for the vimeo-fetch helper. Defaults to the production import. */
+  resolveVimeo?: typeof resolveVimeoLib
+  /** DI for the stream-upload helper. Defaults to the production import. */
+  uploadToStream?: typeof uploadToStreamLib
+  /** Telemetry sink. Defaults to a no-op (commit E swaps in the
+   * real implementation). */
+  emitTelemetry?: (event: MigrationResult) => void | Promise<void>
+  /** DI for the wall clock — tests pass a deterministic now(). */
+  now?: () => number
+  /** DI for fetch — currently used only by helper defaults. */
+  fetchImpl?: typeof fetch
+  /** Stream credentials. Defaults to reading `STREAM_ACCOUNT_ID` /
+   * `STREAM_API_TOKEN` from `process.env`. */
+  streamConfig?: StreamUploadConfig
+  /** Skip the inter-row pacing wait — set to `true` from tests so
+   * a four-row walk doesn't burn 15 s on `setTimeout`. */
+  skipPace?: boolean
+}
+
+function loadStreamConfigFromEnv(): StreamUploadConfig {
+  return {
+    accountId: process.env.STREAM_ACCOUNT_ID ?? '',
+    apiToken: process.env.STREAM_API_TOKEN ?? '',
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+interface MigrationCandidate {
+  datasetId: string
+  legacyId: string
+  title: string
+  vimeoId: string
+}
+
+function asCandidate(row: PublisherDatasetRow): MigrationCandidate | null {
+  if (row.format !== 'video/mp4') return null
+  if (!row.data_ref.startsWith('vimeo:')) return null
+  const vimeoId = row.data_ref.slice('vimeo:'.length).trim()
+  if (!/^\d+$/.test(vimeoId)) return null
+  return {
+    datasetId: row.id,
+    legacyId: row.legacy_id ?? '',
+    title: row.title,
+    vimeoId,
+  }
+}
+
+/**
+ * Build the migration plan by paging through the publisher API.
+ * Filters to:
+ *   - status = published (drafts and retracted rows are out of scope)
+ *   - format = video/mp4
+ *   - data_ref begins `vimeo:`
+ *
+ * Walks pages until the cursor is exhausted. Returns the full
+ * candidate list; `--limit` is applied by the caller after the
+ * pre-flight summary so the dry-run output is honest about the
+ * total work even when the operator opts to run a smaller batch.
+ */
+async function buildPlan(
+  ctx: CommandContext,
+  targetId: string | undefined,
+): Promise<MigrationCandidate[] | null> {
+  // Single-row mode — skip pagination entirely.
+  if (targetId) {
+    const result = await ctx.client.get<DatasetGetEnvelope>(targetId)
+    if (!result.ok) {
+      ctx.stderr.write(
+        `Could not GET ${targetId} (${result.status}): ${result.error}` +
+          (result.message ? ` — ${result.message}` : '') +
+          '\n',
+      )
+      return null
+    }
+    const candidate = asCandidate(result.body.dataset)
+    if (!candidate) {
+      ctx.stderr.write(
+        `Dataset ${targetId} is not a vimeo: video/mp4 row ` +
+          `(format=${result.body.dataset.format}, data_ref=${result.body.dataset.data_ref}). ` +
+          `Skipping.\n`,
+      )
+      return []
+    }
+    return [candidate]
+  }
+
+  const candidates: MigrationCandidate[] = []
+  let cursor: string | undefined
+  do {
+    const result = await ctx.client.list<DatasetListEnvelope>({
+      status: 'published',
+      limit: LIST_PAGE_LIMIT,
+      cursor,
+    })
+    if (!result.ok) {
+      ctx.stderr.write(
+        `Could not list datasets (${result.status}): ${result.error}` +
+          (result.message ? ` — ${result.message}` : '') +
+          '\n',
+      )
+      return null
+    }
+    for (const row of result.body.datasets) {
+      const candidate = asCandidate(row)
+      if (candidate) candidates.push(candidate)
+    }
+    cursor = result.body.next_cursor ?? undefined
+  } while (cursor)
+  return candidates
+}
+
+function printPlanSummary(ctx: CommandContext, plan: MigrationCandidate[], limit: number): void {
+  const willRun = Math.min(plan.length, limit)
+  ctx.stdout.write(
+    `Migration plan:\n` +
+      `  vimeo: rows on video/mp4: ${plan.length}\n` +
+      `  will migrate this run:    ${willRun}` +
+      (limit < plan.length ? ` (capped by --limit)\n` : '\n'),
+  )
+  if (plan.length === 0) return
+  const sample = plan.slice(0, Math.min(willRun, 5))
+  for (const c of sample) {
+    ctx.stdout.write(`  • ${c.datasetId}  vimeo:${c.vimeoId}  ${c.title}\n`)
+  }
+  if (willRun > sample.length) {
+    ctx.stdout.write(`  • … + ${willRun - sample.length} more\n`)
+  }
+}
+
+/**
+ * Migrate a single candidate. Returns the structured outcome — the
+ * caller writes both the operator log line and the telemetry event
+ * from this shape.
+ */
+async function migrateOne(
+  candidate: MigrationCandidate,
+  deps: Required<Pick<MigrateVideoDeps, 'resolveVimeo' | 'uploadToStream' | 'now'>> & {
+    streamConfig: StreamUploadConfig
+    client: CommandContext['client']
+  },
+): Promise<MigrationResult> {
+  const start = deps.now()
+  const out: MigrationResult = {
+    datasetId: candidate.datasetId,
+    legacyId: candidate.legacyId,
+    vimeoId: candidate.vimeoId,
+    streamUid: '',
+    bytesUploaded: 0,
+    durationMs: 0,
+    outcome: 'ok',
+    errorMessage: '',
+  }
+
+  // Stage 1 — resolve the source.
+  let handle
+  try {
+    handle = await deps.resolveVimeo(candidate.vimeoId)
+  } catch (e) {
+    out.outcome = 'vimeo_fetch_failed'
+    out.errorMessage = e instanceof Error ? e.message : String(e)
+    out.durationMs = deps.now() - start
+    return out
+  }
+
+  let body
+  try {
+    body = await handle.openStream()
+  } catch (e) {
+    out.outcome = 'vimeo_fetch_failed'
+    out.errorMessage = e instanceof Error ? e.message : String(e)
+    out.durationMs = deps.now() - start
+    return out
+  }
+
+  // Stage 2 — pump bytes into Stream.
+  let upload
+  try {
+    upload = await deps.uploadToStream(deps.streamConfig, body.stream, body.contentLength, {
+      meta: { name: candidate.title || candidate.datasetId, filename: `${candidate.legacyId || candidate.datasetId}.mp4` },
+    })
+  } catch (e) {
+    out.outcome = 'stream_upload_failed'
+    out.errorMessage = e instanceof Error ? e.message : String(e)
+    out.durationMs = deps.now() - start
+    return out
+  }
+  out.streamUid = upload.streamUid
+  out.bytesUploaded = upload.bytesUploaded
+
+  // Stage 3 — flip the data_ref. This is the commit point.
+  const patched = await deps.client.updateDataset<DatasetUpdateEnvelope>(candidate.datasetId, {
+    data_ref: `stream:${upload.streamUid}`,
+  })
+  if (!patched.ok) {
+    out.outcome = 'data_ref_patch_failed'
+    out.errorMessage = `${patched.status}: ${patched.error}${patched.message ? ` — ${patched.message}` : ''}`
+    out.durationMs = deps.now() - start
+    return out
+  }
+
+  out.durationMs = deps.now() - start
+  return out
+}
+
+export async function runMigrateVideos(
+  ctx: CommandContext,
+  deps: MigrateVideoDeps = {},
+): Promise<number> {
+  const targetId = getString(ctx.args.options, 'id')
+  const limitFlag = getNumber(ctx.args.options, 'limit')
+  const dryRun = getBool(ctx.args.options, 'dry-run')
+  const paceMs = getNumber(ctx.args.options, 'pace-ms') ?? DEFAULT_PACE_MS
+
+  if (limitFlag !== undefined && limitFlag < 1) {
+    ctx.stderr.write(`--limit must be a positive integer (got ${limitFlag}).\n`)
+    return 2
+  }
+  if (paceMs < 0) {
+    ctx.stderr.write(`--pace-ms must be non-negative (got ${paceMs}).\n`)
+    return 2
+  }
+
+  const plan = await buildPlan(ctx, targetId)
+  if (plan === null) return 1
+
+  const limit = limitFlag ?? plan.length
+  printPlanSummary(ctx, plan, limit)
+
+  if (dryRun) {
+    ctx.stdout.write('\nDry run — no rows will be migrated. Re-run without --dry-run to apply.\n')
+    return 0
+  }
+
+  if (plan.length === 0) {
+    ctx.stdout.write('\nNothing to migrate.\n')
+    return 0
+  }
+
+  const streamConfig = deps.streamConfig ?? loadStreamConfigFromEnv()
+  if (!streamConfig.accountId || !streamConfig.apiToken) {
+    ctx.stderr.write(
+      'STREAM_ACCOUNT_ID and STREAM_API_TOKEN must both be set in the environment.\n',
+    )
+    return 2
+  }
+
+  const resolveVimeo = deps.resolveVimeo ?? resolveVimeoLib
+  const uploadToStream = deps.uploadToStream ?? uploadToStreamLib
+  const now = deps.now ?? Date.now
+  const emitTelemetry = deps.emitTelemetry ?? (() => {})
+
+  const work = plan.slice(0, limit)
+  const counts: Record<MigrationOutcome, number> = {
+    ok: 0,
+    vimeo_fetch_failed: 0,
+    stream_upload_failed: 0,
+    data_ref_patch_failed: 0,
+  }
+
+  for (let i = 0; i < work.length; i++) {
+    const candidate = work[i]
+    const result = await migrateOne(candidate, {
+      resolveVimeo,
+      uploadToStream,
+      now,
+      streamConfig,
+      client: ctx.client,
+    })
+    counts[result.outcome]++
+    try {
+      await emitTelemetry(result)
+    } catch (e) {
+      // Telemetry must never abort the migration itself. Log + carry on.
+      ctx.stderr.write(
+        `[${candidate.datasetId}] telemetry emit failed: ${e instanceof Error ? e.message : String(e)}\n`,
+      )
+    }
+
+    if (result.outcome === 'ok') {
+      ctx.stdout.write(
+        `[${candidate.datasetId}] vimeo:${candidate.vimeoId} → stream:${result.streamUid} ` +
+          `(${result.bytesUploaded} bytes, ${result.durationMs} ms)\n`,
+      )
+    } else {
+      ctx.stderr.write(
+        `[${candidate.datasetId}] ${result.outcome}: ${result.errorMessage}\n`,
+      )
+    }
+
+    // Pace between rows; skip after the final row and during tests.
+    if (!deps.skipPace && i < work.length - 1 && paceMs > 0) {
+      await sleep(paceMs)
+    }
+  }
+
+  ctx.stdout.write(
+    `\nMigration complete:\n` +
+      `  ok:                       ${counts.ok}\n` +
+      `  vimeo_fetch_failed:       ${counts.vimeo_fetch_failed}\n` +
+      `  stream_upload_failed:     ${counts.stream_upload_failed}\n` +
+      `  data_ref_patch_failed:    ${counts.data_ref_patch_failed}\n`,
+  )
+  const failures = counts.vimeo_fetch_failed + counts.stream_upload_failed + counts.data_ref_patch_failed
+  return failures > 0 ? 1 : 0
+}
