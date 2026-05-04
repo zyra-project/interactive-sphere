@@ -461,6 +461,31 @@ describe('Tools menu callbacks', () => {
     ;(document.getElementById('tools-menu-clear') as HTMLButtonElement).click()
     expect(announce).toHaveBeenCalledWith('Markers and highlights cleared')
   })
+
+  it('does not render the Credits button when onOpenCredits is not provided', () => {
+    const vm = makeViewports(1)
+    initToolsMenu(vm as any, { getCurrentDataset: () => null })
+
+    expect(document.getElementById('tools-menu-credits')).toBeNull()
+    // Privacy still appears in the About section.
+    expect(document.getElementById('tools-menu-privacy')).not.toBeNull()
+  })
+
+  it('renders the Credits button and invokes onOpenCredits with the Tools toggle as trigger', () => {
+    const vm = makeViewports(1)
+    const onOpenCredits = vi.fn()
+    initToolsMenu(vm as any, { onOpenCredits, getCurrentDataset: () => null })
+
+    const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
+    expect(creditsBtn).not.toBeNull()
+
+    ;(document.getElementById('tools-menu-toggle') as HTMLButtonElement).click()
+    creditsBtn!.click()
+
+    expect(onOpenCredits).toHaveBeenCalledTimes(1)
+    expect(onOpenCredits.mock.calls[0][0]).toBe(document.getElementById('tools-menu-toggle'))
+    expect(isToolsMenuOpen()).toBe(false)
+  })
 })
 
 // ---------------------------------------------------------------------------

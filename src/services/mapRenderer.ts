@@ -10,7 +10,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { Map as MaplibreMap, StyleSpecification, CustomLayerInterface } from 'maplibre-gl'
 import { createEarthTileLayer, computeSunLightPosition, type EarthTileLayerControl } from './earthTileLayer'
-import type { GlobeRenderer, MapViewContext, VideoTextureHandle } from '../types'
+import type { Dataset, GlobeRenderer, MapViewContext, VideoTextureHandle } from '../types'
+import { setDatasetCreditsSource } from '../ui/creditsPanel'
 import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
 import { isMobile } from '../utils/deviceCapability'
@@ -385,7 +386,11 @@ export class MapRenderer implements GlobeRenderer {
       zoom: DEFAULT_ZOOM,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
-      attributionControl: { compact: true },
+      // Stock attribution control disabled — Tools → Credits is
+      // now the canonical surface for both basemap and dataset
+      // attributions, sourced from `map.getStyle().sources[…].attribution`.
+      // See src/ui/creditsPanel.ts for the design.
+      attributionControl: false,
       preserveDrawingBuffer: true, // needed for captureViewContext / toDataURL
       maxPitch: 85,
       maxTileCacheSize: isMobile() ? 750 : 2000,
@@ -526,6 +531,22 @@ export class MapRenderer implements GlobeRenderer {
   /** Return the underlying MapLibre map instance. */
   getMap(): MaplibreMap | null {
     return this.map
+  }
+
+  /**
+   * Register or clear the dataset-credits phantom source on this
+   * panel's map. Pass a Dataset to set the credit; pass null to
+   * clear it (after unload). The phantom source carries no
+   * features and no layers reference it — it exists only to feed
+   * its `attribution` string into MapLibre's source-attribution
+   * pipeline so the Tools → Credits panel can read it back.
+   *
+   * See src/ui/creditsPanel.ts for the full design + composition
+   * rules. Idempotent — calling with the same dataset twice is a
+   * no-op beyond the redundant remove/add.
+   */
+  setDatasetCredits(dataset: Dataset | null): void {
+    setDatasetCreditsSource(this.map, dataset)
   }
 
   /** Return the map canvas element for screenshot capture. */
