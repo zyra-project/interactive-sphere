@@ -16,6 +16,95 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 2 — Stream re-upload migration
+
+**Branch:** `claude/stream-migration-phase-2-dbBnm`
+**Commits:** 2/A through 2/H — eight logical changes.
+
+Phase 1b shipped the canonical Stream upload pipeline (publisher
+API mints Stream direct-upload URLs, content-addressed by sha256
+of the bytes); the legacy SOS rows that Phase 1d imported never
+migrated. ~138 video rows still played through the legacy
+`vimeo:<id>` data_ref proxied via `video-proxy.zyra-project.org`.
+Phase 2 closes that gap with one-time operator tooling.
+
+| Commit | Summary |
+|---|---|
+| 2/A | `cli/lib/vimeo-fetch.ts` — resolves a `vimeo:<id>` to a streaming MP4 + duration via the existing video-proxy. Picks the highest-quality MP4 by size; ties broken by width. Splits metadata fetch from byte-stream fetch so the cost guard rail can sum durations without buffering bytes. |
+| 2/B | `cli/lib/stream-upload.ts` — TUS-resumable upload helper. POSTs the create endpoint with `Tus-Resumable: 1.0.0` + `Upload-Length`, then PATCHes the body to the returned `Location` URL in a single shot. Returns the resulting Stream UID. Plain library function — a future server-side real-time ingestion endpoint can reuse it. |
+| 2/C | `terraviz migrate-videos` CLI subcommand. Walks every published `vimeo:` `video/mp4` row, drives the per-row pipeline (resolve → upload → PATCH `data_ref` → emit telemetry). Idempotent — `stream:` rows skipped at plan time. Sequential, paced 5 s default. `--dry-run`, `--limit=N`, `--id=<id>`, `--pace-ms=N`. |
+| 2/D | Cost guard rail. `--max-minutes=N` (default 300, ~$0.30/mo) hard-fails when total estimated minutes exceed the budget. Source: Vimeo's oembed endpoint. Cache: `.cache/vimeo-durations.json` (gitignored). Estimate respects `--limit` and surfaces missing-duration count separately. |
+| 2/E | `migration_video` telemetry event. Tier A. Fields: `dataset_id` / `legacy_id` / `vimeo_id` / `stream_uid` / `bytes_uploaded` / `duration_ms` / `outcome` (`ok` / `vimeo_fetch_failed` / `stream_upload_failed` / `data_ref_patch_failed`). Operator-side emitter at `cli/lib/migration-telemetry.ts` POSTs single-event batches to `/api/ingest`. |
+| 2/F | Operator runbook in `CATALOG_BACKEND_DEVELOPMENT.md` "Migrating legacy Vimeo data refs to Stream". Pre-flight, batched migration, recovery from partial failures, rollback recipe, observation window. |
+| 2/G | Grafana migration row on `Terraviz — Product Health`. Three panels at y=34: per-day runs by outcome, cumulative ok rows, failure breakdown. After a clean run the row becomes a quiet "still 0% on `vimeo:`" reassurance. |
+| 2/H | This file. |
+
+### Operator-visible changes
+
+- **New CLI subcommand:**
+  ```sh
+  npm run terraviz -- migrate-videos --dry-run         # plan + cost
+  npm run terraviz -- migrate-videos --limit=5         # sanity batch
+  npm run terraviz -- migrate-videos                   # full run
+  ```
+  Requires `STREAM_ACCOUNT_ID` + `STREAM_API_TOKEN` in the
+  environment — same names the publisher API binding uses.
+- **New telemetry event:** `migration_video` — Tier A, one-shot,
+  no throttling. The session id is printed at run start so the
+  operator can correlate Grafana queries.
+- **New Grafana panels:** three on `Terraviz — Product Health`,
+  bumped to `version: 7`. Re-import from
+  `grafana/dashboards/product-health.json` after deploying.
+
+### Stream cost calibration
+
+138 rows × ~1 min average ≈ ~140 minutes ≈ ~$0.14/month at
+Cloudflare Stream's $1/1000-min rate. The default
+`--max-minutes=300` keeps ~2× headroom — tight enough that
+exceeding it means something genuinely surprising is in the
+catalog (a mis-imported full-length film, a row pointing at the
+wrong Vimeo ID), loose enough not to trip on the long tail of
+legitimate ~6-min narrated videos. The Grafana migration row
+is the ongoing observation surface.
+
+### No breaking changes
+
+The manifest endpoint already resolves both `vimeo:` and
+`stream:` (Phase 1b/N). A row mid-migration (uploaded but
+data_ref not yet patched) plays through the proxy until the
+patch step lands; a row post-migration plays through Stream's
+HLS edges directly. The SPA is unchanged.
+
+### Rollback recipe
+
+Single-direction migration only. Per-row rollback is a manual
+data_ref update via the existing PUT route:
+
+```sh
+npm run terraviz -- update <dataset_id> '{"data_ref":"vimeo:<id>"}'
+```
+
+The orphan Stream UID stays in Stream until manually deleted via
+the dashboard or API. There is no `--reverse` flag in v1; if
+rollback proves common, add one as a follow-on commit.
+
+### Out of scope (deferred)
+
+- **Vimeo proxy retirement.** Proxy stays running until the
+  migration is 100% complete AND has been observed for ≥1
+  month.
+- **Real-time / ongoing Vimeo→Stream ingestion.** Belongs
+  server-side via the publisher API; Phase 2 only ships the
+  one-shot operator path. The library helpers
+  (`vimeo-fetch.ts`, `stream-upload.ts`) are deliberately
+  reusable from a future server endpoint.
+- **R2 migration of image rows.** A separate phase if it ever
+  lands (call it 2b).
+- **Stream re-encoding tier upgrades** (HEVC, AV1) — separate
+  ops pass.
+
+---
+
 ## Phase 1f — Cutover stabilisation (PR #62)
 
 **Released:** May 2026
