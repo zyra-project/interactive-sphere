@@ -103,9 +103,9 @@
           </article>
         </div>
 
-        <h3 class="fed__subhead">Cloud-agnostic by design</h3>
+        <h3 class="fed__subhead">Spec is the artifact · canonical implementation on Cloudflare</h3>
         <p class="fed__subhead-hint">
-          TerraViz was designed around Cloudflare's edge primitives because that's where it ships today — same account as the app, single deploy mechanism, no vendor sprawl. A node runs at ~$5/month on Cloudflare's Workers Paid plan (the Analytics Engine threshold); D1, R2, and Pages stay inside the free tier for typical educational traffic, and usage-based services scale linearly above it. The architecture is deliberately portable, though: every dependency above maps to a generic primitive an operator can swap to AWS, GCP, Fly.io, on-prem, or hybrid setups without touching the data model, federation protocol, asset pipeline, or any of the published API contracts.
+          TerraViz publishes its protocol — JSON Schema, OpenAPI, conformance suite — and ships <strong>one canonical implementation on Cloudflare</strong>. Same account as the app, single deploy mechanism, no vendor sprawl. A node runs at ~$5/month on Cloudflare's Workers Paid plan (the Analytics Engine threshold); D1, R2, and Pages stay inside the free tier for typical educational traffic, and usage-based services scale linearly above it. <strong>Zyra builds zero non-Cloudflare full-node adapters</strong>: partners that need a different stack implement against the published spec (Tier 3, weeks of work; the conformance suite is the contract). The portability table below is the <em>contract surface</em> — what the protocol permits anyone to implement against — not a portfolio of adapters Zyra maintains.
         </p>
 
         <div class="fed__portability">
@@ -161,7 +161,10 @@
             </tbody>
           </table>
           <p class="fed__portability-note">
-            The catalog plan, federation protocol, and asset pipeline docs (linked below) describe each contract in primitive terms — D1 as "SQLite-compatible", R2 as "S3-compatible", Vectorize as "vector DB". The runtime swap is a port-shaped task; the API surface and on-disk format don't move.
+            The catalog plan, federation protocol, and asset pipeline docs (linked below) describe each contract in primitive terms — D1 as "SQLite-compatible", R2 as "S3-compatible", Vectorize as "vector DB". The runtime swap is a port-shaped task that partners own (Tier 3); Zyra's deliverable is the spec + conformance harness that makes those ports verifiable.
+          </p>
+          <p class="fed__portability-note">
+            <strong>Tier 1 lightweight peer appliance</strong> — a small reference container with no Cloudflare dependencies, runnable anywhere from a laptop to a museum kiosk to a planetarium server. Serves the well-known doc + federation feed + read-only catalog API only; no publish path, no asset pipeline, no auth provider. The runtime-agnostic on-ramp Zyra ships for cohort B (museums, planetariums, visitor centers without platform engineering); built post-Phase-4 once the protocol is pinned.
           </p>
         </div>
 
@@ -297,13 +300,14 @@
           <article class="fed__phase fed__phase--draft">
             <p class="fed__phase-tag">Forthcoming · drafted</p>
             <h3>Cross-node federation</h3>
-            <p>The federation protocol is documented; subscriber + publisher logic is the next deliverable:</p>
+            <p>The federation protocol is documented; subscriber + publisher logic is the next deliverable, targeted ~1 quarter out:</p>
             <ul>
               <li>Subscribe to a peer's manifest by URL</li>
               <li>Verify the peer's Ed25519 signature on each pull</li>
               <li>Merge peer-published rows into the local catalog</li>
               <li>Per-dataset access control (publisher → specific peers)</li>
               <li>Publisher portal beyond dev-bypass auth</li>
+              <li>JSON Schema + OpenAPI 3.1 spec + a two-node <code>npm run test:federation</code> conformance harness ship in the <em>same</em> Phase 4 PR — the spec is the contract third parties implement against, enforced by CI</li>
             </ul>
           </article>
         </div>
