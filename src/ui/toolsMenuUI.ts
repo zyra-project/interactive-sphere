@@ -188,10 +188,11 @@ export function initToolsMenu(
       </section>
       <section class="tools-menu-section" aria-label="About">
         <h4 class="tools-menu-section-title">About</h4>
+        ${onOpenCredits ? `
         <button type="button" class="tools-menu-item" id="tools-menu-credits">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Credits&hellip;</span>
-        </button>
+        </button>` : ''}
         <button type="button" class="tools-menu-item" id="tools-menu-privacy">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Privacy settings&hellip;</span>
@@ -370,17 +371,22 @@ export function initToolsMenu(
     onOpenOrbitSettings?.()
   })
 
-  const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
-  creditsBtn?.addEventListener('click', () => {
-    if (!onOpenCredits) return
-    closePopover()
-    // Pass the Tools toggle button (which stays visible as the
-    // popover's anchor) as the credits panel's focus-restore
-    // target. The menu item itself is hidden by closePopover()
-    // above, so it can't reliably receive focus on close.
-    onOpenCredits(toggleBtn)
-    announce?.('Credits opened')
-  })
+  // Credits button is only rendered when `onOpenCredits` is wired
+  // (see template above). Skipping the listener entirely when the
+  // callback is absent means there's no dead control in the DOM —
+  // the About section just shows Privacy.
+  if (onOpenCredits) {
+    const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
+    creditsBtn?.addEventListener('click', () => {
+      closePopover()
+      // Pass the Tools toggle button (which stays visible as the
+      // popover's anchor) as the credits panel's focus-restore
+      // target. The menu item itself is hidden by closePopover()
+      // above, so it can't reliably receive focus on close.
+      onOpenCredits(toggleBtn)
+      announce?.('Credits opened')
+    })
+  }
 
   const privacyBtn = document.getElementById('tools-menu-privacy') as HTMLButtonElement | null
   privacyBtn?.addEventListener('click', () => {
