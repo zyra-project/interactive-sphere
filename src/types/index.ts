@@ -1006,6 +1006,56 @@ export interface ErrorEvent extends TelemetryEventBase {
   count_in_batch: number
 }
 
+/** Outcome of a single row in the `terraviz migrate-videos`
+ * pump. Mirrors the `MigrationOutcome` enum in
+ * `cli/migrate-videos.ts`; keep these in sync. */
+export type MigrationVideoOutcome =
+  | 'ok'
+  | 'vimeo_fetch_failed'
+  | 'stream_upload_failed'
+  | 'data_ref_patch_failed'
+
+/**
+ * Operator-facing migration progress event. Emitted once per
+ * dataset row by `terraviz migrate-videos` (Phase 2 commit C).
+ * One-shot — migration runs are operator-driven, not user
+ * sessions, so throttling is not needed.
+ *
+ * Used by the Grafana product-health migration row (commit G):
+ * `100 - 100 * count(outcome=ok) / total_rows` gives the
+ * "% still on vimeo:" headline number.
+ *
+ * No free-text fields — every field is a stable identifier or
+ * enum value. `dataset_id` / `legacy_id` / `vimeo_id` /
+ * `stream_uid` are public catalog identifiers (the same values
+ * already exposed by the catalog manifest endpoint), so no
+ * hashing is required.
+ */
+export interface MigrationVideoEvent extends TelemetryEventBase {
+  event_type: 'migration_video'
+  /** Catalog dataset id (`DS<ulid>`) the migration targeted. */
+  dataset_id: string
+  /** Idempotency key from the original SOS import (e.g.
+   * `INTERNAL_SOS_768`); empty string when the row has no
+   * legacy_id. */
+  legacy_id: string
+  /** Source Vimeo numeric id (the value half of `vimeo:<id>`). */
+  vimeo_id: string
+  /** Resulting Stream UID; empty string when the upload didn't
+   * reach the upload stage successfully. Captured even on
+   * `data_ref_patch_failed` so an orphan UID is recoverable from
+   * the telemetry log. */
+  stream_uid: string
+  /** Bytes Cloudflare confirmed received via Upload-Offset; 0
+   * when the upload didn't complete. */
+  bytes_uploaded: number
+  /** Wall-clock duration of the per-row pump (resolve + upload +
+   * patch) in milliseconds. */
+  duration_ms: number
+  /** Per-row outcome. See `MigrationVideoOutcome`. */
+  outcome: MigrationVideoOutcome
+}
+
 // --- Tier B events ---
 
 export interface DwellEvent extends TelemetryEventBase {
@@ -1138,6 +1188,7 @@ export type TelemetryEvent =
   | VrPlacementEvent
   | PerfSampleEvent
   | ErrorEvent
+  | MigrationVideoEvent
   // Tier B
   | DwellEvent
   | OrbitInteractionEvent

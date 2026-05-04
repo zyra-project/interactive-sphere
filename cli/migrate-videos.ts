@@ -53,6 +53,7 @@
 import { resolveVimeo as resolveVimeoLib } from './lib/vimeo-fetch'
 import { uploadToStream as uploadToStreamLib, type StreamUploadConfig } from './lib/stream-upload'
 import { lookupVimeoDurations as lookupVimeoDurationsLib } from './lib/vimeo-duration'
+import { makeMigrationTelemetryEmitter } from './lib/migration-telemetry'
 import type { CommandContext } from './commands'
 import { getString, getNumber, getBool } from './lib/args'
 
@@ -460,7 +461,18 @@ export async function runMigrateVideos(
   const resolveVimeo = deps.resolveVimeo ?? resolveVimeoLib
   const uploadToStream = deps.uploadToStream ?? uploadToStreamLib
   const now = deps.now ?? Date.now
-  const emitTelemetry = deps.emitTelemetry ?? (() => {})
+  // Default emitter POSTs a single-event batch per row to the
+  // configured server's /api/ingest endpoint. Tests pass a recorder
+  // via `deps.emitTelemetry` so they observe events without a
+  // network round-trip.
+  let emitTelemetry: NonNullable<MigrateVideoDeps['emitTelemetry']>
+  if (deps.emitTelemetry) {
+    emitTelemetry = deps.emitTelemetry
+  } else {
+    const emitter = makeMigrationTelemetryEmitter({ serverUrl: ctx.client.serverUrl })
+    ctx.stdout.write(`Telemetry session id: ${emitter.sessionId}\n`)
+    emitTelemetry = result => emitter.emit(result)
+  }
 
   const counts: Record<MigrationOutcome, number> = {
     ok: 0,

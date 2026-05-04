@@ -4,7 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM"],
-    "types": ["node"],
+    // `geojson` is needed because the cli imports type-only
+    // shapes from `src/types/index.ts` which references
+    // `GeoJSON.GeoJSON` for the docent-action union. The runtime
+    // cli code never touches geojson values; the type-only flow
+    // alone needs the namespace declaration available.
+    "types": ["node", "geojson"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,

@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { TelemetryEvent, SessionStartEvent, LayerLoadedEvent } from '../../src/types'
+import type {
+  TelemetryEvent,
+  SessionStartEvent,
+  LayerLoadedEvent,
+  MigrationVideoEvent,
+} from '../../src/types'
 import {
   onRequestPost,
   onRequestOptions,
@@ -129,6 +134,22 @@ function layerLoaded(id = 'A'): LayerLoadedEvent {
 
 function body(events: TelemetryEvent[], session_id = 'session-1') {
   return { session_id, events }
+}
+
+function migrationVideo(
+  overrides: Partial<MigrationVideoEvent> = {},
+): MigrationVideoEvent {
+  return {
+    event_type: 'migration_video',
+    dataset_id: 'DS00001AAAAAAAAAAAAAAAAAAAAA',
+    legacy_id: 'INTERNAL_SOS_768',
+    vimeo_id: '1107911993',
+    stream_uid: 'stream-abc',
+    bytes_uploaded: 1024,
+    duration_ms: 4200,
+    outcome: 'ok',
+    ...overrides,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -507,6 +528,23 @@ describe('onRequestPost — happy path', () => {
     })
     const res = await onRequestPost(ctx)
     expect(res.status).toBe(204)
+  })
+
+  it('accepts migration_video events (Phase 2 commit E)', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([
+        migrationVideo(),
+        migrationVideo({ outcome: 'data_ref_patch_failed', stream_uid: 'orphan-1' }),
+      ]),
+      ip: '10.0.0.20',
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    const res = await onRequestPost(ctx)
+    expect(res.status).toBe(204)
+    expect(ae.datapoints).toHaveLength(2)
+    expect(ae.datapoints[0].blobs![0]).toBe('migration_video')
+    expect(ae.datapoints[1].blobs![0]).toBe('migration_video')
   })
 })
 
