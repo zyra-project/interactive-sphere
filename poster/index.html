@@ -76,6 +76,12 @@
   --section-px: 4rem;
   --section-py-mobile: 3rem;
   --section-px-mobile: 1.25rem;
+
+  /* Hero backdrop — TerraViz capture, right-anchored, fades into
+     the hero gradient on the left so the title stays readable.
+     Path is relative to poster/index.html (where the CSS inlines
+     to), not to this _styles.css source file. */
+  --hero-earth-bg-image: url('assets/screenshots/hero-globe.webp');
 }
 
 * { box-sizing: border-box; }
@@ -3799,17 +3805,10 @@ a.stack__item-name:focus-visible::after,
 
   <!-- sec-01-hero.html -->
     <section id="sec-1-hero" class="hero" aria-labelledby="hero-title">
-      <!-- TerraViz capture lands here as a background image:
-           `poster/assets/screenshots/hero-globe.{jpg,png,webp}`
-           rendered behind the 3-column hero content. Wide
-           composition — Earth filling most of the frame, dark
-           space backdrop already provided by the hero gradient,
-           ideally a screenshot showing day-night terminator,
-           clouds, atmosphere glow. Until then this slot is a
-           plain space gradient so the layout is stable. -->
-      <div class="hero__earth-bg hero__earth-bg--placeholder" aria-hidden="true">
-        <span class="hero__earth-bg-label">TerraViz capture · hero backdrop pending</span>
-      </div>
+      <!-- TerraViz capture rendered as a background image,
+           right-anchored, behind the 3-column hero content.
+           Wired via `--hero-earth-bg-image` in _styles.css. -->
+      <div class="hero__earth-bg" aria-hidden="true"></div>
 
       <div class="hero__container">
         <div class="hero__logos" aria-hidden="true">

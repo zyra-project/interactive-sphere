@@ -53,6 +53,12 @@
   --section-px: 4rem;
   --section-py-mobile: 3rem;
   --section-px-mobile: 1.25rem;
+
+  /* Hero backdrop — TerraViz capture, right-anchored, fades into
+     the hero gradient on the left so the title stays readable.
+     Path is relative to poster/index.html (where the CSS inlines
+     to), not to this _styles.css source file. */
+  --hero-earth-bg-image: url('assets/screenshots/hero-globe.webp');
 }
 
 * { box-sizing: border-box; }
