@@ -402,6 +402,20 @@ code, kbd, pre {
   line-height: 1.3;
 }
 
+/* Image-variant logo slot — used when a real logo image fills the
+   slot. Drops the placeholder box treatment so transparent logos
+   sit cleanly on the hero gradient. */
+.hero__logo--img {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.hero__logo--img img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
 .hero__center { text-align: center; }
 
 .hero__title {
@@ -3811,12 +3825,13 @@ a.stack__item-name:focus-visible::after,
       <div class="hero__earth-bg" aria-hidden="true"></div>
 
       <div class="hero__container">
-        <div class="hero__logos" aria-hidden="true">
-          <!-- Real SVG logos drop in alongside the rest of the
-               asset follow-up. Boxed text placeholders keep
-               layout stable until they land. -->
-          <div class="hero__logo">NOAA<br>logo</div>
-          <div class="hero__logo">Zyra<br>logo</div>
+        <div class="hero__logos">
+          <div class="hero__logo hero__logo--img">
+            <img src="assets/logos/noaa-gsl-logo.png" alt="NOAA Global Systems Laboratory">
+          </div>
+          <div class="hero__logo hero__logo--img">
+            <img src="assets/logos/zyra-logo.png" alt="Zyra">
+          </div>
         </div>
 
         <div class="hero__center">
