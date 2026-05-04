@@ -118,6 +118,35 @@ describe('diffBindings', () => {
     expect(missing).toEqual([])
   })
 
+  it('emits wrong_type when an expected name lives in a different bucket (1f/N)', () => {
+    // Operator created CATALOG_VECTORIZE as a plaintext env var
+    // instead of wiring the actual Vectorize binding — pre-1f/N
+    // this surfaced as two unrelated rows (missing vectorize +
+    // unexpected plaintext) the operator had to mentally
+    // correlate. Now collapses into one explicit wrong_type row.
+    const proj = fullyConfigured()
+    proj.production.vectorize.delete('CATALOG_VECTORIZE')
+    proj.production.plaintext.add('CATALOG_VECTORIZE')
+    const entries = diffBindings(EXPECTED_BINDINGS, proj)
+    const prod = entries.filter(
+      e => e.environment === 'production' && e.name === 'CATALOG_VECTORIZE',
+    )
+    // Exactly one row for production CATALOG_VECTORIZE — wrong_type,
+    // not missing+unexpected.
+    expect(prod).toHaveLength(1)
+    expect(prod[0].status).toBe('wrong_type')
+    expect(prod[0].type).toBe('vectorize')
+    expect(prod[0].hint).toMatch(/Found as plaintext but expected vectorize/)
+    // No phantom "unexpected" row for the same name.
+    const unexpected = entries.filter(
+      e =>
+        e.environment === 'production' &&
+        e.name === 'CATALOG_VECTORIZE' &&
+        e.status === 'unexpected',
+    )
+    expect(unexpected).toHaveLength(0)
+  })
+
   it('honours per-binding environments', () => {
     // Construct a manifest where one entry is Production-only.
     const proj = fullyConfigured()

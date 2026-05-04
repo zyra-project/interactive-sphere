@@ -175,16 +175,35 @@ export class RestApiSource implements PagesProjectSource {
   }
 }
 
+const ALL_BINDING_TYPES: BindingType[] = [
+  'plaintext',
+  'secret',
+  'd1',
+  'kv',
+  'r2',
+  'vectorize',
+  'ai',
+  'analytics_engine',
+]
+
 /**
  * Pure diff: which expected bindings are missing in which
  * environment, and which actual bindings are present that aren't on
  * the expected list. The output is stable and table-friendly.
  *
- * "Unexpected" entries are not necessarily wrong — operators may
- * intentionally add extra env vars (Stream API tokens, R2 access
- * keys) the manifest doesn't model. Surfacing them is informational
- * so the operator can spot typos and stale leftovers from old
- * deploys; not a failure unless the run is invoked with --strict.
+ * Three failure modes:
+ *
+ *   - `missing` — expected binding absent in this environment.
+ *   - `wrong_type` — a binding with the expected name exists, but
+ *     under a different binding type. Common when an operator
+ *     creates a plaintext env var named `CATALOG_VECTORIZE` (or
+ *     similar) instead of the actual Vectorize binding. Pre-1f/N
+ *     this surfaced as two unrelated rows (`missing` + `unexpected`)
+ *     that the operator had to mentally correlate.
+ *   - `unexpected` — a binding in this environment that isn't on
+ *     the expected list. Not necessarily wrong — operators add
+ *     their own (Stream API tokens, R2 access keys) — informational
+ *     unless the run is invoked with --strict.
  */
 export function diffBindings(
   expected: ExpectedBinding[],
@@ -193,25 +212,54 @@ export function diffBindings(
   const out: DiffEntry[] = []
   const envs: Environment[] = ['production', 'preview']
 
-  // Per-environment "missing" check.
+  /** Names "claimed" as wrong_type in each (env, name) tuple, so the
+   *  unexpected pass can suppress the corresponding actual entry
+   *  (we'd otherwise emit `wrong_type` AND `unexpected` for the same
+   *  binding name and confuse the operator further). */
+  const claimedAsWrongType = new Set<string>()
+
+  // Per-environment "missing" / "wrong_type" check. For each
+  // expected binding we look in the bucket for its declared type
+  // first; if present we emit `present`, if not we look across the
+  // other buckets and either emit `wrong_type` (found under a
+  // different type) or `missing` (genuinely absent).
   for (const exp of expected) {
     for (const env of envs) {
       if (!exp.environments.includes(env)) continue
-      const bucket = bindingsForType(actual[env], exp.type)
+      const correctBucket = bindingsForType(actual[env], exp.type)
+      if (correctBucket.has(exp.name)) {
+        out.push({ name: exp.name, type: exp.type, environment: env, status: 'present' })
+        continue
+      }
+      const wrongType = ALL_BINDING_TYPES.find(
+        t => t !== exp.type && bindingsForType(actual[env], t).has(exp.name),
+      )
+      if (wrongType !== undefined) {
+        out.push({
+          name: exp.name,
+          type: exp.type,
+          environment: env,
+          status: 'wrong_type',
+          hint:
+            `Found as ${wrongType} but expected ${exp.type}. ` +
+            (exp.hint ?? ''),
+        })
+        claimedAsWrongType.add(`${env}|${wrongType}|${exp.name}`)
+        continue
+      }
       out.push({
         name: exp.name,
         type: exp.type,
         environment: env,
-        status: bucket.has(exp.name) ? 'present' : 'missing',
-        hint: bucket.has(exp.name) ? undefined : exp.hint,
+        status: 'missing',
+        hint: exp.hint,
       })
     }
   }
 
-  // "Unexpected" pass — anything in actual that isn't in the
-  // expected manifest at all. Plaintext env vars are deliberately
-  // permissive (operators add their own); we still flag them but
-  // with status='unexpected' so the consumer can choose to ignore.
+  // "Unexpected" pass — anything in actual that isn't on the
+  // expected list AND wasn't already accounted for as wrong_type
+  // above.
   const expectedKey = (b: ExpectedBinding, env: Environment) =>
     `${env}|${b.type}|${b.name}`
   const expectedSet = new Set<string>()
@@ -235,9 +283,9 @@ export function diffBindings(
     for (const { type, names } of allActual) {
       for (const name of names) {
         const key = `${env}|${type}|${name}`
-        if (!expectedSet.has(key)) {
-          out.push({ name, type, environment: env, status: 'unexpected' })
-        }
+        if (expectedSet.has(key)) continue
+        if (claimedAsWrongType.has(key)) continue
+        out.push({ name, type, environment: env, status: 'unexpected' })
       }
     }
   }
@@ -275,7 +323,7 @@ export function formatDiffTable(entries: DiffEntry[]): string {
     type: e.type,
     name: e.name,
     status: statusGlyph(e.status),
-    hint: e.status === 'missing' ? (e.hint ?? '') : '',
+    hint: e.status === 'missing' || e.status === 'wrong_type' ? (e.hint ?? '') : '',
   }))
   const widths = {
     env: Math.max(3, ...rows.map(r => r.env.length)),

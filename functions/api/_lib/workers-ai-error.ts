@@ -5,10 +5,10 @@
  * Workers AI surfaces "you have exhausted your free-tier neuron
  * budget" as an exception whose `.message` contains the platform
  * code. The exact wording has shifted over time
- * ("3036 neurons exhausted", "4006 quota exceeded", "Capacity
- * temporarily exceeded"); pattern-matching the message is the
- * cheapest reliable signal short of a dedicated usage API (which
- * doesn't exist for free-tier accounts at the time of writing).
+ * ("3036 neurons exhausted", "4006 quota exceeded"); pattern-
+ * matching the message is the cheapest reliable signal short of a
+ * dedicated usage API (which doesn't exist for free-tier accounts
+ * at the time of writing).
  *
  * The helper is shared between:
  *   - `functions/api/chat/completions.ts` — wraps `ai.run` in a
@@ -18,9 +18,16 @@
  *     embed + query path and returns
  *     `degraded: 'quota_exhausted'` on the same signal.
  *
- * Conservative on false positives: a generic "Workers AI error"
- * stays a 502 / unconfigured. Only the specific quota signal
- * trips the degraded badge in the SPA.
+ * **Conservative on false positives.** The patterns below match
+ * unambiguous customer-quota signals only. We deliberately do
+ * NOT match "Capacity temporarily exceeded for this model" /
+ * "Service temporarily unavailable" / similar generic load-
+ * shedding messages — those text strings are also used for
+ * provider-side incidents where the customer has plenty of
+ * quota left. Misclassifying load-shedding as quota exhaustion
+ * would route operators toward "upgrade to Workers Paid" when
+ * the right action is "wait for the Cloudflare incident to
+ * clear" (Phase 1f/N — caught by Copilot review on 1f/D).
  */
 
 const QUOTA_PATTERNS: RegExp[] = [
@@ -29,7 +36,6 @@ const QUOTA_PATTERNS: RegExp[] = [
   /quota\s+exceeded/i,
   /quota\s+exhausted/i,
   /neurons?\s+exhausted/i,
-  /capacity\s+temporarily\s+exceeded/i,
   /free[-\s]tier\s+limit/i,
 ]
 

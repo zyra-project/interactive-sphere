@@ -17,7 +17,6 @@ describe('isWorkersAiQuotaError', () => {
     ['4006 quota exceeded', true],
     ['Workers AI 4006: quota exhausted', true],
     ['3036: You have used all available neurons.', true],
-    ['Capacity temporarily exceeded for this model', true],
     ['Account is over the free-tier limit', true],
     ['neurons exhausted', true],
     ['quota exceeded', true],
@@ -31,6 +30,15 @@ describe('isWorkersAiQuotaError', () => {
     'AbortError: aborted',
     'Workers AI returned 502',
     '',
+    // Phase 1f/N — these strings look quota-adjacent but actually
+    // signal provider-side load-shedding / incidents where the
+    // customer's quota is unaffected. Misclassifying them as
+    // `quota_exhausted` would route operators toward "upgrade to
+    // Workers Paid" when the right action is "wait for the
+    // Cloudflare incident to clear".
+    'Capacity temporarily exceeded for this model',
+    'Service temporarily unavailable',
+    'Model is overloaded',
   ])('does not flag %j as a quota error', msg => {
     expect(isWorkersAiQuotaError(new Error(msg))).toBe(false)
   })
