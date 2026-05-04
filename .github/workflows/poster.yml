@@ -67,6 +67,11 @@ jobs:
       url: ${{ steps.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Resolve Git LFS objects so binary assets (screenshots,
+          # logos, QR codes, etc.) ship as their real bytes, not as
+          # 131-byte pointer files. Mirrors ci.yml's SPA deploy.
+          lfs: true
 
       - uses: actions/setup-node@v4
         with:

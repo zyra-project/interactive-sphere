@@ -5,15 +5,3 @@
 *.gif filter=lfs diff=lfs merge=lfs -text
 *.webp filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
-
-# Poster assets stay in regular git pack storage, NOT Git LFS —
-# Cloudflare Pages doesn't resolve LFS objects during build, so
-# anything LFS-tracked under poster/ would deploy as a 131-byte
-# pointer file and break in the browser. The poster README states
-# this policy; these overrides bring .gitattributes into line with
-# it for the image formats poster authors actually use.
-poster/**/*.webp -filter -diff -merge
-poster/**/*.jpg  -filter -diff -merge
-poster/**/*.jpeg -filter -diff -merge
-poster/**/*.png  -filter -diff -merge
-poster/**/*.gif  -filter -diff -merge
