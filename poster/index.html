@@ -4225,16 +4225,9 @@ a.stack__item-name:focus-visible::after,
               There are two common ways to build a 3D Earth on the web. A scene-graph engine like Cesium gives you a full globe runtime; a map engine like MapLibre gives you tile streaming, vector borders, and navigation but no photoreal Earth. TerraViz picked the map-engine side — NASA's GIBS Earth-imagery service speaks WMTS, which MapLibre reads natively; country borders, labels, and 3D terrain are commodity vector and raster-DEM tiles you compose as style layers; and the runtime is ~200 KB gzipped, light enough for a phone. The photoreal half is hand-built: a WebGL2 layer hooked into MapLibre's <code>CustomLayerInterface</code> extension point composites a day-night terminator, real-time clouds, specular sun glint, and a starfield every frame, on the same canvas as the tiles. No external globe library, no framework runtime.
             </p>
           </div>
-          <!-- TerraViz screenshot lands here:
-               `poster/assets/screenshots/globe-photoreal.{jpg,png,webp}`
-               A close-in capture from the live web app showing
-               the photoreal stack at work — day-night terminator
-               sweeping the disc, city lights along the night
-               side, clouds, specular glint on ocean. The framing
-               should feel "from orbit" rather than "world map".
-               Swap is single-element. -->
-          <figure class="globe__hero-earth globe__hero-earth--placeholder" aria-hidden="true">
-            <div class="globe__hero-earth-ph">TerraViz screenshot · photoreal globe pending</div>
+          <figure class="globe__hero-earth">
+            <img src="assets/screenshots/photoreal-globe.webp"
+                 alt="TerraViz photoreal globe — day-night terminator across the disc, city lights along the night side, clouds, and specular sun glint over the ocean">
             <figcaption class="globe__hero-earth-caption">
               Composited frame · diffuse · clouds · specular · day-night
             </figcaption>
