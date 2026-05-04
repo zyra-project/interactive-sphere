@@ -620,6 +620,14 @@ code, kbd, pre {
   line-height: 1.4;
 }
 
+.mission__pair img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
 .mission__pair figcaption {
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -3934,7 +3942,8 @@ a.stack__item-name:focus-visible::after,
                 aria-label="Side-by-side: a Science On a Sphere installation and TerraViz running on a phone">
           <div class="mission__pair">
             <figure>
-              <div class="mission__ph">Science On a Sphere installation photo<br>(asset to land)</div>
+              <img src="assets/screenshots/sos-museum.webp"
+                   alt="A Science On a Sphere installation — NOAA's six-foot suspended globe lit with planetary data in a museum exhibit space">
               <figcaption>Science On a Sphere, installed</figcaption>
             </figure>
             <figure>

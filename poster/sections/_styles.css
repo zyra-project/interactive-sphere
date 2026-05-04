@@ -597,6 +597,14 @@ code, kbd, pre {
   line-height: 1.4;
 }
 
+.mission__pair img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
 .mission__pair figcaption {
   font-family: var(--font-mono);
   font-size: 0.7rem;
