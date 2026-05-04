@@ -154,34 +154,46 @@ const catalogPopulated: VerifyCheck = {
 const searchReachable: VerifyCheck = {
   name: 'search-reachable',
   description:
-    'GET /api/v1/search?q=test — Vectorize + Workers AI responsive (or graceful 503)',
+    'GET /api/v1/search?q=test — Vectorize + Workers AI responsive (or graceful degraded)',
   async run({ serverUrl, fetchImpl }) {
     try {
       const { status, body } = await fetchJson(
         fetchImpl,
         `${serverUrl}/api/v1/search?q=test`,
       )
-      if (status === 200) {
-        const b = (body ?? {}) as { hits?: unknown }
-        if (!Array.isArray(b.hits)) {
-          return { status: 'fail', detail: 'response missing hits[] array' }
-        }
-        return { status: 'pass', detail: `${b.hits.length} hits` }
+      // The route ALWAYS returns 200 — degraded states (bindings
+      // missing, Workers AI quota exhausted) are signalled via the
+      // body's `degraded` field plus a `Warning` response header
+      // (see `functions/api/v1/search.ts` ~line 220–230). A non-200
+      // here means the route itself is sick (5xx upstream / 4xx
+      // bad query) — surface it as a hard failure.
+      if (status !== 200) {
+        return { status: 'fail', detail: `unexpected status ${status}` }
       }
-      // Per CATALOG_BACKEND_DEVELOPMENT.md "Workers AI billing pitfall":
-      // 503 embed_unconfigured is the explicit "bindings missing" path.
-      if (status === 503) {
-        const b = (body ?? {}) as { error?: string; message?: string }
-        if (b.error === 'embed_unconfigured') {
-          return {
-            status: 'fail',
-            detail:
-              'Workers AI / Vectorize bindings missing — see Step 4 of the deploy checklist',
-          }
-        }
-        return { status: 'fail', detail: `503 ${b.error ?? 'unknown'}` }
+      const b = (body ?? {}) as { datasets?: unknown; degraded?: string }
+      if (!Array.isArray(b.datasets)) {
+        return { status: 'fail', detail: 'response missing datasets[] array' }
       }
-      return { status: 'fail', detail: `unexpected status ${status}` }
+      // Distinguish the two documented degraded reasons. Both are
+      // operator-actionable failures, but the hint differs.
+      if (b.degraded === 'unconfigured') {
+        return {
+          status: 'fail',
+          detail:
+            'Workers AI / Vectorize bindings missing — see Step 4 of the deploy checklist',
+        }
+      }
+      if (b.degraded === 'quota_exhausted') {
+        return {
+          status: 'fail',
+          detail:
+            'Workers AI quota exhausted — wait for reset or move to Workers Paid (1f/D)',
+        }
+      }
+      if (b.degraded) {
+        return { status: 'fail', detail: `degraded: ${b.degraded}` }
+      }
+      return { status: 'pass', detail: `${b.datasets.length} hit(s)` }
     } catch (e) {
       return { status: 'fail', detail: networkError(e) }
     }

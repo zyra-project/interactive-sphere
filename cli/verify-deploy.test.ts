@@ -115,22 +115,48 @@ describe('catalog-reachable / catalog-populated checks', () => {
 })
 
 describe('search-reachable check', () => {
-  it('passes on 200 + hits array', async () => {
+  it('passes on 200 + datasets[] (the real wire contract — see functions/api/v1/search.ts)', async () => {
+    // Phase 1f follow-up: the route returns `{datasets: [...]}`,
+    // never `{hits: [...]}`. Pre-1f/M the stub used `hits` and
+    // the check expected `hits`, so the test was internally
+    // consistent but blessed the wrong shape — the real route
+    // would have failed every healthy deployment.
     const fetchImpl = makeRouter({
-      '/api/v1/search': () => mkResponse(200, { hits: [{ id: 'X' }] }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [{ id: 'X' }] }),
     })
     const out = await findCheck('search-reachable').run({ ...baseDeps, fetchImpl })
     expect(out.status).toBe('pass')
+    expect(out.detail).toMatch(/1 hit/)
   })
 
-  it('fails on 503 embed_unconfigured with the bindings hint', async () => {
+  it('fails on 200 + degraded=unconfigured with the bindings hint', async () => {
+    // Real route signals "bindings missing" via 200 + body.degraded
+    // + Warning header — never a 5xx. Pre-1f/M this test stubbed a
+    // 503 response which the route never actually emits.
     const fetchImpl = makeRouter({
-      '/api/v1/search': () =>
-        mkResponse(503, { error: 'embed_unconfigured', message: 'AI/Vectorize unset' }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [], degraded: 'unconfigured' }),
     })
     const out = await findCheck('search-reachable').run({ ...baseDeps, fetchImpl })
     expect(out.status).toBe('fail')
     expect(out.detail).toMatch(/Workers AI/)
+  })
+
+  it('fails on 200 + degraded=quota_exhausted with the quota hint', async () => {
+    const fetchImpl = makeRouter({
+      '/api/v1/search': () => mkResponse(200, { datasets: [], degraded: 'quota_exhausted' }),
+    })
+    const out = await findCheck('search-reachable').run({ ...baseDeps, fetchImpl })
+    expect(out.status).toBe('fail')
+    expect(out.detail).toMatch(/quota exhausted/i)
+  })
+
+  it('fails on a non-200 status (route itself is sick)', async () => {
+    const fetchImpl = makeRouter({
+      '/api/v1/search': () => mkResponse(500, 'oops'),
+    })
+    const out = await findCheck('search-reachable').run({ ...baseDeps, fetchImpl })
+    expect(out.status).toBe('fail')
+    expect(out.detail).toMatch(/500/)
   })
 })
 
@@ -174,7 +200,7 @@ describe('runChecks', () => {
       '/.well-known/terraviz.json': () =>
         mkResponse(200, { node_id: 'X', public_key: 'ed25519:AA' }),
       '/api/v1/catalog': () => mkResponse(200, { datasets: [{ id: 'X' }] }),
-      '/api/v1/search': () => mkResponse(200, { hits: [] }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [] }),
     })
     const rows = await runChecks(VERIFY_CHECKS, {
       serverUrl: 'https://example.test',
@@ -195,7 +221,7 @@ describe('runChecks', () => {
       '/.well-known/terraviz.json': () =>
         mkResponse(200, { node_id: 'X', public_key: 'ed25519:AA' }),
       '/api/v1/catalog': () => mkResponse(200, { datasets: [{ id: 'X' }] }),
-      '/api/v1/search': () => mkResponse(200, { hits: [] }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [] }),
       '/api/v1/publish/me': () =>
         mkResponse(200, { email: 'a@b', role: 'service' }),
       '/api/v1/publish/datasets': () => mkResponse(200, { datasets: [] }),
@@ -254,7 +280,7 @@ describe('runVerifyDeploy', () => {
       '/.well-known/terraviz.json': () =>
         mkResponse(200, { node_id: 'X', public_key: 'ed25519:AA' }),
       '/api/v1/catalog': () => mkResponse(200, { datasets: [{ id: 'X' }] }),
-      '/api/v1/search': () => mkResponse(200, { hits: [] }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [] }),
     })
     const code = await runVerifyDeploy(ctx, {
       config: { server: 'https://example.test', insecureLocal: false },
@@ -269,7 +295,7 @@ describe('runVerifyDeploy', () => {
     const fetchImpl = makeRouter({
       '/.well-known/terraviz.json': () => mkResponse(500, 'oops'),
       '/api/v1/catalog': () => mkResponse(200, { datasets: [{ id: 'X' }] }),
-      '/api/v1/search': () => mkResponse(200, { hits: [] }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [] }),
     })
     const code = await runVerifyDeploy(ctx, {
       config: { server: 'https://example.test', insecureLocal: false },
@@ -285,7 +311,7 @@ describe('runVerifyDeploy', () => {
       '/.well-known/terraviz.json': () =>
         mkResponse(200, { node_id: 'X', public_key: 'ed25519:AA' }),
       '/api/v1/catalog': () => mkResponse(200, { datasets: [{ id: 'X' }] }),
-      '/api/v1/search': () => mkResponse(200, { hits: [] }),
+      '/api/v1/search': () => mkResponse(200, { datasets: [] }),
     })
     const code = await runVerifyDeploy(ctx, {
       config: {

@@ -468,8 +468,14 @@ checks rather than failing them, so you can run it before
 minting the token to verify the public surface in isolation.
 
 Both commands target the production preview deploy as the
-expected first run; pass `--server` (or `CLOUDFLARE_PAGES_PROJECT_NAME`)
-to point at a non-default project.
+expected first run. The two commands read their target from
+different env vars / flags:
+
+- `check-pages-bindings` reads `CLOUDFLARE_PAGES_PROJECT_NAME`
+  (default: `terraviz`); change it to audit a different Pages
+  project's bindings.
+- `verify-deploy` reads `--server` (or `TERRAVIZ_SERVER`); change
+  it to point the HTTP smoke-test at a different deploy URL.
 
 ### 8e. Next steps
 
