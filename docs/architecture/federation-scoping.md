@@ -3,9 +3,8 @@
 **Status: draft for review.** Scopes the question of how a partner
 organisation joins a federated Terraviz network: by forking the
 repo (Path A), by installing a versioned runtime artifact (Path B),
-or by a hybrid. Evidence is drawn from the repository as of branch
-`claude/scope-federation-architecture-pSsvy`, commit `3cff1c4` on
-`main`. Companion to
+or by a hybrid. Evidence is drawn from the repository at `main`
+commit `3cff1c4`. Companion to
 [`../CATALOG_BACKEND_PLAN.md`](../CATALOG_BACKEND_PLAN.md) and
 [`../CATALOG_FEDERATION_PROTOCOL.md`](../CATALOG_FEDERATION_PROTOCOL.md).
 
@@ -48,11 +47,14 @@ plan documents in `docs/CATALOG_*.md` lay out a 6-phase backend
 roadmap with the federation protocol as Phase 4. What ships today
 in `functions/api/v1/**` is Phase 1a–1d: the catalog read API,
 publisher write API, asset uploads, and a docent search index. The
-single line of "federation code" that exists is the well-known
-discovery document at `functions/.well-known/terraviz.json.ts:88-92`
+single piece of federation code that exists is the well-known
+discovery document at `functions/.well-known/terraviz.json.ts:88-92`,
 which advertises `feed` and `handshake` endpoints that **do not yet
-exist** as routes (`grep "federation/feed\|federation/handshake"`
-returns three hits, all comments and the well-known doc itself). No
+exist as routes** — there is no `functions/api/v1/federation/`
+directory, no handler files, no middleware. Other matches for
+`federation/feed` / `federation/handshake` in the repo are confined
+to comments, the well-known document itself, and its test fixture
+(`functions/.well-known/terraviz.json.test.ts`). No
 `federation_peers`, `federation_subscribers`, `federated_datasets`,
 or `federated_tours` tables exist in `migrations/catalog/` (verified
 — the latest migration is `0008_legacy_id.sql`, none mention these).
@@ -122,8 +124,12 @@ Tiered on-ramps:
 | **2 — Full peer** | Publish own data, host assets, federate bidirectionally. | Days; scales with how much custom infra the partner brings. |
 | **3 — Custom implementation** | Write own node in any language from the published spec. | Weeks. The conformance suite is the contract. |
 
-Tier 0 must work *today* — the publisher CLI in `cli/` is the
-hand-it-over moment, gated only on shipping it to npm.
+Tier 0 should work *as soon as the first partner pilot validates
+the auth flow* — the publisher CLI in `cli/` is the hand-it-over
+moment, gated on (a) shipping it to npm and (b) §8 decision 4's
+pilot, which is the discovery exercise that confirms whether
+Cloudflare Access service tokens are a workable onboarding step
+for partners or whether the auth model needs reshaping first.
 Tier 1 is the focus of the post-Phase-4 work and the lowest-burden
 generic on-ramp for partners who want operational control without
 running a full publishing stack. Tier 2 follows once Phase 4 lands.
@@ -311,11 +317,16 @@ the comment "federation goes live in Phase 4").
   today.** Code today calls D1/R2/Stream/KV bindings directly
   through `CatalogEnv`. A future port to Postgres/S3 is bounded
   but not free.
-- **CLI:** the `cli/` tree is the most portable thing in the repo.
-  Speaks plain HTTP+JSON, depends on no Cloudflare primitives,
-  authenticates via Cloudflare Access service tokens (which a
-  non-CF node could replace with bearer tokens or OIDC). Already
-  shipped end-to-end.
+- **CLI:** the `cli/` tree is the closest thing to a portable
+  surface in the repo. It speaks plain HTTP+JSON and does not
+  depend on Cloudflare primitives at the transport layer. Auth is
+  *not yet* portable: `cli/lib/client.ts` only knows how to send
+  Cloudflare Access service-token headers (or `--insecure-local`
+  for dev); a non-Cloudflare node would require corresponding CLI
+  changes (bearer tokens, OIDC) before it could authenticate. So
+  the CLI is portable in *shape* but not in *auth* today, and
+  decision 4 in §8 makes the auth-flow viability an open
+  pilot-validation question rather than a settled property.
 
 ### Mission/roadmap mismatch
 
