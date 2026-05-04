@@ -31,6 +31,30 @@ next" rule from `~/.claude/CLAUDE.md` applies here especially:
   named phases, explicit non-goals, tables for comparisons,
   honest tradeoffs. New plan content should match.
 
+### Federation planning artifact
+
+Federation work — Phase 4 routes (handshake / feed / signing),
+federation tables, peer subscription, the lightweight peer
+appliance, the publisher CLI launch — follows
+[`docs/architecture/federation-scoping.md`](docs/architecture/federation-scoping.md).
+Before designing or implementing federation-related code, read
+**§7** (Phase 4 implementation directives) and **§8** (resolved
+planning decisions). The scoping doc supersedes Phase 4
+sequencing in `docs/CATALOG_BACKEND_PLAN.md` where they conflict.
+
+**Freshness check.** The scoping doc carries a "Last reviewed"
+date and a "Revisit when" trigger list at the top. Before
+applying its directives, verify the doc is still current — if
+the last-reviewed date is more than ~6 months old, or any
+"Revisit when" trigger has been hit (Phase 4 shipped, the
+publisher-CLI pilot revealed auth-flow issues, a non-Cloudflare
+funded partner emerged, the Phase 4 ETA slipped past two
+quarters, any §8 decision changed), surface that to the user
+before proceeding rather than silently applying potentially
+stale guidance. Once the doc's "Supersedes when" condition is
+met, defer to `CATALOG_BACKEND_PLAN.md` and `ROADMAP.md` as the
+active source of truth.
+
 ---
 
 ## Codebase Overview
