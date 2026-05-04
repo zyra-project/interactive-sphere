@@ -23,6 +23,7 @@ import { showBrowseUI, hideBrowseUI, collapseBrowseUI, notifyBrowseOpened } from
 import { initDownloadUI } from './ui/downloadUI'
 import { updateMapControlsPosition } from './ui/mapControlsUI'
 import { initToolsMenu, syncToolsMenuState, syncToolsMenuLayout, pulseBrowseButton } from './ui/toolsMenuUI'
+import { openCreditsPanel } from './ui/creditsPanel'
 import { initChatUI, openChat, openChatSettings, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from './utils/viewPreferences'
 import { initHelpUI, setActiveDataset as setHelpActiveDataset } from './ui/helpUI'
@@ -218,6 +219,7 @@ class InteractiveSphere {
         onSetLayout: (layout) => this.viewports.setLayout(layout),
         onOpenBrowse: () => this.openBrowsePanel(),
         onOpenOrbitSettings: () => openChatSettings(),
+        onOpenCredits: (trigger) => openCreditsPanel(this.viewports, trigger),
         onToggleDatasetInfo: (visible) => this.setDatasetInfoVisible(visible),
         onToggleLegend: (visible) => this.setLegendVisible(visible),
         announce: (msg) => this.announce(msg),
@@ -523,6 +525,12 @@ class InteractiveSphere {
     if (this.panelStates[targetSlot]) {
       this.panelStates[targetSlot].dataset = dataset
     }
+    // Register the dataset's attribution as a phantom MapLibre
+    // source so Tools → Credits picks it up. See creditsPanel.ts
+    // for the design. No-op on non-MapRenderer surfaces.
+    if (targetRenderer instanceof MapRenderer) {
+      targetRenderer.setDatasetCredits(dataset)
+    }
 
     logger.info('[App] Loading dataset:', {
       id: dataset.id,
@@ -697,6 +705,15 @@ class InteractiveSphere {
     }
     if (this.panelStates[targetSlot]) {
       this.panelStates[targetSlot].dataset = dataset
+    }
+    // Register the dataset's attribution as a phantom MapLibre
+    // source so Tools → Credits picks it up. See creditsPanel.ts
+    // for the design. No-op on non-MapRenderer surfaces.
+    {
+      const targetRenderer = this.viewports.getRendererAt(targetSlot)
+      if (targetRenderer instanceof MapRenderer) {
+        targetRenderer.setDatasetCredits(dataset)
+      }
     }
     this.infoDisplayOverride = null
     this.renderInfoPanel()
@@ -2110,6 +2127,11 @@ class InteractiveSphere {
     panel.dataset = null
     panel.image = null
     const renderer = this.viewports.getRendererAt(slot)
+    if (renderer instanceof MapRenderer) {
+      // Drop the panel's dataset-credits phantom source so Tools
+      // → Credits no longer surfaces a stale attribution.
+      renderer.setDatasetCredits(null)
+    }
     if (renderer) {
       renderer.removeCloudOverlay?.()
       renderer.removeNightLights?.()
@@ -2375,11 +2397,16 @@ class InteractiveSphere {
     stopPlaybackLoop(this.playback)
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
-    for (const panel of this.panelStates) {
+    for (let i = 0; i < this.panelStates.length; i++) {
+      const panel = this.panelStates[i]
       if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
       if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
       panel.dataset = null
       panel.image = null
+      const renderer = this.viewports.getRendererAt(i)
+      if (renderer instanceof MapRenderer) {
+        renderer.setDatasetCredits(null)
+      }
     }
   }
 

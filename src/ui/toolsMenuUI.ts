@@ -73,6 +73,13 @@ export interface ToolsMenuCallbacks {
   onToggleDatasetInfo?: (visible: boolean) => void
   /** User toggled legend visibility. */
   onToggleLegend?: (visible: boolean) => void
+  /** User clicked Credits — open the credits / attribution
+   *  dialog. The Tools menu hands its always-visible toggle
+   *  button as `trigger` so the credits panel can restore focus
+   *  there when it closes (the menu item itself is hidden by
+   *  closePopover() before the dialog opens, so it isn't a
+   *  reliable focus target). */
+  onOpenCredits?: (trigger: HTMLElement) => void
   /** Announce something for screen readers. */
   announce?: (message: string) => void
   /** Get the currently loaded dataset (used by the Share action). */
@@ -101,7 +108,7 @@ export function initToolsMenu(
 
   const gateMeetOrbit = isTauri()
 
-  const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, announce } = callbacks
+  const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, onOpenCredits, announce } = callbacks
   const currentLayout = viewports.getLayout()
 
   container.classList.remove('hidden')
@@ -179,8 +186,13 @@ export function initToolsMenu(
           <span class="tools-menu-item-label">Meet Orbit&nbsp;&rarr;</span>
         </a>`}
       </section>
-      <section class="tools-menu-section" aria-label="Privacy">
-        <h4 class="tools-menu-section-title">Privacy</h4>
+      <section class="tools-menu-section" aria-label="About">
+        <h4 class="tools-menu-section-title">About</h4>
+        ${onOpenCredits ? `
+        <button type="button" class="tools-menu-item" id="tools-menu-credits">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Credits&hellip;</span>
+        </button>` : ''}
         <button type="button" class="tools-menu-item" id="tools-menu-privacy">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Privacy settings&hellip;</span>
@@ -358,6 +370,23 @@ export function initToolsMenu(
     closePopover()
     onOpenOrbitSettings?.()
   })
+
+  // Credits button is only rendered when `onOpenCredits` is wired
+  // (see template above). Skipping the listener entirely when the
+  // callback is absent means there's no dead control in the DOM —
+  // the About section just shows Privacy.
+  if (onOpenCredits) {
+    const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
+    creditsBtn?.addEventListener('click', () => {
+      closePopover()
+      // Pass the Tools toggle button (which stays visible as the
+      // popover's anchor) as the credits panel's focus-restore
+      // target. The menu item itself is hidden by closePopover()
+      // above, so it can't reliably receive focus on close.
+      onOpenCredits(toggleBtn)
+      announce?.('Credits opened')
+    })
+  }
 
   const privacyBtn = document.getElementById('tools-menu-privacy') as HTMLButtonElement | null
   privacyBtn?.addEventListener('click', () => {
