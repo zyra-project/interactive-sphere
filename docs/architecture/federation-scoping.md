@@ -657,8 +657,30 @@ remains canonical; the container is a federation-only peer.
 
 ## 6. Recommendation
 
-**Adopt Hybrid 2 first, then Hybrid 1, never adopt Path B as
-designed.**
+**Adopt Hybrid 2 first, then Hybrid 1, then Hybrid 3 as the
+Tier 1 reference implementation; do not adopt Path B as
+originally designed.**
+
+> **Refined by §8 resolutions (2026-05-04 interview).** This
+> recommendation was originally written before the scoping
+> interview as "Hybrid 2 → Hybrid 1, never anything else." §8
+> Decision 2 ("both fork and low-burden install paths matter")
+> and Decision 3 ("Cloudflare-canonical for full nodes,
+> runtime-agnostic for the lightweight peer") together promote
+> Hybrid 3 from "third option to keep on the table" to a
+> first-class committed deliverable — the Tier 1 read-only peer
+> appliance with no Cloudflare dependencies.
+>
+> **The "do not adopt Path B" line still holds for the original
+> Path B shape**: a Zyra-maintained Cloud-portability layer with
+> AWS / GCP / Postgres reference adapters. The Tier 1 lightweight
+> peer is not that — it is a single small artifact with a narrow
+> surface (well-known + feed consumption + read-only catalog API),
+> not a full-node alternate-cloud port. The original §6 reasoning
+> below is preserved as the historical rationale; the resolved
+> sequence is **Hybrid 2 (CLI to npm) → Hybrid 1 (publish protocol
+> + conformance with Phase 4) → Hybrid 3 (Tier 1 peer container,
+> near-term post-Phase-4)**.
 
 ### Why
 
