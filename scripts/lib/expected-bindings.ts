@@ -104,8 +104,10 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
     type: 'ai',
     environments: BOTH,
     hint:
-      'Workers AI binding. Without it the docent search_datasets path 503s with ' +
-      'embed_unconfigured.',
+      'Workers AI binding. Without it /api/v1/search returns 200 with ' +
+      "{ degraded: 'unconfigured' } and a Warning header (the route never 5xxs " +
+      "for missing bindings); the docent's [RELEVANT DATASETS] block stays empty " +
+      'and chip rendering relies on the local-engine fallback (1f/O).',
   },
   {
     name: 'CATALOG_VECTORIZE',
@@ -138,6 +140,9 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
     environments: BOTH,
     hint:
       'KV namespace for the telemetry runtime kill switch. Read on every ingest ' +
-      'request; absence of the binding fails closed.',
+      'request. The endpoint deliberately fails OPEN when this binding is missing ' +
+      'or its read throws (`functions/api/ingest.ts` `isKillSwitchOn`) — telemetry ' +
+      'continues to ingest. So a missing binding is operator-actionable (you lose ' +
+      'the emergency lever) but does not stop ingest.',
   },
 ]

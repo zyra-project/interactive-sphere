@@ -61,7 +61,9 @@ mismatch that silently dropped ~30 datasets from the browse list
   per-turn data to calibrate against.
 - **New operator commands:**
   - `npm run check:pages-bindings` — diff Pages bindings against
-    the expected manifest (requires `CLOUDFLARE_API_TOKEN`).
+    the expected manifest (requires `CLOUDFLARE_API_TOKEN` +
+    `CLOUDFLARE_ACCOUNT_ID`; project name defaults to `terraviz`,
+    override via `CLOUDFLARE_PAGES_PROJECT_NAME`).
   - `npm run terraviz -- verify-deploy [--skip-publish-checks]`
     — post-deploy smoke-test against the configured server.
 - **New Grafana dashboard:** `Terraviz — Orbit Cost`

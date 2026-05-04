@@ -1247,6 +1247,31 @@ export async function* processMessage(
         `[Docent] Pre-search degraded (${preSearchResult.degraded}) — ` +
           'short-circuiting to local engine to avoid an ungrounded LLM round',
       )
+      // Mirror the !llmEnabled local-fallback path: run
+      // `evaluateAutoLoad` for exact-match search intents BEFORE
+      // emitting the load-dataset action chunks. Without this an
+      // exact-title query during a degraded session would surface
+      // the dataset as a button rather than auto-loading the best
+      // match — a regression vs the chat-side-only fallback that
+      // 1f/O introduced and Copilot's 6th-round review caught.
+      if (intent.type === 'search' && searchResults) {
+        const autoResult = evaluateAutoLoad(searchResults)
+        if (autoResult) {
+          const action = {
+            type: 'load-dataset' as const,
+            datasetId: autoResult.autoLoad.id,
+            datasetTitle: autoResult.autoLoad.title,
+          }
+          const alternatives = autoResult.alternatives.map(d => ({
+            type: 'load-dataset' as const,
+            datasetId: d.id,
+            datasetTitle: d.title,
+          }))
+          yieldedIds.add(action.datasetId)
+          for (const alt of alternatives) yieldedIds.add(alt.datasetId)
+          yield { type: 'auto-load', action, alternatives }
+        }
+      }
       // Emit the local engine's load-dataset actions (chips) that
       // were skipped above because llmEnabled was true at the
       // top-of-function check. Mirrors the !llmEnabled action
