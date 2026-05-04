@@ -9,6 +9,33 @@ or by a hybrid. Evidence is drawn from the repository as of branch
 [`../CATALOG_BACKEND_PLAN.md`](../CATALOG_BACKEND_PLAN.md) and
 [`../CATALOG_FEDERATION_PROTOCOL.md`](../CATALOG_FEDERATION_PROTOCOL.md).
 
+**Last reviewed:** 2026-05-04 (initial scoping interview with Eric;
+§8 decisions captured in commit `c98bfc1`).
+
+**Revisit when any of the following becomes true:**
+
+- Phase 4 federation ships in production. At that point this doc
+  transitions from "directive" to "history" — defer to
+  `CATALOG_BACKEND_PLAN.md`.
+- The publisher-CLI pilot (§6 first step) reveals auth-flow
+  problems that invalidate the service-token assumption in
+  decision 4.
+- A non-Cloudflare partner with funding for engineering work
+  emerges, changing the calculus on decision 3.
+- The Phase 4 ETA slips past two quarters from the last-reviewed
+  date, triggering re-evaluation of the §6 sequence.
+- Any of §8's resolved decisions changes — particularly which
+  cohort federation prioritises (decision 1) or how restrictive
+  the trademark policy is (decision 8).
+
+**Supersedes when:** the §8 "Cross-doc updates implied by these
+decisions" subsection has been fully applied to the operational
+docs (`CATALOG_BACKEND_PLAN.md`, `CATALOG_FEDERATION_PROTOCOL.md`,
+`ROADMAP.md`, the §3 Path A polish entries). At that point this
+doc remains as the historical record of *how* those changes were
+decided; the catalog plan and roadmap become the active source of
+truth.
+
 ---
 
 ## Reframing — fork-vs-package is the wrong first question
