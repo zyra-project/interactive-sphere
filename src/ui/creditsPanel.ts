@@ -39,7 +39,7 @@
 
 import type { Dataset } from '../types'
 import type { ViewportManager } from '../services/viewportManager'
-import { escapeHtml } from './domUtils'
+import { escapeHtml, escapeAttr } from './domUtils'
 
 /** Source id used for the phantom dataset-credits source on each
  *  MapRenderer. Single source per map — register replaces, clear
@@ -183,6 +183,67 @@ function snapshotPanelCredits(viewports: ViewportManager): {
   return { basemap: Array.from(basemap), panels }
 }
 
+// ---------------------------------------------------------------------------
+// linkifyAttribution — render attribution text with clickable URLs
+// ---------------------------------------------------------------------------
+
+/** Match http / https URLs (whitespace-bounded). The attribution
+ *  strings TerraViz produces always have URLs at the tail of a
+ *  " · "-separated part, so trailing-punctuation edge cases don't
+ *  arise in practice. */
+const URL_RE = /(https?:\/\/[^\s]+)/g
+
+/** Belt-and-suspenders scheme whitelist. The regex above only
+ *  accepts http(s), but if a future regex change widens the
+ *  match, this guard ensures only safe schemes ever land in
+ *  href. Prevents `javascript:`, `data:`, `file:`, etc. */
+const SAFE_URL_SCHEME = /^https?:\/\//i
+
+/**
+ * Render an attribution string as HTML where URLs become clickable
+ * `<a target="_blank" rel="noopener noreferrer">` anchors and all
+ * other text is HTML-escaped.
+ *
+ * Security guards (see PR #69 review thread):
+ *   - URL_RE only matches `http://` / `https://`. Schemes like
+ *     `javascript:` or `data:` never match, so they pass through
+ *     the non-URL branch and get escaped as plain text.
+ *   - SAFE_URL_SCHEME re-checks the matched URL before wrapping
+ *     it — defense in depth in case the regex widens later.
+ *   - escapeAttr on the href value prevents quote-break attribute
+ *     injection from URLs containing `"` or `>`.
+ *   - escapeHtml on the visible URL text and the surrounding
+ *     non-URL segments prevents HTML/script injection from the
+ *     publisher-supplied attribution.
+ *   - rel="noopener noreferrer" defends against reverse
+ *     tabnabbing and strips the Referer header to the destination.
+ */
+export function linkifyAttribution(text: string): string {
+  let out = ''
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    const url = m[0]
+    const start = m.index ?? 0
+    if (start > last) {
+      out += escapeHtml(text.slice(last, start))
+    }
+    if (SAFE_URL_SCHEME.test(url)) {
+      out += `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`
+    } else {
+      // Unreachable today (URL_RE only matches http(s)), but kept
+      // as defense-in-depth: if a future regex change ever widens
+      // the match, an untrusted scheme still falls back to plain
+      // text instead of becoming a hostile href.
+      out += escapeHtml(url)
+    }
+    last = start + url.length
+  }
+  if (last < text.length) {
+    out += escapeHtml(text.slice(last))
+  }
+  return out
+}
+
 /** Build the panel DOM. Returns the backdrop element so callers
  *  can add it to the document. */
 function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCount: number): HTMLElement {
@@ -199,7 +260,7 @@ function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCoun
   panel.tabIndex = -1
 
   const basemapHtml = snapshot.basemap.length
-    ? snapshot.basemap.map(t => `<li>${escapeHtml(t)}</li>`).join('')
+    ? snapshot.basemap.map(t => `<li>${linkifyAttribution(t)}</li>`).join('')
     : '<li class="credits-empty">No basemap sources declared.</li>'
 
   // Hide empty per-panel sections in the single-panel case so the
@@ -219,7 +280,7 @@ function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCoun
       const heading = panelCount > 1 ? `Loaded — Panel ${p.panelLabel}` : 'Loaded dataset'
       return `<section class="credits-section">
                 <h3 class="credits-section-title">${heading}</h3>
-                <p class="credits-dataset">${escapeHtml(p.datasetAttribution)}</p>
+                <p class="credits-dataset">${linkifyAttribution(p.datasetAttribution)}</p>
               </section>`
     })
     .join('')

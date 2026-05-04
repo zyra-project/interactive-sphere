@@ -5,6 +5,7 @@ import {
   readBasemapAttributions,
   readDatasetAttribution,
   setDatasetCreditsSource,
+  linkifyAttribution,
   openCreditsPanel,
   closeCreditsPanel,
   isCreditsPanelOpen,
@@ -12,6 +13,16 @@ import {
   DATASET_CREDITS_SOURCE_ID,
 } from './creditsPanel'
 import type { Dataset } from '../types'
+
+// Top-level cleanup: any test that calls openCreditsPanel needs
+// disposeCreditsPanel to run so the module-scoped `mounted` flag
+// resets before the next test. Local describe-level afterEach
+// blocks aren't enough — a panel left mounted in one describe
+// would block opens in a later describe (the open call returns
+// early when mounted is already true).
+afterEach(() => {
+  disposeCreditsPanel()
+})
 
 // ---------------------------------------------------------------------------
 // composeDatasetAttribution — pure-function tests
@@ -226,6 +237,108 @@ describe('readDatasetAttribution', () => {
 
   it('returns null for null map', () => {
     expect(readDatasetAttribution(null)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// linkifyAttribution — render attribution with safe clickable URLs
+// ---------------------------------------------------------------------------
+
+describe('linkifyAttribution', () => {
+  it('returns escaped plain text when no URL is present', () => {
+    expect(linkifyAttribution('NASA Blue Marble')).toBe('NASA Blue Marble')
+    // HTML special chars in surrounding text are still escaped.
+    expect(linkifyAttribution('Some <thing>')).toBe('Some &lt;thing&gt;')
+  })
+
+  it('wraps a bare https URL in an anchor with target=_blank and rel=noopener noreferrer', () => {
+    const out = linkifyAttribution('https://example.com/dataset')
+    expect(out).toContain('<a href="https://example.com/dataset"')
+    expect(out).toContain('target="_blank"')
+    expect(out).toContain('rel="noopener noreferrer"')
+    expect(out).toContain('>https://example.com/dataset</a>')
+  })
+
+  it('preserves and anchors a URL embedded in attribution context', () => {
+    const out = linkifyAttribution('SST · Data: NOAA · Source: https://example.com/sst')
+    expect(out).toContain('SST · Data: NOAA · Source: ')
+    expect(out).toContain('<a href="https://example.com/sst"')
+  })
+
+  it('does not anchor non-http(s) schemes — javascript: passes through as escaped text', () => {
+    // javascript: doesn't match URL_RE, so it gets escaped as plain text.
+    const out = linkifyAttribution('Click javascript:alert(1) here')
+    expect(out).not.toContain('<a ')
+    expect(out).toBe('Click javascript:alert(1) here')
+  })
+
+  it('does not anchor data: URLs', () => {
+    const out = linkifyAttribution('See data:text/html,<script>alert(1)</script>')
+    expect(out).not.toContain('<a ')
+    // The HTML in the data: URL is escaped as plain text.
+    expect(out).toContain('&lt;script&gt;')
+  })
+
+  it('escapes the href value to prevent attribute-quote breakout', () => {
+    // A URL containing a quote could otherwise close the href
+    // attribute and inject markup. escapeAttr neutralises it.
+    const out = linkifyAttribution('https://example.com/"><img src=x>')
+    // The literal " inside the URL is escaped before landing in href.
+    expect(out).toContain('&quot;')
+    // The "><img src=x> tail is text-escaped, not rendered.
+    expect(out).not.toContain('<img src=x>')
+  })
+
+  it('escapes HTML in the visible URL text segment', () => {
+    // Even though the regex stops at whitespace, the URL itself
+    // may contain `<`/`>`/`&` if the publisher mis-typed. The
+    // anchor's text content escapes them.
+    const out = linkifyAttribution('https://example.com/<script>')
+    expect(out).toContain('&lt;script&gt;')
+    // No actual <script> tag in the rendered output.
+    const div = document.createElement('div')
+    div.innerHTML = out
+    expect(div.querySelector('script')).toBeNull()
+  })
+
+  it('handles multiple URLs in one attribution string', () => {
+    const out = linkifyAttribution('A: https://a.example · B: https://b.example')
+    expect((out.match(/<a /g) || []).length).toBe(2)
+    expect(out).toContain('href="https://a.example"')
+    expect(out).toContain('href="https://b.example"')
+  })
+
+  it('integrates into the rendered panel — datasets with a websiteLink get a clickable Source', () => {
+    const viewports = makeViewports([
+      makeReadOnlyMap({
+        [DATASET_CREDITS_SOURCE_ID]: { attribution: 'SST · Data: NOAA · Source: https://example.com/sst' },
+      }),
+    ])
+    openCreditsPanel(viewports)
+
+    const datasetEl = document.querySelector('.credits-dataset')!
+    const anchor = datasetEl.querySelector('a')
+    expect(anchor).not.toBeNull()
+    expect(anchor!.getAttribute('href')).toBe('https://example.com/sst')
+    expect(anchor!.getAttribute('target')).toBe('_blank')
+    expect(anchor!.getAttribute('rel')).toBe('noopener noreferrer')
+    expect(anchor!.textContent).toBe('https://example.com/sst')
+  })
+
+  it('integrates with the XSS-shape attribution from openCreditsPanel — no script execution', () => {
+    const viewports = makeViewports([
+      makeReadOnlyMap({
+        [DATASET_CREDITS_SOURCE_ID]: { attribution: '<img onerror=alert(1)> · Source: javascript:alert(2)' },
+      }),
+    ])
+    openCreditsPanel(viewports)
+
+    // No anchor was generated for the javascript: URL.
+    const dataset = document.querySelector('.credits-dataset')!
+    expect(dataset.querySelector('a')).toBeNull()
+    // The raw <img> markup is text-escaped, not rendered.
+    expect(dataset.innerHTML).toContain('&lt;img')
+    expect(dataset.querySelector('img')).toBeNull()
   })
 })
 
