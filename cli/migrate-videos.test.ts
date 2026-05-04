@@ -239,13 +239,24 @@ const FROZEN_NOW = (() => {
   }
 })()
 
+/** Default duration lookup that resolves every Vimeo id to 60 s.
+ * Tests that care about the cost guard rail (D) override this. */
+function makeFakeLookup(seconds = 60) {
+  return vi.fn(async (ids: string[]) => {
+    const m = new Map<string, number>()
+    for (const id of ids) m.set(id, seconds)
+    return m
+  })
+}
+const FAKE_LOOKUP = makeFakeLookup()
+
 describe('runMigrateVideos — plan + dry-run', () => {
   it('--dry-run prints the plan and exits 0 without mutating', async () => {
     const { client, handles } = fakeClient({
       rows: [ROW_VIDEO_VIMEO_1, ROW_VIDEO_VIMEO_2, ROW_VIDEO_STREAM, ROW_IMAGE],
     })
     const { ctx, out, err } = makeCtx(client, { 'dry-run': true })
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(0)
     expect(handles.updateDataset).not.toHaveBeenCalled()
     expect(out.text()).toContain('vimeo: rows on video/mp4: 2')
@@ -257,7 +268,7 @@ describe('runMigrateVideos — plan + dry-run', () => {
   it('filters out rows already on stream: at plan time', async () => {
     const { client } = fakeClient({ rows: [ROW_VIDEO_STREAM, ROW_VIDEO_VIMEO_1] })
     const { ctx, out } = makeCtx(client, { 'dry-run': true })
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(0)
     expect(out.text()).toContain('vimeo: rows on video/mp4: 1')
   })
@@ -265,7 +276,7 @@ describe('runMigrateVideos — plan + dry-run', () => {
   it('filters out non-video formats at plan time', async () => {
     const { client } = fakeClient({ rows: [ROW_IMAGE] })
     const { ctx, out } = makeCtx(client, { 'dry-run': true })
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(0)
     expect(out.text()).toContain('vimeo: rows on video/mp4: 0')
   })
@@ -273,14 +284,14 @@ describe('runMigrateVideos — plan + dry-run', () => {
   it('honours --limit and shows the cap in the summary', async () => {
     const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1, ROW_VIDEO_VIMEO_2] })
     const { ctx, out } = makeCtx(client, { 'dry-run': true, limit: '1' })
-    await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(out.text()).toContain('will migrate this run:    1 (capped by --limit)')
   })
 
   it('--id targets a single row via GET, skipping the list paging', async () => {
     const { client, handles } = fakeClient({ singleRow: ROW_VIDEO_VIMEO_1 })
     const { ctx, out } = makeCtx(client, { id: ROW_VIDEO_VIMEO_1.id, 'dry-run': true })
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(0)
     expect(handles.list).not.toHaveBeenCalled()
     expect(handles.get).toHaveBeenCalledWith(ROW_VIDEO_VIMEO_1.id)
@@ -290,7 +301,7 @@ describe('runMigrateVideos — plan + dry-run', () => {
   it('--id pointing at a non-vimeo row prints a skip and exits 0', async () => {
     const { client, handles } = fakeClient({ singleRow: ROW_IMAGE })
     const { ctx, err } = makeCtx(client, { id: ROW_IMAGE.id })
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(0)
     expect(handles.updateDataset).not.toHaveBeenCalled()
     expect(err.text()).toContain('Skipping')
@@ -299,7 +310,7 @@ describe('runMigrateVideos — plan + dry-run', () => {
   it('exits 2 when --limit is non-positive', async () => {
     const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
     const { ctx, err } = makeCtx(client, { limit: '0' })
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(2)
     expect(err.text()).toContain('--limit must be a positive integer')
   })
@@ -312,7 +323,7 @@ describe('runMigrateVideos — plan + dry-run', () => {
     try {
       const { client, handles } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
       const { ctx, err } = makeCtx(client)
-      const code = await runMigrateVideos(ctx, { skipPace: true })
+      const code = await runMigrateVideos(ctx, { skipPace: true, lookupVimeoDurations: FAKE_LOOKUP })
       expect(code).toBe(2)
       expect(handles.updateDataset).not.toHaveBeenCalled()
       expect(err.text()).toContain('STREAM_ACCOUNT_ID and STREAM_API_TOKEN')
@@ -331,9 +342,104 @@ describe('runMigrateVideos — plan + dry-run', () => {
     }))
     const stub = { serverUrl: 'x', list, get: vi.fn(), updateDataset: vi.fn() }
     const { ctx, err } = makeCtx(stub as unknown as TerravizClient)
-    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG })
+    const code = await runMigrateVideos(ctx, { skipPace: true, streamConfig: STREAM_CONFIG, lookupVimeoDurations: FAKE_LOOKUP })
     expect(code).toBe(1)
     expect(err.text()).toContain('Could not list datasets (401)')
+  })
+})
+
+describe('runMigrateVideos — cost guard rail (Phase 2 D)', () => {
+  it('prints the cost summary on every run including --dry-run', async () => {
+    const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1, ROW_VIDEO_VIMEO_2] })
+    const { ctx, out } = makeCtx(client, { 'dry-run': true })
+    const code = await runMigrateVideos(ctx, {
+      skipPace: true,
+      streamConfig: STREAM_CONFIG,
+      lookupVimeoDurations: makeFakeLookup(120), // 2 min/row × 2 rows = 4 min
+    })
+    expect(code).toBe(0)
+    expect(out.text()).toContain('Cost estimate')
+    expect(out.text()).toContain('total minutes:            4')
+    expect(out.text()).toContain('rows with known duration: 2 / 2')
+    expect(out.text()).toMatch(/≈ \$0\.00\/month storage/)
+  })
+
+  it('aborts with exit 2 when total minutes exceed --max-minutes', async () => {
+    const { client, handles } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1, ROW_VIDEO_VIMEO_2] })
+    const { ctx, err } = makeCtx(client, { 'max-minutes': '0.05' }) // 3 s ceiling
+    const code = await runMigrateVideos(ctx, {
+      skipPace: true,
+      streamConfig: STREAM_CONFIG,
+      lookupVimeoDurations: makeFakeLookup(60),
+      resolveVimeo: fakeResolveVimeoFn(),
+      uploadToStream: fakeUploadToStreamFn(),
+    })
+    expect(code).toBe(2)
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(err.text()).toMatch(/exceeds --max-minutes=0\.05/)
+  })
+
+  it('default --max-minutes is 300 — typical 138-row catalog (~140 min) fits', async () => {
+    // Simulate 138 rows × 1 min average. Use a lookup that returns 60 s
+    // for any id so the sum lands at 138 min.
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      ...ROW_VIDEO_VIMEO_1,
+      id: `DS${String(i + 1).padStart(5, '0')}` + 'A'.repeat(21),
+      data_ref: `vimeo:${100 + i}`,
+    }))
+    const { client } = fakeClient({ rows })
+    const { ctx, out } = makeCtx(client, { 'dry-run': true })
+    const code = await runMigrateVideos(ctx, {
+      skipPace: true,
+      streamConfig: STREAM_CONFIG,
+      lookupVimeoDurations: makeFakeLookup(60),
+    })
+    expect(code).toBe(0)
+    expect(out.text()).toContain('--max-minutes guard rail: 300')
+  })
+
+  it('--max-minutes <= 0 is rejected with exit 2', async () => {
+    const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
+    const { ctx, err } = makeCtx(client, { 'max-minutes': '0' })
+    const code = await runMigrateVideos(ctx, {
+      skipPace: true,
+      streamConfig: STREAM_CONFIG,
+      lookupVimeoDurations: FAKE_LOOKUP,
+    })
+    expect(code).toBe(2)
+    expect(err.text()).toContain('--max-minutes must be a positive number')
+  })
+
+  it('surfaces the missing-duration count when oembed misses', async () => {
+    const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1, ROW_VIDEO_VIMEO_2] })
+    const { ctx, out } = makeCtx(client, { 'dry-run': true })
+    const partialLookup = vi.fn(async (ids: string[]) => {
+      const m = new Map<string, number>()
+      // Resolve only the first id; the second has no duration.
+      if (ids.length > 0) m.set(ids[0], 30)
+      return m
+    })
+    const code = await runMigrateVideos(ctx, {
+      skipPace: true,
+      streamConfig: STREAM_CONFIG,
+      lookupVimeoDurations: partialLookup,
+    })
+    expect(code).toBe(0)
+    expect(out.text()).toContain('rows with known duration: 1 / 2')
+    expect(out.text()).toContain('missing durations:        1')
+  })
+
+  it('cost estimate respects --limit (sums only the rows that will run)', async () => {
+    const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1, ROW_VIDEO_VIMEO_2] })
+    const { ctx, out } = makeCtx(client, { 'dry-run': true, limit: '1' })
+    const code = await runMigrateVideos(ctx, {
+      skipPace: true,
+      streamConfig: STREAM_CONFIG,
+      lookupVimeoDurations: makeFakeLookup(180),
+    })
+    expect(code).toBe(0)
+    // Only the first row (3 min), not both (6 min).
+    expect(out.text()).toContain('total minutes:            3')
   })
 })
 
@@ -348,6 +454,7 @@ describe('runMigrateVideos — live migration', () => {
       streamConfig: STREAM_CONFIG,
       resolveVimeo,
       uploadToStream,
+      lookupVimeoDurations: FAKE_LOOKUP,
       emitTelemetry: e => {
         events.push(e)
       },
@@ -385,6 +492,7 @@ describe('runMigrateVideos — live migration', () => {
       streamConfig: STREAM_CONFIG,
       resolveVimeo: fakeResolveVimeoFn(),
       uploadToStream,
+      lookupVimeoDurations: FAKE_LOOKUP,
       skipPace: true,
     })
     const meta = (uploadToStream.mock.calls[0][3] as { meta?: { name?: string } } | undefined)?.meta
@@ -400,6 +508,7 @@ describe('runMigrateVideos — live migration', () => {
         streamConfig: STREAM_CONFIG,
         resolveVimeo: fakeResolveVimeoFn({ failResolve: true }),
         uploadToStream: fakeUploadToStreamFn(),
+        lookupVimeoDurations: FAKE_LOOKUP,
         emitTelemetry: e => {
           events.push(e)
         },
@@ -423,6 +532,7 @@ describe('runMigrateVideos — live migration', () => {
         streamConfig: STREAM_CONFIG,
         resolveVimeo: fakeResolveVimeoFn(),
         uploadToStream: fakeUploadToStreamFn({ fail: true }),
+        lookupVimeoDurations: FAKE_LOOKUP,
         emitTelemetry: e => {
           events.push(e)
         },
@@ -448,6 +558,7 @@ describe('runMigrateVideos — live migration', () => {
         streamConfig: STREAM_CONFIG,
         resolveVimeo: fakeResolveVimeoFn(),
         uploadToStream: fakeUploadToStreamFn(),
+        lookupVimeoDurations: FAKE_LOOKUP,
         emitTelemetry: e => {
           events.push(e)
         },
@@ -472,6 +583,7 @@ describe('runMigrateVideos — live migration', () => {
         streamConfig: STREAM_CONFIG,
         resolveVimeo: fakeResolveVimeoFn(),
         uploadToStream: fakeUploadToStreamFn(),
+        lookupVimeoDurations: FAKE_LOOKUP,
         emitTelemetry: () => {
           throw new Error('telemetry endpoint down')
         },
@@ -493,6 +605,7 @@ describe('runMigrateVideos — live migration', () => {
       streamConfig: STREAM_CONFIG,
       resolveVimeo: fakeResolveVimeoFn(),
       uploadToStream: fakeUploadToStreamFn(),
+      lookupVimeoDurations: FAKE_LOOKUP,
       skipPace: true,
     })
     expect(code).toBe(0)
@@ -509,6 +622,7 @@ describe('runMigrateVideos — live migration', () => {
         streamConfig: STREAM_CONFIG,
         resolveVimeo: fakeResolveVimeoFn(),
         uploadToStream: fakeUploadToStreamFn(),
+        lookupVimeoDurations: FAKE_LOOKUP,
         emitTelemetry: e => {
           events.push(e)
         },

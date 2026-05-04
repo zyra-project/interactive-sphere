@@ -640,6 +640,7 @@ Commands:
                                       forces public-only.
 
   migrate-videos [--dry-run] [--limit=N] [--id=<id>] [--pace-ms=N]
+                 [--max-minutes=N]
                                       One-shot operator pump that migrates legacy
                                       vimeo:<id> data_refs to stream:<uid> by
                                       re-uploading the source MP4 to Cloudflare
@@ -648,9 +649,11 @@ Commands:
                                       Idempotent — re-running skips rows already
                                       on stream:. Always run --dry-run first.
                                       Sequential, paced (default 5 s between
-                                      rows). See CATALOG_BACKEND_DEVELOPMENT.md
-                                      "Migrating legacy Vimeo data refs to
-                                      Stream".
+                                      rows). --max-minutes (default 300)
+                                      hard-fails if the cost estimate exceeds
+                                      the budget. See
+                                      CATALOG_BACKEND_DEVELOPMENT.md "Migrating
+                                      legacy Vimeo data refs to Stream".
 
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)

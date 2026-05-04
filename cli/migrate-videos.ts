@@ -52,6 +52,7 @@
 
 import { resolveVimeo as resolveVimeoLib } from './lib/vimeo-fetch'
 import { uploadToStream as uploadToStreamLib, type StreamUploadConfig } from './lib/stream-upload'
+import { lookupVimeoDurations as lookupVimeoDurationsLib } from './lib/vimeo-duration'
 import type { CommandContext } from './commands'
 import { getString, getNumber, getBool } from './lib/args'
 
@@ -82,6 +83,22 @@ interface DatasetUpdateEnvelope {
 const LIST_PAGE_LIMIT = 200
 const DEFAULT_PACE_MS = 5_000
 
+/**
+ * Default cost guard rail in minutes. Decision 2 in the Phase 2
+ * brief: 138 rows × ~1 min average ≈ 140 min ≈ $0.14/mo storage on
+ * Cloudflare Stream's $1/1000-min rate. 300 keeps ~2× headroom over
+ * the realistic ceiling — tight enough that exceeding it means
+ * something genuinely surprising is in the catalog (a mis-imported
+ * full-length film, a row pointing at the wrong Vimeo ID), loose
+ * enough not to trip on the long tail of legitimate ~6-min narrated
+ * videos.
+ *
+ * The flag is a hard fail by default. Operators can pass a higher
+ * `--max-minutes=N` explicitly if a budgeted run needs more head-
+ * room; the value is captured in shell history alongside the run.
+ */
+const DEFAULT_MAX_MINUTES = 300
+
 /** Outcome enum. Mirrors the `migration_video` telemetry event's
  * `outcome` field (commit E) — keep these in sync. */
 export type MigrationOutcome =
@@ -107,6 +124,8 @@ export interface MigrateVideoDeps {
   resolveVimeo?: typeof resolveVimeoLib
   /** DI for the stream-upload helper. Defaults to the production import. */
   uploadToStream?: typeof uploadToStreamLib
+  /** DI for the duration-lookup helper used by the cost guard rail. */
+  lookupVimeoDurations?: typeof lookupVimeoDurationsLib
   /** Telemetry sink. Defaults to a no-op (commit E swaps in the
    * real implementation). */
   emitTelemetry?: (event: MigrationResult) => void | Promise<void>
@@ -120,6 +139,9 @@ export interface MigrateVideoDeps {
   /** Skip the inter-row pacing wait — set to `true` from tests so
    * a four-row walk doesn't burn 15 s on `setTimeout`. */
   skipPace?: boolean
+  /** Override the duration-cache path. Tests use a tmpdir; the
+   * production default is `.cache/vimeo-durations.json`. */
+  durationCachePath?: string
 }
 
 function loadStreamConfigFromEnv(): StreamUploadConfig {
@@ -215,6 +237,67 @@ async function buildPlan(
     cursor = result.body.next_cursor ?? undefined
   } while (cursor)
   return candidates
+}
+
+interface CostEstimate {
+  /** Total minutes summed over rows with a known duration. */
+  totalMinutes: number
+  /** Number of rows whose duration could not be resolved. */
+  missingDurations: number
+  /** Total rows considered. */
+  rowCount: number
+}
+
+/**
+ * Walk the migration plan and sum the Vimeo metadata duration for
+ * each row. Reads from the on-disk cache; misses go to the oembed
+ * probe and the cache is rewritten at the end.
+ *
+ * Always called once per run — even on `--dry-run` — so the
+ * operator sees the cost summary before deciding whether to
+ * commit. The summary surfaces the count of unknown durations
+ * separately so the operator can decide whether to proceed when a
+ * subset of rows couldn't be probed (Vimeo geofencing, deleted
+ * videos, oembed rate-limited, etc).
+ */
+async function estimateCost(
+  plan: MigrationCandidate[],
+  lookup: typeof lookupVimeoDurationsLib,
+  cachePath: string | undefined,
+): Promise<CostEstimate> {
+  const ids = plan.map(c => c.vimeoId)
+  const durations = await lookup(ids, { cachePath })
+  let totalSeconds = 0
+  let missing = 0
+  for (const id of ids) {
+    const seconds = durations.get(id)
+    if (seconds === undefined) {
+      missing++
+      continue
+    }
+    totalSeconds += seconds
+  }
+  return {
+    totalMinutes: totalSeconds / 60,
+    missingDurations: missing,
+    rowCount: ids.length,
+  }
+}
+
+function printCostSummary(ctx: CommandContext, estimate: CostEstimate, maxMinutes: number): void {
+  // Stream pricing: $1 / 1000 min stored. (Delivery is symmetric.)
+  // The per-month estimate is what an operator actually sees on the
+  // bill, so it's the more useful number to surface.
+  const totalMinutes = Math.round(estimate.totalMinutes * 10) / 10
+  const monthlyDollars = (estimate.totalMinutes / 1000).toFixed(2)
+  ctx.stdout.write(
+    `Cost estimate (Cloudflare Stream storage):\n` +
+      `  total minutes:            ${totalMinutes}\n` +
+      `  rows with known duration: ${estimate.rowCount - estimate.missingDurations} / ${estimate.rowCount}\n` +
+      `  missing durations:        ${estimate.missingDurations}\n` +
+      `  ≈ \$${monthlyDollars}/month storage at \$1 / 1000 min\n` +
+      `  --max-minutes guard rail: ${maxMinutes}\n`,
+  )
 }
 
 function printPlanSummary(ctx: CommandContext, plan: MigrationCandidate[], limit: number): void {
@@ -318,6 +401,7 @@ export async function runMigrateVideos(
   const limitFlag = getNumber(ctx.args.options, 'limit')
   const dryRun = getBool(ctx.args.options, 'dry-run')
   const paceMs = getNumber(ctx.args.options, 'pace-ms') ?? DEFAULT_PACE_MS
+  const maxMinutes = getNumber(ctx.args.options, 'max-minutes') ?? DEFAULT_MAX_MINUTES
 
   if (limitFlag !== undefined && limitFlag < 1) {
     ctx.stderr.write(`--limit must be a positive integer (got ${limitFlag}).\n`)
@@ -327,12 +411,33 @@ export async function runMigrateVideos(
     ctx.stderr.write(`--pace-ms must be non-negative (got ${paceMs}).\n`)
     return 2
   }
+  if (maxMinutes <= 0) {
+    ctx.stderr.write(`--max-minutes must be a positive number (got ${maxMinutes}).\n`)
+    return 2
+  }
 
   const plan = await buildPlan(ctx, targetId)
   if (plan === null) return 1
 
   const limit = limitFlag ?? plan.length
   printPlanSummary(ctx, plan, limit)
+
+  // Cost guard rail. Always runs (including on --dry-run) so the
+  // operator sees the cost summary up front. Hard-fails when the
+  // total exceeds --max-minutes; the operator can pass a higher
+  // value explicitly, but there's no silent override.
+  const lookup = deps.lookupVimeoDurations ?? lookupVimeoDurationsLib
+  const work = plan.slice(0, limit)
+  const estimate = await estimateCost(work, lookup, deps.durationCachePath)
+  printCostSummary(ctx, estimate, maxMinutes)
+  if (estimate.totalMinutes > maxMinutes) {
+    ctx.stderr.write(
+      `\nAborting: estimated ${estimate.totalMinutes.toFixed(1)} minutes exceeds ` +
+        `--max-minutes=${maxMinutes}. Pass a higher --max-minutes if this is expected, ` +
+        `or use --limit / --id to reduce the batch size.\n`,
+    )
+    return 2
+  }
 
   if (dryRun) {
     ctx.stdout.write('\nDry run — no rows will be migrated. Re-run without --dry-run to apply.\n')
@@ -357,7 +462,6 @@ export async function runMigrateVideos(
   const now = deps.now ?? Date.now
   const emitTelemetry = deps.emitTelemetry ?? (() => {})
 
-  const work = plan.slice(0, limit)
   const counts: Record<MigrationOutcome, number> = {
     ok: 0,
     vimeo_fetch_failed: 0,
