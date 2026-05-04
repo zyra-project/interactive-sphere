@@ -1,35 +1,34 @@
 cff-version: 1.2.0
 title: TerraViz
-message: 'Interactive 3D globe for exploring Earth science datasets with AI-guided navigation, HLS video streaming, and NASA GIBS imagery.'
+message: "If you use this software, please cite it using the metadata below."
 type: software
 authors:
   - given-names: Eric
     family-names: Hackathorn
     email: eric.j.hackathorn@noaa.gov
-    orcid: 'https://orcid.org/0000-0002-9693-2093'
+    orcid: "https://orcid.org/0000-0002-9693-2093"
     affiliation: NOAA Global Systems Laboratory
-identifiers:
-  - type: doi
-    value: 10.5281/zenodo.XXXXXX
-    description: Zenodo DOI
-repository-code: 'https://github.com/zyra-project/terraviz'
-url: 'https://terraviz.zyra-project.org/'
-repository: 'https://pypi.org/project/zyra/'
+repository-code: "https://github.com/zyra-project/terraviz"
+url: "https://terraviz.zyra-project.org/"
 abstract: >-
-What This Project Does
-The Terraviz project is a web-based viewer that brings SOS datasets to any device — phone, tablet, or laptop. It streams NOAA's curated environmental
-data onto a navigable 3D globe, putting the same visualizations that live inside science museums directly in the hands of anyone with a browser.
-Optional desktop versions for Windows, Mac, and Linux are available for those that need the extra power and don't mind the install.
-Why It Matters
-Environmental literacy is a prerequisite for an informed society. People cannot act on what they cannot see — and most people never get to stand in
-front of a Science on a Sphere installation. Geography, mobility, access, and cost all create gaps between NOAA's data and the public it was collected to serve.
-This project closes those gaps. Every dataset made accessible online is one more student in a rural school who can watch a hurricane form, one more
-community member who can understand why their coastline is changing, one more person who can connect planetary data to lived experience.
-The mission is simple: lower the barriers, expand the audience, and help create an environmentally literate society.
+  TerraViz is a web-based viewer that brings Science On a Sphere datasets to
+  any device — phone, tablet, or laptop. It streams NOAA's curated
+  environmental data onto a navigable 3D globe, putting the same
+  visualizations that live inside science museums directly in the hands of
+  anyone with a browser. Optional desktop versions for Windows, macOS, and
+  Linux are available for users who need additional performance.
+
+  TerraViz aims to lower the barriers between NOAA's scientific data and the
+  public it was collected to serve, expanding access beyond the geographic
+  and institutional constraints of physical Science On a Sphere
+  installations.
 keywords:
-  - Type Script
+  - TypeScript
   - data visualization
   - scientific visualization
+  - 3D globe
+  - Earth science
   - open science
   - NOAA
+  - Science On a Sphere
 license: Apache-2.0
