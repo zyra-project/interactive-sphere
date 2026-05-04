@@ -16,15 +16,21 @@ referenced in [`README.md`](README.md).
 
 ---
 
-## Phase 1f — Cutover stabilisation (PR forthcoming)
+## Phase 1f — Cutover stabilisation (PR #62)
 
 **Released:** May 2026
-**Branch:** `claude/cutover-stabilisation-phase-1f-*`
-**Commits:** 1f/A through 1f/H — eight logical changes.
+**Branch:** `claude/cutover-stabilization-phase-1f-EwThP`
+**Commits:** 1f/A through 1f/O — fifteen logical changes
+(eight planned + seven follow-ons across review feedback and a
+live-reported regression).
 
 The Phase 1d cutover landed safely but the live deploy surfaced
 operator-experience and cost-observability friction the plan didn't
-predict. Phase 1f closes those gaps.
+predict. Phase 1f closes those gaps. Three Copilot review rounds
+on top of the original plan caught a verify-deploy contract bug
+that would have shipped broken (1f/M) and a JPEG renderer
+mismatch that silently dropped ~30 datasets from the browse list
+(1f/K, operator-reported, confirmed fixed live).
 
 | Commit | Summary |
 |---|---|
@@ -36,6 +42,13 @@ predict. Phase 1f closes those gaps.
 | 1f/F | `terraviz verify-deploy` CLI subcommand. Per-check pass/fail/skip table for the post-deploy smoke-test from CATALOG_BACKEND_DEVELOPMENT.md. |
 | 1f/G | `docs/SELF_HOSTING.md` Phase 8 walkthrough refresh. Catalog-stack bindings, Workers Paid recommendation, snapshot import, post-deploy verification. |
 | 1f/H | This file. |
+| 1f/I | Round-1 Copilot fixes: cache-key correctness, listener cleanup, badge wording, helper API tightening, doc drift. |
+| 1f/J | Round-2 Copilot fixes: never cache degraded responses, cross-platform entrypoint detection, follow-on wording-drift sweeps. |
+| 1f/K | **Regression fix.** Operator-reported: ~30 JPEG datasets (incl. "Age of the Seafloor") silently filtered from the browse list because the SPA's `isImageDataset` didn't recognise the publisher API's canonical `image/jpeg`. Confirmed fixed live by the operator. |
+| 1f/L | Catalog-source `normaliseSourceFormat` collapses legacy SOS JPEG typos to canonical `image/jpeg`; `image/webp` added to `isImageDataset` to match the validator's `FORMAT_VALUES` surface. |
+| 1f/M | Round-3 Copilot fixes: `verify-deploy` was built against an imagined `/api/v1/search` contract (used `hits`, expected 503 for degraded). Real route returns `datasets` and signals degraded via 200+`body.degraded`+`Warning` header. Tests + check + doc all corrected. |
+| 1f/N | Round-4 Copilot fixes: drop "Capacity temporarily exceeded" pattern from the quota classifier (load-shedding ≠ quota); emit `wrong_type` from `diffBindings` so binding-name+wrong-bucket collisions surface as one row instead of two; add chat UI tests for the degraded badge (initial render, live updates, double-init guard). |
+| 1f/O | Round-5 Copilot fixes: `wrong_type` now fails `check-pages-bindings` (was exit 0); search-side degraded short-circuits the LLM round and routes to the local engine instead of letting the chat call burn a second quota check on an ungrounded prompt; this changelog entry brought up to date. |
 
 ### Operator-visible changes
 
@@ -74,6 +87,17 @@ returns 404 just with a different envelope shape).
 - **Verify-deploy false-fail:** the command runs read-only HTTP
   probes — no rollback needed; reproduce locally with the same
   `--server` flag and add a stub case in `cli/lib/verify-checks.ts`.
+- **JPEG renderer (1f/K, 1f/L):** revert the `image/jpeg` /
+  `image/webp` additions to `DatasetFormat` and `isImageDataset`
+  to fall back to the legacy typo'd MIME set. Will re-introduce
+  the silent-drop bug; only useful if a different fork's
+  catalog source has been hand-canonicalised to those legacy
+  values.
+- **Search-degraded short-circuit (1f/O):** revert the
+  `if (needsPreSearch && preSearchResult.degraded)` block in
+  `processMessage`. The badge still flips correctly via the
+  state-update path; the chat call resumes burning quota on
+  ungrounded prompts.
 
 ---
 

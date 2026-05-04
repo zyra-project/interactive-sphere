@@ -458,6 +458,68 @@ describe('processMessage — pre-search injection (1d/AC)', () => {
     expect(searchFetchCount).toBe(0)
     expect(userMessageContent).not.toContain('[RELEVANT DATASETS')
   })
+
+  it('1f/O — short-circuits to local engine when pre-search returns degraded', async () => {
+    // The brief promised "the docent transparently routes through
+    // the local-engine fallback" when search degrades. Pre-1f/O the
+    // search-side path only flipped the badge and returned empty
+    // hits — the LLM still got called with an empty
+    // [RELEVANT DATASETS] block and either confabulated IDs (chips
+    // stripped) or short-circuited with no recommendations. This
+    // test pins the new behaviour: degraded pre-search → no LLM
+    // round, local-engine result wins, fallback flag set.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        return new Response(
+          JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    mockedStream.mockImplementation(async function* () {
+      // If the short-circuit works, this generator never runs.
+      yield { type: 'delta' as const, text: 'LLM SHOULD NOT FIRE' }
+      yield { type: 'done' as const }
+    })
+    // `vi.mocked(streamChat)` is module-scoped — call counts
+    // leak from prior tests in the file. Reset just before our
+    // assertion to scope the count to this case only.
+    mockedStream.mockClear()
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me datasets about hurricanes', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // The LLM stream must NOT have been invoked.
+    expect(mockedStream).not.toHaveBeenCalled()
+    // The terminal chunk must mark this turn as a fallback.
+    const done = chunks.find(c => c.type === 'done') as
+      | { type: 'done'; fallback: boolean }
+      | undefined
+    expect(done?.fallback).toBe(true)
+    // None of the emitted text should be the LLM's stub.
+    const text = chunks
+      .filter(c => c.type === 'delta')
+      .map(c => (c as { type: 'delta'; text: string }).text)
+      .join('')
+    expect(text).not.toContain('LLM SHOULD NOT FIRE')
+  })
 })
 
 describe('processMessage — auto-inject Load buttons', () => {

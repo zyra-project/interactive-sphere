@@ -91,25 +91,38 @@ export async function runCheck(deps: RunDeps): Promise<number> {
   deps.stdout.write(`Pages bindings audit — project "${projectName}"\n\n`)
   deps.stdout.write(formatDiffTable(entries) + '\n')
 
-  const missing = entries.filter(e => e.status === 'missing')
-  const summary = summariseMissing(missing)
-  if (missing.length === 0) {
+  // Phase 1f/O — `wrong_type` is also a hard failure (the binding
+  // exists under the wrong Pages binding type, so the route still
+  // 503s at runtime — same operator-pain shape as `missing`).
+  // Pre-1f/O the script counted only `missing`, so a wrong-type
+  // misconfig would exit 0 + "All required bindings present" even
+  // though the deploy is broken.
+  const broken = entries.filter(
+    e => e.status === 'missing' || e.status === 'wrong_type',
+  )
+  if (broken.length === 0) {
     deps.stdout.write(
       '\nAll required bindings present in both Production and Preview. ✓\n',
     )
     return 0
   }
-  deps.stdout.write(`\n${summary}\n`)
+  deps.stdout.write(`\n${summariseBroken(broken)}\n`)
   return 1
 }
 
-function summariseMissing(missing: DiffEntry[]): string {
-  if (missing.length === 0) return ''
+function summariseBroken(broken: DiffEntry[]): string {
+  if (broken.length === 0) return ''
+  const missing = broken.filter(e => e.status === 'missing')
+  const wrongType = broken.filter(e => e.status === 'wrong_type')
   const byEnv = new Map<string, number>()
-  for (const m of missing) byEnv.set(m.environment, (byEnv.get(m.environment) ?? 0) + 1)
+  for (const m of broken) byEnv.set(m.environment, (byEnv.get(m.environment) ?? 0) + 1)
   const parts = [...byEnv.entries()].map(([env, n]) => `${n} in ${env}`)
+  const detail =
+    wrongType.length > 0
+      ? `${broken.length} required binding(s) broken (${missing.length} missing, ${wrongType.length} wrong type) — ${parts.join(', ')}.`
+      : `${broken.length} required binding(s) missing — ${parts.join(', ')}.`
   return (
-    `${missing.length} required binding(s) missing — ${parts.join(', ')}.\n` +
+    `${detail}\n` +
     'Wire them in the dashboard under Settings → Variables and Bindings,\n' +
     'then trigger a redeploy (Step 5 of CATALOG_BACKEND_DEVELOPMENT.md).'
   )

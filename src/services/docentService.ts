@@ -537,7 +537,7 @@ export function clearPreSearchCache(): void {
 export async function executeSearchDatasets(
   args: Record<string, unknown>,
   config: DocentConfig,
-): Promise<{ datasets: SearchDatasetsHit[] }> {
+): Promise<{ datasets: SearchDatasetsHit[]; degraded?: 'unconfigured' | 'quota_exhausted' }> {
   // Phase 1f/I — canonicalise once and use the canonical form for
   // BOTH the cache key and the wire `q=` parameter. Pre-1f/I the
   // cache keyed off the canonical form but sent the raw query on
@@ -606,8 +606,16 @@ export async function executeSearchDatasets(
   // at a binding that may get wired up mid-session. Caching either
   // would lock the same query into the empty result for the full
   // 5-minute TTL even after the underlying condition clears.
+  //
+  // Phase 1f/O — also propagate `degraded` up to processMessage so
+  // it can short-circuit the LLM round on discovery turns and use
+  // the local engine instead of burning another quota check on a
+  // search-degraded session.
   if (degradedReason !== undefined) {
-    return { datasets: hits }
+    return {
+      datasets: hits,
+      degraded: degradedReason as 'unconfigured' | 'quota_exhausted',
+    }
   }
 
   preSearchCache.set(cacheKey, { hits, expiresAt: now + PRE_SEARCH_CACHE_TTL_MS })
@@ -1217,9 +1225,45 @@ export async function* processMessage(
       intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
     const preSearchQuery =
       intent.type === 'search' ? intent.query : intent.type === 'category' ? intent.category : input
-    const preSearchHits = needsPreSearch
-      ? (await executeSearchDatasets({ query: preSearchQuery, limit: 5 }, cfg)).datasets
-      : []
+    const preSearchResult = needsPreSearch
+      ? await executeSearchDatasets({ query: preSearchQuery, limit: 5 }, cfg)
+      : { datasets: [] as SearchDatasetsHit[] }
+    const preSearchHits = preSearchResult.datasets
+    // Phase 1f/O — search returned degraded (Workers AI quota
+    // exhausted or embed bindings unconfigured). Short-circuit the
+    // LLM round and fall through to the local engine: the LLM
+    // would receive an empty [RELEVANT DATASETS] block and either
+    // confabulate IDs (validator strips them, no chips) or
+    // short-circuit with no recommendations. The local engine
+    // searches the in-memory catalog and produces real chips
+    // immediately, which is the better degraded UX. The badge
+    // (already flipped via markDegradedState inside
+    // executeSearchDatasets when degraded='quota_exhausted')
+    // signals the state to the user. Only triggers on discovery
+    // intents — non-discovery turns don't pre-search and aren't
+    // affected.
+    if (needsPreSearch && preSearchResult.degraded) {
+      logger.warn(
+        `[Docent] Pre-search degraded (${preSearchResult.degraded}) — ` +
+          'short-circuiting to local engine to avoid an ungrounded LLM round',
+      )
+      // Emit the local engine's load-dataset actions (chips) that
+      // were skipped above because llmEnabled was true at the
+      // top-of-function check. Mirrors the !llmEnabled action
+      // emission but inlined here because we only know to fire it
+      // after the pre-search returns degraded.
+      if (localResponse.actions) {
+        for (const action of localResponse.actions) {
+          if (action.type === 'load-dataset' && !yieldedIds.has(action.datasetId)) {
+            yieldedIds.add(action.datasetId)
+            yield { type: 'action', action }
+          }
+        }
+      }
+      yield { type: 'delta', text: localResponse.text }
+      yield { type: 'done', fallback: true }
+      return
+    }
 
     let preSearchContext = ''
     if (preSearchHits.length > 0) {
