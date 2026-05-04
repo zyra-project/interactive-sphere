@@ -416,6 +416,39 @@ code, kbd, pre {
   object-fit: contain;
 }
 
+/* Wide logo slot — for stacked-text marks like the GSL logo whose
+   natural aspect is wider than tall. Lets the image keep its real
+   ratio at the standard 96px height instead of being letterboxed
+   into a 96×96 square. */
+.hero__logo--wide {
+  width: auto;
+  min-width: 96px;
+  max-width: 200px;
+  height: 96px;
+}
+.hero__logo--wide img {
+  width: auto;
+  height: 100%;
+}
+
+/* QR figure — wraps the QR image (or placeholder) with a small
+   caption underneath, matching the "View Online" treatment used
+   in the Data Depot poster. */
+.hero__qr-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.hero__qr-caption {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--terra-accent-text);
+}
+
 .hero__center { text-align: center; }
 
 .hero__title {
@@ -3830,9 +3863,6 @@ a.stack__item-name:focus-visible::after,
             <img src="assets/logos/noaa-logo.svg" alt="NOAA">
           </div>
           <div class="hero__logo hero__logo--img">
-            <img src="assets/logos/noaa-gsl-logo.png" alt="NOAA Global Systems Laboratory">
-          </div>
-          <div class="hero__logo hero__logo--img">
             <img src="assets/logos/zyra-logo.png" alt="Zyra">
           </div>
         </div>
@@ -3854,9 +3884,18 @@ a.stack__item-name:focus-visible::after,
           </div>
         </div>
 
-        <div class="hero__qrs" aria-hidden="true">
-          <div class="hero__qr">QR<br>web app</div>
-          <div class="hero__qr">QR<br>GitHub</div>
+        <div class="hero__qrs">
+          <div class="hero__logo hero__logo--img hero__logo--wide">
+            <img src="assets/logos/noaa-gsl-logo.png" alt="NOAA Global Systems Laboratory">
+          </div>
+          <figure class="hero__qr-figure">
+            <div class="hero__qr" aria-hidden="true">QR<br>web app</div>
+            <figcaption class="hero__qr-caption">View Online</figcaption>
+          </figure>
+          <figure class="hero__qr-figure">
+            <div class="hero__qr" aria-hidden="true">QR<br>GitHub</div>
+            <figcaption class="hero__qr-caption">Source</figcaption>
+          </figure>
         </div>
       </div>
     </section>
