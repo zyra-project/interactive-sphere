@@ -3,9 +3,30 @@
  */
 
 /**
- * Supported dataset formats
+ * Supported dataset formats.
+ *
+ * The canonical set mirrors the publisher API's `FORMAT_VALUES`
+ * allow-list (`functions/api/v1/_lib/validators.ts`):
+ * `video/mp4`, `image/png`, `image/jpeg`, `image/webp`,
+ * `tour/json`. Anything a publisher can upload, the SPA can
+ * render.
+ *
+ * `image/jpg` and `images/jpg` are the legacy SOS-catalog typos
+ * (preserved verbatim in the upstream JSON). They're normalised
+ * to `image/jpeg` at the source-fetch boundary by
+ * `dataService.normaliseSourceFormat` (Phase 1f/L), so post-
+ * normalisation SPA code only ever sees `image/jpeg`. They stay
+ * in the union as defensive types in case a fork bypasses the
+ * normaliser; the renderer tolerates them too (Phase 1f/K).
  */
-export type DatasetFormat = 'video/mp4' | 'image/png' | 'image/jpg' | 'images/jpg' | 'tour/json'
+export type DatasetFormat =
+  | 'video/mp4'
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/webp'
+  | 'image/jpg'
+  | 'images/jpg'
+  | 'tour/json'
 
 /**
  * Core dataset metadata from SOS API

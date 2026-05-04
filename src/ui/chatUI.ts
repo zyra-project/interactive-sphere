@@ -11,6 +11,11 @@ import type { Dataset } from '../types'
 import { escapeHtml, escapeAttr } from './domUtils'
 import { createMessageId } from '../services/docentEngine'
 import { processMessage, loadConfig, loadConfigWithKey, saveConfig, testConnection, getDefaultConfig, isLocalDev, IS_TAURI, captureViewContext } from '../services/docentService'
+import {
+  getDegradedReason,
+  subscribe as subscribeDegraded,
+  type DegradedReason,
+} from '../services/docentDegradedState'
 import { captureGlobeScreenshot } from '../services/screenshotService'
 import { ensureLoaded as ensureQALoaded } from '../services/qaService'
 import { fetchModels } from '../services/llmProvider'
@@ -61,6 +66,12 @@ let pendingGlobeActions: ChatAction[] = []
 /** Tracks dataset load actions clicked per message (implicit positive feedback). */
 const actionClickMap = new Map<string, string[]>()
 
+/** Phase 1f/I — held across initChatUI calls so a re-init (test
+ * teardown / hot reload) releases the prior listener instead of
+ * accumulating them. Production calls initChatUI exactly once at
+ * boot, so this is purely defensive. */
+let degradedUnsubscribe: (() => void) | null = null
+
 /**
  * Initialize the chat UI with callbacks and restore session.
  */
@@ -77,6 +88,52 @@ export function initChatUI(cb: ChatCallbacks): void {
   // Collapse trigger to icon-only if user has opened chat before
   if (localStorage.getItem(CHAT_OPENED_KEY)) {
     document.getElementById('chat-trigger')?.classList.add('collapsed')
+  }
+  // Phase 1f/D — render an initial degraded badge if the docent
+  // already detected quota exhaustion before the chat UI booted
+  // (e.g. when the disclosure banner triggered an early search),
+  // and keep it in sync with state changes for the session. Release
+  // any prior subscription first so a re-init doesn't double-listen.
+  renderDegradedBadge(getDegradedReason())
+  degradedUnsubscribe?.()
+  degradedUnsubscribe = subscribeDegraded(state =>
+    renderDegradedBadge(state.reason),
+  )
+}
+
+/**
+ * Inject / refresh the "Reduced functionality" badge inside the
+ * chat panel. Idempotent — repeated calls update the existing
+ * element rather than appending duplicates.
+ */
+function renderDegradedBadge(reason: DegradedReason | null): void {
+  const panel = document.getElementById('chat-panel')
+  if (!panel) return
+  let badge = document.getElementById('chat-degraded-badge') as HTMLDivElement | null
+  if (reason === null) {
+    badge?.remove()
+    return
+  }
+  if (!badge) {
+    badge = document.createElement('div')
+    badge.id = 'chat-degraded-badge'
+    badge.className = 'chat-degraded-badge'
+    badge.setAttribute('role', 'status')
+    badge.setAttribute('aria-live', 'polite')
+    panel.prepend(badge)
+  }
+  badge.textContent = degradedBadgeText(reason)
+}
+
+function degradedBadgeText(reason: DegradedReason): string {
+  switch (reason) {
+    case 'quota_exhausted':
+      // Phase 1f/I — text matches the state's actual semantics. The
+      // SPA only flips this reason in response to a Workers AI 4006
+      // (quota *exhausted*, not "approaching"). The earlier
+      // "approaching limit" copy implied a softer state than the
+      // server signals.
+      return 'Reduced functionality — Workers AI quota reached. Suggestions are using offline matching until it recovers.'
   }
 }
 

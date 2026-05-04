@@ -430,6 +430,27 @@ distributions and answer "what fraction of turns are
 tool-calling now?" empirically. Field positions:
 [`docs/ANALYTICS_QUERIES.md` § `orbit_turn`](ANALYTICS_QUERIES.md#orbit_turn).
 
+Phase 1f/E ships the dashboard that consumes those fields:
+**[Terraviz — Orbit Cost](../grafana/dashboards/orbit-cost.json)**.
+Panels:
+
+- **Turn rounds distribution** — direct (`turn_rounds=1`) vs
+  tool-calling (`≥2`) per day, stacked. The ratio is the leading
+  indicator of per-turn cost; a sustained shift toward
+  tool-calling means more neurons burned per turn.
+- **Total LLM rounds per day** — `sum(turn_rounds)` across all
+  assistant turns. The raw cost driver for free-tier neuron
+  exhaustion.
+- **Turn duration p95** — split by direct / tool-calling. A
+  widening gap suggests the LLM is taking more rounds to answer,
+  an early signal of regression in the system prompt or grounding
+  payload.
+- **Top 10 hashed query terms (browse search)** — frequency
+  ranking via `browse_search.query_hash`. The docent's per-turn
+  text is not hashed at emit time (raw user prompts would defeat
+  the privacy contract), so the panel uses browse-side as a proxy
+  for "topics users are exploring".
+
 ### Account-level setup (production-leaning)
 
 Most contributors never touch this. You only need it if you are
