@@ -49,6 +49,94 @@ is where the most likely answer lives.
 
 ---
 
+## Design goals
+
+Three goals scope every decision in this document. They are
+user-stated intent, not derived from the codebase; the rest of
+the doc should be read as "how does this serve (or fail) them."
+
+### Goal 1 — Scale to many partners, not just the first one
+
+The architecture supports a network of nodes from the start, not
+a hub-and-spoke between Zyra and one early adopter. Per-partner
+adapters (an AWS reference because Amazon showed up, a GCP
+reference for the next partner, …) fail at N=2: each adapter is
+a long-term maintenance commitment we'd rather not own. Investment
+goes into the **protocol and the conformance contract**, not into
+adapters Zyra maintains.
+
+### Goal 2 — Maximise partner choice; minimise required vendors
+
+A partner can join the catalog network without being forced into
+a commercial relationship with any specific vendor — including
+Cloudflare (the canonical node's vendor) and Zyra. Concretely:
+
+- **No required language.** JSON-over-HTTP, JSON Schema published.
+- **No required cloud.** Protocol is implementable on any HTTP server.
+- **No required identity provider.** HMAC + Ed25519 are sufficient
+  for federation; richer auth is partner choice.
+- **No required hosting model.** Container, fork, serverless, or
+  bare-metal all viable.
+
+This rules out "Zyra builds and maintains AWS adapters as a
+deliverable." It also rules out picking any single partner's cloud
+as a second reference implementation. The spec is the reference;
+the runtime is whatever the partner chooses.
+
+### Goal 3 — Reduce the technical burden of joining to its smallest form
+
+A partner pays only the cost matching what they actually want.
+Tiered on-ramps:
+
+| Tier | Partner does | Burden |
+|---|---|---|
+| **0 — Publisher** | `terraviz publish dataset.yaml` on a schedule against the canonical node. No node hosted; data appears in the canonical catalog. | Minutes — same shape as a CI deploy step. |
+| **1 — Read-only peer** | Subscribe to a canonical node's feed; mirror catalog metadata; serve locally. No publishing. | Hours; single config file + container or fork. |
+| **2 — Full peer** | Publish own data, host assets, federate bidirectionally. | Days; scales with how much custom infra the partner brings. |
+| **3 — Custom implementation** | Write own node in any language from the published spec. | Weeks. The conformance suite is the contract. |
+
+Tier 0 must work *today* — the publisher CLI in `cli/` is the
+hand-it-over moment, gated only on shipping it to npm.
+Tier 1 is the focus of the post-Phase-4 work and the lowest-burden
+generic on-ramp for partners who want operational control without
+running a full publishing stack. Tier 2 follows once Phase 4 lands.
+Tier 3 is gated only by publishing the spec + conformance, not by
+Zyra shipping anything specific to that partner.
+
+### What these goals change about the rest of this document
+
+- **Path B-as-runtime-artifact does not survive Goal 2.** Path B
+  assumed Zyra would maintain a portable runtime artifact for
+  partners. Goal 2 says the spec is the artifact; the runtime is
+  the partner's choice. The thing Path B *was trying to deliver*
+  — easy joining for non-Cloudflare partners — is delivered by
+  Tier 1 + Tier 3 read against the published spec, with no
+  Zyra-maintained non-Cloudflare runtime.
+- **§7 Directive 2 (publish JSON Schema + protocol CHANGELOG) is
+  promoted from "important" to load-bearing.** It is the only
+  thing that makes Goals 1 and 2 real. Without a published spec,
+  partners depend on us; with one, they don't.
+- **§5 Hybrid 3 (lightweight peer appliance) is promoted from
+  footnote to first-class.** A small reference container that
+  serves the well-known doc + federation feed only — runnable
+  anywhere, in any language — is Tier 1's reference
+  implementation. Roughly a weekend's work post-Phase-4 if §7
+  Directives 1 and 2 are in place.
+- **Amazon (or any non-Cloudflare partner) is steered toward
+  Tier 3, not toward asking us to build their tier.** They are
+  the partner type that can implement against the spec; Zyra's
+  role is to make the spec implementable, not to write their
+  node for them.
+
+The remainder of this document was drafted before these goals
+were stated. Where §5 and §6 read as if Path B's runtime artifact
+were a real option, the goals above supersede them. The
+Recommendation in §6 and the directives in §7 align with these
+goals already; this section makes the alignment explicit so the
+trade-offs aren't re-litigated later.
+
+---
+
 ## 1. Current State Assessment
 
 ### What Terraviz actually is, today
