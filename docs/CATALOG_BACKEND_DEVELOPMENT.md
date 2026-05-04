@@ -740,6 +740,144 @@ The Pages-owning account's subscription is what counts; upgrading
 a personal account doesn't help if the Pages project lives under
 an org. Settings → Billing → Subscriptions on the right account.
 
+### Migrating legacy Vimeo data refs to Stream
+
+Phase 1d's bulk import of the legacy SOS catalog landed ~138 video
+rows with `data_ref: vimeo:<id>` — playback proxied through
+`video-proxy.zyra-project.org`. Phase 2 (`terraviz migrate-videos`)
+walks those rows, re-uploads the source MP4 into Cloudflare Stream,
+and PATCHes `data_ref` to `stream:<uid>`. After the migration,
+playback runs through Stream's HLS edges directly and the proxy
+becomes load-bearing only for the period before retirement (≥1
+month observation post-migration).
+
+**One-time, operator-driven.** This is not a CI job. Don't run it
+from a CI worker, don't run it from the implementation branch —
+run it from your laptop against the production server with a
+service-token configured.
+
+#### Pre-flight (always run dry-run first)
+
+The migration is idempotent — re-runs skip rows already on
+`stream:`. The first thing to verify is the cost estimate:
+
+```sh
+export STREAM_ACCOUNT_ID=...      # same value used by the Pages binding
+export STREAM_API_TOKEN=...       # same token used by the Pages binding
+export TERRAVIZ_SERVER=https://your-domain
+export TERRAVIZ_ACCESS_CLIENT_ID=...
+export TERRAVIZ_ACCESS_CLIENT_SECRET=...
+
+npm run terraviz -- migrate-videos --dry-run
+```
+
+The dry-run output prints:
+
+- The migration plan (number of `vimeo:` rows + the first 5 by id).
+- A cost estimate from Vimeo's `oembed` endpoint, summed in
+  minutes. ~138 rows × ~1 min average ≈ ~140 min ≈ ~$0.14/month
+  storage on Cloudflare Stream's $1/1000-min rate.
+- The `--max-minutes` budget (default 300). Hard-fails if the
+  estimate exceeds it.
+- The "missing durations" count — rows oembed couldn't resolve
+  (deleted videos, geofencing). Migration still tries those, but
+  the cost summary doesn't include them.
+
+The first oembed pass populates `.cache/vimeo-durations.json` (this
+file is gitignored). Subsequent dry-runs are instantaneous.
+
+If the cost estimate looks wrong (a 2-hour entry that should be 5
+min, say), inspect the cache file before re-running — it's plain
+JSON and the operator can hand-edit a stale entry, or delete the
+file to re-probe.
+
+#### Live migration
+
+Once the dry-run looks right:
+
+```sh
+# Sanity batch — migrate 5 rows, verify on the SPA, then continue.
+npm run terraviz -- migrate-videos --limit=5
+
+# Full run — sequential, paced 5 s between rows.
+# A 138-row run takes roughly 15-30 min depending on Vimeo upstream.
+npm run terraviz -- migrate-videos
+```
+
+Per-row stdout shows `[<dataset_id>] vimeo:<vimeo_id> →
+stream:<stream_uid> (<bytes> bytes, <ms> ms)`. Failures go to
+stderr with the outcome (`vimeo_fetch_failed`,
+`stream_upload_failed`, `data_ref_patch_failed`).
+
+The session id printed at the start of the run lets you correlate
+the per-row events on the Grafana migration row (Tools → Product
+Health → "Migration video progress").
+
+#### What the commit point is
+
+The data_ref PATCH (step 3 of each row) is the migration's commit
+point. Before it: the row is still on `vimeo:` and playback runs
+through the proxy unchanged. After it: the row is on `stream:` and
+playback runs through Stream.
+
+Failure modes:
+
+- `vimeo_fetch_failed` — the source isn't fetchable. Row is
+  unchanged. No Stream upload was attempted, so no orphan UID.
+- `stream_upload_failed` — TUS create or PATCH failed. Row is
+  unchanged. Stream may have allocated a UID server-side that
+  never received bytes; Cloudflare's documented behaviour is to
+  reap incomplete uploads automatically.
+- `data_ref_patch_failed` — the upload completed, but the
+  publisher API rejected the PATCH. The orphan Stream UID is
+  captured in the `migration_video.stream_uid` telemetry field
+  for that row. Re-run the migration: idempotency picks up where
+  we left off, but the orphan UID stays in Stream until manually
+  deleted via the Stream dashboard.
+
+#### Recovery from partial failures
+
+Re-running `terraviz migrate-videos` is the recovery path. The
+plan-time filter skips rows already on `stream:` so already-
+migrated rows are no-ops. Failed rows attempt fresh — a new Stream
+UID is minted, the upload is re-driven, the data_ref patches.
+
+#### Rollback
+
+There is no `--reverse` flag (deferred to a follow-on commit if it
+ever proves common). Single-row rollback is a manual data_ref
+update via the existing PUT route:
+
+```sh
+npm run terraviz -- update <dataset_id> '{"data_ref":"vimeo:<original_id>"}'
+```
+
+The manifest endpoint resolves both schemes, so reverting a row to
+`vimeo:` immediately restores proxy-based playback.
+
+Stream UIDs are not easily deletable from the operator side — the
+dashboard's delete is a soft-delete that becomes hard-delete after
+~30 days. If you need to immediately free the storage line item,
+use the Stream API's DELETE endpoint via the same `STREAM_API_TOKEN`.
+
+#### Pacing
+
+The default 5-second inter-row pace is conservative — sized to
+avoid tripping Vimeo's per-IP throttle on the upstream proxy.
+Override with `--pace-ms=N` for a faster run; consider `--pace-ms=0`
+only if you've confirmed the upstream isn't rate-limiting.
+
+#### Observation window
+
+Per Phase 2's stated non-goal: the video-proxy stays running until
+the migration is 100% complete AND has been observed for ≥1 month.
+The Grafana migration row is the headline observation surface —
+"% video/mp4 rows still on `vimeo:`" should be 0 by the end of the
+run, and remain 0 in steady state. A non-zero reading after the
+fact means a stray legacy row was re-imported (re-run the
+migration) or the manifest endpoint regressed somehow (page the
+on-call engineer).
+
 ## Stack
 
 - **Wrangler** (`wrangler pages dev`) is the runner. It loads the
