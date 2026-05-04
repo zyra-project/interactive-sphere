@@ -109,6 +109,27 @@ function sampleTourBuiltins(): Dataset[] {
 }
 
 /**
+ * Phase 1f/L — collapse the legacy SOS catalog's non-standard
+ * JPEG MIME values to the standard `image/jpeg` at the
+ * source-fetch boundary. The publisher API's validator already
+ * canonicalises on the way in (`functions/api/v1/_lib/validators.ts`
+ * `FORMAT_VALUES`); this mirror on the read path means the SPA's
+ * downstream code (logs, analytics, debugger views) only ever
+ * sees one canonical JPEG value regardless of which catalog
+ * source the deploy reads from. The renderer (`isImageDataset`)
+ * still tolerates the legacy values as defense in depth — a
+ * future fork that bypasses this normaliser keeps working
+ * rather than silently dropping rows like the cutover did
+ * pre-1f/K.
+ */
+export function normaliseSourceFormat<T extends { format?: DatasetFormat }>(d: T): T {
+  if (d.format === 'image/jpg' || d.format === 'images/jpg') {
+    return { ...d, format: 'image/jpeg' as DatasetFormat }
+  }
+  return d
+}
+
+/**
  * Fetches and caches the SOS dataset catalog, merges enriched metadata,
  * and provides lookup/filter helpers for the rest of the application.
  *
@@ -168,7 +189,9 @@ export class DataService {
       // Build enriched lookup map by normalized title
       this.enrichedMap = this.buildEnrichedMap(enrichedData)
 
-      const rawDatasets = [...s3Response.data.datasets, ...sampleTourBuiltins()]
+      const rawDatasets = [...s3Response.data.datasets, ...sampleTourBuiltins()].map(
+        normaliseSourceFormat,
+      )
 
       // Filter, sort, and enrich datasets
       const datasets = rawDatasets
@@ -244,6 +267,7 @@ export class DataService {
     fromNode.push(...sampleTourBuiltins())
 
     return fromNode
+      .map(normaliseSourceFormat)
       .filter(d => !d.isHidden && !HIDDEN_TOUR_IDS.has(d.id) && this.isSupportedDataset(d))
       .sort((a, b) => (b.weight || 0) - (a.weight || 0))
   }
@@ -415,9 +439,40 @@ export class DataService {
     return dataset.format === 'video/mp4'
   }
 
-  /** True if the dataset format is a supported image type (PNG or JPEG). */
+  /**
+   * True if the dataset format is a supported image type. The set
+   * mirrors the publisher API's `FORMAT_VALUES` allow-list
+   * (`functions/api/v1/_lib/validators.ts`) so anything a
+   * publisher can upload, the SPA can render:
+   *
+   *   - `image/png`
+   *   - `image/jpeg` — the standard MIME and what the publisher
+   *     API canonicalises to
+   *   - `image/webp` — accepted by the validator since 1c; no
+   *     catalog rows use it today, but keeping the gate in sync
+   *     with the validator means a future publisher uploading
+   *     WebP doesn't get silently dropped from the browse list
+   *     (Phase 1f/M)
+   *   - `image/jpg` / `images/jpg` — legacy SOS-catalog typos.
+   *     Normalised to `image/jpeg` at the source-fetch boundary
+   *     by `normaliseSourceFormat` (Phase 1f/L); the renderer
+   *     tolerance is defense-in-depth in case a fork bypasses
+   *     the normaliser.
+   *
+   * Pre-Phase-1f-cleanup this function only accepted the legacy
+   * typo'd values, which silently dropped every imported JPEG
+   * row from the browse list — visible to operators as "the
+   * catalog suddenly shrank by ~30 datasets after the cutover"
+   * (1f/K).
+   */
   isImageDataset(dataset: Dataset): boolean {
-    return dataset.format === 'image/png' || dataset.format === 'image/jpg' || dataset.format === 'images/jpg'
+    return (
+      dataset.format === 'image/png' ||
+      dataset.format === 'image/jpeg' ||
+      dataset.format === 'image/webp' ||
+      dataset.format === 'image/jpg' ||
+      dataset.format === 'images/jpg'
+    )
   }
 
   /** True if the dataset format is a guided tour. */

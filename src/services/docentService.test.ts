@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
-import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime, executeSearchDatasets, executeListFeaturedDatasets } from './docentService'
+import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime, executeSearchDatasets, executeListFeaturedDatasets, clearPreSearchCache } from './docentService'
+import { getDegradedReason, resetForTests as resetDegradedForTests } from './docentDegradedState'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -38,6 +39,11 @@ beforeEach(() => {
   vi.restoreAllMocks()
   // Clear localStorage
   try { localStorage.clear() } catch { /* ok */ }
+  // Drop the per-session pre-search LRU so cache hits from one
+  // test don't leak into the next.
+  clearPreSearchCache()
+  // Reset Phase 1f/D degraded-mode state between tests.
+  resetDegradedForTests()
 })
 
 describe('processMessage — local fallback', () => {
@@ -451,6 +457,68 @@ describe('processMessage — pre-search injection (1d/AC)', () => {
     // and the injected block should not appear.
     expect(searchFetchCount).toBe(0)
     expect(userMessageContent).not.toContain('[RELEVANT DATASETS')
+  })
+
+  it('1f/O — short-circuits to local engine when pre-search returns degraded', async () => {
+    // The brief promised "the docent transparently routes through
+    // the local-engine fallback" when search degrades. Pre-1f/O the
+    // search-side path only flipped the badge and returned empty
+    // hits — the LLM still got called with an empty
+    // [RELEVANT DATASETS] block and either confabulated IDs (chips
+    // stripped) or short-circuited with no recommendations. This
+    // test pins the new behaviour: degraded pre-search → no LLM
+    // round, local-engine result wins, fallback flag set.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        return new Response(
+          JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    mockedStream.mockImplementation(async function* () {
+      // If the short-circuit works, this generator never runs.
+      yield { type: 'delta' as const, text: 'LLM SHOULD NOT FIRE' }
+      yield { type: 'done' as const }
+    })
+    // `vi.mocked(streamChat)` is module-scoped — call counts
+    // leak from prior tests in the file. Reset just before our
+    // assertion to scope the count to this case only.
+    mockedStream.mockClear()
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me datasets about hurricanes', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // The LLM stream must NOT have been invoked.
+    expect(mockedStream).not.toHaveBeenCalled()
+    // The terminal chunk must mark this turn as a fallback.
+    const done = chunks.find(c => c.type === 'done') as
+      | { type: 'done'; fallback: boolean }
+      | undefined
+    expect(done?.fallback).toBe(true)
+    // None of the emitted text should be the LLM's stub.
+    const text = chunks
+      .filter(c => c.type === 'delta')
+      .map(c => (c as { type: 'delta'; text: string }).text)
+      .join('')
+    expect(text).not.toContain('LLM SHOULD NOT FIRE')
   })
 })
 
@@ -1903,6 +1971,172 @@ describe('executeListFeaturedDatasets', () => {
     expect(url.pathname).toBe('/api/v1/featured')
     // Host is the app origin (window.location), NOT api.openai.com.
     expect(url.host).not.toBe('api.openai.com')
+  })
+})
+
+describe('executeSearchDatasets — per-session pre-search cache (1f/C)', () => {
+  it('serves a repeat call within the TTL window from cache without a second fetch', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ datasets: [{ id: 'X', title: 't', abstract_snippet: '', categories: [], peer_id: 'p', score: 0.5 }] }), { status: 200 }),
+      )
+    const a = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    const b = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(a).toEqual(b)
+  })
+
+  it('canonicalises trivial query variations onto the same cache entry', async () => {
+    // mockImplementation returns a fresh Response each call — Response
+    // bodies are single-read, so mockResolvedValue would re-share a
+    // consumed body across calls and route through the catch path.
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    await executeSearchDatasets({ query: 'Hurricanes  ', limit: 5 }, baseConfig)
+    await executeSearchDatasets({ query: 'hurricanes!', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches when the limit changes', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    await executeSearchDatasets({ query: 'hurricanes', limit: 10 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache transient failures (non-OK or thrown)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    // First call: server 500. Second call: server 200. The 500 should
+    // not poison the cache — the second call must re-issue.
+    fetchSpy
+      .mockResolvedValueOnce(new Response('upstream', { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ datasets: [{ id: 'Y', title: 't', abstract_snippet: '', categories: [], peer_id: 'p', score: 0.5 }] }), { status: 200 }),
+      )
+    const first = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    expect(first.datasets).toEqual([])
+    const second = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    expect(second.datasets).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('expires entries past the TTL', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-05-01T12:00:00.000Z'))
+      await executeSearchDatasets({ query: 'tides', limit: 5 }, baseConfig)
+      // 5 min + 1 ms past the TTL.
+      vi.setSystemTime(new Date('2026-05-01T12:05:00.001Z'))
+      await executeSearchDatasets({ query: 'tides', limit: 5 }, baseConfig)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('evicts the least-recently-touched entry past the LRU limit', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    // Fill 16 distinct queries — exactly at the limit.
+    for (let i = 0; i < 16; i++) {
+      await executeSearchDatasets({ query: `topic-${i}`, limit: 5 }, baseConfig)
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(16)
+    // 17th query evicts topic-0.
+    await executeSearchDatasets({ query: 'topic-16', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(17)
+    // topic-1 was the next-oldest; assert it's still cached BEFORE
+    // the topic-0 lookup, because that lookup is a miss + insert
+    // that would itself evict topic-1.
+    await executeSearchDatasets({ query: 'topic-1', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(17)
+    // topic-0 is no longer cached → re-fetches.
+    await executeSearchDatasets({ query: 'topic-0', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(18)
+  })
+
+  it('clearPreSearchCache forces the next call to refetch', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    await executeSearchDatasets({ query: 'aurora', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    clearPreSearchCache()
+    await executeSearchDatasets({ query: 'aurora', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('executeSearchDatasets — quota-exhausted degraded handling (1f/D)', () => {
+  it('marks the SPA degraded when the response carries degraded=quota_exhausted', async () => {
+    expect(getDegradedReason()).toBeNull()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+        { status: 200 },
+      ),
+    )
+    const result = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(result.datasets).toEqual([])
+    expect(getDegradedReason()).toBe('quota_exhausted')
+  })
+
+  it('does not flip the badge for the unconfigured degraded reason', async () => {
+    expect(getDegradedReason()).toBeNull()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ datasets: [], degraded: 'unconfigured' }),
+        { status: 200 },
+      ),
+    )
+    await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(getDegradedReason()).toBeNull()
+  })
+
+  it('does not cache a degraded response (1f/J — transient by nature)', async () => {
+    // First call: server returns degraded=quota_exhausted (empty hits).
+    // Second call (same query): server now returns real hits — quota
+    // recovered. Without the 1f/J fix the second call would hit the
+    // cache and serve empty hits for the rest of the TTL window.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            datasets: [
+              {
+                id: 'DS001',
+                title: 'A',
+                abstract_snippet: '',
+                categories: [],
+                peer_id: 'p',
+                score: 0.8,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+    const first = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(first.datasets).toEqual([])
+    const second = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(second.datasets).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 })
 

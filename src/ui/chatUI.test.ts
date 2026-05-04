@@ -10,6 +10,11 @@ import {
   submitFeedback,
 } from './chatUI'
 import type { ChatCallbacks } from './chatUI'
+import {
+  clearDegraded,
+  markDegraded,
+  resetForTests as resetDegradedForTests,
+} from '../services/docentDegradedState'
 
 vi.mock('../services/docentService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/docentService')>()
@@ -67,10 +72,12 @@ beforeEach(() => {
   setupDOM()
   sessionStorage.clear()
   localStorage.clear()
+  resetDegradedForTests()
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  resetDegradedForTests()
 })
 
 describe('initChatUI', () => {
@@ -98,6 +105,71 @@ describe('initChatUI', () => {
     const msgs = getMessages()
     expect(msgs).toHaveLength(2)
     expect(msgs[0].text).toBe('hello')
+  })
+})
+
+// ── Phase 1f/D + 1f/I + 1f/N — degraded-mode badge ─────────────
+describe('degraded-mode badge', () => {
+  function badgeEl(): HTMLElement | null {
+    return document.getElementById('chat-degraded-badge')
+  }
+
+  it('renders the badge on init when state is already degraded', () => {
+    // 1f/D: initChatUI synchronously reads getDegradedReason() so an
+    // early-detection (e.g. disclosure banner triggering a search
+    // before the chat UI mounts) shows up immediately rather than
+    // waiting for the next state change.
+    markDegraded('quota_exhausted')
+    initChatUI(makeCallbacks())
+    expect(badgeEl()).not.toBeNull()
+    expect(badgeEl()!.textContent).toMatch(/Workers AI quota reached/)
+    expect(badgeEl()!.getAttribute('role')).toBe('status')
+    expect(badgeEl()!.getAttribute('aria-live')).toBe('polite')
+  })
+
+  it('does not render the badge on init when state is clean', () => {
+    initChatUI(makeCallbacks())
+    expect(badgeEl()).toBeNull()
+  })
+
+  it('renders the badge when markDegraded fires after init', () => {
+    initChatUI(makeCallbacks())
+    expect(badgeEl()).toBeNull()
+    markDegraded('quota_exhausted')
+    expect(badgeEl()).not.toBeNull()
+  })
+
+  it('removes the badge when clearDegraded fires', () => {
+    initChatUI(makeCallbacks())
+    markDegraded('quota_exhausted')
+    expect(badgeEl()).not.toBeNull()
+    clearDegraded()
+    expect(badgeEl()).toBeNull()
+  })
+
+  it('does not duplicate the badge on repeated state changes', () => {
+    initChatUI(makeCallbacks())
+    markDegraded('quota_exhausted')
+    // Re-marking is a no-op at the state layer (markDegraded
+    // suppresses the listener fanout for the same reason), but
+    // even a forced re-render must not stack badge elements.
+    markDegraded('quota_exhausted')
+    expect(document.querySelectorAll('#chat-degraded-badge').length).toBe(1)
+  })
+
+  it('1f/I — re-initialising the UI does not stack listeners', () => {
+    // initChatUI is normally called once at boot; tests + hot-reload
+    // can re-call it. Pre-1f/I each call appended a fresh subscriber
+    // so a single markDegraded fired the render N times. The
+    // unsubscribe-before-resubscribe guard means after a re-init,
+    // exactly one listener still routes state changes to the DOM.
+    initChatUI(makeCallbacks())
+    initChatUI(makeCallbacks())
+    initChatUI(makeCallbacks())
+    markDegraded('quota_exhausted')
+    expect(document.querySelectorAll('#chat-degraded-badge').length).toBe(1)
+    clearDegraded()
+    expect(badgeEl()).toBeNull()
   })
 })
 

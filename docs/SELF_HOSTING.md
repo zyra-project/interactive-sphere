@@ -2,13 +2,26 @@
 
 End-to-end walkthrough for deploying your own Terraviz instance on
 Cloudflare Pages with a custom domain, the analytics pipeline, the
-admin endpoints, and (optionally) Grafana dashboards. Plan ~60–90
-minutes for a clean run-through; less if you already have a
-Cloudflare-managed domain.
+admin endpoints, the catalog backend (Phase 1 onward — datasets,
+tours, publisher API, semantic search), and (optionally) Grafana
+dashboards. Plan ~60–90 minutes for a clean run-through; add ~30
+for the catalog stack if you want the publisher API + Vectorize-
+backed search; less overall if you already have a Cloudflare-
+managed domain.
 
 This doc is the "fork it, run it yourself" path. If you're a
 contributor working on the upstream repo, see
 [`ANALYTICS_CONTRIBUTING.md`](ANALYTICS_CONTRIBUTING.md) instead.
+
+> **Heads up on the catalog stack (Phase 8 below).** The
+> click-by-click Cloudflare-dashboard instructions live in
+> [`CATALOG_BACKEND_DEVELOPMENT.md` "Production deployment
+> checklist"](CATALOG_BACKEND_DEVELOPMENT.md#production-deployment-checklist--first-deploy-walkthrough).
+> This file gives the longer-form story — what each binding does,
+> when you actually need it, and how the post-deploy verification
+> (`terraviz verify-deploy`, `npm run check:pages-bindings`) closes
+> the loop. Read both side-by-side: this doc for the why, that
+> doc for the exact click sequence.
 
 ---
 
@@ -330,6 +343,155 @@ Quick mental model:
 - The response shape is `{ data: [...], meta: [...] }`; Infinity's
   `root_selector: "data"` extracts the rows
 
+The Phase 1f/E `Terraviz — Orbit Cost` dashboard
+(`grafana/dashboards/orbit-cost.json`) is the consumer of the
+`turn_rounds` telemetry the catalog cutover added. Import it
+alongside the other three; the panels are leading indicators of
+free-tier neuron exhaustion. See
+[`grafana/README.md`](../grafana/README.md) for the import
+walkthrough.
+
+---
+
+## Phase 8 — Catalog backend (Phase 1 onward)
+
+Phase 1 of the upstream roadmap (datasets / tours / publisher API
+/ semantic search) lands a second backend stack on top of the
+analytics-only deploy described above. **You only need this phase
+if you want a self-hosted publisher experience** — the public
+viewer works fine without it (it falls back to fetching the
+upstream SOS catalog snapshot). If you're running a "private
+mirror with my own datasets" deploy, this is the phase that adds
+that.
+
+The click-by-click instructions are in
+[`CATALOG_BACKEND_DEVELOPMENT.md` "Production deployment
+checklist"](CATALOG_BACKEND_DEVELOPMENT.md#production-deployment-checklist--first-deploy-walkthrough)
+— **do not duplicate them here**. This section gives the
+conceptual framing and points operators at the right tools.
+
+### 8a. The bindings the catalog stack adds
+
+| Binding | Type | What it does | Required for |
+|---|---|---|---|
+| `CATALOG_DB` | D1 | Datasets, tours, publishers, audit_events. Same physical D1 instance as `FEEDBACK_DB`; separate migrations dir. | Everything in this phase. |
+| `CATALOG_KV` | KV | Hot-path snapshot cache for `/api/v1/catalog`. Without it the public read burns ~5 D1 reads per browse-page load. | Public catalog reads. |
+| `CATALOG_R2` | R2 | Sphere thumbnails, image data refs, legends, captions, tour JSON. Stream handles video uploads via its own API. | Asset uploads. |
+| `AI` | Workers AI | Embedding generation for the docent's `search_datasets` tool and the public `/api/v1/search`. | Semantic search + the docent's chip-rendering reliability. |
+| `CATALOG_VECTORIZE` | Vectorize | 768-dim embedding index over published datasets. Provisioned via `wrangler vectorize create terraviz-datasets --dimensions=768 --metric=cosine` plus three metadata indexes (peer_id / category / visibility). | Same as `AI`. |
+| `NODE_ID_PRIVATE_KEY_PEM` | Secret | Ed25519 keypair for federation signing (Phase 4) and `/.well-known/terraviz.json` advertisement. Generated with `npm run gen:node-key`. | Publishing anything. |
+| `PREVIEW_SIGNING_KEY` | Secret | HMAC-SHA-256 secret for preview-token signing. Without it the preview endpoints fail closed. | The CLI's `terraviz preview` command. |
+| `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` | Plaintext | Cloudflare Access app credentials for `/api/v1/publish/**`. Without them the publisher middleware 503s with `access_unconfigured`. | Publisher API access. |
+
+Every binding must be wired into **both Production and Preview
+environments** in the dashboard. The most common cutover mistake
+is "works on preview, breaks on production" (or vice versa) from
+forgetting the per-environment toggle. The `npm run
+check:pages-bindings` audit (Phase 1f/B) catches this
+automatically — see step 8d below.
+
+### 8b. Workers Paid is recommended, not optional
+
+The free tier of Workers AI gives ~10k neurons/day; a single
+docent turn that tool-calls `search_datasets` burns ~50 neurons
+across the embed + chat round-trip. A small operator deploy with
+~50 active turns/day already starts brushing against that ceiling
+during a demo week. Workers Paid raises the ceiling materially
+and adds the per-request usage telemetry the
+`Terraviz — Orbit Cost` Grafana dashboard plots.
+
+If you stay on the free tier, the Phase 1f/D quota guard rail
+(`/api/chat/completions` returns 503 `quota_exhausted` on 4006;
+the SPA shows a "Reduced functionality" badge and routes through
+the local-engine fallback) keeps the deploy usable when the
+ceiling hits. But the experience degrades — chips stop rendering
+through real search until quota recovers. Plan for Workers Paid
+on any deploy that runs a public chat surface.
+
+### 8c. Run the snapshot import
+
+Once the bindings are wired, the catalog tables are empty. Two
+paths to seed:
+
+```bash
+# Pull the upstream SOS snapshot (mirrors what terraviz.app uses):
+npx tsx scripts/refresh-sos-snapshot.ts
+
+# Import the rows via the publisher API:
+npm run terraviz -- import-snapshot \
+  --server https://your-domain \
+  --client-id $CF_ACCESS_CLIENT_ID \
+  --client-secret $CF_ACCESS_CLIENT_SECRET \
+  --dry-run        # ← always dry-run first
+
+# Once the dry-run plan looks right:
+npm run terraviz -- import-snapshot \
+  --server https://your-domain \
+  --client-id $CF_ACCESS_CLIENT_ID \
+  --client-secret $CF_ACCESS_CLIENT_SECRET
+```
+
+The import is idempotent — re-running skips rows whose `legacy_id`
+is already published. Walks the full SOS catalog (~600 rows) in
+a few minutes; embed jobs run async in the background and back-
+fill the Vectorize index over the next ~10 minutes.
+
+### 8d. Verify the deploy
+
+Two operator-friendly tools ship for post-deploy verification.
+**Run both** before declaring the cutover done:
+
+```bash
+# Audit the dashboard's binding state — catches per-environment
+# typos and missing toggles:
+CLOUDFLARE_API_TOKEN=... \
+CLOUDFLARE_ACCOUNT_ID=... \
+npm run check:pages-bindings
+
+# Smoke-test every step from the deploy checklist via HTTP probes:
+TERRAVIZ_ACCESS_CLIENT_ID=... \
+TERRAVIZ_ACCESS_CLIENT_SECRET=... \
+npm run terraviz -- verify-deploy --server https://your-domain
+```
+
+`check:pages-bindings` reads the project's actual binding set
+from the Cloudflare REST API and diffs it against
+`scripts/lib/expected-bindings.ts`. Any binding missing in either
+Production or Preview shows up as `MISSING` with an operator-
+facing hint.
+
+`verify-deploy` runs the post-deploy smoke-test checklist — node
+identity advertised, catalog reachable, catalog populated, search
+responsive, Access service token round-trips, publisher view
+reads cleanly. Without a service token it skips the publisher-API
+checks rather than failing them, so you can run it before
+minting the token to verify the public surface in isolation.
+
+Both commands target the production preview deploy as the
+expected first run. The two commands read their target from
+different env vars / flags:
+
+- `check-pages-bindings` reads `CLOUDFLARE_PAGES_PROJECT_NAME`
+  (default: `terraviz`); change it to audit a different Pages
+  project's bindings.
+- `verify-deploy` reads `--server` (or `TERRAVIZ_SERVER`); change
+  it to point the HTTP smoke-test at a different deploy URL.
+
+### 8e. Next steps
+
+- Wire up the orbit-cost dashboard alongside the existing three
+  (Phase 7 above).
+- Read [`CATALOG_BACKEND_DEVELOPMENT.md` "Cost
+  model"](CATALOG_BACKEND_DEVELOPMENT.md#cost-model--what-changed-at-the-cutover)
+  to calibrate expectations on neuron burn per turn.
+- Watch the `Total LLM rounds per day` panel for the first week.
+  A sustained drift toward ~7000 rounds/day is the
+  free-tier ceiling for the typical Workers AI mix.
+- For multi-publisher deploys, work through the Cloudflare Access
+  setup so each publisher signs in via SSO. The publishers row
+  is JIT-provisioned on first sign-in; an operator with admin
+  flips `status='active'` to allow publishing.
+
 ---
 
 ## Common failure modes
@@ -388,6 +550,45 @@ mode, those events legitimately won't fire.
 The `--namespace-id` flag wants the *raw* ID (32-character hex
 string), not the namespace title. List with `wrangler kv namespace
 list` to confirm.
+
+### Publisher API returns 503 `access_unconfigured`
+
+`ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` is missing from the
+deployment. Common cause: you set them on Production but forgot
+the Preview tab (or vice versa). Confirm with `npm run
+check:pages-bindings`; if the `MISSING` row says one environment
+has them and the other doesn't, that's the per-environment
+toggle gotcha from Phase 8a.
+
+### Docent suggestions stop showing dataset chips after working briefly
+
+You've hit Workers AI free-tier neuron exhaustion. The chat
+panel shows a "Reduced functionality — Workers AI quota reached"
+badge (Phase 1f/D); the deploy is healthy, just throttled. Two
+mitigations:
+
+1. **Wait it out** — quota resets daily; the badge clears the
+   moment the next LLM call succeeds.
+2. **Move to Workers Paid** — see Phase 8b above. The
+   `Terraviz — Orbit Cost` Grafana dashboard's
+   "Total LLM rounds per day" panel tells you whether you're
+   sustainably under the ceiling or routinely brushing it.
+
+### `terraviz import-snapshot` 409s on the second run
+
+Working as designed — the importer's `legacy_id` idempotency
+check (Phase 1d) recognises rows it already published and skips
+them. Re-running is safe; if you genuinely want to re-import a
+row, retract it via `terraviz retract <id>` and then re-run the
+importer.
+
+### `terraviz verify-deploy` shows SKIP for the publisher checks
+
+Expected when no service token is configured. Mint one in
+Cloudflare Zero Trust → Access → Service Auth → Service Tokens,
+attach it to your Access app's policy as a Service Auth
+include, and re-run with
+`TERRAVIZ_ACCESS_CLIENT_ID=... TERRAVIZ_ACCESS_CLIENT_SECRET=...`.
 
 ---
 
