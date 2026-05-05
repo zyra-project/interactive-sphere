@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { getCatalogSource, isManifestUrl, resolveApiUrl } from './catalogSource'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
+import { apiFetch, getCatalogSource, isManifestUrl, resolveApiUrl } from './catalogSource'
 
 const ORIGINAL = import.meta.env.VITE_CATALOG_SOURCE
 
@@ -117,6 +117,26 @@ describe('resolveApiUrl', () => {
       )
     })
 
+    it('strips a path/query from VITE_API_ORIGIN (origin-only contract)', () => {
+      // Misconfiguration like `https://staging.example.com/foo` should
+      // produce `https://staging.example.com/api/v1/...`, NOT
+      // `https://staging.example.com/foo/api/v1/...`. The variable
+      // name promises an origin; the parser enforces it.
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        'https://staging.example.com/foo/bar?q=1'
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'https://staging.example.com/api/v1/catalog',
+      )
+    })
+
+    it('preserves a non-default port on VITE_API_ORIGIN', () => {
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        'http://staging.example.com:8080'
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'http://staging.example.com:8080/api/v1/catalog',
+      )
+    })
+
     it('ignores a malformed VITE_API_ORIGIN and falls back to default', () => {
       ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
         'not-a-url'
@@ -124,6 +144,45 @@ describe('resolveApiUrl', () => {
         'https://terraviz.zyra-project.org/api/v1/catalog',
       )
     })
+
+    it('ignores a non-http(s) VITE_API_ORIGIN and falls back to default', () => {
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        'ftp://example.com'
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'https://terraviz.zyra-project.org/api/v1/catalog',
+      )
+    })
+  })
+})
+
+describe('apiFetch', () => {
+  const tauriWindow = window as unknown as { __TAURI__?: unknown }
+
+  afterEach(() => {
+    delete tauriWindow.__TAURI__
+    vi.restoreAllMocks()
+  })
+
+  it('routes /api requests through native fetch in web builds', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    await apiFetch('/api/v1/catalog')
+    expect(fetchSpy).toHaveBeenCalledWith('/api/v1/catalog', undefined)
+  })
+
+  it('uses native fetch (NOT the Tauri plugin) for non-/api paths in Tauri', async () => {
+    // Same-origin relative paths in the Tauri webview don't need the
+    // HTTP plugin's CORS bypass and the plugin doesn't know about
+    // the webview origin. The gate has to be `isAbsolute`, not just
+    // `isTauri`, so non-rewritten paths stay on native fetch.
+    tauriWindow.__TAURI__ = {}
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    await apiFetch('/assets/test-tour.json')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith('/assets/test-tour.json', undefined)
   })
 })
 

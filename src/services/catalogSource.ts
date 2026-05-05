@@ -70,10 +70,26 @@ function isTauri(): boolean {
   )
 }
 
+/**
+ * Resolve the active API origin. Reads `VITE_API_ORIGIN` and
+ * normalises it to just `<scheme>://<host>[:port]` via the URL
+ * constructor — anything past the origin (path, query, fragment)
+ * is dropped, which matches the variable's name and prevents a
+ * misconfigured `https://staging.example.com/foo` from producing
+ * `https://staging.example.com/foo/api/v1/catalog`. Non-URL or
+ * non-http(s) values fall back to `DEFAULT_API_ORIGIN` rather
+ * than throwing, so a typo can't take desktop builds offline.
+ */
 function getApiOrigin(): string {
   const override = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim()
-  if (override && /^https?:\/\//.test(override)) return override.replace(/\/$/, '')
-  return DEFAULT_API_ORIGIN
+  if (!override) return DEFAULT_API_ORIGIN
+  try {
+    const u = new URL(override)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return DEFAULT_API_ORIGIN
+    return u.origin
+  } catch {
+    return DEFAULT_API_ORIGIN
+  }
 }
 
 /**
@@ -141,27 +157,30 @@ export function resolveApiUrl(pathOrUrl: string): string {
 /**
  * `fetch` wrapper for `/api/...` calls. Pass-through to the
  * native `fetch` in web builds. In Tauri it rewrites the path
- * via {@link resolveApiUrl} and routes through the Tauri HTTP
- * plugin to bypass webview CORS — which would otherwise reject
- * every cross-origin request because the catalog Pages Functions
- * don't set `Access-Control-Allow-Origin`. If the plugin failed
- * to load, we still attempt native fetch but emit a loud warning
- * so the failure surfaces in logs instead of looking like the
- * original silent `<!DOCTYPE` crash.
+ * via {@link resolveApiUrl} and — only for the resulting absolute
+ * `http(s)://` URL — routes through the Tauri HTTP plugin to
+ * bypass webview CORS, which would otherwise reject every
+ * cross-origin request because the catalog Pages Functions don't
+ * set `Access-Control-Allow-Origin`. Same-origin relative paths
+ * (the SPA's bundled `/assets/...`, `/sw.js`, etc.) deliberately
+ * stay on native fetch: they don't need the plugin and the plugin
+ * doesn't know about the webview origin. If the plugin failed to
+ * load for an absolute URL, we still attempt native fetch but
+ * emit a loud warning so the failure surfaces in logs instead of
+ * looking like the original silent `<!DOCTYPE` crash.
  */
 export async function apiFetch(
   pathOrUrl: string,
   init?: RequestInit,
 ): Promise<Response> {
   const url = resolveApiUrl(pathOrUrl)
-  if (isTauri()) {
+  const isAbsolute = /^https?:\/\//i.test(url)
+  if (isTauri() && isAbsolute) {
     const tauriFetch = await getTauriFetch()
     if (tauriFetch) return tauriFetch(url, init)
-    if (url !== pathOrUrl) {
-      logger.warn(
-        `[catalog] Tauri HTTP plugin unavailable; native fetch for ${url} will likely be CORS-blocked.`,
-      )
-    }
+    logger.warn(
+      `[catalog] Tauri HTTP plugin unavailable; native fetch for ${url} will likely be CORS-blocked.`,
+    )
   }
   return fetch(url, init)
 }
