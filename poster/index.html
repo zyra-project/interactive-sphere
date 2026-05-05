@@ -3836,6 +3836,69 @@ a.stack__item-name:focus-visible::after,
 @media (max-width: 700px) {
   .footer-block__container { grid-template-columns: 1fr; }
 }
+
+/* =========================================================
+   Image lightbox — full-viewport overlay for supporting
+   figure images. Helps mobile / portrait readers who need
+   a closer look at screenshots that render small in flow.
+   ========================================================= */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.5rem;
+  cursor: zoom-out;
+}
+.lightbox[hidden] { display: none; }
+
+.lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: default;
+  user-select: none;
+  border-radius: 4px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.lightbox__close:hover,
+.lightbox__close:focus-visible {
+  background: rgba(0, 0, 0, 0.85);
+  border-color: var(--terra-accent);
+  outline: none;
+}
+
+/* Cursor hint on click-zoomable images. Excludes hero logos
+   (no <figure> wrapper) and QR placeholders (text divs, not
+   <img>) — they're not lightbox-eligible. */
+section figure img {
+  cursor: zoom-in;
+}
   </style>
 </head>
 <body>
@@ -3854,6 +3917,16 @@ a.stack__item-name:focus-visible::after,
       <button type="button" class="pres-timer__btn" data-action="reset" aria-label="Reset timer">⟳</button>
       <button type="button" class="pres-timer__btn" data-action="minimize" aria-label="Minimize timer">–</button>
     </div>
+  </div>
+
+  <!-- Image lightbox overlay — hidden by default; opens when any
+       supporting <img> in a section <figure> is clicked. Wired up
+       by the IIFE at the bottom of _footer.html. Centralised here
+       so the markup exists exactly once and isn't duplicated per
+       trigger image. -->
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
+    <button type="button" class="lightbox__close" aria-label="Close image preview">&#x2715;</button>
+    <img class="lightbox__img" alt="">
   </div>
 
   <main id="poster">
@@ -6992,6 +7065,65 @@ a.stack__item-name:focus-visible::after,
             document.addEventListener('keydown', onKey);
           }
         });
+      });
+    })();
+
+    // Image lightbox — supporting screenshots in section figures
+    // can render small on portrait phones; click any of them to
+    // open at viewport size. Close via the X button, the dark
+    // backdrop, or Escape. Selector matches the same images the
+    // .lightbox CSS hint targets — `section figure img` — which
+    // skips hero logos (no <figure> wrapper) and QR placeholders
+    // (text divs, no <img>).
+    (function () {
+      'use strict';
+      var lightbox = document.getElementById('lightbox');
+      if (!lightbox) return;
+      var img = lightbox.querySelector('.lightbox__img');
+      var closeBtn = lightbox.querySelector('.lightbox__close');
+      var triggers = document.querySelectorAll('section figure img');
+      if (!triggers.length) return;
+
+      var lastFocus = null;
+
+      function open(src, alt) {
+        img.src = src;
+        img.alt = alt || '';
+        lightbox.hidden = false;
+        // Block background scrolling while the overlay is up so
+        // the page doesn't slide around behind the lightbox.
+        document.body.style.overflow = 'hidden';
+        lastFocus = document.activeElement;
+        closeBtn.focus();
+      }
+
+      function close() {
+        lightbox.hidden = true;
+        document.body.style.overflow = '';
+        // Drop the src so the previous image isn't briefly
+        // visible if the lightbox reopens before the next
+        // image's src finishes loading.
+        img.removeAttribute('src');
+        if (lastFocus && typeof lastFocus.focus === 'function') {
+          lastFocus.focus();
+        }
+      }
+
+      triggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function () {
+          open(trigger.currentSrc || trigger.src, trigger.alt);
+        });
+      });
+
+      closeBtn.addEventListener('click', close);
+      lightbox.addEventListener('click', function (e) {
+        // Backdrop click — anything outside the image and the
+        // close button counts. The image itself has a default
+        // cursor so it doesn't accidentally close on tap.
+        if (e.target === lightbox) close();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (!lightbox.hidden && e.key === 'Escape') close();
       });
     })();
   </script>

@@ -313,6 +313,65 @@
         });
       });
     })();
+
+    // Image lightbox — supporting screenshots in section figures
+    // can render small on portrait phones; click any of them to
+    // open at viewport size. Close via the X button, the dark
+    // backdrop, or Escape. Selector matches the same images the
+    // .lightbox CSS hint targets — `section figure img` — which
+    // skips hero logos (no <figure> wrapper) and QR placeholders
+    // (text divs, no <img>).
+    (function () {
+      'use strict';
+      var lightbox = document.getElementById('lightbox');
+      if (!lightbox) return;
+      var img = lightbox.querySelector('.lightbox__img');
+      var closeBtn = lightbox.querySelector('.lightbox__close');
+      var triggers = document.querySelectorAll('section figure img');
+      if (!triggers.length) return;
+
+      var lastFocus = null;
+
+      function open(src, alt) {
+        img.src = src;
+        img.alt = alt || '';
+        lightbox.hidden = false;
+        // Block background scrolling while the overlay is up so
+        // the page doesn't slide around behind the lightbox.
+        document.body.style.overflow = 'hidden';
+        lastFocus = document.activeElement;
+        closeBtn.focus();
+      }
+
+      function close() {
+        lightbox.hidden = true;
+        document.body.style.overflow = '';
+        // Drop the src so the previous image isn't briefly
+        // visible if the lightbox reopens before the next
+        // image's src finishes loading.
+        img.removeAttribute('src');
+        if (lastFocus && typeof lastFocus.focus === 'function') {
+          lastFocus.focus();
+        }
+      }
+
+      triggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function () {
+          open(trigger.currentSrc || trigger.src, trigger.alt);
+        });
+      });
+
+      closeBtn.addEventListener('click', close);
+      lightbox.addEventListener('click', function (e) {
+        // Backdrop click — anything outside the image and the
+        // close button counts. The image itself has a default
+        // cursor so it doesn't accidentally close on tap.
+        if (e.target === lightbox) close();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (!lightbox.hidden && e.key === 'Escape') close();
+      });
+    })();
   </script>
 </body>
 </html>
