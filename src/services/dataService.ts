@@ -7,7 +7,7 @@ import type { Dataset, DatasetFormat, DatasetMetadata, EnrichedMetadata, TimeInf
 import { parseISO8601Duration } from '../utils/time'
 import { logger } from '../utils/logger'
 import { reportError } from '../analytics'
-import { getCatalogSource } from './catalogSource'
+import { apiFetch, getCatalogSource } from './catalogSource'
 
 const METADATA_URL = 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/dataset.json'
 const ENRICHED_METADATA_URL = '/assets/sos_dataset_metadata.json'
@@ -230,7 +230,7 @@ export class DataService {
    */
   private async fetchDatasetsFromNode(): Promise<Dataset[]> {
     logger.info('[DataService] Fetching datasets from node catalog...')
-    const res = await fetch(NODE_CATALOG_URL, {
+    const res = await apiFetch(NODE_CATALOG_URL, {
       headers: { Accept: 'application/json' },
     })
     if (!res.ok) {

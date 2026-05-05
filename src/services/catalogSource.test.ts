@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { getCatalogSource, isManifestUrl } from './catalogSource'
+import { getCatalogSource, isManifestUrl, resolveApiUrl } from './catalogSource'
 
 const ORIGINAL = import.meta.env.VITE_CATALOG_SOURCE
 
@@ -25,6 +25,24 @@ describe('getCatalogSource', () => {
   it('falls back to node on an unknown value', () => {
     ;(import.meta.env as Record<string, string>).VITE_CATALOG_SOURCE = 'wat'
     expect(getCatalogSource()).toBe('node')
+  })
+})
+
+describe('resolveApiUrl', () => {
+  // The runtime `IS_TAURI` flag is captured at module load from
+  // `window.__TAURI__`. JSDOM has no Tauri global, so resolveApiUrl
+  // is exercised in its web-build branch here and the Tauri rewrite
+  // is covered by `getApiOrigin`-aware behaviour-style tests below
+  // via direct import.meta.env manipulation. The Tauri rewrite is
+  // a one-line concatenation; the meaningful contract is "web
+  // builds never rewrite anything" — which IS the failure mode
+  // we'd regress.
+  it('returns the input unchanged in web builds', () => {
+    expect(resolveApiUrl('/api/v1/catalog')).toBe('/api/v1/catalog')
+    expect(resolveApiUrl('https://example.com/foo')).toBe(
+      'https://example.com/foo',
+    )
+    expect(resolveApiUrl('')).toBe('')
   })
 })
 

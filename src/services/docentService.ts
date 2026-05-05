@@ -11,6 +11,7 @@ import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './
 import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
 import { clearDegraded as clearDegradedState, markDegraded as markDegradedState } from './docentDegradedState'
+import { apiFetch } from './catalogSource'
 import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { resolveRegion, boundsToGeoJSON } from '../data/regions'
 import { logger } from '../utils/logger'
@@ -451,12 +452,13 @@ const LIST_FEATURED_MAX_LIMIT = 24
  * 404 on every call, and silently break the docent's discovery
  * tools for anyone not using the bundled Cloudflare proxy.
  *
- * In Tauri contexts where the app runs from a `tauri://localhost/`
- * origin with no Pages backend, `fetch('/api/v1/search')` resolves
- * relative to that origin and 404s; `executeSearchDatasets` /
- * `executeListFeaturedDatasets` catch the error and return
- * `{ datasets: [] }`, falling through to the legacy in-process
- * `search_catalog` tool — same effective behaviour as pre-1c.
+ * In Tauri contexts the webview origin is `tauri://localhost/`
+ * with no Pages Functions backend, so the URL constructed below
+ * is rewritten to the production deployment by `apiFetch` (see
+ * `catalogSource.ts`). If the rewrite or the cross-origin request
+ * fails, `executeSearchDatasets` / `executeListFeaturedDatasets`
+ * catch the error and return `{ datasets: [] }`, falling through
+ * to the legacy in-process `search_catalog` tool.
  */
 const CATALOG_API_BASE = '/api'
 
@@ -575,7 +577,7 @@ export async function executeSearchDatasets(
   let degradedReason: string | undefined
   let hits: SearchDatasetsHit[]
   try {
-    const res = await fetch(url.toString(), { method: 'GET' })
+    const res = await apiFetch(url.toString(), { method: 'GET' })
     if (!res.ok) {
       logger.warn(`[Docent] search_datasets returned ${res.status}`)
       // Don't cache transient failures — the next turn should retry.
@@ -645,7 +647,7 @@ export async function executeListFeaturedDatasets(
   url.searchParams.set('limit', String(limit))
 
   try {
-    const res = await fetch(url.toString(), { method: 'GET' })
+    const res = await apiFetch(url.toString(), { method: 'GET' })
     if (!res.ok) {
       logger.warn(`[Docent] list_featured_datasets returned ${res.status}`)
       return { datasets: [] }

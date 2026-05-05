@@ -6,7 +6,7 @@
 
 import { HLSService, type VideoProxyResponse } from './hlsService'
 import { dataService } from './dataService'
-import { isManifestUrl } from './catalogSource'
+import { apiFetch, isManifestUrl } from './catalogSource'
 import { getDownload, getDownloadPath } from './downloadService'
 import type { Dataset, AppState, GlobeRenderer, VideoTextureHandle } from '../types'
 import { formatDate, isSubDailyPeriod, inferDisplayInterval } from '../utils/time'
@@ -119,7 +119,7 @@ async function loadImageFromNetwork(
   // suffix-mangling fallback isn't needed because the backend
   // synthesises the same ladder for `url:<href>` rows.
   if (isManifestUrl(dataset.dataLink)) {
-    const res = await fetch(dataset.dataLink, { headers: { Accept: 'application/json' } })
+    const res = await apiFetch(dataset.dataLink, { headers: { Accept: 'application/json' } })
     if (!res.ok) throw new Error(`Manifest fetch failed: ${res.status} ${res.statusText}`)
     const manifest = (await res.json()) as {
       kind: 'image'
@@ -209,7 +209,7 @@ export async function loadVideoDataset(
       // `kind` first so an image dataset routed to the video loader
       // fails fast with a clear error rather than throwing at
       // `manifest.files.find(...)` later.
-      const res = await fetch(dataset.dataLink, { headers: { Accept: 'application/json' } })
+      const res = await apiFetch(dataset.dataLink, { headers: { Accept: 'application/json' } })
       if (!res.ok) throw new Error(`Manifest fetch failed: ${res.status} ${res.statusText}`)
       const envelope = (await res.json()) as Omit<VideoProxyResponse, 'dash'> & {
         kind: 'video' | 'image'
