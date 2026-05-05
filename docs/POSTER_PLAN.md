@@ -1,5 +1,15 @@
 # TerraViz Poster — Plan
 
+> **Status update (post-build).** The poster has shipped — see
+> [`poster/`](../poster/) for the source and
+> [poster.terraviz.zyra-project.org](https://poster.terraviz.zyra-project.org)
+> for the deployed site. This document is preserved as the
+> historical scoping artefact — it captures what was agreed
+> before any HTML/CSS landed, and the section structure /
+> phase plan / open questions it lays out are useful as a
+> reading order for the build that followed. Where the build
+> diverged from the plan, the build is the source of truth.
+
 A web-based presentation poster covering the TerraViz application,
 its visualization stack, immersive (XR) mode, the Orbit AI docent,
 the multi-platform delivery story (web + Tauri desktop), and the
