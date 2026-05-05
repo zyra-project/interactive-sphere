@@ -35,3 +35,7 @@ The mission is to lower the barriers on both sides — viewing and publishing �
 TerraViz draws on NOAA's Science On a Sphere program, the room-sized global display system that has lived in museums since 2000 — six-foot suspended globes projecting hurricanes, ocean temperatures, and ice retreat across their surfaces. SOS is one of the most powerful tools ever built for communicating environmental science. The constraint has always been that you have to be in the room.
 
 TerraViz brings a similar view to every device. Some of the starting catalog comes from the SOS dataset library, and SOS-format tours import unchanged. The federation layer is what extends the reach: NOAA's data is the seed, not the ceiling.
+
+---
+
+> **Cite this work:** Hackathorn, E. (2026). *TerraViz*. NOAA Global Systems Laboratory. <https://doi.org/10.5281/zenodo.20043181>
