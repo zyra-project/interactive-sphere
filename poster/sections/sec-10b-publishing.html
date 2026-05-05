@@ -4,9 +4,27 @@
       <div class="fed__container">
         <p class="section__eyebrow">§8 · Publishing &amp; search</p>
         <h2 id="sec-11-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
-        <p class="fed__lede">
-          <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <strong>Tier 0 publishing</strong> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
-        </p>
+        <div class="pub__hero">
+          <div class="pub__hero-text">
+            <p class="fed__lede">
+              <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <strong>Tier 0 publishing</strong> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+            </p>
+          </div>
+          <aside class="pub__rail" aria-label="terraviz-cli session">
+            <div class="pub__rail-chrome">
+              <span class="pub__demo-dot pub__demo-dot--r"></span>
+              <span class="pub__demo-dot pub__demo-dot--y"></span>
+              <span class="pub__demo-dot pub__demo-dot--g"></span>
+              <span class="pub__rail-title">terraviz-cli</span>
+            </div>
+            <pre class="pub__rail-cli"><code><span class="pub__rail-prompt">$</span> terraviz publish dataset.yaml
+<span class="pub__rail-line">↑ uploading dataset.yaml ··· 2 KB</span>
+<span class="pub__rail-line">↑ resolving asset (vimeo) ··· 4.2 GB</span>
+<span class="pub__rail-line pub__rail-ok">✓ published as climate-futures-2024</span>
+<span class="pub__rail-line pub__rail-ok">✓ federation manifest reindexed</span>
+<span class="pub__rail-line pub__rail-meta">ETA on subscribing peers ≤ 15 min</span></code></pre>
+          </aside>
+        </div>
 
         <h3 class="fed__subhead">Try the portal</h3>
         <p class="fed__subhead-hint">

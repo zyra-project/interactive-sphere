@@ -1298,6 +1298,90 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   line-height: 1.6;
 }
 
+/* Split header for §3 tours — lede on the left, a task-verb
+   reference rail on the right. Keeps the typographic measure
+   intact for the prose while filling the right gutter with a
+   small content-driven artefact (a tour, in five tasks). */
+.tours__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.tours__hero .tours__lede {
+  margin-bottom: 0;
+}
+
+.tours__rail {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #e09537;
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+}
+
+.tours__rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin: 0 0 0.6rem;
+}
+
+.tours__rail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.tours__rail-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  padding: 0.22rem 0;
+  border-bottom: 1px dashed var(--neutral-200);
+}
+
+.tours__rail-list li:last-child {
+  border-bottom: 0;
+}
+
+.tours__rail-list code {
+  flex: 0 0 auto;
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.tours__rail-list span {
+  flex: 1 1 auto;
+  color: var(--neutral-600);
+}
+
+.tours__rail-foot {
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  font-style: italic;
+  border-top: 1px solid var(--neutral-200);
+  padding-top: 0.5rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 800px) {
+  .tours__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 .tours__lede code,
 .tours__pillar code,
 .tours__callout code,
@@ -2701,6 +2785,90 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   max-width: 760px;
 }
 
+/* Split header for §8 publishing — lede on the left, a faux
+   `terraviz publish` terminal session on the right. Same pattern
+   as .tours__hero / .globe__hero; reuses the .pub__demo-dot
+   traffic lights inside its own chrome bar. */
+.pub__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.pub__hero .fed__lede {
+  margin-bottom: 0;
+}
+
+.pub__rail {
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.pub__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pub__rail-title {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+  margin-left: 0.4rem;
+}
+
+.pub__rail-cli {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.pub__rail-cli code {
+  display: block;
+  font-family: inherit;
+}
+
+.pub__rail-prompt {
+  color: #5dc2ff;
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+
+.pub__rail-line {
+  display: block;
+}
+
+.pub__rail-ok {
+  color: #6dd49a;
+}
+
+.pub__rail-meta {
+  color: #9aa5b1;
+  font-style: italic;
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 800px) {
+  .pub__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 /* Conceptual federation topology — small hook diagram between
    the lede and the architecture stack-grid. Distinct from the
    detailed .fed__arch diagram below (which shows the local
@@ -4074,7 +4242,7 @@ section figure img {
         <p class="section__eyebrow">What you can do</p>
         <h2 id="sec-3-title" class="features__title">Ten things to know about TerraViz</h2>
         <p class="features__intro">
-          Plenty of ground to cover, and you don't have to read it in order. Each card jumps straight to the section that takes that topic apart — sections stand on their own, so start wherever catches your eye, and double back if a cross-reference points somewhere new.
+          There is plenty of ground to cover, and you don't have to read it in order. Each card jumps straight to the section that takes that topic apart. Sections stand on their own, so start wherever catches your eye, and double back if a cross-reference points somewhere new.
         </p>
 
         <div class="feature-grid">
@@ -4909,9 +5077,24 @@ section figure img {
       <div class="tours__container">
         <p class="section__eyebrow">§3 · Tours — data-driven storytelling</p>
         <h2 id="sec-6-title" class="tours__title">A guided arc through the planet — the script is data, the app is the player.</h2>
-        <p class="tours__lede">
-          A tour leads a visitor through a story — flying the camera to the Great Barrier Reef, swapping in the SSP5 sea-surface-temperature animation, opening a 4-globe layout to compare scenarios, pausing for them to look. It's the same kind of guided arc a Science On a Sphere docent walks a museum audience through, played back the same way on every device, replayable on demand. Behind it is just a small JSON document — <code>flyTo</code>, <code>loadDataset</code>, <code>setEnvView</code>, <code>showRect</code>, <code>pauseForInput</code> — that the engine executes one task at a time, awaiting each promise before stepping to the next.
-        </p>
+        <div class="tours__hero">
+          <div class="tours__hero-text">
+            <p class="tours__lede">
+              A tour leads a visitor through a story — flying the camera to the Great Barrier Reef, swapping in the SSP5 sea-surface-temperature animation, opening a 4-globe layout to compare scenarios, pausing for them to look. It's the same kind of guided arc a Science On a Sphere docent walks a museum audience through, played back the same way on every device, replayable on demand. Behind it is just a small JSON document — <code>flyTo</code>, <code>loadDataset</code>, <code>setEnvView</code>, <code>showRect</code>, <code>pauseForInput</code> — that the engine executes one task at a time, awaiting each promise before stepping to the next.
+            </p>
+          </div>
+          <aside class="tours__rail" aria-label="Tour task verbs">
+            <div class="tours__rail-eyebrow">A tour, in five task verbs</div>
+            <ul class="tours__rail-list">
+              <li><code>flyTo</code><span>fly the camera to a region</span></li>
+              <li><code>loadDataset</code><span>swap the active texture</span></li>
+              <li><code>setEnvView</code><span>1 / 2 / 4 panel layout</span></li>
+              <li><code>showRect</code><span>frame a region for emphasis</span></li>
+              <li><code>pauseForInput</code><span>wait for the visitor</span></li>
+            </ul>
+            <div class="tours__rail-foot">A tour is a JSON document. The app is the player. Same playback on every device.</div>
+          </aside>
+        </div>
 
         <div class="tours__pillars">
           <article class="tours__pillar">
@@ -6177,9 +6360,27 @@ section figure img {
       <div class="fed__container">
         <p class="section__eyebrow">§8 · Publishing &amp; search</p>
         <h2 id="sec-11-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
-        <p class="fed__lede">
-          <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <strong>Tier 0 publishing</strong> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
-        </p>
+        <div class="pub__hero">
+          <div class="pub__hero-text">
+            <p class="fed__lede">
+              <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <strong>Tier 0 publishing</strong> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+            </p>
+          </div>
+          <aside class="pub__rail" aria-label="terraviz-cli session">
+            <div class="pub__rail-chrome">
+              <span class="pub__demo-dot pub__demo-dot--r"></span>
+              <span class="pub__demo-dot pub__demo-dot--y"></span>
+              <span class="pub__demo-dot pub__demo-dot--g"></span>
+              <span class="pub__rail-title">terraviz-cli</span>
+            </div>
+            <pre class="pub__rail-cli"><code><span class="pub__rail-prompt">$</span> terraviz publish dataset.yaml
+<span class="pub__rail-line">↑ uploading dataset.yaml ··· 2 KB</span>
+<span class="pub__rail-line">↑ resolving asset (vimeo) ··· 4.2 GB</span>
+<span class="pub__rail-line pub__rail-ok">✓ published as climate-futures-2024</span>
+<span class="pub__rail-line pub__rail-ok">✓ federation manifest reindexed</span>
+<span class="pub__rail-line pub__rail-meta">ETA on subscribing peers ≤ 15 min</span></code></pre>
+          </aside>
+        </div>
 
         <h3 class="fed__subhead">Try the portal</h3>
         <p class="fed__subhead-hint">

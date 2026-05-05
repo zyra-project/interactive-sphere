@@ -4,9 +4,24 @@
       <div class="tours__container">
         <p class="section__eyebrow">§3 · Tours — data-driven storytelling</p>
         <h2 id="sec-6-title" class="tours__title">A guided arc through the planet — the script is data, the app is the player.</h2>
-        <p class="tours__lede">
-          A tour leads a visitor through a story — flying the camera to the Great Barrier Reef, swapping in the SSP5 sea-surface-temperature animation, opening a 4-globe layout to compare scenarios, pausing for them to look. It's the same kind of guided arc a Science On a Sphere docent walks a museum audience through, played back the same way on every device, replayable on demand. Behind it is just a small JSON document — <code>flyTo</code>, <code>loadDataset</code>, <code>setEnvView</code>, <code>showRect</code>, <code>pauseForInput</code> — that the engine executes one task at a time, awaiting each promise before stepping to the next.
-        </p>
+        <div class="tours__hero">
+          <div class="tours__hero-text">
+            <p class="tours__lede">
+              A tour leads a visitor through a story — flying the camera to the Great Barrier Reef, swapping in the SSP5 sea-surface-temperature animation, opening a 4-globe layout to compare scenarios, pausing for them to look. It's the same kind of guided arc a Science On a Sphere docent walks a museum audience through, played back the same way on every device, replayable on demand. Behind it is just a small JSON document — <code>flyTo</code>, <code>loadDataset</code>, <code>setEnvView</code>, <code>showRect</code>, <code>pauseForInput</code> — that the engine executes one task at a time, awaiting each promise before stepping to the next.
+            </p>
+          </div>
+          <aside class="tours__rail" aria-label="Tour task verbs">
+            <div class="tours__rail-eyebrow">A tour, in five task verbs</div>
+            <ul class="tours__rail-list">
+              <li><code>flyTo</code><span>fly the camera to a region</span></li>
+              <li><code>loadDataset</code><span>swap the active texture</span></li>
+              <li><code>setEnvView</code><span>1 / 2 / 4 panel layout</span></li>
+              <li><code>showRect</code><span>frame a region for emphasis</span></li>
+              <li><code>pauseForInput</code><span>wait for the visitor</span></li>
+            </ul>
+            <div class="tours__rail-foot">A tour is a JSON document. The app is the player. Same playback on every device.</div>
+          </aside>
+        </div>
 
         <div class="tours__pillars">
           <article class="tours__pillar">

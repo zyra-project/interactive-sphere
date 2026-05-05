@@ -1275,6 +1275,90 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   line-height: 1.6;
 }
 
+/* Split header for §3 tours — lede on the left, a task-verb
+   reference rail on the right. Keeps the typographic measure
+   intact for the prose while filling the right gutter with a
+   small content-driven artefact (a tour, in five tasks). */
+.tours__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.tours__hero .tours__lede {
+  margin-bottom: 0;
+}
+
+.tours__rail {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #e09537;
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+}
+
+.tours__rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin: 0 0 0.6rem;
+}
+
+.tours__rail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.tours__rail-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  padding: 0.22rem 0;
+  border-bottom: 1px dashed var(--neutral-200);
+}
+
+.tours__rail-list li:last-child {
+  border-bottom: 0;
+}
+
+.tours__rail-list code {
+  flex: 0 0 auto;
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.tours__rail-list span {
+  flex: 1 1 auto;
+  color: var(--neutral-600);
+}
+
+.tours__rail-foot {
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  font-style: italic;
+  border-top: 1px solid var(--neutral-200);
+  padding-top: 0.5rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 800px) {
+  .tours__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 .tours__lede code,
 .tours__pillar code,
 .tours__callout code,
@@ -2676,6 +2760,90 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   line-height: 1.55;
   margin: 0.85rem 0 0;
   max-width: 760px;
+}
+
+/* Split header for §8 publishing — lede on the left, a faux
+   `terraviz publish` terminal session on the right. Same pattern
+   as .tours__hero / .globe__hero; reuses the .pub__demo-dot
+   traffic lights inside its own chrome bar. */
+.pub__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.pub__hero .fed__lede {
+  margin-bottom: 0;
+}
+
+.pub__rail {
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.pub__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pub__rail-title {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+  margin-left: 0.4rem;
+}
+
+.pub__rail-cli {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.pub__rail-cli code {
+  display: block;
+  font-family: inherit;
+}
+
+.pub__rail-prompt {
+  color: #5dc2ff;
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+
+.pub__rail-line {
+  display: block;
+}
+
+.pub__rail-ok {
+  color: #6dd49a;
+}
+
+.pub__rail-meta {
+  color: #9aa5b1;
+  font-style: italic;
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 800px) {
+  .pub__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
 }
 
 /* Conceptual federation topology — small hook diagram between
