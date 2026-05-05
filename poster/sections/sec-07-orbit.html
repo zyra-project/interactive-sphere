@@ -4,9 +4,24 @@
       <div class="orbit__container">
         <p class="section__eyebrow">§4 · Orbit — the digital docent</p>
         <h2 id="sec-7-title" class="orbit__title">A chat surface that drives the app, not just talks about it</h2>
-        <p class="orbit__lede">
-          Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
-        </p>
+        <div class="orbit__hero">
+          <div class="orbit__hero-text">
+            <p class="orbit__lede">
+              Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
+            </p>
+          </div>
+          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with an inline load button">
+            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me a hurricane in the gulf</div>
+            <div class="orbit__rail-bubble orbit__rail-bubble--orbit">
+              <p>Hurricane Helene swept through the Gulf in late September 2024.</p>
+              <button class="orbit__rail-load" type="button" disabled aria-disabled="true">
+                <span class="orbit__rail-load-arrow">⟶</span>Load Hurricane Helene 2024
+              </button>
+              <p>Want me to open it next to the historical SST baseline?</p>
+            </div>
+            <p class="orbit__rail-note">Inline load chip resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
+          </aside>
+        </div>
 
         <div class="orbit__stack-grid">
           <article class="orbit__stack-card">

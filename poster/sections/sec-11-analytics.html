@@ -4,9 +4,39 @@
       <div class="analytics__container">
         <p class="section__eyebrow">§9 · Privacy-first analytics</p>
         <h2 id="sec-11-title" class="analytics__title">We measure to make it better. We measure as little as possible.</h2>
-        <p class="analytics__lede">
-          TerraViz emits product telemetry on a two-tier consent model. <strong>Essential</strong> events are on by default — they cover broad usage shape (sessions, datasets viewed, layer toggles, performance samples, errors). <strong>Research</strong> events are opt-in and unlock the deeper signals an instance operator might want for studies (chat dwell, attention zones, captured search queries — hashed). Visitors control the tier from <em>Tools → Privacy</em> in the live app.
-        </p>
+        <div class="analytics__hero">
+          <div class="analytics__hero-text">
+            <p class="analytics__lede">
+              TerraViz emits product telemetry on a two-tier consent model. <strong>Essential</strong> events are on by default — they cover broad usage shape (sessions, datasets viewed, layer toggles, performance samples, errors). <strong>Research</strong> events are opt-in and unlock the deeper signals an instance operator might want for studies (chat dwell, attention zones, captured search queries — hashed). Visitors control the tier from <em>Tools → Privacy</em> in the live app.
+            </p>
+          </div>
+          <aside class="analytics__rail" aria-label="Privacy panel mockup — visitor-controlled telemetry tier">
+            <div class="analytics__rail-chrome">Tools › Privacy</div>
+            <div class="analytics__rail-body">
+              <div class="analytics__rail-eyebrow">Telemetry tier</div>
+              <ul class="analytics__rail-options">
+                <li class="analytics__rail-option">
+                  <span class="analytics__rail-radio"></span>
+                  <span class="analytics__rail-label">Off</span>
+                  <span class="analytics__rail-blurb">No events leave the browser</span>
+                </li>
+                <li class="analytics__rail-option analytics__rail-option--active">
+                  <span class="analytics__rail-radio analytics__rail-radio--on"></span>
+                  <span class="analytics__rail-label">Essential</span>
+                  <span class="analytics__rail-blurb">Default · usage shape only</span>
+                </li>
+                <li class="analytics__rail-option">
+                  <span class="analytics__rail-radio"></span>
+                  <span class="analytics__rail-label">Research</span>
+                  <span class="analytics__rail-blurb">Opt-in · deeper signals, hashed</span>
+                </li>
+              </ul>
+              <div class="analytics__rail-foot">
+                <strong>Never stored:</strong> IP · User-Agent · raw search queries
+              </div>
+            </div>
+          </aside>
+        </div>
 
         <h3 class="analytics__subhead">Two tiers, visitor-controlled</h3>
         <p class="analytics__subhead-hint">

@@ -1753,6 +1753,112 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   letter-spacing: -0.01em;
 }
 
+/* Split header for §4 orbit — lede on the left, a compact
+   chat-bubble preview on the right that demonstrates the
+   <<LOAD:ID>>-resolved load chip the lede describes. The
+   larger annotated mockup further down the section
+   (.orbit-chat-mockup) keeps its full-width treatment; this
+   rail is the at-a-glance version. */
+.orbit__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.orbit__hero .orbit__lede {
+  margin-bottom: 0;
+}
+
+.orbit__rail {
+  background: var(--navy);
+  border: 1px solid var(--surface-border);
+  border-left: 3px solid #7e57c2;
+  border-radius: 8px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.orbit__rail-bubble {
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.orbit__rail-bubble--user {
+  background: rgba(77, 166, 255, 0.18);
+  border: 1px solid rgba(77, 166, 255, 0.3);
+  color: #e8eaf0;
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.orbit__rail-bubble--orbit {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--surface-border);
+  color: #e8eaf0;
+  align-self: flex-start;
+  max-width: 95%;
+}
+
+.orbit__rail-bubble--orbit p {
+  margin: 0 0 0.5rem;
+}
+
+.orbit__rail-bubble--orbit p:last-child {
+  margin-bottom: 0;
+}
+
+.orbit__rail-load {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(77, 166, 255, 0.18);
+  border: 1px solid rgba(77, 166, 255, 0.45);
+  color: #6ab8ff;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0 0 0.55rem;
+  cursor: not-allowed;
+}
+
+.orbit__rail-load-arrow {
+  font-family: var(--font-mono);
+  color: var(--terra-accent);
+  font-weight: 700;
+}
+
+.orbit__rail-note {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--mist);
+  letter-spacing: 0.04em;
+  text-align: center;
+  margin: 0.25rem 0 0;
+}
+
+.orbit__rail-note code {
+  background: rgba(77, 166, 255, 0.15);
+  color: #6ab8ff;
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+@media (max-width: 800px) {
+  .orbit__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 .orbit__lede {
   font-size: 1.05rem;
   color: var(--neutral-700);
@@ -2555,6 +2661,98 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   max-width: 760px;
   margin: 0 0 2.25rem;
   line-height: 1.6;
+}
+
+/* Split header for §7 federation — lede on the left, the
+   federation manifest at /.well-known/terraviz.json rendered
+   as a JSON snippet on the right. Concrete artefact for the
+   federation-curious reader; reinforces "signed identity,
+   capability advertisement, open spec" without an extra
+   diagram. */
+.fed__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.fed__hero .fed__lede {
+  margin-bottom: 0;
+}
+
+.fed__rail {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #5c6bc0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.fed__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.45rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.fed__rail-method {
+  background: #5c6bc0;
+  color: white;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.fed__rail-path {
+  color: var(--neutral-700);
+}
+
+.fed__rail-code {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--neutral-800);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.fed__rail-key {
+  color: #5c6bc0;
+}
+
+.fed__rail-str {
+  color: #2c670c;
+}
+
+.fed__rail-punct {
+  color: var(--neutral-500);
+}
+
+.fed__rail-foot {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-500);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-top: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  margin: 0;
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .fed__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
 }
 
 /* Inline aside that follows the federation lede with a smaller,
@@ -3369,6 +3567,133 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   max-width: 760px;
   margin: 0 0 2.25rem;
   line-height: 1.6;
+}
+
+/* Split header for §9 analytics — lede on the left, a small
+   render of the in-app Tools › Privacy panel on the right.
+   Echoes the visitor-controlled claim with the actual UI
+   surface visitors interact with; reinforces the "as little
+   as possible" stance with the explicit "Never stored" line. */
+.analytics__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.analytics__hero .analytics__lede {
+  margin-bottom: 0;
+}
+
+.analytics__rail {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #bf6b78;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px -14px rgba(0, 0, 0, 0.18);
+}
+
+.analytics__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+}
+
+.analytics__rail-body {
+  padding: 0.85rem 1rem;
+}
+
+.analytics__rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin: 0 0 0.55rem;
+}
+
+.analytics__rail-options {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.analytics__rail-option {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+  background: var(--neutral-50);
+}
+
+.analytics__rail-option--active {
+  background: rgba(191, 107, 120, 0.08);
+  border-color: #bf6b78;
+}
+
+.analytics__rail-radio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--neutral-400);
+  background: white;
+  flex: 0 0 auto;
+  position: relative;
+  top: 1px;
+}
+
+.analytics__rail-radio--on {
+  border-color: #bf6b78;
+  background: white;
+  box-shadow: inset 0 0 0 3px #bf6b78;
+}
+
+.analytics__rail-label {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+}
+
+.analytics__rail-blurb {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  line-height: 1.45;
+}
+
+.analytics__rail-foot {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-700);
+  background: var(--neutral-50);
+  border-top: 1px dashed var(--neutral-300);
+  padding-top: 0.55rem;
+  line-height: 1.5;
+}
+
+.analytics__rail-foot strong {
+  color: #bf6b78;
+  font-weight: 700;
+}
+
+@media (max-width: 800px) {
+  .analytics__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
 }
 
 .analytics__lede code,
@@ -5329,9 +5654,24 @@ section figure img {
       <div class="orbit__container">
         <p class="section__eyebrow">§4 · Orbit — the digital docent</p>
         <h2 id="sec-7-title" class="orbit__title">A chat surface that drives the app, not just talks about it</h2>
-        <p class="orbit__lede">
-          Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
-        </p>
+        <div class="orbit__hero">
+          <div class="orbit__hero-text">
+            <p class="orbit__lede">
+              Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
+            </p>
+          </div>
+          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with an inline load button">
+            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me a hurricane in the gulf</div>
+            <div class="orbit__rail-bubble orbit__rail-bubble--orbit">
+              <p>Hurricane Helene swept through the Gulf in late September 2024.</p>
+              <button class="orbit__rail-load" type="button" disabled aria-disabled="true">
+                <span class="orbit__rail-load-arrow">⟶</span>Load Hurricane Helene 2024
+              </button>
+              <p>Want me to open it next to the historical SST baseline?</p>
+            </div>
+            <p class="orbit__rail-note">Inline load chip resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
+          </aside>
+        </div>
 
         <div class="orbit__stack-grid">
           <article class="orbit__stack-card">
@@ -5982,9 +6322,28 @@ section figure img {
       <div class="fed__container">
         <p class="section__eyebrow">§7 · Federated catalog &amp; custom backend</p>
         <h2 id="sec-10-title" class="fed__title">Run your own. Federate with peers. Keep the data at home.</h2>
-        <p class="fed__lede">
-          TerraViz reads its catalog from a self-hosted node-backend by default. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.<br><small class="fed__lede-aside">The legacy NOAA Science On a Sphere (SOS) S3 catalog is the system the cutover replaces — kept behind the <code>VITE_CATALOG_SOURCE=legacy</code> env-var as a rollback hatch during the stabilisation window, scheduled for removal once node-backed deployments have soaked.</small>
-        </p>
+        <div class="fed__hero">
+          <div class="fed__hero-text">
+            <p class="fed__lede">
+              TerraViz reads its catalog from a self-hosted node-backend by default. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.<br><small class="fed__lede-aside">The legacy NOAA Science On a Sphere (SOS) S3 catalog is the system the cutover replaces — kept behind the <code>VITE_CATALOG_SOURCE=legacy</code> env-var as a rollback hatch during the stabilisation window, scheduled for removal once node-backed deployments have soaked.</small>
+            </p>
+          </div>
+          <aside class="fed__rail" aria-label="Example /.well-known/terraviz.json federation manifest">
+            <div class="fed__rail-chrome">
+              <span class="fed__rail-method">GET</span>
+              <span class="fed__rail-path">/.well-known/terraviz.json</span>
+            </div>
+            <pre class="fed__rail-code"><code><span class="fed__rail-punct">{</span>
+  <span class="fed__rail-key">"id"</span>: <span class="fed__rail-str">"noaa-sos.zyra-project.org"</span>,
+  <span class="fed__rail-key">"name"</span>: <span class="fed__rail-str">"NOAA Science On a Sphere"</span>,
+  <span class="fed__rail-key">"api"</span>: <span class="fed__rail-str">"https://noaa-sos.zyra-project.org/api/v1"</span>,
+  <span class="fed__rail-key">"pubkey"</span>: <span class="fed__rail-str">"ed25519:8L2k…uW9q"</span>,
+  <span class="fed__rail-key">"capabilities"</span>: <span class="fed__rail-punct">[</span><span class="fed__rail-str">"catalog"</span>, <span class="fed__rail-str">"search"</span>, <span class="fed__rail-str">"feed"</span><span class="fed__rail-punct">]</span>,
+  <span class="fed__rail-key">"version"</span>: <span class="fed__rail-str">"1.0"</span>
+<span class="fed__rail-punct">}</span></code></pre>
+            <p class="fed__rail-foot">Signed identity · capability advertisement · open spec</p>
+          </aside>
+        </div>
 
         <figure class="fed__topology" aria-labelledby="fed-topology-caption">
           <svg viewBox="0 0 640 220"
@@ -6570,9 +6929,39 @@ section figure img {
       <div class="analytics__container">
         <p class="section__eyebrow">§9 · Privacy-first analytics</p>
         <h2 id="sec-11-title" class="analytics__title">We measure to make it better. We measure as little as possible.</h2>
-        <p class="analytics__lede">
-          TerraViz emits product telemetry on a two-tier consent model. <strong>Essential</strong> events are on by default — they cover broad usage shape (sessions, datasets viewed, layer toggles, performance samples, errors). <strong>Research</strong> events are opt-in and unlock the deeper signals an instance operator might want for studies (chat dwell, attention zones, captured search queries — hashed). Visitors control the tier from <em>Tools → Privacy</em> in the live app.
-        </p>
+        <div class="analytics__hero">
+          <div class="analytics__hero-text">
+            <p class="analytics__lede">
+              TerraViz emits product telemetry on a two-tier consent model. <strong>Essential</strong> events are on by default — they cover broad usage shape (sessions, datasets viewed, layer toggles, performance samples, errors). <strong>Research</strong> events are opt-in and unlock the deeper signals an instance operator might want for studies (chat dwell, attention zones, captured search queries — hashed). Visitors control the tier from <em>Tools → Privacy</em> in the live app.
+            </p>
+          </div>
+          <aside class="analytics__rail" aria-label="Privacy panel mockup — visitor-controlled telemetry tier">
+            <div class="analytics__rail-chrome">Tools › Privacy</div>
+            <div class="analytics__rail-body">
+              <div class="analytics__rail-eyebrow">Telemetry tier</div>
+              <ul class="analytics__rail-options">
+                <li class="analytics__rail-option">
+                  <span class="analytics__rail-radio"></span>
+                  <span class="analytics__rail-label">Off</span>
+                  <span class="analytics__rail-blurb">No events leave the browser</span>
+                </li>
+                <li class="analytics__rail-option analytics__rail-option--active">
+                  <span class="analytics__rail-radio analytics__rail-radio--on"></span>
+                  <span class="analytics__rail-label">Essential</span>
+                  <span class="analytics__rail-blurb">Default · usage shape only</span>
+                </li>
+                <li class="analytics__rail-option">
+                  <span class="analytics__rail-radio"></span>
+                  <span class="analytics__rail-label">Research</span>
+                  <span class="analytics__rail-blurb">Opt-in · deeper signals, hashed</span>
+                </li>
+              </ul>
+              <div class="analytics__rail-foot">
+                <strong>Never stored:</strong> IP · User-Agent · raw search queries
+              </div>
+            </div>
+          </aside>
+        </div>
 
         <h3 class="analytics__subhead">Two tiers, visitor-controlled</h3>
         <p class="analytics__subhead-hint">

@@ -4,9 +4,28 @@
       <div class="fed__container">
         <p class="section__eyebrow">§7 · Federated catalog &amp; custom backend</p>
         <h2 id="sec-10-title" class="fed__title">Run your own. Federate with peers. Keep the data at home.</h2>
-        <p class="fed__lede">
-          TerraViz reads its catalog from a self-hosted node-backend by default. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.<br><small class="fed__lede-aside">The legacy NOAA Science On a Sphere (SOS) S3 catalog is the system the cutover replaces — kept behind the <code>VITE_CATALOG_SOURCE=legacy</code> env-var as a rollback hatch during the stabilisation window, scheduled for removal once node-backed deployments have soaked.</small>
-        </p>
+        <div class="fed__hero">
+          <div class="fed__hero-text">
+            <p class="fed__lede">
+              TerraViz reads its catalog from a self-hosted node-backend by default. The backend is Pages Functions in front of D1 (catalog database), R2 (assets), Workers Analytics Engine (telemetry), KV (caches), and Cloudflare Access (auth) — all on the same platform as the app's deploy. Each node has a signed identity, advertises a federation manifest at <code>/.well-known/terraviz.json</code>, and exposes a versioned API at <code>/api/v1/*</code>. Subscribe to other nodes; their catalog merges into yours; their data stays on their hardware.<br><small class="fed__lede-aside">The legacy NOAA Science On a Sphere (SOS) S3 catalog is the system the cutover replaces — kept behind the <code>VITE_CATALOG_SOURCE=legacy</code> env-var as a rollback hatch during the stabilisation window, scheduled for removal once node-backed deployments have soaked.</small>
+            </p>
+          </div>
+          <aside class="fed__rail" aria-label="Example /.well-known/terraviz.json federation manifest">
+            <div class="fed__rail-chrome">
+              <span class="fed__rail-method">GET</span>
+              <span class="fed__rail-path">/.well-known/terraviz.json</span>
+            </div>
+            <pre class="fed__rail-code"><code><span class="fed__rail-punct">{</span>
+  <span class="fed__rail-key">"id"</span>: <span class="fed__rail-str">"noaa-sos.zyra-project.org"</span>,
+  <span class="fed__rail-key">"name"</span>: <span class="fed__rail-str">"NOAA Science On a Sphere"</span>,
+  <span class="fed__rail-key">"api"</span>: <span class="fed__rail-str">"https://noaa-sos.zyra-project.org/api/v1"</span>,
+  <span class="fed__rail-key">"pubkey"</span>: <span class="fed__rail-str">"ed25519:8L2k…uW9q"</span>,
+  <span class="fed__rail-key">"capabilities"</span>: <span class="fed__rail-punct">[</span><span class="fed__rail-str">"catalog"</span>, <span class="fed__rail-str">"search"</span>, <span class="fed__rail-str">"feed"</span><span class="fed__rail-punct">]</span>,
+  <span class="fed__rail-key">"version"</span>: <span class="fed__rail-str">"1.0"</span>
+<span class="fed__rail-punct">}</span></code></pre>
+            <p class="fed__rail-foot">Signed identity · capability advertisement · open spec</p>
+          </aside>
+        </div>
 
         <figure class="fed__topology" aria-labelledby="fed-topology-caption">
           <svg viewBox="0 0 640 220"
