@@ -491,6 +491,42 @@ code, kbd, pre {
   margin-right: 0.15em;
 }
 
+/* Hero pill row — short value-prop chips that hook scanners
+   before the §2 mission's longer narrative. Each pill is one
+   factual claim chosen to land for a specific audience (educator,
+   decision-maker, content developer, IT). Mirrors the chip-row
+   convention from the Data Depot poster in this series. */
+.hero__pills {
+  list-style: none;
+  margin: 1.1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+.hero__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--neutral-100);
+  white-space: nowrap;
+}
+.hero__pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--terra-accent);
+  flex-shrink: 0;
+}
+
 @media (max-width: 900px) {
   .section {
     padding: var(--section-py-mobile) var(--section-px-mobile);
@@ -3960,6 +3996,13 @@ section figure img {
                rel="noopener"
                aria-label="ORCID 0000-0002-9693-2093">0000-0002-9693-2093</a>
           </div>
+          <ul class="hero__pills" aria-label="Key capabilities">
+            <li class="hero__pill">Free &amp; open source</li>
+            <li class="hero__pill">No login required</li>
+            <li class="hero__pill">NOAA datasets</li>
+            <li class="hero__pill">Web + Desktop + AR/VR</li>
+            <li class="hero__pill">Self-hostable</li>
+          </ul>
         </div>
 
         <div class="hero__qrs">
