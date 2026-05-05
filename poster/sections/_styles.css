@@ -4290,6 +4290,31 @@ a.stack__item-name:focus-visible::after,
   font-weight: 700;
 }
 
+/* Quality tag inside a download pill — flags alpha/beta builds
+   without changing the pill's visual weight relative to the
+   stable Windows pill. Amber-on-dark mirrors the standard
+   pre-release convention. */
+.cta__download-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(255, 193, 7, 0.14);
+  border: 1px solid rgba(255, 193, 7, 0.45);
+  border-radius: 3px;
+  padding: 0.05rem 0.32rem;
+}
+
+.cta__downloads-note {
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  margin: 0.5rem 0 0;
+  line-height: 1.5;
+  font-style: italic;
+}
+
 .cta__links {
   list-style: none;
   padding: 0;
