@@ -29,20 +29,101 @@ describe('getCatalogSource', () => {
 })
 
 describe('resolveApiUrl', () => {
-  // The runtime `IS_TAURI` flag is captured at module load from
-  // `window.__TAURI__`. JSDOM has no Tauri global, so resolveApiUrl
-  // is exercised in its web-build branch here and the Tauri rewrite
-  // is covered by `getApiOrigin`-aware behaviour-style tests below
-  // via direct import.meta.env manipulation. The Tauri rewrite is
-  // a one-line concatenation; the meaningful contract is "web
-  // builds never rewrite anything" — which IS the failure mode
-  // we'd regress.
-  it('returns the input unchanged in web builds', () => {
-    expect(resolveApiUrl('/api/v1/catalog')).toBe('/api/v1/catalog')
-    expect(resolveApiUrl('https://example.com/foo')).toBe(
-      'https://example.com/foo',
-    )
-    expect(resolveApiUrl('')).toBe('')
+  const tauriWindow = window as unknown as { __TAURI__?: unknown }
+  const ORIGINAL_API_ORIGIN = import.meta.env.VITE_API_ORIGIN
+
+  afterEach(() => {
+    delete tauriWindow.__TAURI__
+    if (ORIGINAL_API_ORIGIN === undefined) {
+      delete (import.meta.env as Record<string, string>).VITE_API_ORIGIN
+    } else {
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        ORIGINAL_API_ORIGIN
+    }
+  })
+
+  describe('web builds (no __TAURI__)', () => {
+    it('returns relative API paths unchanged', () => {
+      expect(resolveApiUrl('/api/v1/catalog')).toBe('/api/v1/catalog')
+      expect(resolveApiUrl('/api/v1/datasets/DS001/manifest')).toBe(
+        '/api/v1/datasets/DS001/manifest',
+      )
+    })
+
+    it('returns absolute and non-API paths unchanged', () => {
+      expect(resolveApiUrl('https://example.com/foo')).toBe(
+        'https://example.com/foo',
+      )
+      expect(resolveApiUrl('/assets/test-tour.json')).toBe(
+        '/assets/test-tour.json',
+      )
+      expect(resolveApiUrl('')).toBe('')
+    })
+  })
+
+  describe('Tauri builds (__TAURI__ present)', () => {
+    beforeEach(() => {
+      tauriWindow.__TAURI__ = {}
+    })
+
+    it('rewrites /api/ paths to the production origin', () => {
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'https://terraviz.zyra-project.org/api/v1/catalog',
+      )
+      expect(resolveApiUrl('/api/v1/datasets/DS001/manifest')).toBe(
+        'https://terraviz.zyra-project.org/api/v1/datasets/DS001/manifest',
+      )
+    })
+
+    it('strips a webview-origin prefix before rewriting', () => {
+      // The docent constructs URLs via `new URL(path, window.location.origin)`,
+      // which produces e.g. `http://localhost:3000/api/v1/search?q=foo` in
+      // tests. The rewrite must reach the same production endpoint as a
+      // bare-path caller, so the helper has to recognise the origin prefix.
+      const constructed = `${window.location.origin}/api/v1/search?q=foo`
+      expect(resolveApiUrl(constructed)).toBe(
+        'https://terraviz.zyra-project.org/api/v1/search?q=foo',
+      )
+    })
+
+    it('does NOT rewrite non-/api paths (the Tauri SPA still owns them)', () => {
+      // The SPA bundle ships `/assets/test-tour.json`, `/sw.js`, etc.
+      // Rewriting those would break the bundled asset path.
+      expect(resolveApiUrl('/assets/test-tour.json')).toBe(
+        '/assets/test-tour.json',
+      )
+      expect(resolveApiUrl('/sw.js')).toBe('/sw.js')
+    })
+
+    it('passes external HTTPS URLs through unchanged', () => {
+      expect(resolveApiUrl('https://example.com/foo')).toBe(
+        'https://example.com/foo',
+      )
+    })
+
+    it('honours VITE_API_ORIGIN as an override origin', () => {
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        'https://staging.example.com'
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'https://staging.example.com/api/v1/catalog',
+      )
+    })
+
+    it('strips a trailing slash from VITE_API_ORIGIN', () => {
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        'https://staging.example.com/'
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'https://staging.example.com/api/v1/catalog',
+      )
+    })
+
+    it('ignores a malformed VITE_API_ORIGIN and falls back to default', () => {
+      ;(import.meta.env as Record<string, string>).VITE_API_ORIGIN =
+        'not-a-url'
+      expect(resolveApiUrl('/api/v1/catalog')).toBe(
+        'https://terraviz.zyra-project.org/api/v1/catalog',
+      )
+    })
   })
 })
 

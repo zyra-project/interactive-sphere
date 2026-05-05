@@ -1,3 +1,6 @@
+import { logger } from '../utils/logger'
+import { reportError } from '../analytics'
+
 /**
  * Build-time switch that controls where `dataService.ts` and
  * `datasetLoader.ts` source their catalog data from.
@@ -54,8 +57,18 @@ export function isManifestUrl(dataLink: string): boolean {
  */
 const DEFAULT_API_ORIGIN = 'https://terraviz.zyra-project.org'
 
-const IS_TAURI =
-  typeof window !== 'undefined' && !!(window as { __TAURI__?: unknown }).__TAURI__
+/**
+ * Whether the SPA is currently running inside a Tauri webview.
+ * Resolved per call (rather than captured once at module load) so
+ * tests can flip `window.__TAURI__` between cases without resorting
+ * to `vi.resetModules()` and dynamic re-imports.
+ */
+function isTauri(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    !!(window as { __TAURI__?: unknown }).__TAURI__
+  )
+}
 
 function getApiOrigin(): string {
   const override = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim()
@@ -71,25 +84,49 @@ function getApiOrigin(): string {
  * to the production deployment would otherwise be blocked. The
  * plugin issues the request from Rust (reqwest), bypassing webview
  * CORS — same lazy-import pattern used by `llmProvider.ts` and
- * `downloadService.ts`.
+ * `downloadService.ts`. We log + `reportError` on import failure
+ * (same telemetry category as the catalog fetch itself) so a broken
+ * plugin doesn't silently degrade to native fetch and re-trigger
+ * the original `<!DOCTYPE` crash class with no diagnostic.
  */
-const tauriFetchReady: Promise<typeof globalThis.fetch | null> = IS_TAURI
-  ? import('@tauri-apps/plugin-http')
-      .then(m => m.fetch as typeof globalThis.fetch)
-      .catch(() => null)
-  : Promise.resolve(null)
+let tauriFetchPromise: Promise<typeof globalThis.fetch | null> | null = null
+function getTauriFetch(): Promise<typeof globalThis.fetch | null> {
+  if (tauriFetchPromise) return tauriFetchPromise
+  tauriFetchPromise = import('@tauri-apps/plugin-http')
+    .then(m => {
+      logger.info('[catalog] Tauri HTTP plugin loaded')
+      return m.fetch as typeof globalThis.fetch
+    })
+    .catch(err => {
+      logger.warn('[catalog] Failed to load Tauri HTTP plugin:', err)
+      reportError('download', err)
+      return null
+    })
+  return tauriFetchPromise
+}
 
 /**
- * Resolve a relative API path to an absolute URL the active
- * runtime can fetch. Web builds keep the relative path so the
- * request hits the same Pages deployment serving the SPA. Tauri
- * builds rewrite `/api/v1/...` (and webview-origin URLs already
- * coerced through `new URL(..., window.location.origin)`) to the
- * production API origin. Already-absolute non-webview URLs pass
- * through unchanged.
+ * Resolve a path or URL to one the active runtime can actually
+ * fetch. Web builds (and Tauri requests already pointed at an
+ * external HTTPS origin) pass through unchanged. In Tauri the
+ * function rewrites paths under `/api/...` to the production API
+ * origin so the cross-origin fetch reaches a real Pages Functions
+ * backend instead of the webview's bundled `index.html`.
+ *
+ * URLs that already include the webview origin (the typical output
+ * of `new URL(path, window.location.origin).toString()`) are
+ * stripped back to their pathname before the rewrite so callers
+ * who construct a URL via the URL constructor — like the docent —
+ * get the same routing as callers who pass a raw path.
+ *
+ * Non-`/api/` relative paths (`/assets/...`, `/sw.js`, sample-tour
+ * JSON, etc.) are deliberately NOT rewritten: they live in the
+ * Tauri-bundled SPA and must continue to resolve against the
+ * webview origin. The rewrite is gated narrowly to keep this helper
+ * safe to reuse for non-catalog fetches in the future.
  */
 export function resolveApiUrl(pathOrUrl: string): string {
-  if (!IS_TAURI) return pathOrUrl
+  if (!isTauri()) return pathOrUrl
   let path = pathOrUrl
   if (typeof window !== 'undefined') {
     const origin = window.location.origin
@@ -97,26 +134,34 @@ export function resolveApiUrl(pathOrUrl: string): string {
       path = path.slice(origin.length) || '/'
     }
   }
-  if (!path.startsWith('/')) return path
+  if (!path.startsWith('/api/')) return path
   return `${getApiOrigin()}${path}`
 }
 
 /**
- * `fetch` wrapper for `/api/v1/...` calls. Pass-through to the
- * native `fetch` in web builds. In Tauri it rewrites relative
- * paths to the production API origin and routes through the
- * Tauri HTTP plugin to bypass webview CORS — which would
- * otherwise reject every cross-origin request because the catalog
- * Pages Functions don't set `Access-Control-Allow-Origin`.
+ * `fetch` wrapper for `/api/...` calls. Pass-through to the
+ * native `fetch` in web builds. In Tauri it rewrites the path
+ * via {@link resolveApiUrl} and routes through the Tauri HTTP
+ * plugin to bypass webview CORS — which would otherwise reject
+ * every cross-origin request because the catalog Pages Functions
+ * don't set `Access-Control-Allow-Origin`. If the plugin failed
+ * to load, we still attempt native fetch but emit a loud warning
+ * so the failure surfaces in logs instead of looking like the
+ * original silent `<!DOCTYPE` crash.
  */
 export async function apiFetch(
   pathOrUrl: string,
   init?: RequestInit,
 ): Promise<Response> {
   const url = resolveApiUrl(pathOrUrl)
-  if (IS_TAURI) {
-    const tauriFetch = await tauriFetchReady
+  if (isTauri()) {
+    const tauriFetch = await getTauriFetch()
     if (tauriFetch) return tauriFetch(url, init)
+    if (url !== pathOrUrl) {
+      logger.warn(
+        `[catalog] Tauri HTTP plugin unavailable; native fetch for ${url} will likely be CORS-blocked.`,
+      )
+    }
   }
   return fetch(url, init)
 }
