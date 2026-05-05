@@ -1,0 +1,393 @@
+  </main>
+
+  <script>
+    // Presentation timer.
+    // Minimized by default; warns at 4:00, overtime at 5:00.
+    // Choice persists in localStorage so rehearsals don't reset.
+    (function () {
+      'use strict';
+      var STORAGE_KEY = 'terraviz-poster-timer';
+      var WARN_AT = 240;
+      var OVER_AT = 300;
+
+      var timer = document.getElementById('pres-timer');
+      if (!timer) return;
+      var display = timer.querySelector('.pres-timer__display');
+      var expandBtn = timer.querySelector('.pres-timer__expand');
+      var minBtn = timer.querySelector('[data-action="minimize"]');
+      var playBtn = timer.querySelector('[data-action="play"]');
+      var resetBtn = timer.querySelector('[data-action="reset"]');
+      var elapsed = 0;
+      var intervalId = null;
+      var running = false;
+
+      try {
+        var saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved === 'expanded') {
+          timer.classList.remove('is-minimized');
+          expandBtn.setAttribute('aria-expanded', 'true');
+        }
+      } catch (e) { /* private mode etc. — fine */ }
+
+      function fmt(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = seconds % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function render() {
+        display.textContent = fmt(elapsed);
+        display.classList.toggle('is-warning', elapsed >= WARN_AT && elapsed < OVER_AT);
+        display.classList.toggle('is-overtime', elapsed >= OVER_AT);
+      }
+
+      function tick() {
+        elapsed += 1;
+        render();
+      }
+
+      function start() {
+        if (running) return;
+        running = true;
+        intervalId = window.setInterval(tick, 1000);
+        playBtn.textContent = '⏸';
+        playBtn.setAttribute('aria-label', 'Pause timer');
+      }
+
+      function pause() {
+        running = false;
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+          intervalId = null;
+        }
+        playBtn.textContent = '▶';
+        playBtn.setAttribute('aria-label', 'Resume timer');
+      }
+
+      function reset() {
+        pause();
+        elapsed = 0;
+        render();
+      }
+
+      function persist(state) {
+        try { window.localStorage.setItem(STORAGE_KEY, state); } catch (e) { /* ignore */ }
+      }
+
+      function expand() {
+        timer.classList.remove('is-minimized');
+        expandBtn.setAttribute('aria-expanded', 'true');
+        persist('expanded');
+      }
+
+      function minimize() {
+        timer.classList.add('is-minimized');
+        expandBtn.setAttribute('aria-expanded', 'false');
+        persist('minimized');
+      }
+
+      expandBtn.addEventListener('click', expand);
+      minBtn.addEventListener('click', minimize);
+      playBtn.addEventListener('click', function () { running ? pause() : start(); });
+      resetBtn.addEventListener('click', reset);
+
+      render();
+    })();
+
+    // Scroll-fade reveal.
+    // No-op under prefers-reduced-motion; falls back to immediate
+    // reveal if IntersectionObserver isn't available. Threshold
+    // is 0 (any intersection) rather than a fractional value so
+    // very tall sections — which can never satisfy a fractional
+    // threshold on small viewports — still reveal as soon as the
+    // user scrolls into them. A safety timeout reveals anything
+    // still hidden after 4 seconds, in case the observer misses
+    // for any other reason.
+    (function () {
+      'use strict';
+      var elements = document.querySelectorAll('.fade-in');
+      if (!elements.length) return;
+
+      var prefersReducedMotion =
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function revealAll() {
+        for (var i = 0; i < elements.length; i++) {
+          elements[i].classList.add('is-visible');
+        }
+      }
+
+      if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+        revealAll();
+        return;
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0, rootMargin: '0px 0px -5% 0px' });
+
+      elements.forEach(function (el) { io.observe(el); });
+
+      // Safety net: anything still hidden after 4s gets revealed
+      // unconditionally. Covers tall sections, observer flakes,
+      // and the rare case where layout settles after the IO has
+      // already done its initial pass.
+      window.setTimeout(function () {
+        elements.forEach(function (el) {
+          if (!el.classList.contains('is-visible')) {
+            el.classList.add('is-visible');
+            io.unobserve(el);
+          }
+        });
+      }, 4000);
+    })();
+
+    // Live demo iframes — single-active-instance manager.
+    //
+    // Each section's <div class="demo-frame" data-default-src="...">
+    // has its own iframe co-located with the buttons that drive
+    // it (no cross-section pointers, no scroll jumps). At any
+    // moment exactly one frame holds the app: the one most
+    // visible to the user. Others are reset to about:blank so
+    // they cost nothing.
+    //
+    // A frame remembers its last-clicked URL via dataset.currentSrc
+    // so that scrolling away and back resumes whichever state the
+    // visitor last asked for.
+    (function () {
+      'use strict';
+      var frames = Array.from(document.querySelectorAll('.demo-frame[data-default-src]'));
+      if (!frames.length) return;
+
+      var ratios = new WeakMap();
+      var active = null;
+
+      function getSrc(frame) {
+        return frame.dataset.currentSrc || frame.dataset.defaultSrc;
+      }
+
+      function activate(frame) {
+        if (active === frame) return;
+        if (active) deactivate(active);
+        active = frame;
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
+        frame.dataset.state = 'loading';
+        iframe.src = getSrc(frame);
+      }
+
+      function deactivate(frame) {
+        if (!frame) return;
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
+        iframe.src = 'about:blank';
+        frame.dataset.state = 'loading';
+      }
+
+      // Mark the active frame ready once its iframe finishes
+      // loading the real (non-about:blank) URL.
+      frames.forEach(function (frame) {
+        var iframe = frame.querySelector('.demo-frame__iframe');
+        if (!iframe) return;
+        iframe.addEventListener('load', function () {
+          if (active === frame && iframe.src && iframe.src !== 'about:blank') {
+            frame.dataset.state = 'ready';
+          }
+        }, false);
+      });
+
+      function pickBest() {
+        var best = null;
+        var bestRatio = 0;
+        frames.forEach(function (f) {
+          var r = ratios.get(f) || 0;
+          if (r > bestRatio) {
+            bestRatio = r;
+            best = f;
+          }
+        });
+        return { frame: best, ratio: bestRatio };
+      }
+
+      if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) { ratios.set(e.target, e.intersectionRatio); });
+          var pick = pickBest();
+          if (pick.frame && pick.ratio > 0.05) {
+            if (pick.frame !== active) activate(pick.frame);
+          } else if (active) {
+            deactivate(active);
+            active = null;
+          }
+        }, { threshold: [0, 0.05, 0.25, 0.5, 0.75, 1.0] });
+        frames.forEach(function (f) { io.observe(f); });
+      } else {
+        // No IntersectionObserver — load the first one and
+        // leave the rest at about:blank.
+        activate(frames[0]);
+      }
+
+      // Expose a tiny API for the effect-toggle wiring below
+      // so a button click can record a new target URL on a
+      // frame and trigger an immediate reload (without
+      // leaving the iframe pointing at the old src).
+      window.__terravizPosterDemo = {
+        setSrc: function (frame, src) {
+          frame.dataset.currentSrc = src;
+          if (active === frame) {
+            var iframe = frame.querySelector('.demo-frame__iframe');
+            if (!iframe) return;
+            frame.dataset.state = 'loading';
+            iframe.src = src;
+          }
+          // If not active, the new src will be loaded the next
+          // time this frame becomes most-visible.
+        }
+      };
+    })();
+
+    // Effect-toggle bar — buttons swap an iframe's src to a
+    // deep-linked URL. Marks the clicked button .is-active
+    // within its bar and routes the change through the
+    // single-active-instance manager above.
+    (function () {
+      'use strict';
+      var buttons = document.querySelectorAll('.effect-toggle[data-iframe-target][data-iframe-src]');
+      if (!buttons.length) return;
+      buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var frame = document.getElementById(btn.dataset.iframeTarget);
+          if (!frame) return;
+          var bar = btn.closest('.effect-toggle-bar');
+          if (bar) {
+            bar.querySelectorAll('.effect-toggle').forEach(function (b) {
+              b.classList.toggle('is-active', b === btn);
+            });
+          }
+          var demo = window.__terravizPosterDemo;
+          if (demo && demo.setSrc) {
+            demo.setSrc(frame, btn.dataset.iframeSrc);
+          } else {
+            // Fallback if the manager hasn't initialised
+            // (e.g. zero frames found earlier).
+            var iframe = frame.querySelector('.demo-frame__iframe');
+            if (iframe) {
+              frame.dataset.state = 'loading';
+              iframe.src = btn.dataset.iframeSrc;
+            }
+          }
+        });
+      });
+    })();
+
+    // Fullscreen toggle — flips .is-fullscreen on a target
+    // element so it covers the viewport. Either Escape OR a
+    // second button click exits, and both paths remove the
+    // keydown listener registered on entry (otherwise stale
+    // listeners accumulate across enter/exit cycles).
+    (function () {
+      'use strict';
+      var btns = document.querySelectorAll('[data-fullscreen-target]');
+      if (!btns.length) return;
+      btns.forEach(function (btn) {
+        var activeKeyHandler = null;
+
+        function enter(target) {
+          target.classList.add('is-fullscreen');
+          btn.textContent = '✕ Exit fullscreen';
+          btn.setAttribute('aria-label', 'Exit fullscreen');
+          activeKeyHandler = function (e) {
+            if (e.key === 'Escape') exit(target);
+          };
+          document.addEventListener('keydown', activeKeyHandler);
+        }
+
+        function exit(target) {
+          target.classList.remove('is-fullscreen');
+          btn.textContent = '⤢ Fullscreen';
+          btn.setAttribute('aria-label', 'Toggle fullscreen');
+          if (activeKeyHandler) {
+            document.removeEventListener('keydown', activeKeyHandler);
+            activeKeyHandler = null;
+          }
+        }
+
+        btn.addEventListener('click', function () {
+          var target = document.getElementById(btn.dataset.fullscreenTarget);
+          if (!target) return;
+          if (target.classList.contains('is-fullscreen')) {
+            exit(target);
+          } else {
+            enter(target);
+          }
+        });
+      });
+    })();
+
+    // Image lightbox — supporting screenshots in section figures
+    // can render small on portrait phones; click any of them to
+    // open at viewport size. Close via the X button, the dark
+    // backdrop, or Escape. Selector matches the same images the
+    // .lightbox CSS hint targets — `section figure img` — which
+    // skips hero logos (no <figure> wrapper) and QR placeholders
+    // (text divs, no <img>).
+    (function () {
+      'use strict';
+      var lightbox = document.getElementById('lightbox');
+      if (!lightbox) return;
+      var img = lightbox.querySelector('.lightbox__img');
+      var closeBtn = lightbox.querySelector('.lightbox__close');
+      var triggers = document.querySelectorAll('section figure img');
+      if (!triggers.length) return;
+
+      var lastFocus = null;
+
+      function open(src, alt) {
+        img.src = src;
+        img.alt = alt || '';
+        lightbox.hidden = false;
+        // Block background scrolling while the overlay is up so
+        // the page doesn't slide around behind the lightbox.
+        document.body.style.overflow = 'hidden';
+        lastFocus = document.activeElement;
+        closeBtn.focus();
+      }
+
+      function close() {
+        lightbox.hidden = true;
+        document.body.style.overflow = '';
+        // Drop the src so the previous image isn't briefly
+        // visible if the lightbox reopens before the next
+        // image's src finishes loading.
+        img.removeAttribute('src');
+        if (lastFocus && typeof lastFocus.focus === 'function') {
+          lastFocus.focus();
+        }
+      }
+
+      triggers.forEach(function (trigger) {
+        trigger.addEventListener('click', function () {
+          open(trigger.currentSrc || trigger.src, trigger.alt);
+        });
+      });
+
+      closeBtn.addEventListener('click', close);
+      lightbox.addEventListener('click', function (e) {
+        // Backdrop click — anything outside the image and the
+        // close button counts. The image itself has a default
+        // cursor so it doesn't accidentally close on tap.
+        if (e.target === lightbox) close();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (!lightbox.hidden && e.key === 'Escape') close();
+      });
+    })();
+  </script>
+</body>
+</html>

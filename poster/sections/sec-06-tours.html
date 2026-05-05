@@ -1,0 +1,250 @@
+    <section id="sec-6-tours"
+             class="section section--alt fade-in"
+             aria-labelledby="sec-6-title">
+      <div class="tours__container">
+        <p class="section__eyebrow">§3 · Tours — data-driven storytelling</p>
+        <h2 id="sec-6-title" class="tours__title">A guided arc through the planet — the script is data, the app is the player.</h2>
+        <div class="tours__hero">
+          <div class="tours__hero-text">
+            <p class="tours__lede">
+              A tour leads a visitor through a story — flying the camera to the Great Barrier Reef, swapping in the SSP5 sea-surface-temperature animation, opening a 4-globe layout to compare scenarios, pausing for them to look. It's the same kind of guided arc a Science On a Sphere docent walks a museum audience through, played back the same way on every device, replayable on demand. Behind it is just a small JSON document — <code>flyTo</code>, <code>loadDataset</code>, <code>setEnvView</code>, <code>showRect</code>, <code>pauseForInput</code> — that the engine executes one task at a time, awaiting each promise before stepping to the next.
+            </p>
+          </div>
+          <aside class="tours__rail" aria-label="Tour task verbs">
+            <div class="tours__rail-eyebrow">A tour, in five task verbs</div>
+            <ul class="tours__rail-list">
+              <li><code>flyTo</code><span>fly the camera to a region</span></li>
+              <li><code>loadDataset</code><span>swap the active texture</span></li>
+              <li><code>setEnvView</code><span>1 / 2 / 4 panel layout</span></li>
+              <li><code>showRect</code><span>frame a region for emphasis</span></li>
+              <li><code>pauseForInput</code><span>wait for the visitor</span></li>
+            </ul>
+            <div class="tours__rail-foot">A tour is a JSON document. The app is the player. Same playback on every device.</div>
+          </aside>
+        </div>
+
+        <div class="tours__pillars">
+          <article class="tours__pillar">
+            <h3>Data-driven storytelling</h3>
+            <p>
+              The Climate Futures tour compares <strong>SSP1</strong>, <strong>SSP2</strong>, and <strong>SSP5</strong> climate scenarios across air temperature, precipitation, sea-surface temperature, and sea-ice concentration. The script is data; the app is the player.
+            </p>
+          </article>
+
+          <article class="tours__pillar">
+            <h3>Educational scaffolding</h3>
+            <p>
+              <code>pauseForInput</code>, <code>pauseSeconds</code>, and the <code>showRect</code> / <code>hideRect</code> overlay tasks build pacing into a tour the way a lesson plan paces a class. Captions support <code>&lt;color=…&gt;</code> and <code>&lt;i&gt;</code> markup; the SOS tour-builder ecosystem already produces this format.
+            </p>
+          </article>
+
+          <article class="tours__pillar tours__pillar--emph">
+            <h3>Orbit drives the app via tours</h3>
+            <p>
+              The tour engine is the bridge that turns Orbit from a chat surface into an agent. Tours load through the same <code>&lt;&lt;LOAD:TOUR_ID&gt;&gt;</code> markers used for datasets, and the docent is already prompted to recommend tours when a visitor "seems new, asks for an overview, or wants to learn about a broad topic." Saying <em>"show me how the climate is going to change by 2100"</em> can fly the camera, swap to a 4-globe layout, load four datasets across the panels, and start the narration — all from chat.
+            </p>
+          </article>
+        </div>
+
+        <figure class="tours__strip">
+          <svg viewBox="0 0 900 140"
+               role="img"
+               aria-label="Climate Futures tour, abstracted into six task steps in sequence: 1. envShow* (set the day/night and cloud stage), 2. showRect (welcome caption), 3. pauseForInput (wait for the user to tap play), 4. setEnvView (switch to a 4-globe layout — emphasized), 5. loadDataset times four (load SSP1 / SSP2 / SSP5 datasets across the panels — emphasized), 6. datasetAnimation (play the timeline)">
+            <defs>
+              <marker id="arrow-tour" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 Z" fill="#737373" />
+              </marker>
+              <style>
+                .ts-step { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .ts-step-emph { fill: rgba(77, 166, 255, 0.10); stroke: #4da6ff; stroke-width: 1.5; }
+                .ts-num { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; font-weight: 700; }
+                .ts-task { font-family: 'Source Code Pro', monospace; font-size: 12px; fill: #00529E; font-weight: 600; }
+                .ts-label { font-family: 'Source Sans 3', sans-serif; font-size: 12px; fill: #404040; }
+                .ts-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+              </style>
+            </defs>
+
+            <g transform="translate(10,30)">
+              <rect class="ts-step" x="0" y="0" width="130" height="80" rx="8" />
+              <text class="ts-num" x="10" y="20">1</text>
+              <text class="ts-task" x="65" y="44" text-anchor="middle">envShow*</text>
+              <text class="ts-label" x="65" y="64" text-anchor="middle">Set the stage</text>
+            </g>
+            <path class="ts-arrow" d="M140,70 L156,70" marker-end="url(#arrow-tour)" />
+
+            <g transform="translate(160,30)">
+              <rect class="ts-step" x="0" y="0" width="130" height="80" rx="8" />
+              <text class="ts-num" x="10" y="20">2</text>
+              <text class="ts-task" x="65" y="44" text-anchor="middle">showRect</text>
+              <text class="ts-label" x="65" y="64" text-anchor="middle">"Welcome"</text>
+            </g>
+            <path class="ts-arrow" d="M290,70 L306,70" marker-end="url(#arrow-tour)" />
+
+            <g transform="translate(310,30)">
+              <rect class="ts-step" x="0" y="0" width="130" height="80" rx="8" />
+              <text class="ts-num" x="10" y="20">3</text>
+              <text class="ts-task" x="65" y="44" text-anchor="middle">pauseForInput</text>
+              <text class="ts-label" x="65" y="64" text-anchor="middle">Wait for tap</text>
+            </g>
+            <path class="ts-arrow" d="M440,70 L456,70" marker-end="url(#arrow-tour)" />
+
+            <g transform="translate(460,30)">
+              <rect class="ts-step-emph" x="0" y="0" width="130" height="80" rx="8" />
+              <text class="ts-num" x="10" y="20">4</text>
+              <text class="ts-task" x="65" y="44" text-anchor="middle">setEnvView</text>
+              <text class="ts-label" x="65" y="64" text-anchor="middle">4-globe layout</text>
+            </g>
+            <path class="ts-arrow" d="M590,70 L606,70" marker-end="url(#arrow-tour)" />
+
+            <g transform="translate(610,30)">
+              <rect class="ts-step-emph" x="0" y="0" width="130" height="80" rx="8" />
+              <text class="ts-num" x="10" y="20">5</text>
+              <text class="ts-task" x="65" y="44" text-anchor="middle">loadDataset ×4</text>
+              <text class="ts-label" x="65" y="64" text-anchor="middle">SSP1 · SSP2 · SSP5</text>
+            </g>
+            <path class="ts-arrow" d="M740,70 L756,70" marker-end="url(#arrow-tour)" />
+
+            <g transform="translate(760,30)">
+              <rect class="ts-step" x="0" y="0" width="130" height="80" rx="8" />
+              <text class="ts-num" x="10" y="20">6</text>
+              <text class="ts-task" x="65" y="44" text-anchor="middle">datasetAnimation</text>
+              <text class="ts-label" x="65" y="64" text-anchor="middle">Play 2015 → 2100</text>
+            </g>
+          </svg>
+          <figcaption class="tours__strip-caption">
+            CLIMATE FUTURES, ABSTRACTED — TASKS EXECUTE IN SEQUENCE, EACH AWAITING THE LAST
+          </figcaption>
+        </figure>
+
+        <h3 class="tours__subhead">The task surface</h3>
+        <p class="tours__subhead-hint">
+          A representative subset of what <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/tourEngine.ts" target="_blank" rel="noopener"><code>tourEngine.ts</code></a> already supports today.
+        </p>
+
+        <div class="tours__table-wrapper">
+          <table class="tours__table">
+            <thead>
+              <tr>
+                <th scope="col">Task</th>
+                <th scope="col">Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>flyTo</code></td>
+                <td>Camera to lat/lon at altitude (resolves on <code>moveend</code>)</td>
+              </tr>
+              <tr>
+                <td><code>loadDataset</code></td>
+                <td>Loads a dataset; <code>worldIndex</code> routes it to a specific panel</td>
+              </tr>
+              <tr>
+                <td><code>unloadDataset</code> / <code>unloadAllDatasets</code></td>
+                <td>Clears the globe (or a specific panel by tour handle)</td>
+              </tr>
+              <tr>
+                <td><code>setEnvView</code></td>
+                <td>Switches 1g / 2g / 4g layout</td>
+              </tr>
+              <tr>
+                <td><code>datasetAnimation</code></td>
+                <td>Toggles play / pause on the current video</td>
+              </tr>
+              <tr>
+                <td><code>showRect</code> / <code>hideRect</code></td>
+                <td>Glass-styled DOM text overlays with <code>&lt;color&gt;</code> and <code>&lt;i&gt;</code> markup</td>
+              </tr>
+              <tr>
+                <td><code>pauseForInput</code></td>
+                <td>Wait for the user to tap play (or press space)</td>
+              </tr>
+              <tr>
+                <td><code>pauseSeconds</code></td>
+                <td>Timed pause</td>
+              </tr>
+              <tr>
+                <td><code>setGlobeRotationRate</code></td>
+                <td>Auto-rotate speed in degrees per second</td>
+              </tr>
+              <tr>
+                <td><code>envShowDayNightLighting</code> / <code>envShowClouds</code></td>
+                <td>Earth-stack toggles</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <aside class="tours__callout">
+          <p>
+            <strong>Architectural note.</strong> The engine receives a <code>TourCallbacks</code> interface — it never imports <code>InteractiveSphere</code>. That decoupling is what lets Orbit, the URL-param handlers, and the in-app tour player all drive the same tour through the same engine.
+          </p>
+        </aside>
+
+        <h3 class="tours__subhead">Where this is going</h3>
+        <p class="tours__subhead-hint">
+          AI is already in the tour-authoring loop today. Closing it is the next deliverable, not a research project.
+        </p>
+
+        <div class="tours__forward">
+          <article class="tours__forward-card">
+            <p class="tours__forward-tag">Today</p>
+            <h4>The sample tours were AI-authored</h4>
+            <p>
+              Climate Futures and the other samples under <code>public/assets/*-tour.json</code> were drafted by an LLM from prompts that named the datasets and the story to tell, then human-reviewed and adjusted. The JSON format is small, declarative, and the task surface is documented — which makes it a plausible target for LLM authoring even with today's models.
+            </p>
+          </article>
+
+          <article class="tours__forward-card tours__forward-card--next">
+            <p class="tours__forward-tag">Forward</p>
+            <h4>Orbit as tour author, on demand</h4>
+            <p>
+              Orbit currently <em>recommends</em> tours from the catalog and <em>loads</em> them. Closing the loop — having Orbit <em>generate</em> a tour from a question like <em>"walk me through how Atlantic hurricane seasons have changed since 2000"</em> — turns the docent from a chat surface that knows the catalog into an educational-scaffolding generator. A <code>&lt;&lt;TOUR:…&gt;&gt;</code> marker carrying inline JSON, or a function-calling tool that returns a tour document, is a credible next deliverable.
+            </p>
+            <p class="tours__forward-honest">Forward direction. Not shipped — yet.</p>
+          </article>
+        </div>
+
+        <h3 class="tours__subhead">Try it</h3>
+
+        <div class="demo-frame"
+             id="tours-demo"
+             data-state="loading"
+             data-default-src="https://terraviz.zyra-project.org/?tour=climate-futures">
+          <button type="button"
+                  class="demo-frame__fullscreen-btn"
+                  data-fullscreen-target="tours-demo"
+                  aria-label="Toggle fullscreen">⤢ Fullscreen</button>
+          <iframe class="demo-frame__iframe"
+                  src="about:blank"
+                  title="Live TerraViz application — tour playback demo"
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <div class="demo-frame__fallback" role="status" aria-live="polite">
+            <p class="demo-frame__fallback-title">Loading the live demo…</p>
+            <p class="demo-frame__fallback-body">If the embed doesn't load within a few seconds, the network may be blocking framed content. Open <a class="demo-frame__fallback-link" href="https://terraviz.zyra-project.org/?tour=climate-futures" target="_blank" rel="noopener">terraviz.zyra-project.org</a> directly in a new tab.</p>
+          </div>
+        </div>
+
+        <div class="effect-toggle-bar"
+             role="group"
+             aria-label="Tour deep-links — change this section's demo iframe to start a specific tour">
+          <span class="effect-toggle-bar__label">Take a tour</span>
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="tours-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?tour=climate-futures">Climate Futures · 2100</button>
+          <button type="button" class="effect-toggle effect-toggle--cta"
+                  data-iframe-target="tours-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?orbit=open&amp;prompt=tour"
+                  aria-label="Ask Orbit to recommend a tour">Ask Orbit to pick one →</button>
+        </div>
+
+        <p class="effect-note">
+          <strong>Climate Futures · 2100</strong> reloads the embedded app with <code>?tour=climate-futures</code>; the tour engine takes over from the welcome rect. <strong>Ask Orbit to pick one →</strong> reloads with <code>?orbit=open&amp;prompt=tour</code>, which opens the chat panel pre-filled with <em>"I'm new here. What tour should I start with?"</em> — press <kbd>↵</kbd> to send.
+        </p>
+
+        <p class="tours__refs">
+          Want to author your own? See <a href="https://github.com/zyra-project/terraviz/blob/main/docs/TOURS_IMPLEMENTATION_PLAN.md" target="_blank" rel="noopener">docs/TOURS_IMPLEMENTATION_PLAN.md</a> for the engine internals, the full task list, and the callback contract.
+        </p>
+      </div>
+    </section>

@@ -1,6 +1,7 @@
 # Terraviz
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-terraviz.zyra--project.org-4da6ff)](https://terraviz.zyra-project.org)
+[![Poster](https://img.shields.io/badge/Poster-poster.terraviz.zyra--project.org-4da6ff)](https://poster.terraviz.zyra-project.org)
 [![Windows](https://img.shields.io/badge/Download-Windows-0078D4?logo=windows&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.msi)
 [![macOS](https://img.shields.io/badge/Download-macOS-000000?logo=apple&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-aarch64.dmg)
 [![Linux](https://img.shields.io/badge/Download-Linux-FCC624?logo=linux&logoColor=black)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.AppImage)
@@ -387,6 +388,8 @@ When you find issues, note:
 
 ## 🔗 Resources
 
+- **Live web app**: https://terraviz.zyra-project.org
+- **Presentation poster**: https://poster.terraviz.zyra-project.org — scrollable companion to the [`zyra`](https://noaa-gsl.github.io/zyra/poster/), [`depot-explorer`](https://noaa-gsl.github.io/depot-explorer/), and [`zyra-editor`](https://zyra-project.github.io/zyra-editor/) posters; covers the architecture, AI docent, immersive WebXR, multi-platform delivery, federated catalog, and analytics pipeline. Source under [`poster/`](poster/).
 - **SOS Project**: https://sos.noaa.gov/
 - **Dataset Metadata**: https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/dataset.json
 - **Video Proxy**: https://video-proxy.zyra-project.org/video/{VIMEO_ID}

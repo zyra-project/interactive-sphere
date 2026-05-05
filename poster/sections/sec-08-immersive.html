@@ -1,0 +1,251 @@
+    <section id="sec-8-immersive"
+             class="section section--alt fade-in"
+             aria-labelledby="sec-8-title">
+      <div class="xr__container">
+        <p class="section__eyebrow">§5 · Immersive — AR &amp; VR via WebXR</p>
+        <h2 id="sec-8-title" class="xr__title">AR puts the planet on your desk. VR puts you next to it.</h2>
+        <div class="xr__hero">
+          <div class="xr__hero-text">
+            <p class="xr__lede">
+              Tap <em>Enter AR</em> on a Quest 3 and the photoreal Earth lands on your desk — anchored to a real surface, walkable around, persistent across sessions thanks to Meta Anchors. Tap <em>Enter VR</em> on PCVR and the same planet drops in front of you at room scale. Both modes share the same dataset textures the 2D app already loaded, so switching in costs you nothing extra.
+            </p>
+          </div>
+          <div class="xr__cta xr__cta--rail">
+            <p class="xr__cta-eyebrow">Try it</p>
+            <h3 class="xr__cta-title">Open TerraViz on your headset</h3>
+            <p class="xr__cta-body">
+              WebXR sessions can't reliably launch from inside an embedded iframe — the browser needs the page to be the top-level document. Open the live app on a Quest 2 / 3 / Pro browser (or any WebXR-capable PCVR rig) and the <em>Enter AR</em> / <em>Enter VR</em> button appears in the top-right.
+            </p>
+            <a class="xr__cta-btn"
+               href="https://terraviz.zyra-project.org/"
+               target="_blank"
+               rel="noopener">
+              Open terraviz.zyra-project.org →
+            </a>
+          </div>
+        </div>
+
+        <h3 class="xr__subhead">From a Quest</h3>
+        <p class="xr__subhead-hint">
+          Real captures from a Quest 3 are the visual centrepiece — anchored globes on real desks, room-scale photoreal Earth, the in-VR HUD. They drop in alongside the rest of the asset follow-up.
+        </p>
+
+        <div class="xr__captures">
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">AR · globe anchored on a real desk<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">Place the planet on the table next to you. Walk around it.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">AR · cross-session persistence<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">Persistent anchors keep the globe in the same spot the next time you open the app.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">VR · room-scale photoreal Earth<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">PCVR fallback when AR isn't supported. Same Earth stack.</p>
+          </figure>
+          <figure class="xr__capture">
+            <div class="xr__capture-ph">In-VR HUD floating panel<br>(Quest 3 capture to land)</div>
+            <p class="xr__capture-caption">CanvasTexture-backed floating UI. Title, play/pause, exit-VR.</p>
+          </figure>
+        </div>
+        <p class="xr__captures-note">Placeholders. Real captures swap in via a follow-up commit when they're ready.</p>
+
+        <h3 class="xr__subhead">Earth-as-planet · Data-as-surface</h3>
+        <p class="xr__subhead-hint">
+          With no dataset loaded, the photoreal Earth stack runs in full. With a dataset, every Earth-specific decoration (atmosphere, clouds, night lights, specular) is hidden so the data reads uniformly across the sphere. Same camera, same controller, two visual modes.
+        </p>
+
+        <div class="xr__earth-modes">
+          <figure class="xr__earth-mode">
+            <img src="assets/screenshots/photoreal-globe.webp"
+                 alt="TerraViz photoreal globe with no dataset loaded — atmosphere, day-night terminator, clouds, city lights, and specular sun glint">
+            <h4>Earth-as-planet</h4>
+            <p>No dataset · photoreal stack runs in full</p>
+          </figure>
+
+          <figure class="xr__earth-mode">
+            <img src="assets/screenshots/data-globe.webp"
+                 alt="TerraViz globe with a dataset loaded — Earth-specific decoration hidden so the data reads uniformly across the sphere">
+            <h4>Data-as-surface</h4>
+            <p>Dataset loaded · decoration hidden so the data reads uniformly</p>
+          </figure>
+        </div>
+
+        <h3 class="xr__subhead">How it works · MapLibre by default, Three.js for XR</h3>
+        <p class="xr__subhead-hint">
+          MapLibre's WebGL canvas can't be reused inside an XR session — its render loop, projection matrices, and viewport are owned. So immersive mode is a parallel <strong>Three.js</strong> renderer, attached to its own canvas, lazy-loaded only on the first <em>Enter AR</em> / <em>Enter VR</em> tap. <code>renderer.xr.setSession()</code> takes over; on session-end the 2D canvas resumes. Browsers without <code>navigator.xr</code> never load the Three.js chunk and see no UI change.
+        </p>
+
+        <div class="xr__stack-grid">
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrSession.ts" target="_blank" rel="noopener">vrSession.ts</a></h3>
+            <p>Session lifecycle. <code>enterImmersive('ar' | 'vr')</code> requests the session, builds a Three.js renderer + camera, calls <code>renderer.xr.setSession()</code>, drives a separate XR render loop via <code>XRSession.requestAnimationFrame</code>, and yields back to MapLibre on session-end.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/photorealEarth.ts" target="_blank" rel="noopener">photorealEarth.ts</a> + <a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrScene.ts" target="_blank" rel="noopener">vrScene.ts</a></h3>
+            <p>The Earth stack — diffuse, night lights, specular, atmosphere, clouds, sun, ground shadow — with day/night shading gated on the real UTC sun position. Same factory used on <code>/orbit</code>; here it provides the empty-state planet when no dataset is loaded.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrInteraction.ts" target="_blank" rel="noopener">vrInteraction.ts</a></h3>
+            <p>Controller input. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin inertia. Raycast hit routing for the floating HUD's UV regions and the AR Place button.</p>
+          </article>
+
+          <article class="xr__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/vrPlacement.ts" target="_blank" rel="noopener">vrPlacement.ts</a></h3>
+            <p>AR-only. WebXR <code>hit-test</code> + reticle + Place button. Anchors the globe to a real surface; persistent-handle UUIDs in <code>localStorage</code> keep it in the same physical spot across sessions on Quest (Meta Anchors extension).</p>
+          </article>
+        </div>
+
+        <h3 class="xr__subhead">The per-frame loop</h3>
+        <p class="xr__subhead-hint">
+          The XR render loop runs in this order every frame. Steps marked <em>AR only</em> are skipped in VR sessions. Order matters — anchor-pose sync (step 2) must run before scene update (step 6) so the atmosphere and sun track the placed globe.
+        </p>
+
+        <ol class="xr__loop-steps">
+          <li class="xr__loop-step xr__loop-step--ar">
+            <div>
+              <span class="xr__loop-name">Hit-test</span>
+              <span class="xr__loop-tag">AR only</span>
+              <p class="xr__loop-desc">Query the WebXR hit-test source for surface intersections. Drives the placement reticle.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step xr__loop-step--ar">
+            <div>
+              <span class="xr__loop-name">Anchor-pose sync</span>
+              <span class="xr__loop-tag">AR only</span>
+              <p class="xr__loop-desc">If the globe is anchored, read the anchor's current pose and write it into <code>globe.position</code>.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Dataset texture swap</span>
+              <p class="xr__loop-desc">Idempotent no-op in steady state; updates if the dataset changed since the last frame. Reuses the existing <code>&lt;video&gt;</code> via <code>THREE.VideoTexture</code> or the decoded <code>HTMLImageElement</code> — zero re-fetch.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">HUD state update</span>
+              <p class="xr__loop-desc">Debounced. Updates the in-VR floating panel's title, play/pause label, and exit-VR icon as the underlying state changes.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Interaction update</span>
+              <p class="xr__loop-desc">Controller input — rotation, zoom, inertia. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Scene update</span>
+              <p class="xr__loop-desc">Earth-stack tracking — shadow, atmosphere, sun positions follow <code>globe.position</code>. Day/night shader updated against real UTC.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">HUD + Place button position sync</span>
+              <p class="xr__loop-desc">Floating UI follows the globe so the HUD never drifts away from the data the user is looking at.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name">Loading-scene animation</span>
+              <p class="xr__loop-desc">Orbiting rings + progress bar + status text on the 3D loading scene. Fades out when the dataset is ready.</p>
+            </div>
+          </li>
+          <li class="xr__loop-step">
+            <div>
+              <span class="xr__loop-name"><code>renderer.render(scene, camera)</code></span>
+              <p class="xr__loop-desc">Submit the frame. WebGL2 + the XR session's compositor handle the per-eye projection.</p>
+            </div>
+          </li>
+        </ol>
+
+        <h3 class="xr__subhead">Where it works</h3>
+        <p class="xr__subhead-hint">
+          WebXR support is a moving target. Apple has not shipped a WebXR implementation on iOS Safari, so iPhones can't enter the immersive globe via the same code path that Quest does. The model-viewer fallback below closes that gap (without porting the full app).
+        </p>
+
+        <div class="xr__compat-wrapper">
+          <table class="xr__compat-table">
+            <thead>
+              <tr>
+                <th scope="col">Platform</th>
+                <th scope="col"><code>immersive-ar</code></th>
+                <th scope="col"><code>immersive-vr</code></th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Meta Quest 2 / 3 / Pro</td>
+                <td><span class="xr__yes">✓</span></td>
+                <td><span class="xr__yes">✓</span></td>
+                <td>The primary target. AR-first button.</td>
+              </tr>
+              <tr>
+                <td>Android Chrome (Pixel + recent Samsung)</td>
+                <td><span class="xr__yes">✓</span></td>
+                <td><span class="xr__no">—</span></td>
+                <td>ARCore-backed. Phone AR, not headset.</td>
+              </tr>
+              <tr>
+                <td>PCVR (SteamVR, Index, etc.)</td>
+                <td><span class="xr__no">—</span></td>
+                <td><span class="xr__yes">✓</span></td>
+                <td>Falls back to <code>immersive-vr</code> when <code>immersive-ar</code> is unsupported.</td>
+              </tr>
+              <tr>
+                <td>iOS Safari (any iPhone)</td>
+                <td><span class="xr__no">✗</span></td>
+                <td><span class="xr__no">✗</span></td>
+                <td>Apple has not shipped WebXR. <code>navigator.xr</code> is undefined.</td>
+              </tr>
+              <tr>
+                <td>Other desktop browsers</td>
+                <td><span class="xr__no">—</span></td>
+                <td><span class="xr__no">—</span></td>
+                <td>The XR button hides cleanly. The 2D experience is unchanged.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <aside class="xr__reach" role="note">
+          <p class="section__eyebrow">Reach beyond the headset</p>
+          <h3>Tap to place Earth on your desk — from any phone</h3>
+          <p>
+            For visitors without a Quest, the immersive part of the poster shouldn't be a dead end. Google's <code>&lt;model-viewer&gt;</code> web component handles AR Quick Look on iOS (<code>.usdz</code>) and Scene Viewer on Android (<code>.glb</code>) with a single tag — no app install, no permission prompt beyond what the OS already shows. The Earth model is a static, baked export — Blue Marble continents on a sphere — not the dynamic photoreal stack with day/night and atmosphere. It's the right scope for a hand-held AR moment.
+          </p>
+
+          <model-viewer
+            class="xr__model-viewer"
+            src="assets/xr/models/terraviz-earth.glb"
+            ios-src="assets/xr/models/terraviz-earth.usdz"
+            alt="3D model of Earth — Blue Marble continents on a sphere; tap the AR icon to place it on your desk"
+            ar
+            ar-modes="webxr scene-viewer quick-look"
+            ar-scale="auto"
+            camera-controls
+            touch-action="pan-y"
+            auto-rotate
+            auto-rotate-delay="3000"
+            shadow-intensity="0.6"
+            exposure="1"
+            loading="lazy"
+            reveal="auto">
+            <button slot="ar-button" class="xr__model-ar-btn" type="button">
+              View in your space
+            </button>
+            <div slot="poster" class="xr__model-poster">
+              <span class="xr__model-poster-label">3D Earth — asset export pending</span>
+            </div>
+          </model-viewer>
+
+          <p class="xr__reach-note">
+            On iPhone the AR icon launches AR Quick Look. On Pixel and other ARCore-capable Android phones it launches Scene Viewer. On desktop the model rotates inline as a 3D preview. The component lazy-loads — non-XR pages never download the runtime.
+          </p>
+        </aside>
+      </div>
+    </section>

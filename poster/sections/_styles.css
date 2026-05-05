@@ -1,0 +1,4601 @@
+/* =========================================================
+   TerraViz Poster — design tokens and base styles.
+   Authoring source. Do not edit poster/index.html directly —
+   run poster/scripts/build_poster.py to re-render it.
+
+   Companion to:
+     https://noaa-gsl.github.io/zyra/poster/
+     https://noaa-gsl.github.io/depot-explorer/
+     https://zyra-project.github.io/zyra-editor/
+   ========================================================= */
+
+:root {
+  /* Series chrome (matches the rest of the poster series) */
+  --navy: #00172D;
+  --ocean-blue: #1A5A69;
+  --cable-blue: #00529E;
+  --seafoam: #5F9DAE;
+  --mist: #9AB2B1;
+  --deep-teal: #091A1B;
+  --leaf-green: #2C670C;
+  --amber: #FFC107;
+  --red: #F44336;
+
+  /* TerraViz live-element accent */
+  --terra-accent: #4da6ff;
+  --terra-accent-bg: rgba(77, 166, 255, 0.12);
+  --terra-accent-text: #6ab8ff;
+
+  /* Frosted-glass surface (carries the app's design language) */
+  --surface-glass: rgba(13, 13, 18, 0.88);
+  --surface-border: rgba(255, 255, 255, 0.08);
+  --surface-border-hover: rgba(77, 166, 255, 0.4);
+
+  /* Neutral ramp */
+  --neutral-50: #fafafa;
+  --neutral-100: #f5f5f5;
+  --neutral-200: #e5e5e5;
+  --neutral-300: #d4d4d4;
+  --neutral-400: #a3a3a3;
+  --neutral-500: #737373;
+  --neutral-600: #525252;
+  --neutral-700: #404040;
+  --neutral-800: #262626;
+  --neutral-900: #171717;
+
+  /* Typography */
+  --font-sans: 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Source Code Pro', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  /* Layout */
+  --container-max: 1200px;
+  --section-py: 5rem;
+  --section-px: 4rem;
+  --section-py-mobile: 3rem;
+  --section-px-mobile: 1.25rem;
+
+  /* Hero backdrop — TerraViz capture, right-anchored, fades into
+     the hero gradient on the left so the title stays readable.
+     Path is relative to poster/index.html (where the CSS inlines
+     to), not to this _styles.css source file. */
+  --hero-earth-bg-image: url('assets/screenshots/hero-globe.webp');
+}
+
+* { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--neutral-900);
+  background: var(--neutral-50);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5 {
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 0.6em;
+}
+
+p { margin: 0 0 1em; }
+
+a {
+  color: var(--cable-blue);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+code, kbd, pre {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--terra-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(77, 166, 255, 0.4);
+}
+
+/* Skip-to-main-content link — only visible on focus.
+   Renders above the sticky timer (z-index: 11000 > 10000)
+   so a keyboard-tab visitor lands on it before any
+   interactive control on the page. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 11000;
+  background: var(--terra-accent);
+  color: white;
+  padding: 0.55rem 1rem;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 700;
+  font-family: var(--font-sans);
+}
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+/* =========================================================
+   Section backgrounds — alternating per the series convention
+   ========================================================= */
+.section {
+  padding: var(--section-py) var(--section-px);
+  background: var(--neutral-50);
+  color: var(--neutral-900);
+}
+.section--alt {
+  background: var(--neutral-200);
+}
+.section--dark {
+  background: var(--navy);
+  color: var(--neutral-100);
+}
+.section--dark a { color: var(--terra-accent); }
+
+.container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+/* Placeholder treatment for empty section anchors landing in
+   later phases. Removed from each section as content arrives. */
+.section--placeholder {
+  background: var(--neutral-100);
+  border-top: 1px dashed var(--neutral-300);
+  border-bottom: 1px dashed var(--neutral-300);
+}
+.section--placeholder .container {
+  padding: 2.5rem 0;
+  font-family: var(--font-mono);
+  color: var(--neutral-500);
+  font-size: 0.85rem;
+}
+.section--placeholder h2 {
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--neutral-700);
+  margin-bottom: 0.4rem;
+}
+
+/* =========================================================
+   Sticky presentation timer — minimized by default.
+   Persists expanded/collapsed choice in localStorage so a
+   presenter can rehearse without re-clicking every load.
+   ========================================================= */
+.pres-timer {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10000;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  color: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: opacity 0.2s ease;
+}
+
+.pres-timer.is-minimized .pres-timer__body { display: none; }
+.pres-timer:not(.is-minimized) .pres-timer__expand { display: none; }
+
+.pres-timer__expand {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  line-height: 1;
+}
+
+.pres-timer__body {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pres-timer__display {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+  min-width: 3.4em;
+  text-align: right;
+}
+.pres-timer__display.is-warning { color: var(--amber); }
+.pres-timer__display.is-overtime { color: var(--red); }
+
+.pres-timer__btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--surface-border);
+  color: inherit;
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  font: inherit;
+  cursor: pointer;
+  line-height: 1.1;
+}
+.pres-timer__btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--surface-border-hover);
+}
+
+/* =========================================================
+   Scroll-fade reveal — gated on prefers-reduced-motion (JS
+   side too; this keeps the initial paint correct if JS fails)
+   ========================================================= */
+.fade-in {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.fade-in.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+  .fade-in {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  html { scroll-behavior: auto; }
+}
+
+/* =========================================================
+   Hero
+   ========================================================= */
+.hero {
+  padding: 5rem 4rem 4.5rem;
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(77, 166, 255, 0.22), transparent 60%),
+    linear-gradient(180deg, var(--navy) 0%, var(--deep-teal) 100%);
+  color: var(--neutral-100);
+  border-bottom: 1px solid var(--surface-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 2.5rem;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero Earth backdrop slot — full-bleed behind .hero__container.
+   When a real capture lands, set background-image on this
+   element (or replace --hero-earth-bg-image). The placeholder
+   modifier renders a neutral "asset pending" tag so the slot
+   is visible during review. */
+.hero__earth-bg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 60%;
+  pointer-events: none;
+  z-index: 0;
+  background-image: var(--hero-earth-bg-image, none);
+  background-size: cover;
+  background-position: center right;
+  background-repeat: no-repeat;
+  /* Mask the right-anchored image so it fades into the
+     hero gradient on its left edge — keeps the title's
+     contrast high. */
+  mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  opacity: 0.55;
+}
+
+.hero__earth-bg--placeholder {
+  background:
+    radial-gradient(circle at 80% 50%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.02),
+      rgba(255, 255, 255, 0.02) 8px,
+      rgba(255, 255, 255, 0.04) 8px,
+      rgba(255, 255, 255, 0.04) 16px
+    );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero__earth-bg-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed var(--neutral-500);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+}
+
+@media (max-width: 700px) {
+  .hero__earth-bg {
+    /* On phones the hero stacks single-column; dim the
+       backdrop further so it doesn't compete with the
+       title. Real captures should still read fine. */
+    width: 100%;
+    opacity: 0.35;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+  }
+}
+
+.hero__logos,
+.hero__qrs {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hero__logo,
+.hero__qr {
+  width: 96px;
+  height: 96px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--neutral-400);
+  text-align: center;
+  padding: 0.4rem;
+  line-height: 1.3;
+}
+
+/* Image-variant logo slot — used when a real logo image fills the
+   slot. Drops the placeholder box treatment so transparent logos
+   sit cleanly on the hero gradient. */
+.hero__logo--img {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.hero__logo--img img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* Wide logo slot — for stacked-text marks like the GSL logo whose
+   natural aspect is wider than tall. Lets the image keep its real
+   ratio at the standard 96px height instead of being letterboxed
+   into a 96×96 square. */
+.hero__logo--wide {
+  width: auto;
+  min-width: 96px;
+  max-width: 200px;
+  height: 96px;
+}
+.hero__logo--wide img {
+  width: auto;
+  height: 100%;
+}
+
+/* Desktop bump for the left-column NOAA logo. The left column
+   holds a single mark while the right column stacks two rows
+   (GSL wide logo + QR figure with caption ≈ 220px tall), so
+   keeping the left logo at 96px reads visually undersized
+   relative to the right column's combined height. Above the
+   900px breakpoint, scale it to 160px so it carries comparable
+   weight; the mobile flow (≤ 900px) keeps the 96px sizing,
+   which works for the row-collapsed layout. */
+@media (min-width: 901px) {
+  .hero__logos .hero__logo {
+    width: 160px;
+    height: 160px;
+  }
+}
+
+/* QR figure — wraps the QR image (or placeholder) with a small
+   caption underneath, matching the "View Online" treatment used
+   in the Data Depot poster. */
+.hero__qr-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.hero__qr-caption {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--terra-accent-text);
+}
+
+.hero__center { text-align: center; }
+
+.hero__title {
+  font-size: clamp(1.85rem, 3.6vw, 2.7rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.6rem;
+  color: white;
+}
+
+.hero__subtitle {
+  font-size: clamp(1rem, 1.4vw, 1.15rem);
+  color: var(--mist);
+  max-width: 600px;
+  margin: 0 auto 1.75rem;
+  font-weight: 300;
+  line-height: 1.5;
+}
+
+.hero__author {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--neutral-300);
+  line-height: 1.55;
+}
+.hero__author strong {
+  color: var(--neutral-100);
+  display: block;
+  font-weight: 600;
+  font-size: 1rem;
+}
+.hero__author .orcid {
+  color: #a6ce39;
+}
+.hero__author .orcid::before {
+  content: "iD ";
+  font-weight: 700;
+  font-style: italic;
+  color: #a6ce39;
+  margin-right: 0.15em;
+}
+
+/* Hero pill row — short value-prop chips that hook scanners
+   before the §2 mission's longer narrative. Each pill is one
+   factual claim chosen to land for a specific audience (educator,
+   decision-maker, content developer, IT). Mirrors the chip-row
+   convention from the Data Depot poster in this series. */
+.hero__pills {
+  list-style: none;
+  margin: 1.1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+.hero__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--neutral-100);
+  white-space: nowrap;
+}
+.hero__pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--terra-accent);
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .section {
+    padding: var(--section-py-mobile) var(--section-px-mobile);
+  }
+  .hero {
+    padding: 3rem 1.25rem 2.75rem;
+  }
+  .hero__container {
+    grid-template-columns: 1fr;
+    text-align: center;
+    gap: 1.5rem;
+  }
+  .hero__logos,
+  .hero__qrs {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+/* =========================================================
+   Shared section eyebrow + lede typography
+   ========================================================= */
+.section__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ocean-blue);
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+/* =========================================================
+   §2 Mission — two-column on desktop, stacked on mobile
+   ========================================================= */
+.mission__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+.mission__lede {
+  font-size: clamp(1.2rem, 1.8vw, 1.45rem);
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--ocean-blue);
+  border-left: 3px solid var(--terra-accent);
+  padding-left: 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.mission__copy p {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--neutral-700);
+}
+
+.mission__copy p.mission__close {
+  margin-bottom: 0;
+  font-weight: 600;
+  color: var(--neutral-900);
+  font-size: 1.1rem;
+}
+
+/* Quiet CTA below the iconic mission close — links to the
+   full MISSION.md doc on GitHub. Styled small enough not
+   to compete with "Same data — no museum required" but
+   discoverable for readers who want the longer form. */
+.mission__copy p.mission__link-row {
+  margin-top: 0.85rem;
+  font-size: 0.95rem;
+}
+
+.mission__link {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cable-blue);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.mission__link:hover,
+.mission__link:focus-visible {
+  text-decoration: underline;
+}
+
+.mission__visual {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Vertical stack so each image gets the full right-column width
+   on desktop — meaningfully larger than the previous side-by-side
+   half-column thumbs. Below the section's 900px breakpoint, the
+   .mission__container collapses to a single column anyway so the
+   pair flows naturally to viewport width. */
+.mission__pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.mission__pair > figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mission__ph {
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  aspect-ratio: 3 / 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-500);
+  text-align: center;
+  padding: 0.5rem;
+  line-height: 1.4;
+}
+
+/* The shipped images (sos-museum.webp, terraviz-phone.webp) are
+   1280×853 — native 3:2. Match that here so object-fit doesn't
+   crop the sides. */
+.mission__pair img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
+.mission__pair figcaption {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  text-align: center;
+}
+
+.mission__caption {
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ocean-blue);
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .mission__container {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+/* =========================================================
+   §3 Feature gallery — 3-up responsive card grid
+   ========================================================= */
+.features__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.features__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.features__intro {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 720px;
+  margin: 0 0 2.5rem;
+  line-height: 1.55;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+.feature-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-top: 3px solid var(--card-accent, var(--terra-accent));
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Keep the foreground content above the faded section icon
+   that lives in .feature-card__bg. The wallpaper element is
+   absolutely-positioned with z-index:0; everything else floats
+   above it on z-index:1. */
+.feature-card > :not(.feature-card__bg) {
+  position: relative;
+  z-index: 1;
+}
+
+.feature-card:hover,
+.feature-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--card-accent, var(--terra-accent));
+  box-shadow:
+    0 8px 24px -12px rgba(0, 0, 0, 0.18),
+    0 0 0 1px var(--card-accent-bg, rgba(77, 166, 255, 0.15));
+  text-decoration: none;
+}
+
+.feature-card__icon {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-accent-bg, var(--terra-accent-bg));
+  color: var(--card-accent, var(--cable-blue));
+  border-radius: 10px;
+  flex-shrink: 0;
+  margin-bottom: 0.25rem;
+}
+
+.feature-card__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.feature-card__anchor {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: var(--card-accent, var(--terra-accent));
+  font-weight: 600;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.feature-card__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.feature-card__desc {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.feature-card__cta {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--card-accent, var(--cable-blue));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.feature-card__cta::after {
+  content: " →";
+}
+
+/* Faded section icon as background art — anchored bottom-right,
+   inherits --card-accent, sits below text. Lifts opacity
+   slightly on hover to reinforce interactivity. */
+.feature-card__bg {
+  position: absolute;
+  right: -30px;
+  bottom: -30px;
+  width: 200px;
+  height: 200px;
+  color: var(--card-accent, var(--terra-accent));
+  opacity: 0.07;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 0.2s ease;
+}
+
+.feature-card__bg svg {
+  width: 100%;
+  height: 100%;
+}
+
+.feature-card:hover .feature-card__bg,
+.feature-card:focus-visible .feature-card__bg {
+  opacity: 0.12;
+}
+
+/* Per-card palette. Each hue is muted enough to coexist on the
+   page; the soft -bg variant tints the icon plate and hover
+   ring. Keep these in sync with sec-03-features.html's modifier
+   classes. */
+.feature-card--globe       { --card-accent: #4da6ff; --card-accent-bg: rgba(77, 166, 255, 0.10); }
+.feature-card--multiglobe  { --card-accent: #26a69a; --card-accent-bg: rgba(38, 166, 154, 0.10); }
+.feature-card--tours       { --card-accent: #e09537; --card-accent-bg: rgba(224, 149, 55, 0.10); }
+.feature-card--orbit       { --card-accent: #7e57c2; --card-accent-bg: rgba(126, 87, 194, 0.10); }
+.feature-card--immersive   { --card-accent: #d05a99; --card-accent-bg: rgba(208, 90, 153, 0.10); }
+.feature-card--platforms   { --card-accent: #43a047; --card-accent-bg: rgba(67, 160, 71, 0.10); }
+.feature-card--federation  { --card-accent: #5c6bc0; --card-accent-bg: rgba(92, 107, 192, 0.10); }
+.feature-card--publishing  { --card-accent: #afb42b; --card-accent-bg: rgba(175, 180, 43, 0.12); }
+.feature-card--analytics   { --card-accent: #bf6b78; --card-accent-bg: rgba(191, 107, 120, 0.10); }
+.feature-card--techstack   { --card-accent: #607d8b; --card-accent-bg: rgba(96, 125, 139, 0.10); }
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-card,
+  .feature-card__bg {
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   §4 Globe — architecture cards, pipeline diagram, live demo
+   iframe, and effect-toggle bar
+   ========================================================= */
+.globe__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+/* Split header for §1 globe — title + lede on the left,
+   illustrative photoreal Earth visual on the right. The
+   stack-grid and the rest of the section continue
+   single-column below. Stylized SVG today; swap target for
+   a real TerraViz capture later (one element, no layout
+   reshape). */
+.globe__hero {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  margin: 0 0 2.5rem;
+}
+
+.globe__hero-text {
+  /* eyebrow + title + lede inherit existing styling. */
+}
+
+.globe__hero-earth {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.globe__hero-earth img,
+.globe__hero-earth svg {
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+.globe__hero-earth-ph {
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-100),
+      var(--neutral-100) 8px,
+      var(--neutral-200) 8px,
+      var(--neutral-200) 16px
+    );
+  border: 1px dashed var(--neutral-300);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  padding: 1rem;
+  line-height: 1.4;
+}
+
+.globe__hero-earth-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin-top: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .globe__hero {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .globe__hero-earth img,
+  .globe__hero-earth svg,
+  .globe__hero-earth-ph {
+    max-width: 260px;
+  }
+}
+
+.globe__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.globe__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.globe__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.globe__stack-card {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.globe__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.globe__stack-card p {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.globe__stack-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+/* Source-code links — every <a> pointing at a file on main
+   carries a discreet ↗ glyph signaling the off-site jump.
+   Heading-level links additionally inherit the heading color
+   until hover, so card titles read as titles, not as a wall of
+   blue. Validated against renames by check_source_links.py. */
+a[href*="github.com/zyra-project/terraviz/blob/"]::after {
+  content: "↗";
+  margin-left: 0.3em;
+  font-size: 0.75em;
+  color: var(--neutral-400);
+  vertical-align: super;
+  display: inline-block;
+}
+
+a[href*="github.com/zyra-project/terraviz/blob/"]:hover::after,
+a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible::after {
+  color: var(--cable-blue);
+}
+
+h3 a[href*="github.com/zyra-project/terraviz/blob/"] {
+  color: inherit;
+  text-decoration: none;
+}
+
+h3 a[href*="github.com/zyra-project/terraviz/blob/"]:hover,
+h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
+}
+
+@media (max-width: 700px) {
+  .globe__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.globe__diagram {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.75rem 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.globe__diagram svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.globe__diagram-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.75rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+.globe__arch-planned-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+  border: 1px dashed var(--terra-accent);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  vertical-align: 0.05em;
+}
+
+.globe__arch-footnote {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  text-align: center;
+  margin: -1.25rem auto 2.5rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+.globe__arch-footnote code {
+  font-style: normal;
+  background: var(--neutral-100);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--neutral-700);
+  font-size: 0.85em;
+}
+
+/* Demo iframe + effect bar */
+.demo-section__title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.demo-section__hint {
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  margin: 0 0 1.25rem;
+  max-width: 760px;
+}
+
+.demo-frame {
+  position: relative;
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  box-shadow: 0 12px 32px -16px rgba(0, 23, 45, 0.25);
+}
+
+.demo-frame__iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--navy);
+}
+
+.demo-frame__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  background: var(--navy);
+  color: var(--neutral-100);
+  font-family: var(--font-sans);
+  text-align: center;
+  padding: 2rem;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.demo-frame[data-state="ready"] .demo-frame__fallback {
+  opacity: 0;
+}
+
+.demo-frame__fallback-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--neutral-100);
+  margin: 0;
+}
+
+.demo-frame__fallback-body {
+  font-size: 0.9rem;
+  color: var(--mist);
+  max-width: 36em;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.demo-frame__fallback-link {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--terra-accent);
+  pointer-events: auto;
+}
+
+.demo-frame__fullscreen-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--neutral-100);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  padding: 0.32rem 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: border-color 0.15s, background 0.15s;
+}
+.demo-frame__fullscreen-btn:hover,
+.demo-frame__fullscreen-btn:focus-visible {
+  border-color: var(--surface-border-hover);
+  background: rgba(13, 13, 18, 0.94);
+}
+
+.demo-frame.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  border-radius: 0;
+  border: 0;
+  aspect-ratio: auto;
+}
+
+.effect-toggle-bar {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.effect-toggle-bar__label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 0.25rem;
+}
+
+.effect-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--neutral-300);
+  color: var(--neutral-800);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.effect-toggle:hover,
+.effect-toggle:focus-visible {
+  border-color: var(--terra-accent);
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+}
+
+.effect-toggle.is-active {
+  border-color: var(--terra-accent);
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+}
+
+.effect-note {
+  margin-top: 0.95rem;
+  font-size: 0.8rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  max-width: 760px;
+}
+
+/* =========================================================
+   §6 Tours — pillars, task strip, task table, callout,
+   forward-direction cards, and the take-a-tour bar
+   ========================================================= */
+.tours__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.tours__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.tours__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+/* Split header for §3 tours — lede on the left, a task-verb
+   reference rail on the right. Keeps the typographic measure
+   intact for the prose while filling the right gutter with a
+   small content-driven artefact (a tour, in five tasks). */
+.tours__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.tours__hero .tours__lede {
+  margin-bottom: 0;
+}
+
+.tours__rail {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #e09537;
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+}
+
+.tours__rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin: 0 0 0.6rem;
+}
+
+.tours__rail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.tours__rail-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  padding: 0.22rem 0;
+  border-bottom: 1px dashed var(--neutral-200);
+}
+
+.tours__rail-list li:last-child {
+  border-bottom: 0;
+}
+
+.tours__rail-list code {
+  flex: 0 0 auto;
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.tours__rail-list span {
+  flex: 1 1 auto;
+  color: var(--neutral-600);
+}
+
+.tours__rail-foot {
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  font-style: italic;
+  border-top: 1px solid var(--neutral-200);
+  padding-top: 0.5rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 800px) {
+  .tours__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+.tours__lede code,
+.tours__pillar code,
+.tours__callout code,
+.tours__forward-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.tours__pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.tours__pillar {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 1.2rem 1.3rem;
+}
+
+.tours__pillar h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.tours__pillar p {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0;
+}
+
+.tours__pillar--emph {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.08), rgba(77, 166, 255, 0));
+  border-color: var(--terra-accent);
+  border-left: 3px solid var(--terra-accent);
+}
+
+@media (max-width: 900px) {
+  .tours__pillars {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tours__strip {
+  margin: 0 0 2.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  overflow-x: auto;
+}
+
+.tours__strip svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.tours__strip-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.04em;
+}
+
+.tours__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.tours__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+}
+
+.tours__table-wrapper {
+  overflow-x: auto;
+  margin: 0 0 2rem;
+}
+
+.tours__table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.tours__table th,
+.tours__table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--neutral-200);
+  vertical-align: top;
+}
+
+.tours__table thead th {
+  background: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  font-weight: 700;
+}
+
+.tours__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tours__table tbody tr:hover {
+  background: var(--neutral-50);
+}
+
+.tours__table code {
+  font-size: 0.88em;
+  color: var(--cable-blue);
+}
+
+.tours__table td:first-child {
+  white-space: nowrap;
+}
+
+.tours__callout {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 4px solid var(--ocean-blue);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.tours__callout p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+}
+
+.tours__forward {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.tours__forward-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.tours__forward-card--next {
+  border-color: var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.05), rgba(77, 166, 255, 0));
+}
+
+.tours__forward-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+}
+
+.tours__forward-card--next .tours__forward-tag {
+  color: var(--cable-blue);
+}
+
+.tours__forward-card h4 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.tours__forward-card p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.7rem;
+}
+
+.tours__forward-honest {
+  font-size: 0.78rem !important;
+  font-style: italic;
+  color: var(--neutral-500) !important;
+  margin: 0.5rem 0 0 !important;
+}
+
+@media (max-width: 800px) {
+  .tours__forward {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tours__refs {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  margin: 1.25rem 0 0;
+}
+
+/* Distinct CTA variant of the existing .effect-toggle so the
+   "Ask Orbit" launcher reads as a primary action rather than
+   a sibling of the deep-link buttons. */
+.effect-toggle--cta {
+  background: var(--cable-blue);
+  border-color: var(--cable-blue);
+  color: white;
+}
+.effect-toggle--cta:hover,
+.effect-toggle--cta:focus-visible {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: white;
+}
+.effect-toggle--cta.is-active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: white;
+}
+
+/* =========================================================
+   §5 Multi-globe — architecture cards + camera-lockstep
+   diagram + layout-toggle bar
+   ========================================================= */
+.multiglobe__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.multiglobe__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.multiglobe__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.multiglobe__lede code,
+.multiglobe__stack-card code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.multiglobe__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.multiglobe__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.multiglobe__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.multiglobe__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .multiglobe__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.multiglobe__diagram {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.multiglobe__diagram svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 640px;
+  width: 100%;
+  height: auto;
+}
+
+.multiglobe__diagram-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+.multiglobe__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.multiglobe__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+}
+
+/* =========================================================
+   §7 Orbit — architecture cards, sequence diagram, chunk
+   reference, chat-bubble mockup, live demo, forward callout
+   ========================================================= */
+.orbit__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.orbit__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+/* Split header for §4 orbit — lede on the left, a compact
+   chat-bubble preview on the right that demonstrates the
+   <<LOAD:ID>>-resolved load chips the lede describes. Carries
+   both action types (dataset + tour) in the orbit reply bubble,
+   so the rail is the section's only chat-mockup. */
+.orbit__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.orbit__hero .orbit__lede {
+  margin-bottom: 0;
+}
+
+.orbit__rail {
+  background: var(--navy);
+  border: 1px solid var(--surface-border);
+  border-left: 3px solid #7e57c2;
+  border-radius: 8px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.orbit__rail-bubble {
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.orbit__rail-bubble--user {
+  background: rgba(77, 166, 255, 0.18);
+  border: 1px solid rgba(77, 166, 255, 0.3);
+  color: #e8eaf0;
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.orbit__rail-bubble--orbit {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--surface-border);
+  color: #e8eaf0;
+  align-self: flex-start;
+  max-width: 95%;
+}
+
+.orbit__rail-bubble--orbit p {
+  margin: 0 0 0.5rem;
+}
+
+.orbit__rail-bubble--orbit p:last-child {
+  margin-bottom: 0;
+}
+
+.orbit__rail-load {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(77, 166, 255, 0.18);
+  border: 1px solid rgba(77, 166, 255, 0.45);
+  color: #6ab8ff;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0 0 0.55rem;
+  cursor: not-allowed;
+}
+
+.orbit__rail-load--tour {
+  background: rgba(77, 166, 255, 0.26);
+  border-color: var(--terra-accent);
+}
+
+.orbit__rail-load-arrow {
+  font-family: var(--font-mono);
+  color: var(--terra-accent);
+  font-weight: 700;
+}
+
+.orbit__rail-note {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--mist);
+  letter-spacing: 0.04em;
+  text-align: center;
+  margin: 0.25rem 0 0;
+}
+
+.orbit__rail-note code {
+  background: rgba(77, 166, 255, 0.15);
+  color: #6ab8ff;
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+@media (max-width: 800px) {
+  .orbit__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+.orbit__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.orbit__lede code,
+.orbit__stack-card code,
+.orbit__forward code,
+.orbit-chunks-list code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.orbit__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.orbit__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.orbit__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.orbit__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .orbit__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.orbit__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.orbit__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+.orbit__sequence {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.orbit__sequence svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.orbit__sequence-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Chunk-types reference */
+.orbit-chunks-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 1.5rem;
+}
+
+.orbit-chunks-list li {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  padding-left: 1.1rem;
+  position: relative;
+  line-height: 1.5;
+}
+
+.orbit-chunks-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--terra-accent);
+}
+
+@media (max-width: 700px) {
+  .orbit-chunks-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Research-question callout — the "does the avatar matter"
+   open question + invitation to collaborate */
+.orbit__research-question {
+  margin: 1.25rem 0 2.5rem;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  max-width: 760px;
+}
+
+.orbit__research-question p {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--neutral-800);
+  margin: 0;
+}
+
+.orbit__research-cta {
+  margin-top: 0.7rem !important;
+  color: var(--cable-blue) !important;
+  font-weight: 600;
+  font-size: 0.92rem !important;
+  font-style: italic;
+}
+
+/* Forward callout linking back to §6 */
+.orbit__forward {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.08), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1rem;
+}
+
+.orbit__forward .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.orbit__forward h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.orbit__forward p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0;
+}
+
+/* =========================================================
+   §8 Immersive — AR/VR architecture cards, per-frame loop,
+   Earth-mode diptych, captures grid, compatibility table,
+   reach-beyond-Quest callout, headset CTA
+   ========================================================= */
+.xr__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.xr__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.xr__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.xr__lede code,
+.xr__stack-card code,
+.xr__loop-step code,
+.xr__compat-table code,
+.xr__reach code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.xr__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.xr__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.xr__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.xr__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .xr__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.xr__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.xr__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Per-frame loop — vertical numbered steps */
+.xr__loop-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  counter-reset: xr-step;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.xr__loop-step {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 0.85rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  align-items: start;
+  counter-increment: xr-step;
+}
+
+.xr__loop-step::before {
+  content: counter(xr-step);
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 0.3rem 0;
+  align-self: stretch;
+}
+
+.xr__loop-step--ar {
+  border-left: 3px solid var(--terra-accent);
+}
+
+.xr__loop-name {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  display: block;
+  margin: 0;
+}
+
+.xr__loop-desc {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.45;
+  margin: 0.15rem 0 0;
+}
+
+.xr__loop-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--cable-blue);
+  background: var(--terra-accent-bg);
+  border: 1px solid var(--terra-accent);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+/* Earth-modes diptych (no dataset · with dataset) */
+.xr__earth-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+
+.xr__earth-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.xr__earth-mode svg,
+.xr__earth-mode img {
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+/* Placeholder slot — diagonal-stripe square that holds layout
+   stable until a real TerraViz screenshot drops in. Same
+   visual language as the §1 globe photoreal slot and the §5
+   Quest captures grid. */
+.xr__earth-mode-ph {
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 1 / 1;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(77, 166, 255, 0.18), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-100),
+      var(--neutral-100) 8px,
+      var(--neutral-200) 8px,
+      var(--neutral-200) 16px
+    );
+  border: 1px dashed var(--neutral-300);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+  padding: 1rem;
+  line-height: 1.4;
+}
+
+.xr__earth-mode h4 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--cable-blue);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.xr__earth-mode p {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .xr__earth-modes {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Captures grid — placeholders for Quest screenshots / MP4s */
+.xr__captures {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+
+.xr__capture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.xr__capture-ph {
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  aspect-ratio: 16 / 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neutral-600);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 0.85rem;
+  line-height: 1.5;
+}
+
+.xr__capture-caption {
+  font-size: 0.85rem;
+  color: var(--neutral-700);
+  margin: 0;
+  text-align: center;
+}
+
+.xr__captures-note {
+  font-size: 0.8rem;
+  color: var(--neutral-600);
+  font-style: italic;
+  margin: 0 0 2.5rem;
+}
+
+@media (max-width: 700px) {
+  .xr__captures {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Compatibility table */
+.xr__compat-wrapper {
+  overflow-x: auto;
+  margin: 0 0 1.5rem;
+}
+
+.xr__compat-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.xr__compat-table th,
+.xr__compat-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--neutral-200);
+  vertical-align: top;
+}
+
+.xr__compat-table thead th {
+  background: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--neutral-600);
+  font-weight: 700;
+}
+
+.xr__compat-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.xr__yes {
+  color: var(--leaf-green);
+  font-weight: 700;
+}
+
+.xr__no {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.xr__pending {
+  color: var(--cable-blue);
+  font-weight: 700;
+}
+
+/* Reach-beyond-Quest callout (model-viewer tile placeholder) */
+.xr__reach {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 2.5rem;
+}
+
+.xr__reach .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.xr__reach h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.xr__reach p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.5rem;
+}
+
+.xr__reach p:last-child {
+  margin-bottom: 0;
+}
+
+.xr__reach-ph {
+  margin-top: 1rem;
+  background: white;
+  border: 1px dashed var(--neutral-400);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  line-height: 1.55;
+}
+
+.xr__model-viewer {
+  display: block;
+  width: 100%;
+  height: 360px;
+  margin: 1rem 0 0;
+  background: var(--navy);
+  border-radius: 10px;
+  overflow: hidden;
+  --poster-color: var(--navy);
+}
+
+.xr__model-ar-btn {
+  position: absolute;
+  bottom: 0.85rem;
+  right: 0.85rem;
+  background: var(--terra-accent);
+  color: white;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.3);
+}
+
+.xr__model-ar-btn:hover {
+  background: #6ab8ff;
+}
+
+.xr__model-poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--navy);
+  color: var(--mist);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.xr__model-poster-label {
+  padding: 0.85rem 1.5rem;
+  border: 1px dashed var(--surface-border-hover);
+  border-radius: 6px;
+}
+
+.xr__reach-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  line-height: 1.55;
+}
+
+/* Headset CTA — open in new tab to launch XR session */
+/* Split header for §5 immersive — lede on the left, the
+   "Open TerraViz on your headset" CTA box on the right. The
+   CTA reuses the existing .xr__cta navy treatment; the
+   .xr__cta--rail modifier just trims the body's max-width
+   so the prose wraps tighter inside the narrower column. */
+.xr__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.xr__hero .xr__lede {
+  margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+  .xr__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+.xr__cta {
+  background: var(--navy);
+  color: var(--neutral-100);
+  border-radius: 10px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.xr__cta--rail {
+  padding: 1.15rem 1.25rem;
+  gap: 0.7rem;
+}
+
+.xr__cta--rail .xr__cta-body {
+  font-size: 0.88rem;
+  max-width: none;
+}
+
+.xr__cta-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0;
+}
+
+.xr__cta-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+
+.xr__cta-body {
+  font-size: 0.95rem;
+  color: var(--mist);
+  line-height: 1.55;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.xr__cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--terra-accent);
+  border: 0;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.6rem 1.1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.xr__cta-btn:hover {
+  background: #6ab8ff;
+  text-decoration: none;
+}
+
+/* =========================================================
+   §10 Federation — architecture cards, federation diagram
+   with animated peer-pulse, phase status, dev-quickstart
+   code block, doc cross-links
+   ========================================================= */
+.fed__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.fed__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.fed__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+/* Split header for §7 federation — lede on the left, the
+   federation manifest at /.well-known/terraviz.json rendered
+   as a JSON snippet on the right. Concrete artefact for the
+   federation-curious reader; reinforces "signed identity,
+   capability advertisement, open spec" without an extra
+   diagram. */
+.fed__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.fed__hero .fed__lede {
+  margin-bottom: 0;
+}
+
+.fed__rail {
+  background: var(--neutral-50);
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #5c6bc0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.fed__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.45rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.fed__rail-method {
+  background: #5c6bc0;
+  color: white;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.fed__rail-path {
+  color: var(--neutral-700);
+}
+
+.fed__rail-code {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--neutral-800);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.fed__rail-key {
+  color: #5c6bc0;
+}
+
+.fed__rail-str {
+  color: #2c670c;
+}
+
+.fed__rail-punct {
+  color: var(--neutral-500);
+}
+
+.fed__rail-foot {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-500);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-top: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  margin: 0;
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .fed__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+/* Inline aside that follows the federation lede with a smaller,
+   muted footnote about the deprecated legacy catalog source.
+   Reads as context for the reader who remembers the SOS S3
+   path, not load-bearing copy. */
+.fed__lede-aside {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--neutral-500);
+  line-height: 1.5;
+}
+
+.fed__lede code,
+.fed__stack-card code,
+.fed__phase code,
+.fed__refs code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.fed__stack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__stack-card {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 6px;
+  padding: 1rem 1.15rem;
+}
+
+.fed__stack-card h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.fed__stack-card p {
+  font-size: 0.9rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .fed__stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fed__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.fed__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Architecture / federation diagram */
+.fed__arch {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.fed__arch svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.fed__arch-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Animated dashed federation lines.
+   Existing prefers-reduced-motion media query already pauses
+   this animation by setting animation-duration to 0.001ms. */
+@keyframes fed-flow {
+  to { stroke-dashoffset: -16; }
+}
+
+.fed-flow-line {
+  stroke-dasharray: 4 4;
+  animation: fed-flow 1.6s linear infinite;
+}
+
+.fed-flow-line--delay-1 {
+  animation-delay: -0.5s;
+}
+
+.fed-flow-line--delay-2 {
+  animation-delay: -1s;
+}
+
+/* §8 publisher dashboard placeholder — frames the slot like a
+   browser window (faux chrome bar + traffic lights + URL) so
+   it visually telegraphs "interactive embed pending" rather
+   than reading as a generic image placeholder. When the real
+   portal ships behind Access, this becomes a sandbox-attribute
+   <iframe> with no markup churn beyond the body element. */
+.pub__demo {
+  margin: 0 0 1rem;
+}
+
+.pub__demo-frame {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.pub__demo-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.55rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pub__demo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.pub__demo-dot--r { background: #ff5f57; }
+.pub__demo-dot--y { background: #febc2e; }
+.pub__demo-dot--g { background: #28c840; }
+
+.pub__demo-url {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--neutral-600);
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  margin: 0 1rem;
+}
+
+.pub__demo-url code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.pub__demo-body {
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(175, 180, 43, 0.12), transparent 55%),
+    repeating-linear-gradient(
+      45deg,
+      var(--neutral-50, #fafafa),
+      var(--neutral-50, #fafafa) 10px,
+      var(--neutral-100) 10px,
+      var(--neutral-100) 20px
+    );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+}
+
+.pub__demo-label {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--neutral-700);
+  letter-spacing: 0.02em;
+}
+
+.pub__demo-tag {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  background: white;
+  border: 1px dashed var(--neutral-400);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+
+.pub__demo-caption {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.55;
+  margin: 0.85rem 0 0;
+  max-width: 760px;
+}
+
+/* Split header for §8 publishing — lede on the left, a faux
+   `terraviz publish` terminal session on the right. Same pattern
+   as .tours__hero / .globe__hero; reuses the .pub__demo-dot
+   traffic lights inside its own chrome bar. */
+.pub__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.pub__hero .fed__lede {
+  margin-bottom: 0;
+}
+
+.pub__rail {
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.pub__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pub__rail-title {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+  margin-left: 0.4rem;
+}
+
+.pub__rail-cli {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.pub__rail-cli code {
+  display: block;
+  font-family: inherit;
+}
+
+.pub__rail-prompt {
+  color: #5dc2ff;
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+
+.pub__rail-line {
+  display: block;
+}
+
+.pub__rail-ok {
+  color: #6dd49a;
+}
+
+.pub__rail-meta {
+  color: #9aa5b1;
+  font-style: italic;
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 800px) {
+  .pub__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+/* Conceptual federation topology — small hook diagram between
+   the lede and the architecture stack-grid. Distinct from the
+   detailed .fed__arch diagram below (which shows the local
+   node's stack + signed-pull mechanics); this one just lends
+   the idea — a mesh of peer nodes with a client searching
+   across them. */
+.fed__topology {
+  margin: 0 0 2.25rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.fed__topology svg {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  display: block;
+}
+
+.fed__topology-caption {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+  text-align: center;
+  max-width: 640px;
+  margin: 0;
+}
+
+/* Cloud-agnostic portability table — three columns mapping
+   today's Cloudflare service to the generic primitive it
+   represents and a few drop-in alternatives. Visually muted
+   so it reads as "context for the operator" rather than
+   competing with the federation flow diagram below. */
+/* Four-tier on-ramp ladder — defines Tier 0 / 1 / 2 / 3 once,
+   so the rest of the poster can reference the numbers without
+   redefining them. Anchored at #fed-tiers; §2 mission and
+   §8 publishing link the first tier-mention back to this table. */
+.fed__tiers {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #5c6bc0;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__tiers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.fed__tiers-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  font-weight: 700;
+  padding: 0.4rem 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.fed__tiers-table td {
+  padding: 0.6rem 0.55rem;
+  border-bottom: 1px solid var(--neutral-100);
+  vertical-align: top;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.fed__tiers-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fed__tiers-table code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+.fed__tiers-tier {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--neutral-800);
+  white-space: nowrap;
+}
+
+.fed__tiers-tier strong {
+  display: inline-block;
+  background: #5c6bc0;
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  margin-right: 0.25rem;
+}
+
+.fed__tiers-burden {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  white-space: nowrap;
+}
+
+.fed__tiers-note {
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  margin: 0.85rem 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .fed__tiers-table thead {
+    display: none;
+  }
+  .fed__tiers-table,
+  .fed__tiers-table tbody,
+  .fed__tiers-table tr,
+  .fed__tiers-table td {
+    display: block;
+    width: 100%;
+  }
+  .fed__tiers-table tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--neutral-200);
+  }
+  .fed__tiers-table tr:last-child {
+    border-bottom: none;
+  }
+  .fed__tiers-table td {
+    padding: 0.2rem 0;
+    border-bottom: none;
+  }
+  .fed__tiers-burden {
+    white-space: normal;
+  }
+}
+
+.fed__portability {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid var(--terra-accent);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__portability-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.fed__portability-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  font-weight: 700;
+  padding: 0.4rem 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.fed__portability-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--neutral-100);
+  vertical-align: top;
+  color: var(--neutral-700);
+  line-height: 1.45;
+}
+
+.fed__portability-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fed__portability-table code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+.fed__portability-alts {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-500);
+}
+
+.fed__portability-note {
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  margin: 0.85rem 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .fed__portability-table thead {
+    display: none;
+  }
+  .fed__portability-table,
+  .fed__portability-table tbody,
+  .fed__portability-table tr,
+  .fed__portability-table td {
+    display: block;
+    width: 100%;
+  }
+  .fed__portability-table tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--neutral-200);
+  }
+  .fed__portability-table tr:last-child {
+    border-bottom: none;
+  }
+  .fed__portability-table td {
+    padding: 0.15rem 0;
+    border: none;
+  }
+}
+
+/* Phase status — "today" + "forthcoming" diptych */
+.fed__phase-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__phase {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.fed__phase--shipped {
+  border-left: 3px solid var(--leaf-green);
+}
+
+.fed__phase--draft {
+  border-color: var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.05), rgba(77, 166, 255, 0));
+}
+
+.fed__phase-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.fed__phase--shipped .fed__phase-tag {
+  color: var(--leaf-green);
+}
+
+.fed__phase--draft .fed__phase-tag {
+  color: var(--cable-blue);
+}
+
+.fed__phase h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.fed__phase p {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.6rem;
+}
+
+.fed__phase ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.fed__phase li {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--neutral-700);
+  margin: 0 0 0.25rem;
+}
+
+@media (max-width: 800px) {
+  .fed__phase-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dev-quickstart terminal — wraps the .fed__code block in a
+   chrome bar with traffic-light dots and a title, mirroring the
+   §8 publishing CLI rail's framing so the two terminal-flavoured
+   artifacts read as the same idiom. */
+.fed__terminal {
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 0 0 2.5rem;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.fed__terminal-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fed__terminal-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+  margin-left: 0.4rem;
+}
+
+.fed__terminal-foot {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--mist);
+  letter-spacing: 0.02em;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.6rem 1.5rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fed__terminal-foot code {
+  background: rgba(77, 166, 255, 0.15);
+  color: #6ab8ff;
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+/* Inner code block — now nested inside .fed__terminal so the
+   outer wrapper carries the border-radius / box-shadow. */
+.fed__code {
+  background: var(--navy);
+  color: var(--neutral-100);
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+
+.fed__code-line {
+  display: block;
+  white-space: pre;
+}
+
+.fed__code-comment {
+  color: var(--mist);
+}
+
+.fed__code-prompt {
+  color: var(--terra-accent);
+  font-weight: 700;
+  user-select: none;
+  margin-right: 0.45rem;
+}
+
+.fed__code-output {
+  color: var(--seafoam);
+  display: block;
+  padding-left: 1.5rem;
+}
+
+.fed__code-cmd {
+  color: #e8eaf0;
+}
+
+/* Doc cross-link grid */
+.fed__refs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin: 0 0 2rem;
+}
+
+.fed__refs a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 1.05rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.fed__refs a:hover {
+  border-color: var(--terra-accent);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.16);
+  text-decoration: none;
+}
+
+.fed__refs-name {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--cable-blue);
+  font-weight: 700;
+}
+
+.fed__refs-blurb {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.45;
+}
+
+@media (max-width: 700px) {
+  .fed__refs {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   §9 Multi-platform — branching diagram, platform matrix,
+   on-device LLM forward callout
+   ========================================================= */
+.platforms__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.platforms__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.platforms__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.platforms__lede code,
+.platforms__row code,
+.platforms__forward code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.platforms__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.platforms__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+/* Branching diagram */
+.platforms__branch {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2.5rem;
+  overflow-x: auto;
+}
+
+.platforms__branch svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.platforms__branch-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Platform matrix — one row per target */
+.platforms__matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 0 0 2.5rem;
+}
+
+.platforms__row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 1rem 1.25rem;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 0.95rem 1.1rem;
+}
+
+.platforms__row--shipping {
+  border-left: 3px solid var(--leaf-green);
+}
+
+.platforms__row--inflight {
+  border-left: 3px solid var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.04), white);
+}
+
+.platforms__row-target {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  letter-spacing: 0.02em;
+}
+
+.platforms__row-target small {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--neutral-600);
+  letter-spacing: 0;
+  text-transform: uppercase;
+  margin-top: 0.15rem;
+}
+
+.platforms__row-body {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.platforms__row-status {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.platforms__row-status--shipping {
+  background: rgba(44, 103, 12, 0.12);
+  color: var(--leaf-green);
+}
+
+.platforms__row-status--inflight {
+  background: var(--terra-accent-bg);
+  color: var(--cable-blue);
+}
+
+@media (max-width: 700px) {
+  .platforms__row {
+    grid-template-columns: 1fr;
+  }
+  .platforms__row-status {
+    justify-self: start;
+  }
+}
+
+/* Forward callout for on-device LLM */
+.platforms__forward {
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.07), rgba(77, 166, 255, 0));
+  border: 1px solid var(--terra-accent);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.platforms__forward .section__eyebrow {
+  color: var(--cable-blue);
+  margin: 0 0 0.4rem;
+}
+
+.platforms__forward h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.6rem;
+}
+
+.platforms__forward p {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.6rem;
+}
+
+.platforms__forward p:last-child {
+  margin-bottom: 0;
+}
+
+.platforms__forward strong {
+  color: var(--neutral-900);
+}
+
+/* =========================================================
+   §11 Analytics — tier diptych, invariants list, flow
+   diagram, doc cross-links
+   ========================================================= */
+.analytics__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.analytics__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.analytics__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+/* Split header for §9 analytics — lede on the left, a small
+   render of the in-app Tools › Privacy panel on the right.
+   Echoes the visitor-controlled claim with the actual UI
+   surface visitors interact with; reinforces the "as little
+   as possible" stance with the explicit "Never stored" line. */
+.analytics__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.analytics__hero .analytics__lede {
+  margin-bottom: 0;
+}
+
+/* Compact chip linking to the public privacy policy. Sits under
+   the §9 lede in the left column; uses the section's rose accent
+   (#bf6b78) so it visually pairs with the privacy-panel rail
+   beside it. */
+.analytics__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
+  padding: 0.4rem 0.85rem;
+  background: rgba(191, 107, 120, 0.08);
+  border: 1px solid #bf6b78;
+  border-radius: 999px;
+  color: #bf6b78;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.analytics__chip:hover,
+.analytics__chip:focus-visible {
+  background: #bf6b78;
+  color: white;
+  text-decoration: none;
+}
+
+.analytics__chip-arrow {
+  font-weight: 700;
+}
+
+.analytics__rail {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #bf6b78;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px -14px rgba(0, 0, 0, 0.18);
+}
+
+.analytics__rail-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+}
+
+.analytics__rail-body {
+  padding: 0.85rem 1rem;
+}
+
+.analytics__rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--neutral-500);
+  text-transform: uppercase;
+  margin: 0 0 0.55rem;
+}
+
+.analytics__rail-options {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.analytics__rail-option {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+  background: var(--neutral-50);
+}
+
+.analytics__rail-option--active {
+  background: rgba(191, 107, 120, 0.08);
+  border-color: #bf6b78;
+}
+
+.analytics__rail-radio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--neutral-400);
+  background: white;
+  flex: 0 0 auto;
+  position: relative;
+  top: 1px;
+}
+
+.analytics__rail-radio--on {
+  border-color: #bf6b78;
+  background: white;
+  box-shadow: inset 0 0 0 3px #bf6b78;
+}
+
+.analytics__rail-label {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+}
+
+.analytics__rail-blurb {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  line-height: 1.45;
+}
+
+.analytics__rail-foot {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-700);
+  background: var(--neutral-50);
+  border-top: 1px dashed var(--neutral-300);
+  padding-top: 0.55rem;
+  line-height: 1.5;
+}
+
+.analytics__rail-foot strong {
+  color: #bf6b78;
+  font-weight: 700;
+}
+
+@media (max-width: 800px) {
+  .analytics__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+.analytics__lede code,
+.analytics__tier code,
+.analytics__invariants code,
+.analytics__flow-caption code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.88em;
+}
+
+.analytics__subhead {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.4rem;
+}
+
+.analytics__subhead-hint {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  margin: 0 0 1rem;
+  max-width: 760px;
+  line-height: 1.55;
+}
+
+.analytics__tiers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.analytics__tier {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}
+
+.analytics__tier--essential {
+  border-left: 3px solid var(--leaf-green);
+}
+
+.analytics__tier--research {
+  border-left: 3px solid var(--terra-accent);
+  background: linear-gradient(180deg, rgba(77, 166, 255, 0.05), white);
+}
+
+.analytics__tier-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.analytics__tier--essential .analytics__tier-tag { color: var(--leaf-green); }
+.analytics__tier--research  .analytics__tier-tag { color: var(--cable-blue); }
+
+.analytics__tier h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.5rem;
+}
+
+.analytics__tier p {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--neutral-700);
+  margin: 0 0 0.6rem;
+}
+
+.analytics__tier ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.analytics__tier li {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--neutral-700);
+  margin: 0 0 0.2rem;
+}
+
+@media (max-width: 800px) {
+  .analytics__tiers { grid-template-columns: 1fr; }
+}
+
+.analytics__invariants {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem 1.5rem;
+}
+
+.analytics__invariants li {
+  font-size: 0.92rem;
+  color: var(--neutral-700);
+  padding-left: 1.4rem;
+  position: relative;
+  line-height: 1.5;
+}
+
+.analytics__invariants li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--leaf-green);
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 700px) {
+  .analytics__invariants { grid-template-columns: 1fr; }
+}
+
+.analytics__flow {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem 1rem 1rem;
+  margin: 0 0 2rem;
+  overflow-x: auto;
+}
+
+.analytics__flow svg {
+  display: block;
+  margin: 0 auto;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.analytics__flow-caption {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--neutral-600);
+  text-align: center;
+  margin: 0.85rem 0 0;
+  letter-spacing: 0.05em;
+}
+
+/* Dashboards section — 2x2 grid mixing inline SVG mock charts
+   (visual filler that ships now) with placeholder boxes that
+   swap in real Grafana captures later. Each tile has a dark
+   panel header to read as a Grafana dashboard tile rather
+   than a generic figure. */
+.analytics__dashboards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 0 0 1.5rem;
+}
+
+.analytics__dash {
+  background: #11151a;
+  border: 1px solid #2a3340;
+  border-radius: 8px;
+  margin: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics__dash-title {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: #d6dde6;
+  background: #0a0e13;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid #2a3340;
+}
+
+.analytics__dash-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.analytics__dash-ph {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--neutral-400);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #11151a,
+      #11151a 8px,
+      #161b22 8px,
+      #161b22 16px
+    );
+  min-height: 160px;
+  padding: 1.5rem;
+}
+
+.analytics__dash-caption {
+  font-size: 0.82rem;
+  color: var(--neutral-500);
+  line-height: 1.5;
+  background: white;
+  padding: 0.7rem 0.85rem;
+  border-top: 1px solid #2a3340;
+}
+
+.analytics__dash-caption code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+}
+
+.analytics__dash-caption em {
+  color: var(--neutral-600);
+  font-style: italic;
+}
+
+.analytics__dashboards-note {
+  font-size: 0.88rem;
+  color: var(--neutral-600);
+  margin: 0 0 1.75rem;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+@media (max-width: 760px) {
+  .analytics__dashboards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.analytics__refs {
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  margin: 0;
+}
+
+.analytics__refs a {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* =========================================================
+   §12 Tech stack — grouped logo/name list with rationale
+   ========================================================= */
+.stack__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.stack__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.stack__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.stack__group {
+  margin: 0 0 1.75rem;
+}
+
+.stack__group-title {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cable-blue);
+  font-weight: 700;
+  margin: 0 0 0.6rem;
+}
+
+/* "Today's stack — portable by design" pill that sits beside
+   the Cloud group title, signalling that the brands listed are
+   the current deploy and not an architectural lock-in. Links
+   to §7 for the portability table. */
+.stack__group-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--neutral-600);
+  background: var(--neutral-100);
+  border: 1px solid var(--neutral-200);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.stack__group-pill a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.stack__group-pill a:hover,
+.stack__group-pill a:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
+}
+
+.stack__items {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stack__item {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.85rem;
+  align-items: baseline;
+  padding: 0.6rem 0.85rem;
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 6px;
+}
+
+.stack__item-name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--neutral-900);
+}
+
+/* Linked chip names — jump to the project's official site or
+   docs in a new tab. Stays styled as the mono chip name
+   until hover, where it gains the cable-blue underline + ↗
+   glyph used elsewhere for off-site jumps. The
+   .stack__item-name a selector handles chips with multiple
+   embedded links (e.g. "Ollama · LM Studio"). */
+a.stack__item-name,
+.stack__item-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.stack__item-name:hover,
+a.stack__item-name:focus-visible,
+.stack__item-name a:hover,
+.stack__item-name a:focus-visible {
+  color: var(--cable-blue);
+  text-decoration: underline;
+}
+
+a.stack__item-name::after,
+.stack__item-name a::after {
+  content: "↗";
+  margin-left: 0.2em;
+  font-size: 0.75em;
+  color: var(--neutral-400);
+  vertical-align: super;
+  display: inline-block;
+}
+
+a.stack__item-name:hover::after,
+a.stack__item-name:focus-visible::after,
+.stack__item-name a:hover::after,
+.stack__item-name a:focus-visible::after {
+  color: var(--cable-blue);
+}
+
+.stack__item-blurb {
+  font-size: 0.88rem;
+  color: var(--neutral-700);
+  line-height: 1.45;
+}
+
+@media (max-width: 800px) {
+  .stack__items { grid-template-columns: 1fr; }
+  .stack__item { grid-template-columns: 7.5rem 1fr; }
+}
+
+@media (max-width: 500px) {
+  .stack__item { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+/* =========================================================
+   §13 CTA — try-it + read-more two-column block
+   ========================================================= */
+.cta__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+}
+
+.cta__title {
+  font-size: clamp(1.5rem, 2.4vw, 1.85rem);
+  font-weight: 700;
+  color: var(--neutral-900);
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.cta__lede {
+  font-size: 1.05rem;
+  color: var(--neutral-700);
+  max-width: 760px;
+  margin: 0 0 2.25rem;
+  line-height: 1.6;
+}
+
+.cta__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.cta__column {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+
+.cta__column h3 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cable-blue);
+  font-weight: 700;
+  margin: 0 0 0.85rem;
+}
+
+.cta__audience {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--neutral-500);
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+.cta__qrs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+  margin: 0 0 1.25rem;
+}
+
+.cta__qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.cta__qr-ph {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--neutral-200);
+  border: 1px dashed var(--neutral-400);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  text-align: center;
+  padding: 0.5rem;
+  line-height: 1.4;
+}
+
+.cta__qr-label {
+  font-size: 0.85rem;
+  color: var(--neutral-700);
+  font-weight: 600;
+}
+
+.cta__qr-url {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--neutral-600);
+  word-break: break-all;
+}
+
+.cta__downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.cta__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--navy);
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.cta__download:hover {
+  background: var(--cable-blue);
+  text-decoration: none;
+}
+
+.cta__download-arrow {
+  color: var(--terra-accent);
+  font-weight: 700;
+}
+
+/* Quality tag inside a download pill — flags alpha/beta builds
+   without changing the pill's visual weight relative to the
+   stable Windows pill. Amber-on-dark mirrors the standard
+   pre-release convention. */
+.cta__download-tag {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(255, 193, 7, 0.14);
+  border: 1px solid rgba(255, 193, 7, 0.45);
+  border-radius: 3px;
+  padding: 0.05rem 0.32rem;
+}
+
+.cta__downloads-note {
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  margin: 0.5rem 0 0;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.cta__links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cta__links li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cta__links a {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--cable-blue);
+  text-decoration: none;
+}
+
+.cta__links a:hover { text-decoration: underline; }
+
+.cta__links small {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--neutral-600);
+}
+
+@media (max-width: 800px) {
+  .cta__columns { grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   §14 Footer
+   ========================================================= */
+.footer-block__container {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.footer-block__title {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.footer-block__authors {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--mist);
+  margin: 0 0 1rem;
+}
+
+.footer-block__authors strong {
+  color: white;
+  font-weight: 600;
+}
+
+.footer-block__authors a {
+  color: var(--terra-accent);
+}
+
+.footer-block__attribution {
+  font-size: 0.85rem;
+  color: var(--mist);
+  line-height: 1.55;
+  margin: 0 0 1rem;
+}
+
+.footer-block__meta {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #5d7a89;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.footer-block__meta span {
+  display: block;
+}
+
+.footer-block__poster-series {
+  font-size: 0.85rem;
+  color: var(--mist);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.footer-block__poster-series h4 {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terra-accent);
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.footer-block__poster-series ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.footer-block__poster-series a {
+  color: white;
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+.footer-block__poster-series a:hover {
+  color: var(--terra-accent);
+  text-decoration: underline;
+}
+
+@media (max-width: 700px) {
+  .footer-block__container { grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   Image lightbox — full-viewport overlay for supporting
+   figure images. Helps mobile / portrait readers who need
+   a closer look at screenshots that render small in flow.
+   ========================================================= */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.5rem;
+  cursor: zoom-out;
+}
+.lightbox[hidden] { display: none; }
+
+.lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: default;
+  user-select: none;
+  border-radius: 4px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.lightbox__close:hover,
+.lightbox__close:focus-visible {
+  background: rgba(0, 0, 0, 0.85);
+  border-color: var(--terra-accent);
+  outline: none;
+}
+
+/* Cursor hint on click-zoomable images. Excludes hero logos
+   (no <figure> wrapper) and QR placeholders (text divs, not
+   <img>) — they're not lightbox-eligible. */
+section figure img {
+  cursor: zoom-in;
+}
