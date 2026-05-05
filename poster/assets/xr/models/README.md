@@ -77,14 +77,15 @@ Before committing the binaries, check both targets:
   scroll point. Drag to spin. The AR icon should be hidden
   (no AR available).
 
-If iOS launches AR Quick Look but the Earth renders with the
-texture upside-down, the fix is a one-line addition in
-`buildUsda()` — insert a `UsdTransform2d` shader between the
-primvar reader and the texture sampler with `scale = (1, -1)` and
-`translation = (0, 1)`. The current code skips it because
-`UsdPreviewSurface` and glTF nominally share the same V=0-at-top
-convention, but real-device AR Quick Look behavior is the
-authority — patch and re-run if the iPhone says otherwise.
+A note on the iOS V-flip: AR Quick Look's `UsdUVTexture` samples
+with V=0 at the bottom of the texture (OpenGL convention), not
+V=0 at the top (glTF / image convention). To keep the same UV
+array driving both outputs, `buildUsda()` inserts a
+`UsdTransform2d` shader between the primvar reader and the
+texture sampler with `scale = (1, -1)` and `translation = (0, 1)`,
+which flips V at sample time. If a future iOS version changes
+its sampling convention and the Earth starts rendering
+upside-down again, removing those two lines flips it back.
 
 ## Step 3 — commit the binaries
 

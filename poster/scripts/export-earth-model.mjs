@@ -400,8 +400,18 @@ def Xform "Earth"
         {
             uniform token info:id = "UsdUVTexture"
             asset inputs:file = @${textureFilename}@
-            float2 inputs:st.connect = </Earth/EarthMaterial/PrimvarReader.outputs:result>
+            float2 inputs:st.connect = </Earth/EarthMaterial/UVTransform.outputs:result>
             color3f outputs:rgb
+        }
+
+        def Shader "UVTransform"
+        {
+            uniform token info:id = "UsdTransform2d"
+            float2 inputs:in.connect = </Earth/EarthMaterial/PrimvarReader.outputs:result>
+            float2 inputs:scale = (1, -1)
+            float2 inputs:translation = (0, 1)
+            float inputs:rotation = 0
+            float2 outputs:result
         }
 
         def Shader "PrimvarReader"
