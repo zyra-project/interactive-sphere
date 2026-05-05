@@ -3003,6 +3003,117 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
    represents and a few drop-in alternatives. Visually muted
    so it reads as "context for the operator" rather than
    competing with the federation flow diagram below. */
+/* Four-tier on-ramp ladder — defines Tier 0 / 1 / 2 / 3 once,
+   so the rest of the poster can reference the numbers without
+   redefining them. Anchored at #fed-tiers; §2 mission and
+   §8 publishing link the first tier-mention back to this table. */
+.fed__tiers {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #5c6bc0;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__tiers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.fed__tiers-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  font-weight: 700;
+  padding: 0.4rem 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.fed__tiers-table td {
+  padding: 0.6rem 0.55rem;
+  border-bottom: 1px solid var(--neutral-100);
+  vertical-align: top;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.fed__tiers-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fed__tiers-table code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+.fed__tiers-tier {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--neutral-800);
+  white-space: nowrap;
+}
+
+.fed__tiers-tier strong {
+  display: inline-block;
+  background: #5c6bc0;
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  margin-right: 0.25rem;
+}
+
+.fed__tiers-burden {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  white-space: nowrap;
+}
+
+.fed__tiers-note {
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  margin: 0.85rem 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .fed__tiers-table thead {
+    display: none;
+  }
+  .fed__tiers-table,
+  .fed__tiers-table tbody,
+  .fed__tiers-table tr,
+  .fed__tiers-table td {
+    display: block;
+    width: 100%;
+  }
+  .fed__tiers-table tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--neutral-200);
+  }
+  .fed__tiers-table tr:last-child {
+    border-bottom: none;
+  }
+  .fed__tiers-table td {
+    padding: 0.2rem 0;
+    border-bottom: none;
+  }
+  .fed__tiers-burden {
+    white-space: normal;
+  }
+}
+
 .fed__portability {
   background: white;
   border: 1px solid var(--neutral-200);

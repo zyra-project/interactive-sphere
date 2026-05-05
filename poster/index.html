@@ -3026,6 +3026,117 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
    represents and a few drop-in alternatives. Visually muted
    so it reads as "context for the operator" rather than
    competing with the federation flow diagram below. */
+/* Four-tier on-ramp ladder — defines Tier 0 / 1 / 2 / 3 once,
+   so the rest of the poster can reference the numbers without
+   redefining them. Anchored at #fed-tiers; §2 mission and
+   §8 publishing link the first tier-mention back to this table. */
+.fed__tiers {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-left: 3px solid #5c6bc0;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 2.5rem;
+}
+
+.fed__tiers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.fed__tiers-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--neutral-500);
+  font-weight: 700;
+  padding: 0.4rem 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.fed__tiers-table td {
+  padding: 0.6rem 0.55rem;
+  border-bottom: 1px solid var(--neutral-100);
+  vertical-align: top;
+  color: var(--neutral-700);
+  line-height: 1.5;
+}
+
+.fed__tiers-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fed__tiers-table code {
+  background: var(--terra-accent-bg);
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  color: var(--cable-blue);
+  font-size: 0.85em;
+}
+
+.fed__tiers-tier {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--neutral-800);
+  white-space: nowrap;
+}
+
+.fed__tiers-tier strong {
+  display: inline-block;
+  background: #5c6bc0;
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  margin-right: 0.25rem;
+}
+
+.fed__tiers-burden {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--neutral-600);
+  white-space: nowrap;
+}
+
+.fed__tiers-note {
+  font-size: 0.85rem;
+  color: var(--neutral-600);
+  margin: 0.85rem 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .fed__tiers-table thead {
+    display: none;
+  }
+  .fed__tiers-table,
+  .fed__tiers-table tbody,
+  .fed__tiers-table tr,
+  .fed__tiers-table td {
+    display: block;
+    width: 100%;
+  }
+  .fed__tiers-table tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--neutral-200);
+  }
+  .fed__tiers-table tr:last-child {
+    border-bottom: none;
+  }
+  .fed__tiers-table td {
+    padding: 0.2rem 0;
+    border-bottom: none;
+  }
+  .fed__tiers-burden {
+    white-space: normal;
+  }
+}
+
 .fed__portability {
   background: white;
   border: 1px solid var(--neutral-200);
@@ -4447,7 +4558,7 @@ section figure img {
             Most people will never stand in front of one. Geography, mobility, access, and cost all create gaps between NOAA's data and the public it was collected to serve.
           </p>
           <p>
-            The same gaps face the research groups, universities, science museums, planetariums, and visitor centers with visualizations of their own to share — and want to keep their data on their own infrastructure. The path to public reach has historically run through a museum partnership that may never come. TerraViz offers a few clear options instead: publish a dataset to the live catalog in <strong>minutes</strong>, mirror that catalog locally in <strong>hours</strong>, host a full peer in <strong>days</strong>, or implement your own node against the published spec in <strong>weeks</strong>.
+            The same gaps face the research groups, universities, science museums, planetariums, and visitor centers with visualizations of their own to share — and want to keep their data on their own infrastructure. The path to public reach has historically run through a museum partnership that may never come. TerraViz offers <a href="#fed-tiers">a four-tier on-ramp</a> instead: publish a dataset to the live catalog in <strong>minutes</strong>, mirror that catalog locally in <strong>hours</strong>, host a full peer in <strong>days</strong>, or implement your own node against the published spec in <strong>weeks</strong>.
           </p>
           <p>
             Viewable on any device. Publishable from any node — your hardware, your domain, one publish reaching every federated peer.
@@ -6337,6 +6448,46 @@ section figure img {
           </article>
         </div>
 
+        <h3 id="fed-tiers" class="fed__subhead">Four tiers, four burdens — partners pay only for what they want</h3>
+        <p class="fed__subhead-hint">
+          The canonical node above is one shape. Joining the network has four shapes — minutes to publish a row against the canonical catalog, hours to mirror that catalog locally, days to host a full bidirectional peer, weeks to implement a node from scratch in any language. Partners pick their burden; <strong>Zyra ships the spec and one canonical implementation</strong>, not a portfolio of stacks.
+        </p>
+
+        <div class="fed__tiers">
+          <table class="fed__tiers-table">
+            <thead>
+              <tr>
+                <th scope="col">Tier</th>
+                <th scope="col">What the partner does</th>
+                <th scope="col">Burden</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fed__tiers-tier"><strong>0</strong> · Publisher</td>
+                <td><code>terraviz publish dataset.yaml</code> on a schedule against the canonical node. No node hosted; data appears in the canonical catalog and propagates to every subscribing peer.</td>
+                <td class="fed__tiers-burden">Minutes — same shape as a CI deploy step</td>
+              </tr>
+              <tr>
+                <td class="fed__tiers-tier"><strong>1</strong> · Read-only peer</td>
+                <td>Subscribe to a canonical node's feed; mirror catalog metadata; serve locally. No publishing, no asset hosting. The lightweight peer appliance is the reference implementation.</td>
+                <td class="fed__tiers-burden">Hours — single config file plus container or fork</td>
+              </tr>
+              <tr>
+                <td class="fed__tiers-tier"><strong>2</strong> · Full peer</td>
+                <td>Publish own data, host assets, federate bidirectionally. Subscribers see your rows alongside the canonical catalog; you see theirs.</td>
+                <td class="fed__tiers-burden">Days — scales with how much custom infra the partner brings</td>
+              </tr>
+              <tr>
+                <td class="fed__tiers-tier"><strong>3</strong> · Custom implementation</td>
+                <td>Write your own node in any language from the published spec — JSON Schema, OpenAPI, conformance suite. No Zyra dependency in the runtime.</td>
+                <td class="fed__tiers-burden">Weeks — conformance suite is the contract</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="fed__tiers-note">Tier 0 ships first — the federation arc's lead deliverable, gated on a partner pilot validating the auth flow. Tiers 1–3 land progressively as Phase 4 lights up.</p>
+        </div>
+
         <h3 class="fed__subhead">Spec is the artifact · canonical implementation on Cloudflare</h3>
         <p class="fed__subhead-hint">
           TerraViz publishes its protocol — JSON Schema, OpenAPI, conformance suite — and ships <strong>one canonical implementation on Cloudflare</strong>. Same account as the app, single deploy mechanism, no vendor sprawl. A node runs at ~$5/month on Cloudflare's Workers Paid plan (the Analytics Engine threshold); D1, R2, and Pages stay inside the free tier for typical educational traffic, and usage-based services scale linearly above it. <strong>Zyra builds zero non-Cloudflare full-node adapters</strong>: partners that need a different stack implement against the published spec (Tier 3, weeks of work; the conformance suite is the contract). The portability table below is the <em>contract surface</em> — what the protocol permits anyone to implement against — not a portfolio of adapters Zyra maintains.
@@ -6619,7 +6770,7 @@ section figure img {
         <div class="pub__hero">
           <div class="pub__hero-text">
             <p class="fed__lede">
-              <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <strong>Tier 0 publishing</strong> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+              <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <a href="#fed-tiers"><strong>Tier 0 publishing</strong></a> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
             </p>
           </div>
           <aside class="pub__rail" aria-label="terraviz-cli session">

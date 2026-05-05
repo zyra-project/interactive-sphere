@@ -122,6 +122,46 @@
           </article>
         </div>
 
+        <h3 id="fed-tiers" class="fed__subhead">Four tiers, four burdens — partners pay only for what they want</h3>
+        <p class="fed__subhead-hint">
+          The canonical node above is one shape. Joining the network has four shapes — minutes to publish a row against the canonical catalog, hours to mirror that catalog locally, days to host a full bidirectional peer, weeks to implement a node from scratch in any language. Partners pick their burden; <strong>Zyra ships the spec and one canonical implementation</strong>, not a portfolio of stacks.
+        </p>
+
+        <div class="fed__tiers">
+          <table class="fed__tiers-table">
+            <thead>
+              <tr>
+                <th scope="col">Tier</th>
+                <th scope="col">What the partner does</th>
+                <th scope="col">Burden</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fed__tiers-tier"><strong>0</strong> · Publisher</td>
+                <td><code>terraviz publish dataset.yaml</code> on a schedule against the canonical node. No node hosted; data appears in the canonical catalog and propagates to every subscribing peer.</td>
+                <td class="fed__tiers-burden">Minutes — same shape as a CI deploy step</td>
+              </tr>
+              <tr>
+                <td class="fed__tiers-tier"><strong>1</strong> · Read-only peer</td>
+                <td>Subscribe to a canonical node's feed; mirror catalog metadata; serve locally. No publishing, no asset hosting. The lightweight peer appliance is the reference implementation.</td>
+                <td class="fed__tiers-burden">Hours — single config file plus container or fork</td>
+              </tr>
+              <tr>
+                <td class="fed__tiers-tier"><strong>2</strong> · Full peer</td>
+                <td>Publish own data, host assets, federate bidirectionally. Subscribers see your rows alongside the canonical catalog; you see theirs.</td>
+                <td class="fed__tiers-burden">Days — scales with how much custom infra the partner brings</td>
+              </tr>
+              <tr>
+                <td class="fed__tiers-tier"><strong>3</strong> · Custom implementation</td>
+                <td>Write your own node in any language from the published spec — JSON Schema, OpenAPI, conformance suite. No Zyra dependency in the runtime.</td>
+                <td class="fed__tiers-burden">Weeks — conformance suite is the contract</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="fed__tiers-note">Tier 0 ships first — the federation arc's lead deliverable, gated on a partner pilot validating the auth flow. Tiers 1–3 land progressively as Phase 4 lights up.</p>
+        </div>
+
         <h3 class="fed__subhead">Spec is the artifact · canonical implementation on Cloudflare</h3>
         <p class="fed__subhead-hint">
           TerraViz publishes its protocol — JSON Schema, OpenAPI, conformance suite — and ships <strong>one canonical implementation on Cloudflare</strong>. Same account as the app, single deploy mechanism, no vendor sprawl. A node runs at ~$5/month on Cloudflare's Workers Paid plan (the Analytics Engine threshold); D1, R2, and Pages stay inside the free tier for typical educational traffic, and usage-based services scale linearly above it. <strong>Zyra builds zero non-Cloudflare full-node adapters</strong>: partners that need a different stack implement against the published spec (Tier 3, weeks of work; the conformance suite is the contract). The portability table below is the <em>contract surface</em> — what the protocol permits anyone to implement against — not a portfolio of adapters Zyra maintains.
