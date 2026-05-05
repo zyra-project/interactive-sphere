@@ -431,6 +431,21 @@ code, kbd, pre {
   height: 100%;
 }
 
+/* Desktop bump for the left-column NOAA logo. The left column
+   holds a single mark while the right column stacks two rows
+   (GSL wide logo + QR figure with caption ≈ 220px tall), so
+   keeping the left logo at 96px reads visually undersized
+   relative to the right column's combined height. Above the
+   900px breakpoint, scale it to 160px so it carries comparable
+   weight; the mobile flow (≤ 900px) keeps the 96px sizing,
+   which works for the row-collapsed layout. */
+@media (min-width: 901px) {
+  .hero__logos .hero__logo {
+    width: 160px;
+    height: 160px;
+  }
+}
+
 /* QR figure — wraps the QR image (or placeholder) with a small
    caption underneath, matching the "View Online" treatment used
    in the Data Depot poster. */
@@ -626,10 +641,15 @@ code, kbd, pre {
   gap: 1rem;
 }
 
+/* Vertical stack so each image gets the full right-column width
+   on desktop — meaningfully larger than the previous side-by-side
+   half-column thumbs. Below the section's 900px breakpoint, the
+   .mission__container collapses to a single column anyway so the
+   pair flows naturally to viewport width. */
 .mission__pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  grid-template-columns: 1fr;
+  gap: 1rem;
   align-items: stretch;
 }
 
@@ -644,7 +664,7 @@ code, kbd, pre {
   background: var(--neutral-200);
   border: 1px dashed var(--neutral-400);
   border-radius: 8px;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -656,9 +676,12 @@ code, kbd, pre {
   line-height: 1.4;
 }
 
+/* The shipped images (sos-museum.webp, terraviz-phone.webp) are
+   1280×853 — native 3:2. Match that here so object-fit doesn't
+   crop the sides. */
 .mission__pair img {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 2;
   object-fit: cover;
   border-radius: 8px;
   display: block;
