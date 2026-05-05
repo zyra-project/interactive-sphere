@@ -3271,13 +3271,62 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   }
 }
 
-/* Dev-quickstart code block — terminal-flavoured */
+/* Dev-quickstart terminal — wraps the .fed__code block in a
+   chrome bar with traffic-light dots and a title, mirroring the
+   §8 publishing CLI rail's framing so the two terminal-flavoured
+   artifacts read as the same idiom. */
+.fed__terminal {
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 0 0 2.5rem;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.fed__terminal-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fed__terminal-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+  margin-left: 0.4rem;
+}
+
+.fed__terminal-foot {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--mist);
+  letter-spacing: 0.02em;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.6rem 1.5rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fed__terminal-foot code {
+  background: rgba(77, 166, 255, 0.15);
+  color: #6ab8ff;
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+/* Inner code block — now nested inside .fed__terminal so the
+   outer wrapper carries the border-radius / box-shadow. */
 .fed__code {
   background: var(--navy);
   color: var(--neutral-100);
-  border-radius: 10px;
+  margin: 0;
   padding: 1.25rem 1.5rem;
-  margin: 0 0 2.5rem;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.7;

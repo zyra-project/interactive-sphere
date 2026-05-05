@@ -3294,13 +3294,62 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   }
 }
 
-/* Dev-quickstart code block — terminal-flavoured */
+/* Dev-quickstart terminal — wraps the .fed__code block in a
+   chrome bar with traffic-light dots and a title, mirroring the
+   §8 publishing CLI rail's framing so the two terminal-flavoured
+   artifacts read as the same idiom. */
+.fed__terminal {
+  background: var(--navy);
+  border: 1px solid var(--neutral-300);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 0 0 2.5rem;
+  box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.18);
+}
+
+.fed__terminal-chrome {
+  background: var(--neutral-100);
+  border-bottom: 1px solid var(--neutral-200);
+  padding: 0.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fed__terminal-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--neutral-600);
+  margin-left: 0.4rem;
+}
+
+.fed__terminal-foot {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--mist);
+  letter-spacing: 0.02em;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.6rem 1.5rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fed__terminal-foot code {
+  background: rgba(77, 166, 255, 0.15);
+  color: #6ab8ff;
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+/* Inner code block — now nested inside .fed__terminal so the
+   outer wrapper carries the border-radius / box-shadow. */
 .fed__code {
   background: var(--navy);
   color: var(--neutral-100);
-  border-radius: 10px;
+  margin: 0;
   padding: 1.25rem 1.5rem;
-  margin: 0 0 2.5rem;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.7;
@@ -6699,10 +6748,17 @@ section figure img {
 
         <h3 class="fed__subhead">Spin one up locally</h3>
         <p class="fed__subhead-hint">
-          The README's quickstart works against this repo today. Six commands and a curl smoke test.
+          The README's quickstart works against this repo today — six commands plus a <code>curl</code> smoke test, end-to-end in a few minutes on Node 20+ with the Wrangler dev runtime. The steps generate a fresh Ed25519 node identity, apply the D1 migrations and seed ~20 sample SOS rows, start Pages Functions in front of D1 + R2 + KV, and (optionally) point the app at the local backend instead of the canonical catalog. By the last command the local node is serving the same <code>/api/v1/*</code> surface a real partner deployment would.
         </p>
 
-        <pre class="fed__code" aria-label="Six-step local-node quickstart from the README"><code><span class="fed__code-line"><span class="fed__code-comment"># 1. Generate the node's Ed25519 identity (~/.terraviz/keys).</span></span>
+        <div class="fed__terminal" aria-label="Six-step local-node quickstart from the README">
+          <div class="fed__terminal-chrome">
+            <span class="pub__demo-dot pub__demo-dot--r"></span>
+            <span class="pub__demo-dot pub__demo-dot--y"></span>
+            <span class="pub__demo-dot pub__demo-dot--g"></span>
+            <span class="fed__terminal-title">~/terraviz · npm + wrangler · localhost:8788</span>
+          </div>
+          <pre class="fed__code"><code><span class="fed__code-line"><span class="fed__code-comment"># 1. Generate the node's Ed25519 identity (~/.terraviz/keys).</span></span>
 <span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">npm run gen:node-key</span></span>
 <span class="fed__code-line"></span>
 <span class="fed__code-line"><span class="fed__code-comment"># 2. Reset local D1 (apply migrations + seed ~20 SOS rows).</span></span>
@@ -6721,6 +6777,8 @@ section figure img {
 <span class="fed__code-line"><span class="fed__code-comment"># 6. Smoke test.</span></span>
 <span class="fed__code-line"><span class="fed__code-prompt">$</span><span class="fed__code-cmd">curl http://localhost:8788/api/v1/catalog | jq '.datasets | length'</span></span>
 <span class="fed__code-output">20</span></code></pre>
+          <p class="fed__terminal-foot">Local node serving <code>/api/v1/*</code> · 20 seeded SOS rows · same surface a real partner deployment exposes</p>
+        </div>
 
         <h3 class="fed__subhead">Read the docs</h3>
         <p class="fed__subhead-hint">
