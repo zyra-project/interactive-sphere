@@ -3677,6 +3677,38 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   margin-bottom: 0;
 }
 
+/* Compact chip linking to the public privacy policy. Sits under
+   the §9 lede in the left column; uses the section's rose accent
+   (#bf6b78) so it visually pairs with the privacy-panel rail
+   beside it. */
+.analytics__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
+  padding: 0.4rem 0.85rem;
+  background: rgba(191, 107, 120, 0.08);
+  border: 1px solid #bf6b78;
+  border-radius: 999px;
+  color: #bf6b78;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.analytics__chip:hover,
+.analytics__chip:focus-visible {
+  background: #bf6b78;
+  color: white;
+  text-decoration: none;
+}
+
+.analytics__chip-arrow {
+  font-weight: 700;
+}
+
 .analytics__rail {
   background: white;
   border: 1px solid var(--neutral-200);
