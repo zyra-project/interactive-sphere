@@ -1,29 +1,37 @@
 # Mission
 
-## What is Science on a Sphere?
+## Why This Exists
 
-[Science on a Sphere](https://sos.noaa.gov) (SOS) is NOAA's room-sized global display system — a six-foot diameter sphere suspended from the ceiling, projecting planetary data across its surface. Since 2000, installations at science museums, universities, and visitor centers worldwide have shown the public what Earth's systems actually look like: hurricanes spinning in real time, ocean temperatures shifting across decades, sea ice retreating season by season.
+Environmental literacy is a prerequisite for an informed society. People cannot act on what they cannot see — and the planetary data NOAA collects on behalf of the public is largely invisible to the public. Geography, mobility, access, and cost all create a gap between the data and the people it was collected to serve.
 
-It is one of the most powerful tools ever built for communicating environmental science. But you have to be in the room.
+That gap has a second edge. The universities, research groups, planetariums, science museums, and visitor centers with visualizations of their own to share face the same problem in reverse. The path to public reach has historically run through a museum partnership that may never come, or a platform handoff that surrenders control of the data along the way.
 
-## What This Project Does
+TerraViz closes both gaps with one project.
 
-The Terraviz project is a web-based viewer that brings SOS datasets to any device — phone, tablet, or laptop. It streams NOAA's curated environmental data onto a navigable 3D globe, putting the same visualizations that live inside science museums directly in the hands of anyone with a browser. Optional desktop versions for Windows, Mac, and Linux are available for those that need the extra power and don't mind the install.
+## What TerraViz Is
 
-Researchers, museums, universities, and partner organizations can also run their own TerraViz node — a catalog backend on the cloud platform of their choice — and publish their own datasets and tours alongside NOAA's. Nodes can subscribe to each other; a search at one node surfaces datasets from any peer it federates with, while each operator retains full control of their own data and infrastructure.
+A web-based 3D globe for exploring planetary data — streamable to any phone, tablet, or laptop, installable as a desktop or mobile app, and immersive on AR/VR headsets. NASA imagery, NOAA datasets, and tour-based storytelling come included. An AI docent named Orbit explains datasets, recommends tours, and loads them onto the globe by conversation.
+
+Behind the viewer is a federated catalog backend. Anyone can self-host a TerraViz node, publish their own datasets, and have those datasets surface across every peer node in the network. The path in has four shapes: publish a row to the canonical catalog in **minutes**, mirror that catalog locally in **hours**, host a full bidirectional peer in **days**, or implement a node from scratch against the published spec in **weeks**. Partners pick their burden.
+
+**Same data, no museum required. Same publishers, no platform required.**
 
 ## Why It Matters
 
-Environmental literacy is a prerequisite for an informed society. People cannot act on what they cannot see — and most people never get to stand in front of a Science on a Sphere installation. Geography, mobility, access, and cost all create gaps between NOAA's data and the public it was collected to serve.
+Every dataset made accessible online is one more student in a rural school who can watch a hurricane form, one more community member who can understand why their coastline is changing, one more person who can connect planetary data to lived experience.
 
-This project closes those gaps on both sides of the data flow. Every dataset made viewable online is one more student in a rural school who can watch a hurricane form, one more community member who can understand why their coastline is changing, one more person who can connect planetary data to lived experience. Every dataset made *publishable* is one more research group who can share their work without needing a museum partnership or a custom web stack — and one more institution that can keep its data on its own infrastructure while still being discoverable through a shared catalog.
+Every node added to the federation is one more research group, university, or visitor center reaching audiences they couldn't reach before — without surrendering their data, their domain, or their identity to do it.
 
-The mission is simple: lower the barriers — to seeing the data, to publishing it, to running the platform — expand the audience, and help create an environmentally literate society where Earth-science visualizations belong to everyone.
+The mission is to lower the barriers on both sides — viewing and publishing — and use that combined reach to help build an environmentally literate society.
 
 ## Who It's For
 
-Everyone. Students and educators. Curious people on their lunch break. Researchers without museum access. Communities on the front lines of climate change. Anyone who wants to understand the planet they live on.
+**Visitors.** Students, educators, curious people on their lunch break, researchers without museum access, communities on the front lines of climate change. Anyone who wants to understand the planet they live on.
 
-And the people who feed it: research teams that have visualizations to share but nowhere to host them, universities that want their own catalog under their own URL, partner organizations that need data sovereignty without sacrificing reach, federated operators building shared scientific infrastructure.
+**Publishers.** Universities, research labs, planetariums, science museums, visitor centers, federal partners — any organization with environmental data to share and a stake in keeping it sovereign.
 
-Science on a Sphere was built to inspire. This project makes sure that inspiration isn't limited by where you happen to be standing.
+## Inspiration
+
+TerraViz draws on NOAA's Science On a Sphere program, the room-sized global display system that has lived in museums since 2000 — six-foot suspended globes projecting hurricanes, ocean temperatures, and ice retreat across their surfaces. SOS is one of the most powerful tools ever built for communicating environmental science. The constraint has always been that you have to be in the room.
+
+TerraViz brings a similar view to every device. Some of the starting catalog comes from the SOS dataset library, and SOS-format tours import unchanged. The federation layer is what extends the reach: NOAA's data is the seed, not the ceiling.
