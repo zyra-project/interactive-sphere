@@ -8,6 +8,10 @@ authors:
     email: eric.j.hackathorn@noaa.gov
     orcid: "https://orcid.org/0000-0002-9693-2093"
     affiliation: NOAA Global Systems Laboratory
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20043181
+    description: "Concept DOI (always resolves to latest version)"
 repository-code: "https://github.com/zyra-project/terraviz"
 url: "https://terraviz.zyra-project.org/"
 abstract: >-
@@ -32,3 +36,4 @@ keywords:
   - NOAA
   - Science On a Sphere
 license: Apache-2.0
+type: software
