@@ -2500,6 +2500,30 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
 }
 
 /* Headset CTA — open in new tab to launch XR session */
+/* Split header for §5 immersive — lede on the left, the
+   "Open TerraViz on your headset" CTA box on the right. The
+   CTA reuses the existing .xr__cta navy treatment; the
+   .xr__cta--rail modifier just trims the body's max-width
+   so the prose wraps tighter inside the narrower column. */
+.xr__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.xr__hero .xr__lede {
+  margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+  .xr__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 .xr__cta {
   background: var(--navy);
   color: var(--neutral-100);
@@ -2509,6 +2533,16 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   flex-direction: column;
   gap: 0.85rem;
   align-items: flex-start;
+}
+
+.xr__cta--rail {
+  padding: 1.15rem 1.25rem;
+  gap: 0.7rem;
+}
+
+.xr__cta--rail .xr__cta-body {
+  font-size: 0.88rem;
+  max-width: none;
 }
 
 .xr__cta-eyebrow {
@@ -5985,9 +6019,26 @@ section figure img {
       <div class="xr__container">
         <p class="section__eyebrow">§5 · Immersive — AR &amp; VR via WebXR</p>
         <h2 id="sec-8-title" class="xr__title">AR puts the planet on your desk. VR puts you next to it.</h2>
-        <p class="xr__lede">
-          Tap <em>Enter AR</em> on a Quest 3 and the photoreal Earth lands on your desk — anchored to a real surface, walkable around, persistent across sessions thanks to Meta Anchors. Tap <em>Enter VR</em> on PCVR and the same planet drops in front of you at room scale. Both modes share the same dataset textures the 2D app already loaded, so switching in costs you nothing extra.
-        </p>
+        <div class="xr__hero">
+          <div class="xr__hero-text">
+            <p class="xr__lede">
+              Tap <em>Enter AR</em> on a Quest 3 and the photoreal Earth lands on your desk — anchored to a real surface, walkable around, persistent across sessions thanks to Meta Anchors. Tap <em>Enter VR</em> on PCVR and the same planet drops in front of you at room scale. Both modes share the same dataset textures the 2D app already loaded, so switching in costs you nothing extra.
+            </p>
+          </div>
+          <div class="xr__cta xr__cta--rail">
+            <p class="xr__cta-eyebrow">Try it</p>
+            <h3 class="xr__cta-title">Open TerraViz on your headset</h3>
+            <p class="xr__cta-body">
+              WebXR sessions can't reliably launch from inside an embedded iframe — the browser needs the page to be the top-level document. Open the live app on a Quest 2 / 3 / Pro browser (or any WebXR-capable PCVR rig) and the <em>Enter AR</em> / <em>Enter VR</em> button appears in the top-right.
+            </p>
+            <a class="xr__cta-btn"
+               href="https://terraviz.zyra-project.org/"
+               target="_blank"
+               rel="noopener">
+              Open terraviz.zyra-project.org →
+            </a>
+          </div>
+        </div>
 
         <h3 class="xr__subhead">From a Quest</h3>
         <p class="xr__subhead-hint">
@@ -6211,20 +6262,6 @@ section figure img {
             On iPhone the AR icon launches AR Quick Look. On Pixel and other ARCore-capable Android phones it launches Scene Viewer. On desktop the model rotates inline as a 3D preview. The component lazy-loads — non-XR pages never download the runtime.
           </p>
         </aside>
-
-        <div class="xr__cta">
-          <p class="xr__cta-eyebrow">Try it</p>
-          <h3 class="xr__cta-title">Open TerraViz on your headset</h3>
-          <p class="xr__cta-body">
-            WebXR sessions can't reliably launch from inside an embedded iframe — the browser needs the page to be the top-level document. Open the live app on a Quest 2 / 3 / Pro browser (or any WebXR-capable PCVR rig) and the <em>Enter AR</em> / <em>Enter VR</em> button appears in the top-right.
-          </p>
-          <a class="xr__cta-btn"
-             href="https://terraviz.zyra-project.org/"
-             target="_blank"
-             rel="noopener">
-            Open terraviz.zyra-project.org →
-          </a>
-        </div>
       </div>
     </section>
 

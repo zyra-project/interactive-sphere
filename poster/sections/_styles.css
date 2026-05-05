@@ -2477,6 +2477,30 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
 }
 
 /* Headset CTA — open in new tab to launch XR session */
+/* Split header for §5 immersive — lede on the left, the
+   "Open TerraViz on your headset" CTA box on the right. The
+   CTA reuses the existing .xr__cta navy treatment; the
+   .xr__cta--rail modifier just trims the body's max-width
+   so the prose wraps tighter inside the narrower column. */
+.xr__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  margin: 0 0 2.5rem;
+}
+
+.xr__hero .xr__lede {
+  margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+  .xr__hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
 .xr__cta {
   background: var(--navy);
   color: var(--neutral-100);
@@ -2486,6 +2510,16 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   flex-direction: column;
   gap: 0.85rem;
   align-items: flex-start;
+}
+
+.xr__cta--rail {
+  padding: 1.15rem 1.25rem;
+  gap: 0.7rem;
+}
+
+.xr__cta--rail .xr__cta-body {
+  font-size: 0.88rem;
+  max-width: none;
 }
 
 .xr__cta-eyebrow {
