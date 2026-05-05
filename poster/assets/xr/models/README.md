@@ -7,14 +7,16 @@ web component:
 | File | Used by | Source |
 |---|---|---|
 | `terraviz-earth.glb` | Android Scene Viewer + desktop preview | `poster/scripts/export-earth-model.mjs` |
-| `terraviz-earth.usdz` | iOS AR Quick Look | converted from the GLB (see below) |
+| `terraviz-earth.usdz` | iOS AR Quick Look | `poster/scripts/export-earth-model.mjs` (same run) |
 
-Neither is checked in until the export has been run; the
-`<model-viewer>` tile in `sec-08-immersive.html` shows an
-"asset export pending" poster until both files are present.
-This README is the **how to produce them** half — run it
-locally; the sandbox CI environment doesn't have outbound
-network to the SOS CDN.
+Both files come out of a single `node` invocation, share the same
+canonical sphere geometry, and reuse the same Blue Marble texture
+bytes — so they can't drift apart. Neither is checked in until the
+export has been run; the `<model-viewer>` tile in
+`sec-08-immersive.html` shows an "asset export pending" poster
+until both files are present. This README is the **how to produce
+them** half — run it locally; the sandbox CI environment doesn't
+have outbound network to the SOS CDN.
 
 ## What this model is — and isn't
 
@@ -35,60 +37,33 @@ Visitors get a static Earth they can place on a desk — not
 the live globe with controllers and datasets. The §8 copy
 frames it accordingly.
 
-## Step 1 — export the GLB
+## Step 1 — export both binaries
 
 ```sh
 node poster/scripts/export-earth-model.mjs
 ```
 
-Writes `terraviz-earth.glb` (~3 MB) here. Stdlib only — no
-external Node deps.
+Writes `terraviz-earth.glb` (~700 KB) and `terraviz-earth.usdz`
+(~880 KB) here in a single run. Stdlib only — no external Node
+deps, no Apple toolchain, no Blender.
 
 The script fetches the diffuse texture from
 `https://d3sik7mbbzunjo.cloudfront.net/terraviz/basemaps/earth_diffuse_2048.jpg`
-— the same texture `photorealEarth.ts` loads at the 2048
-tier — and embeds it inside a single textured-sphere mesh.
+— the same texture `photorealEarth.ts` loads at the 2048 tier —
+and embeds it into both outputs. The GLB carries it as a binary
+chunk; the USDZ packages a USDA (text USD) document plus the JPEG
+in a STORED-only zip with 64-byte-aligned data offsets, which is
+what Apple AR Quick Look requires.
 
-If the fetch fails with a 403, you're on a network without
-egress to the SOS CDN. Run from a normal developer machine.
+If the fetch fails with a 403, you're on a network without egress
+to the SOS CDN. Run from a normal developer machine.
 
-## Step 2 — convert to USDZ for iOS AR Quick Look
+The USDZ uses a `UsdPreviewSurface` material with a single
+`UsdUVTexture` — the AR Quick Look-canonical material network.
+The same UV array drives both outputs, so the texture orientation
+is consistent across all three viewers.
 
-Apple's `usdzconvert` is the canonical tool. Install once
-via the [`usdpython` toolkit](https://developer.apple.com/augmented-reality/tools/)
-(macOS download from Apple) and run:
-
-```sh
-cd poster/assets/xr/models
-usdzconvert terraviz-earth.glb terraviz-earth.usdz
-```
-
-Writes `terraviz-earth.usdz` (~4 MB) alongside the GLB.
-
-### Alternative converters
-
-If `usdpython` is awkward to install on your machine, these
-also produce iOS-compatible USDZ:
-
-- **Reality Composer** (macOS, GUI) — open the GLB, export
-  as USDZ.
-- **Reality Composer Pro** (macOS, GUI) — same idea, newer.
-- **`gltf2usdz`** Node CLI — GitHub-installed, MIT-licensed.
-  YMMV; verify on a real iPhone before merging.
-
-Whatever tool you use, the resulting USDZ must:
-
-- Embed the diffuse texture (not reference an external URL —
-  AR Quick Look on iOS won't follow cross-origin asset
-  fetches reliably).
-- Use a `UsdPreviewSurface` material — Reality Composer's
-  default. Other material networks render but lose the
-  texture in some iOS versions.
-- Pass the
-  [Apple AR Quick Look validator](https://developer.apple.com/augmented-reality/tools/)
-  if you want to be belt-and-suspenders about it.
-
-## Step 3 — verify on real devices
+## Step 2 — verify on real devices
 
 Before committing the binaries, check both targets:
 
@@ -102,11 +77,16 @@ Before committing the binaries, check both targets:
   scroll point. Drag to spin. The AR icon should be hidden
   (no AR available).
 
-If iOS launches AR Quick Look but the Earth shows up
-untextured grey, the USDZ material wasn't preserved — try
-a different converter from the alternatives list.
+If iOS launches AR Quick Look but the Earth renders with the
+texture upside-down, the fix is a one-line addition in
+`buildUsda()` — insert a `UsdTransform2d` shader between the
+primvar reader and the texture sampler with `scale = (1, -1)` and
+`translation = (0, 1)`. The current code skips it because
+`UsdPreviewSurface` and glTF nominally share the same V=0-at-top
+convention, but real-device AR Quick Look behavior is the
+authority — patch and re-run if the iPhone says otherwise.
 
-## Step 4 — commit the binaries
+## Step 3 — commit the binaries
 
 ```sh
 git add poster/assets/xr/models/terraviz-earth.glb
@@ -121,21 +101,16 @@ Both binaries go into regular git pack storage —
 and `*.usdz` are deliberately excluded so a re-export
 doesn't eat the project's free-tier LFS bandwidth quota.
 
-Combined size: ~7 MB, one-time cost. Re-export only when
+Combined size: ~1.6 MB, one-time cost. Re-export only when
 the upstream Blue Marble texture changes — NASA refreshes
 Blue Marble approximately once per decade, so this should
 not be a recurring expense.
 
 ## Why not a CI job
 
-Tempting, but adds infrastructure for a one-time-ish task:
-
-- Cross-platform `usdzconvert` requires macOS for canonical
-  output. Linux / Windows GitHub runners can't run Apple's
-  toolchain natively.
-- Either of those constraints alone makes the CI job
-  bigger than the manual procedure. We'd be optimising for
-  a re-export cadence we don't expect.
-
-If we ever add monthly Earth refreshes for some reason, the
-CI option is worth revisiting.
+Tempting, but adds infrastructure for a one-time-ish task. The
+script is now stdlib-only Node, so a Linux GitHub runner could
+run it — the previous Apple-toolchain blocker is gone. The
+remaining reason is cadence: a re-export per decade isn't worth
+the workflow file. If Blue Marble ever starts refreshing more
+often, this is a small lift.
