@@ -6821,10 +6821,10 @@ section figure img {
   <!-- sec-10b-publishing.html -->
     <section id="sec-11-publishing"
              class="section fade-in"
-             aria-labelledby="sec-11-title">
+             aria-labelledby="sec-11-publishing-title">
       <div class="fed__container">
         <p class="section__eyebrow">§8 · Publishing &amp; search</p>
-        <h2 id="sec-11-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
+        <h2 id="sec-11-publishing-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
         <div class="pub__hero">
           <div class="pub__hero-text">
             <p class="fed__lede">
@@ -7031,10 +7031,10 @@ section figure img {
   <!-- sec-11-analytics.html -->
     <section id="sec-11-analytics"
              class="section fade-in"
-             aria-labelledby="sec-11-title">
+             aria-labelledby="sec-11-analytics-title">
       <div class="analytics__container">
         <p class="section__eyebrow">§9 · Privacy-first analytics</p>
-        <h2 id="sec-11-title" class="analytics__title">We measure to make it better. We measure as little as possible.</h2>
+        <h2 id="sec-11-analytics-title" class="analytics__title">We measure to make it better. We measure as little as possible.</h2>
         <div class="analytics__hero">
           <div class="analytics__hero-text">
             <p class="analytics__lede">
@@ -7780,28 +7780,44 @@ section figure img {
     })();
 
     // Fullscreen toggle — flips .is-fullscreen on a target
-    // element so it covers the viewport. Escape exits.
+    // element so it covers the viewport. Either Escape OR a
+    // second button click exits, and both paths remove the
+    // keydown listener registered on entry (otherwise stale
+    // listeners accumulate across enter/exit cycles).
     (function () {
       'use strict';
       var btns = document.querySelectorAll('[data-fullscreen-target]');
       if (!btns.length) return;
       btns.forEach(function (btn) {
+        var activeKeyHandler = null;
+
+        function enter(target) {
+          target.classList.add('is-fullscreen');
+          btn.textContent = '✕ Exit fullscreen';
+          btn.setAttribute('aria-label', 'Exit fullscreen');
+          activeKeyHandler = function (e) {
+            if (e.key === 'Escape') exit(target);
+          };
+          document.addEventListener('keydown', activeKeyHandler);
+        }
+
+        function exit(target) {
+          target.classList.remove('is-fullscreen');
+          btn.textContent = '⤢ Fullscreen';
+          btn.setAttribute('aria-label', 'Toggle fullscreen');
+          if (activeKeyHandler) {
+            document.removeEventListener('keydown', activeKeyHandler);
+            activeKeyHandler = null;
+          }
+        }
+
         btn.addEventListener('click', function () {
           var target = document.getElementById(btn.dataset.fullscreenTarget);
           if (!target) return;
-          var nowFull = target.classList.toggle('is-fullscreen');
-          btn.textContent = nowFull ? '✕ Exit fullscreen' : '⤢ Fullscreen';
-          btn.setAttribute('aria-label', nowFull ? 'Exit fullscreen' : 'Toggle fullscreen');
-          if (nowFull) {
-            var onKey = function (e) {
-              if (e.key === 'Escape') {
-                target.classList.remove('is-fullscreen');
-                btn.textContent = '⤢ Fullscreen';
-                btn.setAttribute('aria-label', 'Toggle fullscreen');
-                document.removeEventListener('keydown', onKey);
-              }
-            };
-            document.addEventListener('keydown', onKey);
+          if (target.classList.contains('is-fullscreen')) {
+            exit(target);
+          } else {
+            enter(target);
           }
         });
       });

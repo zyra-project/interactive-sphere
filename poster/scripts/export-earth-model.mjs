@@ -44,8 +44,8 @@ const TEXTURE_URL =
 //   - 2048×1024 diffuse (Blue Marble), no specular, no clouds, no night
 //     lights. Static lighting only — glTF can't carry runtime shaders.
 const SPHERE_RADIUS = 0.5
-const SPHERE_LONGITUDE_SEGMENTS = 64 // ring count
-const SPHERE_LATITUDE_SEGMENTS = 32 // segments per ring (north→south)
+const SPHERE_LONGITUDE_SEGMENTS = 64 // segments per ring (east→west)
+const SPHERE_LATITUDE_SEGMENTS = 32 // ring count (north→south)
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..')
