@@ -3,16 +3,17 @@
 //
 // Export the §8 "Tap to place Earth on your desk" model.
 //
-// Generates `poster/assets/xr/models/terraviz-earth.glb` from the
-// Blue Marble diffuse texture hosted on the SOS CDN — the same one
-// `src/services/photorealEarth.ts` loads at the 2048 tier. Output
-// is a single GLB containing one textured-sphere mesh: ~3 MB.
+// Generates two binaries from the Blue Marble diffuse texture
+// hosted on the SOS CDN — the same texture
+// `src/services/photorealEarth.ts` loads at the 2048 tier:
 //
-// The USDZ counterpart is produced from the GLB with Apple's
-// `usdzconvert` (from `usdpython`); see
-// `poster/assets/xr/models/README.md` for the conversion step.
-// We don't run it from this script because `usdzconvert` requires
-// a Python toolchain we don't want as a poster dev dependency.
+//   poster/assets/xr/models/terraviz-earth.glb   (Android Scene Viewer + desktop preview)
+//   poster/assets/xr/models/terraviz-earth.usdz  (iOS AR Quick Look)
+//
+// Both files share the same canonical sphere geometry built once
+// in `buildSphere()` — outward unit-sphere normals, CCW winding,
+// glTF-convention UVs (V=0 at the top of the texture, matching an
+// equirectangular Earth image with the Arctic at top).
 //
 // Usage (run locally — the sandbox doesn't have outbound network
 // to the SOS CDN):
@@ -21,12 +22,14 @@
 //
 // Re-run when the upstream Blue Marble texture changes (rare —
 // NASA updates Blue Marble approximately once per decade). Commit
-// the regenerated GLB alongside any source changes that motivated
-// the re-export.
+// both regenerated binaries alongside any source changes that
+// motivated the re-export.
 //
-// Stdlib only. No external Node deps; no Three.js — manual glTF
-// construction is ~150 lines and avoids dragging the renderer into
-// the poster's tooling surface.
+// Stdlib only. No external Node deps; no Three.js, no
+// `usdzconvert`. The USDZ side is a USDA (text USD) plus the same
+// JPEG, packaged in a STORED-only zip with 64-byte-aligned file
+// data offsets — Apple AR Quick Look's hard requirements for
+// USDZ. ~350 lines total.
 
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
@@ -47,6 +50,12 @@ const SPHERE_LATITUDE_SEGMENTS = 32 // segments per ring (north→south)
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..', '..')
 const OUT_GLB = resolve(REPO_ROOT, 'poster/assets/xr/models/terraviz-earth.glb')
+const OUT_USDZ = resolve(REPO_ROOT, 'poster/assets/xr/models/terraviz-earth.usdz')
+
+// Filename inside the USDZ archive — the USDA references it by
+// this name, so the two must agree.
+const USDZ_TEXTURE_FILENAME = 'earth_diffuse_2048.jpg'
+const USDZ_USDA_FILENAME = 'terraviz-earth.usda'
 
 // --- Sphere geometry --------------------------------------------------------
 
@@ -304,6 +313,247 @@ function packGlb(gltf, binChunk) {
   return out
 }
 
+// --- USDA (text USD) --------------------------------------------------------
+
+/**
+ * Trim a float to 6 decimal places and drop trailing zeros — keeps
+ * the USDA file from ballooning with full-double-precision noise on
+ * trig outputs (`Math.sin`, `Math.cos`).
+ */
+function f(n) {
+  return parseFloat(n.toFixed(6)).toString()
+}
+
+function vec3ListUsda(arr) {
+  const parts = []
+  for (let i = 0; i < arr.length; i += 3) {
+    parts.push(`(${f(arr[i])}, ${f(arr[i + 1])}, ${f(arr[i + 2])})`)
+  }
+  return `[${parts.join(', ')}]`
+}
+
+function vec2ListUsda(arr) {
+  const parts = []
+  for (let i = 0; i < arr.length; i += 2) {
+    parts.push(`(${f(arr[i])}, ${f(arr[i + 1])})`)
+  }
+  return `[${parts.join(', ')}]`
+}
+
+/**
+ * Emit a USDA (text USD) document for the textured sphere. The
+ * mesh shares its `points` / `primvars:normals` / `primvars:st`
+ * with the GLB — same indices, same winding, same UVs — so the
+ * two outputs render identically modulo viewer differences.
+ *
+ * `subdivisionScheme = "none"` is critical: USD's default scheme
+ * is `catmullClark`, which would re-subdivide our triangle mesh
+ * and render a faceted blob.
+ *
+ * `orientation = "rightHanded"` is USD's default but spelled out
+ * for clarity — matches glTF's CCW front-face winding.
+ */
+function buildUsda({ positions, normals, uvs, indices, textureFilename }) {
+  const triCount = indices.length / 3
+  const faceVertexCounts = new Array(triCount).fill(3)
+  const faceVertexIndices = Array.from(indices)
+
+  return `#usda 1.0
+(
+    defaultPrim = "Earth"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "Earth"
+{
+    def Mesh "EarthMesh"
+    {
+        uniform token subdivisionScheme = "none"
+        uniform token orientation = "rightHanded"
+        int[] faceVertexCounts = [${faceVertexCounts.join(', ')}]
+        int[] faceVertexIndices = [${faceVertexIndices.join(', ')}]
+        point3f[] points = ${vec3ListUsda(positions)}
+        normal3f[] primvars:normals = ${vec3ListUsda(normals)} (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = ${vec2ListUsda(uvs)} (
+            interpolation = "vertex"
+        )
+        rel material:binding = </Earth/EarthMaterial>
+    }
+
+    def Material "EarthMaterial"
+    {
+        token outputs:surface.connect = </Earth/EarthMaterial/PreviewSurface.outputs:surface>
+
+        def Shader "PreviewSurface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor.connect = </Earth/EarthMaterial/Texture.outputs:rgb>
+            float inputs:roughness = 1
+            float inputs:metallic = 0
+            token outputs:surface
+        }
+
+        def Shader "Texture"
+        {
+            uniform token info:id = "UsdUVTexture"
+            asset inputs:file = @${textureFilename}@
+            float2 inputs:st.connect = </Earth/EarthMaterial/PrimvarReader.outputs:result>
+            color3f outputs:rgb
+        }
+
+        def Shader "PrimvarReader"
+        {
+            uniform token info:id = "UsdPrimvarReader_float2"
+            token inputs:varname = "st"
+            float2 outputs:result
+        }
+    }
+}
+`
+}
+
+// --- USDZ packaging (STORED zip with 64-byte aligned data offsets) ----------
+
+// CRC-32 (IEEE 802.3 polynomial 0xedb88320) — required by the zip
+// spec for each entry. Node's `zlib.crc32` would do, but it's
+// Node 22+ and we want to stay compatible with whatever runtime
+// the local dev box has.
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256)
+  for (let i = 0; i < 256; i++) {
+    let c = i
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    }
+    table[i] = c >>> 0
+  }
+  return table
+})()
+
+function crc32(bytes) {
+  let c = 0xffffffff
+  for (let i = 0; i < bytes.length; i++) {
+    c = (c >>> 8) ^ CRC32_TABLE[(c ^ bytes[i]) & 0xff]
+  }
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/**
+ * Pack `entries` into a USDZ archive. Apple AR Quick Look's hard
+ * requirements:
+ *   1. STORED entries only (compression method 0).
+ *   2. Each entry's file data must start at a 64-byte multiple
+ *      offset within the archive.
+ *   3. The first entry is the "default file" — must be the USDA
+ *      (or other USD) entry-point.
+ *
+ * The 64-byte alignment is achieved by padding the local file
+ * header's `extra field` (a variable-length zero-fill region after
+ * the filename) so that
+ *   localOffset + 30 + filename.length + extraField.length ≡ 0 (mod 64)
+ *
+ * Spec: https://openusd.org/release/spec_usdz.html
+ *       https://pkwaredownloads.blob.core.windows.net/pem/APPNOTE.txt
+ */
+function packUsdz(entries) {
+  const records = entries.map(e => ({
+    filename: e.filename,
+    data: e.data,
+    nameBytes: new TextEncoder().encode(e.filename),
+    crc: crc32(e.data),
+    size: e.data.byteLength,
+  }))
+
+  // First pass — compute extra-field padding so that each entry's
+  // file data starts on a 64-byte boundary, and remember the local
+  // header offset for the central directory.
+  let offset = 0
+  for (const r of records) {
+    const baseHeaderSize = 30 + r.nameBytes.byteLength
+    const dataStart = offset + baseHeaderSize
+    r.extraFieldLength = (64 - (dataStart % 64)) % 64
+    r.localOffset = offset
+    offset += baseHeaderSize + r.extraFieldLength + r.size
+  }
+  const cdStart = offset
+
+  const parts = []
+
+  // Local file headers + data.
+  for (const r of records) {
+    const lfh = new Uint8Array(30 + r.nameBytes.byteLength + r.extraFieldLength)
+    const dv = new DataView(lfh.buffer)
+    dv.setUint32(0, 0x04034b50, true) // signature: PK\3\4
+    dv.setUint16(4, 0x000a, true)     // version needed: 1.0 (STORED)
+    dv.setUint16(6, 0x0000, true)     // gp bit flag
+    dv.setUint16(8, 0x0000, true)     // method: STORED
+    dv.setUint16(10, 0x0000, true)    // last mod time
+    dv.setUint16(12, 0x0021, true)    // last mod date: 1980-01-01
+    dv.setUint32(14, r.crc, true)
+    dv.setUint32(18, r.size, true)    // compressed size = uncompressed (STORED)
+    dv.setUint32(22, r.size, true)
+    dv.setUint16(26, r.nameBytes.byteLength, true)
+    dv.setUint16(28, r.extraFieldLength, true)
+    lfh.set(r.nameBytes, 30)
+    // Extra field is already zero-filled by Uint8Array allocation.
+    parts.push(lfh)
+    parts.push(r.data)
+  }
+
+  // Central directory.
+  let cdSize = 0
+  for (const r of records) {
+    const cdh = new Uint8Array(46 + r.nameBytes.byteLength)
+    const dv = new DataView(cdh.buffer)
+    dv.setUint32(0, 0x02014b50, true) // signature: PK\1\2
+    dv.setUint16(4, 0x0014, true)     // version made by: 2.0
+    dv.setUint16(6, 0x000a, true)     // version needed
+    dv.setUint16(8, 0x0000, true)     // gp bit flag
+    dv.setUint16(10, 0x0000, true)    // method: STORED
+    dv.setUint16(12, 0x0000, true)    // mod time
+    dv.setUint16(14, 0x0021, true)    // mod date
+    dv.setUint32(16, r.crc, true)
+    dv.setUint32(20, r.size, true)
+    dv.setUint32(24, r.size, true)
+    dv.setUint16(28, r.nameBytes.byteLength, true)
+    dv.setUint16(30, 0, true)         // extra field length (CD): 0
+    dv.setUint16(32, 0, true)         // file comment length
+    dv.setUint16(34, 0, true)         // disk number start
+    dv.setUint16(36, 0, true)         // internal file attrs
+    dv.setUint32(38, 0, true)         // external file attrs
+    dv.setUint32(42, r.localOffset, true)
+    cdh.set(r.nameBytes, 46)
+    parts.push(cdh)
+    cdSize += cdh.byteLength
+  }
+
+  // End of Central Directory Record.
+  const eocd = new Uint8Array(22)
+  const dv = new DataView(eocd.buffer)
+  dv.setUint32(0, 0x06054b50, true) // signature: PK\5\6
+  dv.setUint16(4, 0, true)
+  dv.setUint16(6, 0, true)
+  dv.setUint16(8, records.length, true)
+  dv.setUint16(10, records.length, true)
+  dv.setUint32(12, cdSize, true)
+  dv.setUint32(16, cdStart, true)
+  dv.setUint16(20, 0, true)
+  parts.push(eocd)
+
+  let total = 0
+  for (const p of parts) total += p.byteLength
+  const out = new Uint8Array(total)
+  let pos = 0
+  for (const p of parts) {
+    out.set(p, pos)
+    pos += p.byteLength
+  }
+  return out
+}
+
 // --- Main -------------------------------------------------------------------
 
 console.log(`[export-earth-model] Fetching ${TEXTURE_URL}`)
@@ -343,6 +593,20 @@ writeFileSync(OUT_GLB, glb)
 console.log(
   `[export-earth-model] Wrote ${relative(REPO_ROOT, OUT_GLB)} (${glb.byteLength} bytes)`,
 )
+
+console.log('[export-earth-model] Building USDA (text USD) document')
+const usdaText = buildUsda({ ...geometry, textureFilename: USDZ_TEXTURE_FILENAME })
+const usdaBytes = new TextEncoder().encode(usdaText)
+console.log(`[export-earth-model]   ${usdaBytes.byteLength} bytes`)
+
+console.log('[export-earth-model] Packing USDZ archive')
+// Order matters: AR Quick Look treats the first archive entry as
+// the default / entry-point USD.
+const usdz = packUsdz([
+  { filename: USDZ_USDA_FILENAME, data: usdaBytes },
+  { filename: USDZ_TEXTURE_FILENAME, data: textureBytes },
+])
+writeFileSync(OUT_USDZ, usdz)
 console.log(
-  '[export-earth-model] Convert to USDZ next: see poster/assets/xr/models/README.md',
+  `[export-earth-model] Wrote ${relative(REPO_ROOT, OUT_USDZ)} (${usdz.byteLength} bytes)`,
 )
