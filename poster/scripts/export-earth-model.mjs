@@ -57,9 +57,10 @@ const OUT_GLB = resolve(REPO_ROOT, 'poster/assets/xr/models/terraviz-earth.glb')
  *
  * Convention: latitude runs north→south (theta 0→π); longitude
  * runs west→east (phi 0→2π). UV.u maps to longitude (0 at the
- * antimeridian), UV.v maps to latitude (0 at the south pole, 1 at
- * the north pole) — matches how equirectangular Earth textures are
- * conventionally laid out.
+ * antimeridian), UV.v maps to latitude (0 at the north pole, 1 at
+ * the south pole) — matches glTF's image-origin convention where
+ * texcoord (0,0) is the upper-left corner of the texture, and an
+ * equirectangular Earth texture has the Arctic at top.
  */
 function buildSphere() {
   const positions = []
@@ -84,7 +85,7 @@ function buildSphere() {
 
       positions.push(SPHERE_RADIUS * x, SPHERE_RADIUS * y, SPHERE_RADIUS * z)
       normals.push(x, y, z)
-      uvs.push(lon / SPHERE_LONGITUDE_SEGMENTS, 1 - lat / SPHERE_LATITUDE_SEGMENTS)
+      uvs.push(lon / SPHERE_LONGITUDE_SEGMENTS, lat / SPHERE_LATITUDE_SEGMENTS)
     }
   }
 
