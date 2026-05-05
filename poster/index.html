@@ -1755,10 +1755,9 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
 
 /* Split header for §4 orbit — lede on the left, a compact
    chat-bubble preview on the right that demonstrates the
-   <<LOAD:ID>>-resolved load chip the lede describes. The
-   larger annotated mockup further down the section
-   (.orbit-chat-mockup) keeps its full-width treatment; this
-   rail is the at-a-glance version. */
+   <<LOAD:ID>>-resolved load chips the lede describes. Carries
+   both action types (dataset + tour) in the orbit reply bubble,
+   so the rail is the section's only chat-mockup. */
 .orbit__hero {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
@@ -1829,6 +1828,11 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   cursor: not-allowed;
 }
 
+.orbit__rail-load--tour {
+  background: rgba(77, 166, 255, 0.26);
+  border-color: var(--terra-accent);
+}
+
 .orbit__rail-load-arrow {
   font-family: var(--font-mono);
   color: var(--terra-accent);
@@ -1869,7 +1873,6 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
 
 .orbit__lede code,
 .orbit__stack-card code,
-.orbit-chat-mockup code,
 .orbit__forward code,
 .orbit-chunks-list code {
   background: var(--terra-accent-bg);
@@ -1990,89 +1993,6 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   .orbit-chunks-list {
     grid-template-columns: 1fr;
   }
-}
-
-/* Chat-bubble mockup — frosted-glass aesthetic from
-   STYLE_GUIDE.md, simplified to read at poster scale */
-.orbit-chat-mockup {
-  background: var(--navy);
-  border: 1px solid var(--surface-border);
-  border-radius: 10px;
-  padding: 1.5rem;
-  margin: 0 0 2.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-width: 760px;
-}
-
-.orbit-chat-mockup__bubble {
-  border-radius: 10px;
-  padding: 0.85rem 1.1rem;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.orbit-chat-mockup__bubble--user {
-  background: rgba(77, 166, 255, 0.18);
-  color: #e8eaf0;
-  align-self: flex-end;
-  max-width: 75%;
-  border: 1px solid rgba(77, 166, 255, 0.3);
-}
-
-.orbit-chat-mockup__bubble--orbit {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--surface-border);
-  color: #e8eaf0;
-  align-self: flex-start;
-  max-width: 88%;
-}
-
-.orbit-chat-mockup__bubble--orbit p {
-  margin: 0 0 0.85rem;
-}
-
-.orbit-chat-mockup__bubble--orbit p:last-child {
-  margin-bottom: 0;
-}
-
-.orbit-chat-mockup__load-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: rgba(77, 166, 255, 0.15);
-  border: 1px solid rgba(77, 166, 255, 0.4);
-  color: #6ab8ff;
-  border-radius: 6px;
-  padding: 0.45rem 0.8rem;
-  font-family: var(--font-sans);
-  font-size: 0.88rem;
-  font-weight: 600;
-  margin: 0 0 0.85rem;
-  cursor: not-allowed;
-  opacity: 0.95;
-}
-
-.orbit-chat-mockup__load-btn--tour {
-  background: rgba(77, 166, 255, 0.22);
-  border-color: var(--terra-accent);
-}
-
-.orbit-chat-mockup__load-btn::before {
-  content: "⟶";
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--terra-accent);
-}
-
-.orbit-chat-mockup__annotation {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--mist);
-  letter-spacing: 0.04em;
-  text-align: center;
-  margin: 0.5rem 0 0;
 }
 
 /* Research-question callout — the "does the avatar matter"
@@ -5660,16 +5580,19 @@ section figure img {
               Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
             </p>
           </div>
-          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with an inline load button">
-            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me a hurricane in the gulf</div>
+          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with inline load chips for a dataset and a tour">
+            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me 2024 hurricane activity</div>
             <div class="orbit__rail-bubble orbit__rail-bubble--orbit">
-              <p>Hurricane Helene swept through the Gulf in late September 2024.</p>
+              <p>The Atlantic hurricane season from June through November 2024 is in the catalog.</p>
               <button class="orbit__rail-load" type="button" disabled aria-disabled="true">
-                <span class="orbit__rail-load-arrow">⟶</span>Load Hurricane Helene 2024
+                <span class="orbit__rail-load-arrow">⟶</span>Load · Hurricane Season — 2024
               </button>
-              <p>Want me to open it next to the historical SST baseline?</p>
+              <p>Want context for the longer climate trend? Climate Futures compares three SSP scenarios.</p>
+              <button class="orbit__rail-load orbit__rail-load--tour" type="button" disabled aria-disabled="true">
+                <span class="orbit__rail-load-arrow">⟶</span>Take a tour · Climate Futures
+              </button>
             </div>
-            <p class="orbit__rail-note">Inline load chip resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
+            <p class="orbit__rail-note">Inline action chips resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
           </aside>
         </div>
 
@@ -5810,32 +5733,6 @@ section figure img {
           <li><code>auto-load</code> — dataset loaded immediately, no click required</li>
           <li><code>done</code> — stream complete; <code>fallback: true</code> flag if local engine took over</li>
         </ul>
-
-        <h3 class="orbit__subhead">A real Orbit response, annotated</h3>
-        <p class="orbit__subhead-hint">
-          The LLM emits <code>&lt;&lt;LOAD:ID&gt;&gt;</code> markers inline with its prose. The service parses each into an <code>action</code> chunk; <code>chatUI</code> renders each as an inline load button so the visitor can drop the dataset (or tour) onto the globe with a tap. Same marker pattern for both.
-        </p>
-
-        <div class="orbit-chat-mockup" aria-label="Annotated mockup of an Orbit chat response, showing inline load buttons resolved from <<LOAD:ID>> markers">
-          <div class="orbit-chat-mockup__bubble orbit-chat-mockup__bubble--user">
-            Show me how the climate is changing in the Atlantic.
-          </div>
-
-          <div class="orbit-chat-mockup__bubble orbit-chat-mockup__bubble--orbit">
-            <p>Atlantic warming is one of the clearer signals in the Science On a Sphere catalog.</p>
-            <button class="orbit-chat-mockup__load-btn" type="button" disabled aria-disabled="true">
-              Load · Sea-surface temperature, 1981–2023
-            </button>
-            <p>If you want to see what climate scientists project for the rest of the century, the Climate Futures tour compares three SSP scenarios across temperature, precipitation, and sea ice.</p>
-            <button class="orbit-chat-mockup__load-btn orbit-chat-mockup__load-btn--tour" type="button" disabled aria-disabled="true">
-              Take a tour · Climate Futures · 2100
-            </button>
-          </div>
-
-          <p class="orbit-chat-mockup__annotation">
-            BUTTONS ARE INLINE <code>&lt;&lt;LOAD:ID&gt;&gt;</code> MARKERS RESOLVED INTO ACTIONS · TAP TO LOAD
-          </p>
-        </div>
 
         <h3 class="orbit__subhead">Does the avatar matter? An open research question.</h3>
         <p class="orbit__subhead-hint">

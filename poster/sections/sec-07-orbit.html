@@ -10,16 +10,19 @@
               Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
             </p>
           </div>
-          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with an inline load button">
-            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me a hurricane in the gulf</div>
+          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with inline load chips for a dataset and a tour">
+            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me 2024 hurricane activity</div>
             <div class="orbit__rail-bubble orbit__rail-bubble--orbit">
-              <p>Hurricane Helene swept through the Gulf in late September 2024.</p>
+              <p>The Atlantic hurricane season from June through November 2024 is in the catalog.</p>
               <button class="orbit__rail-load" type="button" disabled aria-disabled="true">
-                <span class="orbit__rail-load-arrow">⟶</span>Load Hurricane Helene 2024
+                <span class="orbit__rail-load-arrow">⟶</span>Load · Hurricane Season — 2024
               </button>
-              <p>Want me to open it next to the historical SST baseline?</p>
+              <p>Want context for the longer climate trend? Climate Futures compares three SSP scenarios.</p>
+              <button class="orbit__rail-load orbit__rail-load--tour" type="button" disabled aria-disabled="true">
+                <span class="orbit__rail-load-arrow">⟶</span>Take a tour · Climate Futures
+              </button>
             </div>
-            <p class="orbit__rail-note">Inline load chip resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
+            <p class="orbit__rail-note">Inline action chips resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
           </aside>
         </div>
 
@@ -160,32 +163,6 @@
           <li><code>auto-load</code> — dataset loaded immediately, no click required</li>
           <li><code>done</code> — stream complete; <code>fallback: true</code> flag if local engine took over</li>
         </ul>
-
-        <h3 class="orbit__subhead">A real Orbit response, annotated</h3>
-        <p class="orbit__subhead-hint">
-          The LLM emits <code>&lt;&lt;LOAD:ID&gt;&gt;</code> markers inline with its prose. The service parses each into an <code>action</code> chunk; <code>chatUI</code> renders each as an inline load button so the visitor can drop the dataset (or tour) onto the globe with a tap. Same marker pattern for both.
-        </p>
-
-        <div class="orbit-chat-mockup" aria-label="Annotated mockup of an Orbit chat response, showing inline load buttons resolved from <<LOAD:ID>> markers">
-          <div class="orbit-chat-mockup__bubble orbit-chat-mockup__bubble--user">
-            Show me how the climate is changing in the Atlantic.
-          </div>
-
-          <div class="orbit-chat-mockup__bubble orbit-chat-mockup__bubble--orbit">
-            <p>Atlantic warming is one of the clearer signals in the Science On a Sphere catalog.</p>
-            <button class="orbit-chat-mockup__load-btn" type="button" disabled aria-disabled="true">
-              Load · Sea-surface temperature, 1981–2023
-            </button>
-            <p>If you want to see what climate scientists project for the rest of the century, the Climate Futures tour compares three SSP scenarios across temperature, precipitation, and sea ice.</p>
-            <button class="orbit-chat-mockup__load-btn orbit-chat-mockup__load-btn--tour" type="button" disabled aria-disabled="true">
-              Take a tour · Climate Futures · 2100
-            </button>
-          </div>
-
-          <p class="orbit-chat-mockup__annotation">
-            BUTTONS ARE INLINE <code>&lt;&lt;LOAD:ID&gt;&gt;</code> MARKERS RESOLVED INTO ACTIONS · TAP TO LOAD
-          </p>
-        </div>
 
         <h3 class="orbit__subhead">Does the avatar matter? An open research question.</h3>
         <p class="orbit__subhead-hint">
