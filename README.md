@@ -1,13 +1,13 @@
 # Terraviz
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-terraviz.zyra--project.org-4da6ff)](https://terraviz.zyra-project.org)
-[![Poster](https://img.shields.io/badge/Poster-poster.terraviz.zyra--project.org-4da6ff)](https://poster.terraviz.zyra-project.org)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20043181.svg)](https://doi.org/10.5281/zenodo.20043181)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Poster](https://img.shields.io/badge/poster-view%20online-00172D)](https://poster.terraviz.zyra-project.org/)
+[![Live App](https://img.shields.io/badge/app-terraviz.zyra--project.org-success)](https://terraviz.zyra-project.org/)
+
 [![Windows](https://img.shields.io/badge/Download-Windows-0078D4?logo=windows&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.msi)
 [![macOS](https://img.shields.io/badge/Download-macOS-000000?logo=apple&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-aarch64.dmg)
 [![Linux](https://img.shields.io/badge/Download-Linux-FCC624?logo=linux&logoColor=black)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.AppImage)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20043181.svg)](https://doi.org/10.5281/zenodo.20043181)
-[![Privacy](https://img.shields.io/badge/privacy-policy-blue)](docs/PRIVACY.md)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 A WebGL-based globe that streams environmental data from the [Science On a Sphere](https://sos.noaa.gov/) project. Available as a [web app](https://terraviz.zyra-project.org) and a native desktop application for Windows, macOS, and Linux.
 
