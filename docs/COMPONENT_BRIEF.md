@@ -70,11 +70,13 @@ Create text styles that reference tokens:
 | Label | 0.6rem | 600 | `color > text-dim` |
 
 Font stack: `-apple-system, BlinkMacSystemFont, Segoe UI, Roboto` —
-in Figma, use **Inter** or **SF Pro** as the closest match.
+in your design tool, use **Inter** or **SF Pro** as the closest
+match (both Penpot and Figma include them by default).
 
 ### Color Styles
 
-Apply these as Figma color styles linked to tokens:
+Apply these as named color styles in your design tool, linked to
+tokens (Penpot: Library → Color styles; Figma: Local styles):
 
 | Style | Token | Usage |
 |---|---|---|
@@ -388,19 +390,24 @@ If you want to show responsive states, create additional frames:
 | Phone Portrait | 375 × 812 | Browse becomes bottom sheet, chat full-width |
 
 The token values change automatically per mode in the build pipeline.
-In Figma, you'd manually set the tablet/phone values on these frames
-since Tokens Studio free tier doesn't support mode switching in the UI.
+In Penpot, switch the board's mode in the Tokens panel to preview
+the responsive variants natively. In Figma + Tokens Studio you'll
+need to set the tablet/phone values manually since the free tier
+doesn't support live mode switching in the UI.
 
 ## Tips
 
-- **Use auto-layout** for all components — it maps most closely to
-  CSS flexbox which the app uses
+- **Use Flex Layout / Auto Layout** for all components — it maps
+  most closely to CSS flexbox, which the app uses
 - **Name layers** to match CSS class names (e.g., `.browse-card`,
-  `.chat-msg-text`) — this helps when Code Connect is added later
-- **Don't hardcode values** — if a dimension exists as a token, use
-  "Apply to selection" in Tokens Studio rather than typing the number
-- **Glass blur effect** — Figma's "Background blur" layer effect is
-  the equivalent of CSS `backdrop-filter: blur()`
+  `.chat-msg-text`) — this keeps the design file traceable to source
+- **Don't hardcode values** — if a dimension exists as a token,
+  apply it via the design tool's token binding (Penpot: right-click
+  → Apply Token; Figma + Tokens Studio: "Apply to selection")
+  rather than typing the number
+- **Glass blur effect** — both Penpot ("Layer background blur") and
+  Figma ("Background blur") expose the equivalent of CSS
+  `backdrop-filter: blur()`
 - **Opacity on fills, not layers** — the glass surface uses rgba
   colors with built-in opacity, not a layer opacity. Set the fill
   color to the token value (which includes opacity) and keep layer
