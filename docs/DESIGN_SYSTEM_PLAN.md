@@ -423,6 +423,69 @@ exporting JSON back out and committing the diff.
       Penpot → export → diff component JSON → regenerate CSS → verify
       `--component-browse-panel-width` value
 
+#### Bootstrap tooling: `scripts/sync-penpot-global.ts`
+
+The Penpot "Tokens panel → Import" path works for one-off JSON
+imports, but it is a manual click-through and easy to drift from
+when seeding a fresh file or refreshing tokens after edits. To make
+the JSON-source-of-truth → Penpot direction reliable and repeatable,
+bootstrapping the **Global** token set is automated by
+[`scripts/sync-penpot-global.ts`](../scripts/sync-penpot-global.ts).
+
+The script reads `tokens/global.json`, walks the W3C token tree, and
+emits two outputs:
+
+| Output | Flag | Use |
+|---|---|---|
+| Plugin code (default) | `--code` (default) | A self-contained JS string ready to send through the Penpot MCP `execute_code` tool |
+| Spec list | `--list` | Flat JSON dump of `{ name, type, value, description? }` for inspection or piping to other tools |
+
+The emitted code performs an idempotent upsert against a single set
+named **Global**:
+
+- creates the set if it does not exist
+- creates each token if missing
+- updates `value` only when it differs from the JSON
+- leaves matching tokens untouched
+- logs (does not delete) any tokens already in the set with no JSON
+  counterpart, so renames surface as a warning rather than data loss
+- preserves `$description` from the JSON onto the Penpot token
+
+**Token naming.** Names mirror the JSON path with a literal dot,
+matching the CSS custom-property suffix:
+
+| JSON path | CSS variable | Penpot token name |
+|---|---|---|
+| `color.accent` | `--color-accent` | `color.accent` |
+| `radius.md` | `--radius-md` | `radius.md` |
+| `accent-opacity.o05` | `--accent-o05` | `accent-opacity.o05` |
+| `glass.blur` | `--glass-blur` | `glass.blur` |
+
+**Initial seed (May 2026).** The first run of this script against
+the empty TerraViz - Design System file created 53 tokens — 44
+`color`, 9 `dimension` — covering every leaf in `tokens/global.json`
+that is a `color` or `dimension`. Every subsequent run with no JSON
+edits is a no-op (`0 created / 0 updated / 53 unchanged`).
+
+**Out of scope for this pass** (deferred to follow-up branches):
+
+- Component token sets sourced from `tokens/components/*.json`
+- Mode overrides (`com.tokens-studio.modes`) — `default` `$value`
+  only for now; modes will be wired through Penpot themes once the
+  Global set is stable
+- Library typographies and component scaffolding (Glass Surface,
+  Transport Button, etc.)
+- Round-trip in the other direction (Penpot → JSON export). The
+  designer-side export-and-commit flow described above remains the
+  canonical channel for now; a future script will diff Penpot's
+  exported JSON against `tokens/*.json` to streamline review.
+
+**Operating note.** The MCP plugin operates on whichever Penpot file
+the plugin tab has focused. Verify with
+`penpot.currentFile?.name` / `penpotUtils.getPages()` before any
+write — if the plugin is attached to the wrong file, every
+`addToken` call lands in the wrong library.
+
 ### Phase 4: CI and contributor setup
 
 Since `tokens.css` is gitignored, CI must generate it before building.
