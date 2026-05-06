@@ -57,7 +57,7 @@ border-radius: 6px;               /* --radius-md; 8px (--radius-lg) for larger p
 | `--color-warning` | `#ffcc66` | Warning state |
 | `--glass-bg` | `rgba(13, 13, 18, 0.92)` | Glass panel background — dark |
 | `--glass-bg-light` | `rgba(13, 13, 18, 0.88)` | Glass panel background — lighter variant |
-| `--glass-blur` | `12px` | Backdrop blur radius for frosted-glass effect |
+| `--glass-blur` | `blur(12px)` | Backdrop blur radius for frosted-glass effect |
 <!-- /tokens:auto:colors -->
 
 ## Typography

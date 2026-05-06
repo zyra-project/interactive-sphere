@@ -6,6 +6,9 @@
   "bin": {
     "terraviz": "./bin/terraviz.cjs"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "tokens": "style-dictionary build --config tokens/style-dictionary.config.mjs",
     "postinstall": "npm run tokens",

@@ -66,13 +66,16 @@ function hasMode(tokens, mode) {
 
 function generateGlass(global) {
   const glass = global.glass;
+  const borderColor = global.color['surface-border-subtle'].$value;
+  const radiusMd = global.radius.md.$value;
+  const radiusLg = global.radius.lg.$value;
   const lines = [
     '```css',
     `background: ${glass.bg.$value};`,
     `backdrop-filter: blur(${glass.blur.$value});`,
     `-webkit-backdrop-filter: blur(${glass.blur.$value});`,
-    `border: 1px solid rgba(255, 255, 255, 0.08); /* --color-surface-border-subtle */`,
-    `border-radius: 6px;               /* --radius-md; 8px (--radius-lg) for larger panels */`,
+    `border: 1px solid ${borderColor}; /* --color-surface-border-subtle */`,
+    `border-radius: ${radiusMd};               /* --radius-md; ${radiusLg} (--radius-lg) for larger panels */`,
     '```',
   ];
   return lines.join('\n');
@@ -96,7 +99,7 @@ function generateColors(global) {
   // Glass tokens
   lines.push(`| \`--glass-bg\` | \`${global.glass.bg.$value}\` | ${global.glass.bg.$description || 'Glass panel background'} |`);
   lines.push(`| \`--glass-bg-light\` | \`${global.glass['bg-light'].$value}\` | ${global.glass['bg-light'].$description || 'Glass panel background — lighter'} |`);
-  lines.push(`| \`--glass-blur\` | \`${global.glass.blur.$value}\` | ${global.glass.blur.$description || 'Backdrop blur radius'} |`);
+  lines.push(`| \`--glass-blur\` | \`blur(${global.glass.blur.$value})\` | ${global.glass.blur.$description || 'Backdrop blur radius'} |`);
 
   return lines.join('\n');
 }

@@ -67,17 +67,6 @@ function getModeValue(token, mode) {
 }
 
 /**
- * Resolve the display value — for the default mode, use the
- * token's $value. For overrides, use the mode value.
- */
-function getTokenValue(token, mode) {
-  if (mode === 'default') {
-    return token.$value ?? token.value;
-  }
-  return getModeValue(token, mode);
-}
-
-/**
  * Format a CSS value. The glass blur token stores "12px" but the
  * CSS custom property uses "blur(12px)".
  */
@@ -137,14 +126,6 @@ export default {
 
     // :root block
     lines.push(':root {');
-
-    // Group by category for readability
-    const categories = new Map();
-    for (const entry of defaultEntries) {
-      const prefix = entry.name.split('-').slice(0, 3).join('-');
-      if (!categories.has(prefix)) categories.set(prefix, []);
-      categories.get(prefix).push(entry);
-    }
 
     let prevCategory = '';
     for (const entry of defaultEntries) {
