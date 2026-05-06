@@ -124,7 +124,7 @@ font-size: 0.58rem–0.6rem;
 | Token | Default | Tablet (≤768px) | Phone Portrait |
 |---|---|---|---|
 | `--component-browse-panel-width` | `420px` | `—` | `100%` |
-| `--component-browse-panel-max-height` | `none` | `—` | `70vh` |
+| `--component-browse-panel-max-height` | `100vh` | `—` | `70vh` |
 | `--component-browse-card-padding` | `0.875rem` | `—` | `—` |
 | `--component-browse-card-radius` | `8px` | `—` | `—` |
 | `--component-browse-card-gap` | `0.75rem` | `—` | `—` |

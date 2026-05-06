@@ -13,12 +13,12 @@
         }
       },
       "panel-max-height": {
-        "$value": "none",
+        "$value": "100vh",
         "$type": "dimension",
-        "$description": "Browse overlay max-height",
+        "$description": "Browse overlay max-height (only consumed in phone-portrait; 100vh on desktop is a no-op)",
         "$extensions": {
           "com.tokens-studio.modes": {
-            "default": "none",
+            "default": "100vh",
             "phone-portrait": "70vh"
           }
         }
