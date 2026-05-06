@@ -19,13 +19,26 @@ import { logger } from './utils/logger'
 import type { AppState, VideoTextureHandle, TourFile, Dataset } from './types'
 
 // Extracted modules
-import { showBrowseUI, hideBrowseUI, collapseBrowseUI } from './ui/browseUI'
+import { showBrowseUI, hideBrowseUI, collapseBrowseUI, notifyBrowseOpened } from './ui/browseUI'
 import { initDownloadUI } from './ui/downloadUI'
 import { updateMapControlsPosition } from './ui/mapControlsUI'
 import { initToolsMenu, syncToolsMenuState, syncToolsMenuLayout, pulseBrowseButton } from './ui/toolsMenuUI'
+import { openCreditsPanel } from './ui/creditsPanel'
 import { initChatUI, openChat, openChatSettings, notifyDatasetChanged, showChatTrigger, hideChatTrigger, closeChat, flushPendingGlobeActions } from './ui/chatUI'
 import { loadViewPreferences, saveViewPreferences, type ViewPreferences } from './utils/viewPreferences'
 import { initHelpUI, setActiveDataset as setHelpActiveDataset } from './ui/helpUI'
+import { showDisclosureBannerIfNeeded } from './ui/disclosureBanner'
+import {
+  createFetchTransport,
+  emit,
+  initSession,
+  pauseForVrEntry,
+  resumeForVrExit,
+  setTransport,
+  startPerfSampler,
+  TELEMETRY_BUILD_ENABLED,
+  TELEMETRY_CONSOLE_MODE,
+} from './analytics'
 import {
   createPlaybackState, startPlaybackLoop, stopPlaybackLoop,
   togglePlayPause, rewind, fastForward, stepFrame, onScrub,
@@ -41,6 +54,13 @@ import { showTourControls, hideTourControls, hideAllTourTextBoxes, hideAllTourIm
 import { initLegendForDataset, clearLegendCache, loadConfig } from './services/docentService'
 import { isMobile, IS_MOBILE_NATIVE, getCloudTextureUrl } from './utils/deviceCapability'
 import { initDeepLinks } from './services/deepLinkService'
+import {
+  applyPosterDeepLinks,
+  parseInitialLayout,
+} from './utils/posterDeepLinks'
+import { initVrButton } from './ui/vrButton'
+import { flyToOnGlobe, isVrActive } from './services/vrSession'
+import type { VrDatasetTexture } from './services/vrScene'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
 // (larger touch targets, bottom sheets, etc.) without JS per-component.
@@ -74,10 +94,28 @@ interface PanelState {
   dataset: Dataset | null
   hlsService: HLSService | null
   videoTexture: VideoTextureHandle | null
+  /** Decoded image element for image datasets — passed to VR to avoid re-fetching. */
+  image: HTMLImageElement | null
+  /** Wall-clock `Date.now()` at which the current dataset finished
+   * loading into this panel. Used to compute `layer_unloaded.dwell_ms`.
+   * Null when the panel is empty (default Earth). */
+  loadedAt: number | null
 }
 
 function createPanelState(): PanelState {
-  return { dataset: null, hlsService: null, videoTexture: null }
+  return { dataset: null, hlsService: null, videoTexture: null, image: null, loadedAt: null }
+}
+
+/** Map a dataset-load trigger to the analytics tour-source enum.
+ * `tour_started.source` accepts `'browse' | 'orbit' | 'deeplink'`;
+ * URL/deep-link loads collapse to `'deeplink'`, defaults / chained
+ * loads collapse to `'browse'`. */
+function triggerToTourSource(
+  trigger: import('./types').LoadTrigger,
+): 'browse' | 'orbit' | 'deeplink' {
+  if (trigger === 'orbit') return 'orbit'
+  if (trigger === 'url') return 'deeplink'
+  return 'browse'
 }
 
 class InteractiveSphere {
@@ -171,6 +209,7 @@ class InteractiveSphere {
       this.viewports.init(mapGrid, initialLayout, {
         onLayoutChange: (newCount, oldCount) => this.onViewportLayoutChange(newCount, oldCount),
         onPrimaryChange: (newIdx, oldIdx) => this.onViewportPrimaryChange(newIdx, oldIdx),
+        getLayerIdForSlot: (slot) => this.panelStates[slot]?.dataset?.id ?? null,
       })
       // Parallel per-panel dataset state, one entry per viewport.
       this.panelStates = Array.from({ length: this.viewports.getPanelCount() }, createPanelState)
@@ -180,6 +219,7 @@ class InteractiveSphere {
         onSetLayout: (layout) => this.viewports.setLayout(layout),
         onOpenBrowse: () => this.openBrowsePanel(),
         onOpenOrbitSettings: () => openChatSettings(),
+        onOpenCredits: (trigger) => openCreditsPanel(this.viewports, trigger),
         onToggleDatasetInfo: (visible) => this.setDatasetInfoVisible(visible),
         onToggleLegend: (visible) => this.setLegendVisible(visible),
         announce: (msg) => this.announce(msg),
@@ -193,6 +233,15 @@ class InteractiveSphere {
       })
       initDownloadUI().catch(err => logger.warn('[App] Download UI init failed:', err))
       initHelpUI()
+      // First-session privacy disclosure. No-ops on every launch
+      // after the user dismisses it.
+      showDisclosureBannerIfNeeded()
+      // Telemetry transport — skipped entirely when the compile-time
+      // flag is off (telemetry-free builds) and when console mode
+      // is on (dev convenience: events log locally, no POSTs).
+      if (TELEMETRY_BUILD_ENABLED && !TELEMETRY_CONSOLE_MODE) {
+        setTransport(createFetchTransport())
+      }
       logger.info('[App] Using MapLibre renderer (layout: %s)', initialLayout)
 
       // Wire up lat/lng display (bind to primary; secondary panels don't
@@ -219,12 +268,17 @@ class InteractiveSphere {
       // Initialize digital docent chat (available on all views)
       this.initChat()
 
+      // Enter VR button — feature-gated internally; hides itself on
+      // non-WebXR browsers and warm-loads Three.js in the background
+      // on devices that can enter VR.
+      void this.wireVrButton()
+
       const datasetId = this.getDatasetIdFromUrl()
       if (datasetId) {
         this.setLoadingStatus('Loading dataset\u2026', 50)
-        await this.loadDataset(datasetId)
+        await this.loadDataset(datasetId, 'url')
         this.setLoading(false)
-        showChatTrigger()
+        this.runUrlLoadUiSync()
         // In multi-viewport mode, pre-render the browse panel in its
         // collapsed state so users can slide it open to load datasets
         // into the remaining panels, and pulse the Browse button so
@@ -269,17 +323,25 @@ class InteractiveSphere {
         this.setLoading(false)
         // Render the browse panel (populates category filters and
         // dataset cards) then decide whether to leave it visible.
-        // On mobile (≤768px) the panel is full-width and would hide
-        // the globe entirely — start closed on that breakpoint and
-        // pulse the Browse button briefly so users notice where
-        // datasets live. Desktop keeps the existing side-panel UX.
+        // - Multi-viewport mode: the visitor explicitly chose
+        //   multiple globes (via ?layout= or the layout picker).
+        //   Don't cover one of them with the browse panel by
+        //   default — collapse it and pulse the Browse button so
+        //   they notice where to click. Mirrors the same decision
+        //   in the dataset-from-URL branch above.
+        // - Mobile single-view: panel is full-width and would
+        //   hide the globe entirely; start hidden and pulse.
+        // - Desktop single-view: keep the existing side-panel UX
+        //   so the visitor sees the catalog by default.
         showBrowseUI(this.appState.datasets, {
           onSelectDataset: (id) => this.selectDatasetFromBrowse(id),
           announce: (msg) => this.announce(msg),
           isMobile: this.isMobile,
           onOpenChat: (query) => this.openChatWithQuery(query),
         })
-        if (window.matchMedia('(max-width: 768px)').matches) {
+        if (this.viewports.getPanelCount() > 1) {
+          collapseBrowseUI()
+        } else if (window.matchMedia('(max-width: 768px)').matches) {
           hideBrowseUI()
         }
         pulseBrowseButton()
@@ -292,9 +354,68 @@ class InteractiveSphere {
     // Phase 5: listen for deep links unconditionally so the app can
     // load a dataset when opened from an external URL at any time,
     // not just when a ?dataset= query param is present at startup.
-    initDeepLinks((id) => {
-      this.loadDataset(id)
+    // The Tauri native deep-link plugin fires `zyra://dataset/<id>`
+    // and `https://terraviz.zyra-project.org/dataset/<id>` events
+    // mid-session; route them through the same post-load UI sync
+    // that the boot ?dataset= and poster ?tour= paths use, so the
+    // chat trigger / canvas description / help overlay all stay in
+    // sync regardless of which entry point the load came from.
+    initDeepLinks(async (id) => {
+      await this.loadDataset(id, 'url')
+      this.runUrlLoadUiSync()
     })
+
+    // Apply any poster-flavoured deep-link query params (?tour=,
+    // ?terrain=, ?labels=, ?borders=, ?rotate=, ?orbit=). These run
+    // after the catalog is loaded and the Tools menu is wired so the
+    // dispatch can route through canonical APIs and button click
+    // handlers without any race risk. ?layout= and ?dataset= are
+    // already handled by the existing initial-load path above. The
+    // call is awaited so a ?tour= load completes before subsequent
+    // ?orbit=open / view-toggle dispatches run on top of it.
+    //
+    // The loadDataset callback runs the same post-load UI sync the
+    // boot ?dataset= path does (showChatTrigger, notifyDatasetChanged,
+    // setHelpActiveDataset). Without it, a poster URL like
+    // ?tour=climate-futures&orbit=open opens the chat panel but the
+    // floating Orbit trigger stays hidden — so if the visitor closes
+    // the chat panel they have no way to reopen it.
+    await applyPosterDeepLinks({
+      catalog: this.appState.datasets,
+      loadDataset: async (id) => {
+        await this.loadDataset(id, 'url')
+        this.runUrlLoadUiSync()
+      },
+      openChatWithQuery: (query) => this.openChatWithQuery(query),
+    })
+  }
+
+  /**
+   * Post-load UI sync that every URL-driven dataset load needs to
+   * run on top of `loadDataset()`: surface the floating Orbit chat
+   * trigger so the visitor can re-open chat after closing it,
+   * refresh the canvas's accessible description so screen readers
+   * stop announcing the stale Earth title, announce the dataset
+   * change to the chat panel so its system prompt picks up the
+   * new context, and tell the help overlay which dataset is now
+   * active.
+   *
+   * Browse-panel and chat-driven loads (`selectDatasetFromBrowse`,
+   * `selectDatasetFromChat`) call equivalent code inline; URL
+   * paths share this helper — boot `?dataset=`, the
+   * `applyPosterDeepLinks` poster pipeline, and the Tauri
+   * `zyra://`/`/dataset/...` native deep-link listener — so the
+   * sequencing stays consistent across every URL-driven entry
+   * point.
+   */
+  private runUrlLoadUiSync(): void {
+    showChatTrigger()
+    const dataset = this.appState.currentDataset
+    if (dataset) {
+      this.renderer?.setCanvasDescription(`3D globe showing ${dataset.title}`)
+      notifyDatasetChanged(dataset)
+      setHelpActiveDataset(dataset.id)
+    }
   }
 
   /** Extract the `dataset` query parameter from the current URL. */
@@ -304,17 +425,16 @@ class InteractiveSphere {
   }
 
   /**
-   * Read the initial viewport layout from the `?setview=` query param.
-   * Phase 1 defaults to `'1'` (single globe); the param is a dev flag
-   * for smoke-testing multi-viewport before the layout picker ships.
-   * Unknown values fall back to single-view.
+   * Read the initial viewport layout from the URL. Prefers
+   * `?layout=` (the public form used by the companion poster's
+   * deep-link buttons); falls back to the legacy dev `?setview=`
+   * for backwards compatibility. Both forms accept the same set
+   * of values: `1`, `2`, `2h`, `2v`, `4`. The shorthand `2`
+   * resolves to `2h`. Unknown / missing values default to
+   * single-view (`1`).
    */
   private getInitialLayoutFromUrl(): ViewLayout {
-    const raw = new URLSearchParams(window.location.search).get('setview')
-    if (raw === '1' || raw === '2h' || raw === '2v' || raw === '4') return raw
-    // Legacy shorthand: ?setview=2 → 2h, ?setview=4 → 4
-    if (raw === '2') return '2h'
-    return '1'
+    return parseInitialLayout(window.location.search)
   }
 
   /** Fetch the dataset catalog from the data service and store in app state. */
@@ -324,12 +444,21 @@ class InteractiveSphere {
   }
 
   /** Load a dataset by ID onto the globe, tearing down any previous video stream first. Uses a generation counter to safely ignore superseded loads. */
-  private async loadDataset(datasetId: string): Promise<void> {
+  private async loadDataset(
+    datasetId: string,
+    trigger: import('./types').LoadTrigger = 'default',
+  ): Promise<void> {
     const gen = this.loadGeneration
+    const loadStartWall = Date.now()
     logger.debug('[App] loadDataset start:', datasetId)
     stopPlaybackLoop(this.playback)
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
+
+    // Emit layer_unloaded for whatever was in the primary panel before
+    // the new dataset supersedes it. "replaced" covers both user-driven
+    // browses and orbit-driven loads; `goHome` has its own reason.
+    this.emitLayerUnloadedForSlot(this.viewports.getPrimaryIndex(), 'replaced')
 
     // Stop any active tour (but don't trigger full goHome — let the new load proceed)
     this.stopTour()
@@ -345,7 +474,7 @@ class InteractiveSphere {
     this.renderer?.disableSunLighting()
 
     try {
-      await this.displayDataset(datasetId, gen)
+      await this.displayDataset(datasetId, gen, trigger, loadStartWall)
       if (gen !== this.loadGeneration) {
         logger.debug('[App] loadDataset superseded:', datasetId)
         this.cleanupVideo()
@@ -354,9 +483,10 @@ class InteractiveSphere {
       this.showHomeButton()
       logger.debug('[App] loadDataset complete:', datasetId)
     } catch (error) {
-      // Clear the loading overlay on the primary panel regardless of
-      // whether the load was superseded or genuinely failed.
-      this.viewports.setPanelLoading(this.viewports.getPrimaryIndex(), false)
+      // displayDataset clears its own loading overlay via a
+      // try/finally scoped to the slot it pinned at entry, so we
+      // don't need to touch it here — doing so risks clearing the
+      // wrong panel if the user promoted a different slot mid-load.
       if (gen !== this.loadGeneration) {
         logger.debug('[App] loadDataset superseded (error ignored):', datasetId)
         this.cleanupVideo()
@@ -370,22 +500,43 @@ class InteractiveSphere {
   }
 
   /** Resolve, render, and apply a dataset (image or video) to the sphere. */
-  private async displayDataset(datasetId: string, gen: number): Promise<void> {
+  private async displayDataset(
+    datasetId: string,
+    gen: number,
+    trigger: import('./types').LoadTrigger = 'default',
+    loadStartWall: number = Date.now(),
+  ): Promise<void> {
     const dataset = dataService.getDatasetById(datasetId)
     if (!dataset) throw new Error(`Dataset not found: ${datasetId}`)
 
+    // Pin the target slot + its renderer once, at the very start. Both
+    // must stay fixed for the lifetime of this call — the awaits below
+    // span image decode / HLS manifest fetches, during which the user
+    // can promote a different panel to primary. Reading `this.renderer`
+    // (a live getter over the primary) after an await would then apply
+    // the new dataset's texture to a different panel than the one we
+    // recorded in `panelStates`, leaving the two in disagreement and
+    // letting a single load bleed across globes.
+    const targetSlot = this.viewports.getPrimaryIndex()
+    const targetRenderer = this.viewports.getRendererAt(targetSlot)
+    if (!targetRenderer) throw new Error('Renderer not initialized')
+
     this.appState.currentDataset = dataset
-    // Record on the primary panel's state so onPrimaryChange later
-    // knows what's loaded where.
-    const primaryIdx = this.viewports.getPrimaryIndex()
-    if (this.panelStates[primaryIdx]) {
-      this.panelStates[primaryIdx].dataset = dataset
+    if (this.panelStates[targetSlot]) {
+      this.panelStates[targetSlot].dataset = dataset
+    }
+    // Register the dataset's attribution as a phantom MapLibre
+    // source so Tools → Credits picks it up. See creditsPanel.ts
+    // for the design. No-op on non-MapRenderer surfaces.
+    if (targetRenderer instanceof MapRenderer) {
+      targetRenderer.setDatasetCredits(dataset)
     }
 
     logger.info('[App] Loading dataset:', {
       id: dataset.id,
       title: dataset.title,
       format: dataset.format,
+      slot: targetSlot,
       hasTimeData: !!(dataset.startTime && dataset.endTime)
     })
 
@@ -395,43 +546,68 @@ class InteractiveSphere {
     this.renderInfoPanel()
     this.refreshPanelLegends()
 
-    if (!this.renderer) throw new Error('Renderer not initialized')
-
     const loaderCallbacks = {
       showPlaybackControls: (show: boolean) => this.showPlaybackControls(show),
       showTimeLabel: (show: boolean) => this.showTimeLabel(show),
     }
 
     // Show a per-panel loading overlay so the user sees "Loading…"
-    // instead of the confusing Blue Marble intermediate state.
-    this.viewports.setPanelLoading(primaryIdx, true, `Loading ${dataset.title}\u2026`)
+    // instead of the confusing Blue Marble intermediate state. Wrap
+    // the whole async body in try/finally so the overlay always
+    // clears on the slot we pinned — even if the load throws and
+    // even if the user promotes a different panel mid-flight.
+    this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
-    if (dataset.format === 'tour/json') {
-      this.viewports.setPanelLoading(primaryIdx, false)
-      this.tourIsStandalone = true
-      await this.startTour(dataset.dataLink, gen)
-      return
-    } else if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(dataset, this.renderer, this.appState, this.isMobile, loaderCallbacks)
-      this.viewports.setPanelLoading(primaryIdx, false)
-      if (gen !== this.loadGeneration) return
-    } else if (dataService.isVideoDataset(dataset)) {
-      const result = await loadVideoDataset(
-        dataset, this.renderer, this.appState, this.isMobile, this.playback, loaderCallbacks
-      )
-      this.viewports.setPanelLoading(primaryIdx, false)
-      // If a newer load started while we were awaiting, discard these results.
-      // Don't dispose videoTexture here — setVideoTexture already placed it on
-      // the sphere material, so the next load's setVideoTexture will replace it.
-      if (gen !== this.loadGeneration) {
-        result.hlsService.destroy()
+    try {
+      if (dataset.format === 'tour/json') {
+        this.tourIsStandalone = true
+        // The node-catalog source surfaces the actual tour-fetch
+        // URL on `tourJsonUrl`; the manifest endpoint at
+        // `dataLink` 415s tour formats. Legacy SOS catalog
+        // responses don't carry `tourJsonUrl` — fall back to
+        // `dataLink` (which on those rows is the direct
+        // CloudFront URL).
+        const tourUrl = dataset.tourJsonUrl ?? dataset.dataLink
+        await this.startTour(tourUrl, gen, null, {
+          tourId: dataset.id,
+          tourTitle: dataset.title,
+          source: triggerToTourSource(trigger),
+        })
         return
+      } else if (dataService.isImageDataset(dataset)) {
+        const img = await loadImageDataset(dataset, targetRenderer, this.appState, this.isMobile, loaderCallbacks)
+        if (gen !== this.loadGeneration) return
+        if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
+        this.emitLayerLoaded(dataset, targetSlot, trigger, 'image', Date.now() - loadStartWall)
+      } else if (dataService.isVideoDataset(dataset)) {
+        // Clear any previously-cached image element for this slot —
+        // if the user just switched from an image dataset to a video
+        // dataset, the old decoded image is no longer referenced and
+        // should be released so its backing bytes can be GC'd.
+        if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
+        const result = await loadVideoDataset(
+          dataset, targetRenderer, this.appState, this.isMobile, this.playback, loaderCallbacks
+        )
+        // If a newer load started while we were awaiting, discard these results.
+        // Don't dispose videoTexture here — setVideoTexture already placed it on
+        // the sphere material, so the next load's setVideoTexture will replace it.
+        if (gen !== this.loadGeneration) {
+          result.hlsService.destroy()
+          return
+        }
+        this.storePanelVideoResult(targetSlot, result)
+        this.attachPrimaryVideoSync()
+        this.doStartPlaybackLoop()
+        this.emitLayerLoaded(dataset, targetSlot, trigger, 'hls', Date.now() - loadStartWall)
+      } else {
+        throw new Error(`Unsupported format: ${dataset.format}`)
       }
-      this.storePanelVideoResult(this.viewports.getPrimaryIndex(), result)
-      this.attachPrimaryVideoSync()
-      this.doStartPlaybackLoop()
-    } else {
-      throw new Error(`Unsupported format: ${dataset.format}`)
+    } finally {
+      // Guard against a superseded load hiding the newer load's
+      // overlay: only clear if we're still the most recent load.
+      if (gen === this.loadGeneration) {
+        this.viewports.setPanelLoading(targetSlot, false)
+      }
     }
 
     // Fetch and cache the legend image; generate a text description for non-vision mode.
@@ -440,17 +616,23 @@ class InteractiveSphere {
     // Auto-start a tour if the dataset has one associated via runTourOnLoad.
     // Skip if a tour is already running (the tour engine triggered this load).
     // Failures are silently logged — the tour is optional, the dataset already loaded.
+    //
+    // Pin the tour to the slot we just loaded into. Legacy SOS tour
+    // JSON uses `worldIndex: 1` to mean "the current globe", which
+    // the tour engine would otherwise route to panel 1 and clobber
+    // whatever the user had there in a multi-globe layout.
     if (dataset.runTourOnLoad && gen === this.loadGeneration && !this.tourEngine) {
       const ref = dataset.runTourOnLoad
       try {
         if (ref.startsWith('http://') || ref.startsWith('https://') || ref.endsWith('.json')) {
           logger.info('[App] Auto-starting tour from runTourOnLoad URL:', ref)
-          await this.startTour(ref, gen)
+          await this.startTour(ref, gen, targetSlot)
         } else {
           const tourDataset = dataService.getDatasetById(ref)
           if (tourDataset && tourDataset.format === 'tour/json') {
             logger.info('[App] Auto-starting tour from runTourOnLoad dataset:', tourDataset.id)
-            await this.startTour(tourDataset.dataLink, gen)
+            const tourUrl = tourDataset.tourJsonUrl ?? tourDataset.dataLink
+            await this.startTour(tourUrl, gen, targetSlot)
           } else {
             logger.warn('[App] runTourOnLoad references unknown dataset:', ref)
           }
@@ -482,6 +664,7 @@ class InteractiveSphere {
     const targetSlot = slot ?? this.viewports.getPrimaryIndex()
     const isPrimarySlot = targetSlot === this.viewports.getPrimaryIndex()
     const targetRenderer = this.viewports.getRendererAt(targetSlot)
+    const tourLoadStartWall = Date.now()
     logger.debug('[App] loadDatasetForTour:', datasetId, 'slot:', targetSlot)
 
     if (!targetRenderer) {
@@ -523,6 +706,15 @@ class InteractiveSphere {
     if (this.panelStates[targetSlot]) {
       this.panelStates[targetSlot].dataset = dataset
     }
+    // Register the dataset's attribution as a phantom MapLibre
+    // source so Tools → Credits picks it up. See creditsPanel.ts
+    // for the design. No-op on non-MapRenderer surfaces.
+    {
+      const targetRenderer = this.viewports.getRendererAt(targetSlot)
+      if (targetRenderer instanceof MapRenderer) {
+        targetRenderer.setDatasetCredits(dataset)
+      }
+    }
     this.infoDisplayOverride = null
     this.renderInfoPanel()
     this.refreshPanelLegends()
@@ -542,12 +734,23 @@ class InteractiveSphere {
     // target globe instead of a confusing Blue Marble intermediate.
     this.viewports.setPanelLoading(targetSlot, true, `Loading ${dataset.title}\u2026`)
 
+    // The previous dataset in this slot (if any) is about to be
+    // superseded by the tour's next step — emit its unload first.
+    this.emitLayerUnloadedForSlot(targetSlot, 'tour')
+
     if (dataService.isImageDataset(dataset)) {
-      await loadImageDataset(
+      const img = await loadImageDataset(
         dataset, targetRenderer, this.appState, this.isMobile, tourLoaderCallbacks,
         { isPrimary: isPrimarySlot },
       )
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = img
+      this.emitLayerLoaded(dataset, targetSlot, 'tour', 'image', Date.now() - tourLoadStartWall)
     } else if (dataService.isVideoDataset(dataset)) {
+      // Clear any previously-cached image element for this slot —
+      // if the user just switched from an image dataset to a video
+      // dataset, the old decoded image is no longer referenced and
+      // should be released so its backing bytes can be GC'd.
+      if (this.panelStates[targetSlot]) this.panelStates[targetSlot].image = null
       const result = await loadVideoDataset(
         dataset, targetRenderer, this.appState, this.isMobile, this.playback, tourLoaderCallbacks,
         { isPrimary: isPrimarySlot },
@@ -557,6 +760,7 @@ class InteractiveSphere {
         this.attachPrimaryVideoSync()
         this.doStartPlaybackLoop()
       }
+      this.emitLayerLoaded(dataset, targetSlot, 'tour', 'hls', Date.now() - tourLoadStartWall)
     }
 
     this.viewports.setPanelLoading(targetSlot, false)
@@ -584,8 +788,21 @@ class InteractiveSphere {
     }
   }
 
-  /** Fetch a tour JSON file and start the tour engine. */
-  private async startTour(dataLink: string, gen: number): Promise<void> {
+  /**
+   * Fetch a tour JSON file and start the tour engine.
+   *
+   * @param anchorSlot  When set, the tour is scoped to a specific
+   *   panel — `loadDataset` tasks route there and the legacy SOS
+   *   `worldIndex: 1` convention ("the current globe") is treated
+   *   as "the anchored globe." Passed by the `runTourOnLoad` flow
+   *   so a chained tour can't clobber another panel's dataset.
+   */
+  private async startTour(
+    dataLink: string,
+    gen: number,
+    anchorSlot: number | null = null,
+    meta?: { tourId: string; tourTitle: string; source: 'browse' | 'orbit' | 'deeplink' },
+  ): Promise<void> {
     // Stop any previous tour
     this.stopTour()
 
@@ -611,10 +828,11 @@ class InteractiveSphere {
         await this.unloadPanelDataset(slot)
       },
       setEnvView: async ({ layout }) => {
-        this.viewports.setLayout(layout)
+        this.viewports.setLayout(layout, 'tour')
       },
       getRenderer: () => this.renderer!,
       getAllRenderers: () => this.viewports.getAll(),
+      getPrimarySlot: () => this.viewports.getPrimaryIndex(),
       togglePlayPause: () => {
         togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m))
       },
@@ -632,7 +850,7 @@ class InteractiveSphere {
           return filename
         }
       },
-    })
+    }, { anchorSlot, meta })
 
     showTourControls(this.tourEngine, () => this.stopTour())
     this.showPlaybackControls(false)
@@ -831,7 +1049,7 @@ class InteractiveSphere {
     }
 
     // Render the currently-selected dataset into the info panel body.
-    displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id))
+    displayDatasetInfo(dataset, this.appState.datasets, (id) => this.loadDataset(id, 'browse'))
 
     // Repopulate the picker with every loaded dataset (in panel order)
     // and wire the change handler once.
@@ -997,9 +1215,19 @@ class InteractiveSphere {
     // Already rendered — either collapsed or fully visible. Remove
     // the collapsed class either way and ensure `browse-open` is
     // set so other UI can react.
+    const wasCollapsed = overlay.classList.contains('collapsed')
+    const wasHidden = overlay.classList.contains('hidden')
     overlay.classList.remove('collapsed')
     overlay.classList.remove('hidden')
     document.body.classList.add('browse-open')
+    // Re-opening from collapsed (or hidden, in pathological cases
+    // where showBrowseUI ran but the overlay got hidden externally)
+    // is conceptually a fresh open — emit browse_opened and
+    // restart the dwell handle. The collapseBrowseUI path stops
+    // dwell, so this pairs with that.
+    if (wasCollapsed || wasHidden) {
+      notifyBrowseOpened('tools')
+    }
   }
 
   /** Detect WebGL support. If unavailable, display troubleshooting instructions and return false. */
@@ -1107,12 +1335,274 @@ class InteractiveSphere {
     }
   }
 
+  /** Emit a `layer_loaded` event and remember when the slot filled so
+   * the matching `layer_unloaded` can report dwell_ms. */
+  private emitLayerLoaded(
+    dataset: Dataset,
+    slot: number,
+    trigger: import('./types').LoadTrigger,
+    source: import('./types').LayerSource,
+    loadMs: number,
+  ): void {
+    const now = Date.now()
+    if (this.panelStates[slot]) {
+      this.panelStates[slot].loadedAt = now
+    }
+    emit({
+      event_type: 'layer_loaded',
+      layer_id: dataset.id,
+      layer_source: source,
+      slot_index: String(slot),
+      trigger,
+      load_ms: Math.max(0, Math.round(loadMs)),
+    })
+  }
+
+  /** Emit `layer_unloaded` for whatever dataset currently occupies
+   * `slot`, if any. No-op when the slot is empty. Clears the
+   * `loadedAt` timestamp so repeat unloads don't double-count. */
+  private emitLayerUnloadedForSlot(
+    slot: number,
+    reason: import('./types').UnloadReason,
+  ): void {
+    const panel = this.panelStates[slot]
+    if (!panel || !panel.dataset) return
+    const loadedAt = panel.loadedAt ?? Date.now()
+    emit({
+      event_type: 'layer_unloaded',
+      layer_id: panel.dataset.id,
+      slot_index: String(slot),
+      reason,
+      dwell_ms: Math.max(0, Date.now() - loadedAt),
+    })
+    panel.loadedAt = null
+  }
+
+  /** Emit `playback_action` for a transport-control event. Reads the
+   * current video's time and rate so downstream queries can see how
+   * far into a time-series users actually scrub. */
+  private emitPlaybackAction(action: 'play' | 'pause' | 'seek' | 'rate'): void {
+    const layer_id = this.appState.currentDataset?.id ?? 'unknown'
+    const video = this.hlsService?.getVideo?.()
+    emit({
+      event_type: 'playback_action',
+      layer_id,
+      action,
+      playback_time_s: video?.currentTime ?? 0,
+      playback_rate: video?.playbackRate ?? 1,
+    })
+  }
+
+  /**
+   * Wire the Enter VR button. The button hides itself on browsers
+   * without WebXR, so calling this unconditionally is safe — the
+   * Three.js chunk only downloads on devices that advertise
+   * `immersive-vr` support (see src/ui/vrButton.ts). VR mode always
+   * uses the primary panel's dataset; in multi-globe layouts the
+   * other panels keep rendering in 2D behind the scenes.
+   *
+   * Both image and video datasets are supported: image datasets
+   * reuse the primary panel's already-decoded `HTMLImageElement`
+   * (stored in `panelStates[slot].image` after `loadImageDataset`
+   * returns), so VR doesn't re-fetch or re-decode the bytes;
+   * video datasets reuse the existing HLS `<video>` element.
+   */
+  private async wireVrButton(): Promise<void> {
+    // Shared helper — returns the texture spec for a specific
+    // panel slot by looking at that slot's own panel state (its
+    // dataset + HLS service + decoded image). This is the
+    // multi-panel foundation; the single-panel getters below are
+    // just convenience wrappers that call it for the primary slot.
+    const getPanelTexture = (slot: number): VrDatasetTexture | null => {
+      const panel = this.panelStates[slot]
+      if (!panel?.dataset) return null
+      if (dataService.isImageDataset(panel.dataset)) {
+        return panel.image ? { kind: 'image', element: panel.image } : null
+      }
+      const video = panel.hlsService?.getVideo()
+      return video ? { kind: 'video', element: video } : null
+    }
+
+    await initVrButton({
+      // Primary-focused convenience getters — equivalent to calling
+      // the panel-slot version with the current primary index.
+      getDatasetTexture: () => getPanelTexture(this.viewports.getPrimaryIndex()),
+      getDatasetTitle: () => this.appState.currentDataset?.title ?? null,
+      getDatasetId: () => this.appState.currentDataset?.id ?? null,
+      getDatasetTimeLabel: () => {
+        // Compute the label fresh from video.currentTime every call.
+        //
+        // Why not read appState.timeLabel? WebXR pauses
+        // window.requestAnimationFrame while an immersive session
+        // is live, which freezes `startPlaybackLoop` — the
+        // per-frame loop that normally keeps appState.timeLabel
+        // updated. A VR session reading appState.timeLabel would
+        // see the value from the instant the user tapped Enter VR
+        // and stay there forever. Recomputing here makes the
+        // label advance on the XR animation loop instead, and as
+        // a bonus gives us correct pause behaviour for free: a
+        // paused video's currentTime doesn't advance, so the
+        // formatted string stays fixed until playback resumes.
+        const ds = this.appState.currentDataset
+        if (!ds?.startTime) return null
+
+        if (dataService.isVideoDataset(ds)) {
+          const video = this.hlsService?.video
+          if (!video || !ds.endTime) return null
+          // `HTMLVideoElement.duration` is `NaN` until the video's
+          // metadata has loaded — `?? 1` doesn't catch NaN because
+          // it isn't nullish, so the previous check would pass NaN
+          // straight into `videoTimeToDate` and `formatDate` would
+          // render "Invalid Date". Suppress the label entirely
+          // until duration is available; the per-frame poll will
+          // pick it up the first frame after `loadedmetadata`.
+          const duration = this.hlsService?.duration
+          if (!Number.isFinite(duration) || (duration as number) <= 0) return null
+          const start = new Date(ds.startTime)
+          const end = new Date(ds.endTime)
+          const snapMs = this.playback.displayInterval?.intervalMs
+          const currentDate = videoTimeToDate(video.currentTime, duration as number, start, end, snapMs)
+          const showTime = ds.period
+            ? isSubDailyPeriod(ds.period)
+            : (this.playback.displayInterval?.showTime ?? false)
+          return formatDate(currentDate, showTime)
+        }
+
+        // Image dataset — the startTime is the only thing to show.
+        const showTime = ds.period ? isSubDailyPeriod(ds.period) : false
+        return formatDate(new Date(ds.startTime), showTime)
+      },
+      hasVideoDataset: () => {
+        const ds = this.appState.currentDataset
+        return !!ds && dataService.isVideoDataset(ds)
+      },
+      isPlaying: () => this.appState.isPlaying,
+      togglePlayPause: () => togglePlayPause(
+        this.hlsService, this.appState, (m) => this.announce(m),
+      ),
+      isMuted: () => {
+        // Read directly off the primary's <video> element —
+        // hlsService sets it muted by default for autoplay
+        // compliance; the 2D mute button (and the new VR HUD mute
+        // button) flip it when the user wants sound.
+        return this.hlsService?.video?.muted ?? true
+      },
+      toggleMute: () => {
+        const video = this.hlsService?.video
+        if (!video) return
+        video.muted = !video.muted
+        this.announce(video.muted ? 'Muted' : 'Unmuted')
+      },
+
+      // --- Phase 2.5 multi-panel getters ---
+      getPanelCount: () => this.viewports.getPanelCount(),
+      getPrimaryIndex: () => this.viewports.getPrimaryIndex(),
+      getPanelTexture,
+      getPanelTitle: (slot: number) =>
+        this.panelStates[slot]?.dataset?.title ?? null,
+
+      // --- Phase 3 in-VR browse ---
+      getDatasets: () => {
+        return this.appState.datasets
+          .filter(d => dataService.isSupportedDataset(d) && !d.isHidden)
+          .map(d => {
+            // Mirror the 2D browse UI (browseUI.ts line 79-90):
+            // chips are the UNION of enriched.categories keys and
+            // `Dataset.tags`, minus 'Movies' and 'Layers' (those
+            // are internal shape-of-data markers, not user-facing
+            // filters). Without the tags merge, chips like "Tours"
+            // and "Real-Time" — which live exclusively on tags —
+            // never appear.
+            const cats = new Set<string>()
+            if (d.enriched?.categories) {
+              for (const k of Object.keys(d.enriched.categories)) cats.add(k)
+            }
+            if (d.tags) {
+              for (const t of d.tags) cats.add(t)
+            }
+            cats.delete('Movies')
+            cats.delete('Layers')
+            return {
+              id: d.id,
+              title: d.title,
+              categories: Array.from(cats),
+              thumbnailUrl: d.thumbnailLink ?? null,
+            }
+          })
+      },
+      loadDataset: (id: string) => {
+        void this.loadDataset(id, 'orbit')
+      },
+
+      // --- Phase 3.5 in-VR tour controls ---
+      // `tourEngine` is null when no tour is running — the strip
+      // keys off `active: false` in that case and stays hidden.
+      // When a tour is running, state maps 1:1 onto TourEngine's
+      // accessors. Tour actions fan out to the same methods the 2D
+      // `showTourControls` bar wires up.
+      getTourState: () => {
+        const engine = this.tourEngine
+        if (!engine) {
+          return { active: false, isPlaying: false, step: 0, totalSteps: 0 }
+        }
+        return {
+          active: engine.state !== 'stopped',
+          isPlaying: engine.state === 'playing',
+          step: engine.currentIndex,
+          totalSteps: engine.totalSteps,
+        }
+      },
+      tourTogglePlayPause: () => {
+        const engine = this.tourEngine
+        if (!engine) return
+        if (engine.state === 'playing') engine.pause()
+        else void engine.play()
+      },
+      tourPrev: () => {
+        const engine = this.tourEngine
+        if (!engine) return
+        engine.prev()
+        // Matches the 2D next-button behavior (tourUI.onNext): after
+        // navigating, resume playback if the engine paused itself on
+        // a pauseForInput waiting for user input.
+        if (engine.state === 'paused') void engine.play()
+      },
+      tourNext: () => {
+        const engine = this.tourEngine
+        if (!engine) return
+        engine.next()
+        if (engine.state === 'paused') void engine.play()
+      },
+      tourStop: () => {
+        // Routes through stopTour() not engine.stop() so the
+        // standalone-tour "return home" behaviour still runs.
+        this.stopTour()
+      },
+
+      onSessionEnd: () => {
+        this.announce('Exited VR')
+        // Resume the 2D perf sampler now that VR has handed the
+        // GPU back. The sampler stayed paused for the duration of
+        // the immersive session — VR has its own end-of-session
+        // FPS metric on `vr_session_ended.mean_fps`.
+        if (TELEMETRY_BUILD_ENABLED) resumeForVrExit()
+      },
+    })
+  }
+
   /** Initialize the Orbit chat panel and wire playback positioning observers. */
   private initChat(): void {
     initPlaybackPositioning()
     initChatUI({
       onLoadDataset: (id) => { void this.selectDatasetFromChat(id) },
-      onFlyTo: (lat, lon, altitude) => { void this.renderer?.flyTo(lat, lon, altitude) },
+      onFlyTo: (lat, lon, altitude) => {
+        void this.renderer?.flyTo(lat, lon, altitude)
+        // Also rotate the VR globe if a session is live. Fire-and-
+        // forget — chat isn't awaiting the settle, and the VR-side
+        // animation runs off the existing render loop regardless
+        // of whether anyone holds the promise.
+        if (isVrActive()) void flyToOnGlobe(lat, lon)
+      },
       onSetTime: (isoDate) => seekToDate(isoDate, this.hlsService, this.appState, this.playback),
       onFitBounds: (bounds, _label) => { this.renderer?.fitBounds(bounds) },
       onAddMarker: (lat, lng, label) => { this.renderer?.addMarker(lat, lng, label) },
@@ -1143,6 +1633,8 @@ class InteractiveSphere {
 
 
   /** Load a dataset selected via the chat panel, updating URL and notifying chat of the change. */
+  /** Orbit-driven dataset load. Tags the layer_loaded trigger so we
+   * can tell chat-initiated loads apart from browse/url/tour. */
   private async selectDatasetFromChat(id: string): Promise<void> {
     const gen = ++this.loadGeneration
     logger.debug('[App] selectDatasetFromChat:', id, 'gen:', gen)
@@ -1150,7 +1642,7 @@ class InteractiveSphere {
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
-    await this.loadDataset(id)
+    await this.loadDataset(id, 'browse')
     if (gen !== this.loadGeneration) {
       logger.debug('[App] selectDatasetFromChat superseded:', id, 'gen:', gen, 'current:', this.loadGeneration)
       return
@@ -1633,7 +2125,13 @@ class InteractiveSphere {
     // specific panel's renderer so it doesn't keep showing a stale
     // texture.
     panel.dataset = null
+    panel.image = null
     const renderer = this.viewports.getRendererAt(slot)
+    if (renderer instanceof MapRenderer) {
+      // Drop the panel's dataset-credits phantom source so Tools
+      // → Credits no longer surfaces a stale attribution.
+      renderer.setDatasetCredits(null)
+    }
     if (renderer) {
       renderer.removeCloudOverlay?.()
       renderer.removeNightLights?.()
@@ -1666,22 +2164,42 @@ class InteractiveSphere {
 
   /** Wire up all DOM event listeners: transport controls, keyboard shortcuts, scrubber, mute. */
   setupEventListeners(): void {
+    // Back/forward cache restore (iOS Safari in particular). MapLibre
+    // caches its canvas dimensions; after a bfcache restore the canvas
+    // can be stuck at a stale size and the globe renders in a thin
+    // strip. `persisted === true` only fires for bfcache restores, so
+    // this is cheap on every other navigation.
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) this.viewports.resizeAll()
+    })
+
     document.getElementById('home-btn')?.addEventListener('click', () => this.goHome())
 
     // Browse panel opens via the Tools menu's Browse button (see
     // openBrowsePanel). No standalone peek-out toggle tab.
 
     // Transport controls — delegate to playback module
-    document.getElementById('rewind-btn')?.addEventListener('click', () =>
-      rewind(this.hlsService, this.appState, this.playback, (m) => this.announce(m)))
-    document.getElementById('step-back-btn')?.addEventListener('click', () =>
-      stepFrame(-1, this.hlsService, this.appState, this.playback, (m) => this.announce(m)))
-    document.getElementById('play-btn')?.addEventListener('click', () =>
-      togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m)))
-    document.getElementById('step-fwd-btn')?.addEventListener('click', () =>
-      stepFrame(1, this.hlsService, this.appState, this.playback, (m) => this.announce(m)))
-    document.getElementById('ff-btn')?.addEventListener('click', () =>
-      fastForward(this.hlsService, this.appState, this.playback, (m) => this.announce(m)))
+    document.getElementById('rewind-btn')?.addEventListener('click', () => {
+      rewind(this.hlsService, this.appState, this.playback, (m) => this.announce(m))
+      this.emitPlaybackAction('seek')
+    })
+    document.getElementById('step-back-btn')?.addEventListener('click', () => {
+      stepFrame(-1, this.hlsService, this.appState, this.playback, (m) => this.announce(m))
+      this.emitPlaybackAction('seek')
+    })
+    document.getElementById('play-btn')?.addEventListener('click', () => {
+      const wasPaused = this.hlsService?.paused ?? true
+      togglePlayPause(this.hlsService, this.appState, (m) => this.announce(m))
+      this.emitPlaybackAction(wasPaused ? 'play' : 'pause')
+    })
+    document.getElementById('step-fwd-btn')?.addEventListener('click', () => {
+      stepFrame(1, this.hlsService, this.appState, this.playback, (m) => this.announce(m))
+      this.emitPlaybackAction('seek')
+    })
+    document.getElementById('ff-btn')?.addEventListener('click', () => {
+      fastForward(this.hlsService, this.appState, this.playback, (m) => this.announce(m))
+      this.emitPlaybackAction('seek')
+    })
     document.getElementById('cc-btn')?.addEventListener('click', () =>
       toggleCaptions(this.playback))
 
@@ -1744,7 +2262,7 @@ class InteractiveSphere {
     this.announce('Loading dataset\u2026')
     this.showLoadingScreen('Loading dataset\u2026', 20)
     window.history.pushState({}, '', `?dataset=${encodeURIComponent(id)}`)
-    await this.loadDataset(id)
+    await this.loadDataset(id, 'orbit')
     if (gen !== this.loadGeneration) return // a newer load superseded this one
     this.setLoading(false)
     showChatTrigger()
@@ -1804,6 +2322,12 @@ class InteractiveSphere {
   /** Navigate back to the default Earth view: tear down every panel's dataset, reload Earth materials, and re-show the browse panel. */
   private async goHome(): Promise<void> {
     this.stopTour()
+    // Emit layer_unloaded for every panel that currently has a
+    // dataset so dwell_ms can be accounted for. Runs before
+    // unloadAllPanels() so panelStates[*].dataset is still populated.
+    for (let i = 0; i < this.panelStates.length; i++) {
+      this.emitLayerUnloadedForSlot(i, 'home')
+    }
     await this.unloadAllPanels()
     clearLegendCache()
     this.appState.currentDataset = null
@@ -1873,10 +2397,16 @@ class InteractiveSphere {
     stopPlaybackLoop(this.playback)
     this.appState.isPlaying = false
     resetPlaybackState(this.playback)
-    for (const panel of this.panelStates) {
+    for (let i = 0; i < this.panelStates.length; i++) {
+      const panel = this.panelStates[i]
       if (panel.videoTexture) { panel.videoTexture.dispose(); panel.videoTexture = null }
       if (panel.hlsService) { panel.hlsService.destroy(); panel.hlsService = null }
       panel.dataset = null
+      panel.image = null
+      const renderer = this.viewports.getRendererAt(i)
+      if (renderer instanceof MapRenderer) {
+        renderer.setDatasetCredits(null)
+      }
     }
   }
 
@@ -1921,6 +2451,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await app.initialize()
 
   ;(window as any).app = app
+
+  // Emit session_start after the app is fully initialized so every
+  // subsequent event carries a non-zero client_offset_ms relative to
+  // it. The hook itself is best-effort — if telemetry is off (tier
+  // or compile flag) the emit() calls inside no-op.
+  if (TELEMETRY_BUILD_ENABLED) {
+    void initSession()
+    startPerfSampler()
+  }
 
   // Non-blocking update check after app is ready
   checkForUpdates()

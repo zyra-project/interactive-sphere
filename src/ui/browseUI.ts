@@ -13,6 +13,23 @@ import {
 import { closeDownloadPanel } from './downloadUI'
 import { toggleHelp } from './helpUI'
 import { escapeHtml, escapeAttr } from './domUtils'
+import { emit, startDwell, hashQuery, type DwellHandle } from '../analytics'
+
+/** Tier B dwell handle for the browse overlay — non-null while the
+ * overlay is visible. Started on showBrowseUI when the overlay
+ * transitions from hidden, stopped on hideBrowseUI / collapseBrowseUI.
+ * Tier-gated at emit time so the wiring is unconditional. */
+let browseDwellHandle: DwellHandle | null = null
+
+/** Bucket a result count for the `browse_filter.result_count_bucket`
+ * schema — we want coarse buckets so the telemetry can't be used to
+ * fingerprint a specific search's uniqueness. */
+function bucketResultCount(n: number): '0' | '1-10' | '11-50' | '50+' {
+  if (n <= 0) return '0'
+  if (n <= 10) return '1-10'
+  if (n <= 50) return '11-50'
+  return '50+'
+}
 
 // Re-export so existing callers (chatUI, downloadUI, datasetLoader)
 // continue to import these from browseUI.
@@ -23,6 +40,12 @@ const CARD_DESCRIPTION_MAX_LENGTH = 120
 const MAX_CARD_CATEGORIES = 3
 const MAX_CARD_KEYWORDS = 12
 const SEARCH_FOCUS_DELAY_MS = 200
+/** Debounce window between the last keystroke and the
+ * `browse_search` Tier B emit. 400 ms feels right for a search-as-you
+ * type box: long enough that `"hurricane"` is one event instead of
+ * nine, short enough that the event lands while the user is still
+ * looking at the results. */
+const BROWSE_SEARCH_DEBOUNCE_MS = 400
 
 /** Callbacks the browse UI uses to communicate with the main app. */
 export interface BrowseCallbacks {
@@ -36,12 +59,40 @@ export interface BrowseCallbacks {
  * Render and display the dataset browse overlay with category filters,
  * search, sort controls, and dataset cards.
  */
-export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): void {
+/**
+ * Notify analytics that the browse overlay just transitioned from
+ * hidden / collapsed to visible. Caller is responsible for deciding
+ * whether the transition actually happened — this just emits the
+ * event and (re)starts the dwell handle if it isn't already running.
+ *
+ * Exported so the main app's "re-open from collapsed" path
+ * (`openBrowsePanel` in main.ts, which skips `showBrowseUI` to
+ * avoid duplicating event listeners) can still book-keep telemetry
+ * cleanly.
+ */
+export function notifyBrowseOpened(
+  source: 'tools' | 'orbit' | 'shortcut' = 'tools',
+): void {
+  emit({ event_type: 'browse_opened', source })
+  if (!browseDwellHandle) {
+    browseDwellHandle = startDwell('browse')
+  }
+}
+
+export function showBrowseUI(
+  datasets: Dataset[],
+  callbacks: BrowseCallbacks,
+  source: 'tools' | 'orbit' | 'shortcut' = 'tools',
+): void {
   const overlay = document.getElementById('browse-overlay')
   if (!overlay) return
+  const wasHidden = overlay.classList.contains('hidden')
   overlay.classList.remove('hidden')
   document.body.classList.add('browse-open')
   closeDownloadPanel()
+  if (wasHidden) {
+    notifyBrowseOpened(source)
+  }
 
   // Wire the in-header help trigger once (idempotent)
   const helpBtn = document.getElementById('help-trigger-browse')
@@ -115,20 +166,29 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
       .map(cat => `<button class="browse-chip${cat === 'All' ? ' active' : ''}" data-cat="${escapeAttr(cat)}" aria-pressed="${cat === 'All'}">${escapeHtml(cat)}</button>`)
       .join('')
 
-    chipBar.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest('.browse-chip') as HTMLElement | null
-      if (!btn) return
-      activeCategory = btn.dataset.cat ?? 'All'
-      activeSubCategory = null
-      chipBar.querySelectorAll('.browse-chip').forEach(c => {
-        c.classList.remove('active')
-        c.setAttribute('aria-pressed', 'false')
+    if (!chipBar.dataset.wired) {
+      chipBar.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('.browse-chip') as HTMLElement | null
+        if (!btn) return
+        activeCategory = btn.dataset.cat ?? 'All'
+        activeSubCategory = null
+        chipBar.querySelectorAll('.browse-chip').forEach(c => {
+          c.classList.remove('active')
+          c.setAttribute('aria-pressed', 'false')
+        })
+        btn.classList.add('active')
+        btn.setAttribute('aria-pressed', 'true')
+        renderSubChips()
+        renderCards()
+        const cardCount = document.querySelectorAll('#browse-grid .browse-card').length
+        emit({
+          event_type: 'browse_filter',
+          category: activeCategory,
+          result_count_bucket: bucketResultCount(cardCount),
+        })
       })
-      btn.classList.add('active')
-      btn.setAttribute('aria-pressed', 'true')
-      renderSubChips()
-      renderCards()
-    })
+      chipBar.dataset.wired = 'true'
+    }
   }
 
   // Sub-category chip bar
@@ -145,7 +205,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
       .map(s => `<button class="browse-subchip${activeSubCategory === s ? ' active' : ''}" data-sub="${escapeAttr(s)}" aria-pressed="${activeSubCategory === s}">${escapeHtml(s)}</button>`)
       .join('')
   }
-  if (subChipBar) {
+  if (subChipBar && !subChipBar.dataset.wired) {
     subChipBar.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('.browse-subchip') as HTMLElement | null
       if (!btn) return
@@ -154,6 +214,7 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
       renderSubChips()
       renderCards()
     })
+    subChipBar.dataset.wired = 'true'
   }
 
   // Search input + clear button
@@ -162,24 +223,65 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
   const updateSearchClear = () => {
     searchClear?.classList.toggle('hidden', !searchInput?.value)
   }
+  /** Token guards against the async hash() call resolving for an
+   * older keystroke after the user has typed more characters. Each
+   * scheduled emit captures the current token; the emit is dropped
+   * if the token has moved on. */
+  let searchEmitToken = 0
+  let searchEmitTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleSearchEmit = (raw: string) => {
+    if (searchEmitTimer != null) clearTimeout(searchEmitTimer)
+    // Empty string isn't a search — bump the token to invalidate any
+    // in-flight hash from a prior keystroke. Without this, typing
+    // "h" then immediately backspacing could still emit the "h"
+    // event once its async hash settles.
+    if (raw.length === 0) {
+      searchEmitToken++
+      return
+    }
+    const token = ++searchEmitToken
+    searchEmitTimer = setTimeout(() => {
+      searchEmitTimer = null
+      const cardCount = document.querySelectorAll('#browse-grid .browse-card').length
+      void hashQuery(raw).then((query_hash) => {
+        if (token !== searchEmitToken) return
+        emit({
+          event_type: 'browse_search',
+          query_hash,
+          query_length: raw.length,
+          result_count_bucket: bucketResultCount(cardCount),
+        })
+      })
+    }, BROWSE_SEARCH_DEBOUNCE_MS)
+  }
   if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      searchQuery = searchInput.value.trim().toLowerCase()
-      updateSearchClear()
-      renderCards()
-    })
+    if (!searchInput.dataset.wired) {
+      searchInput.addEventListener('input', () => {
+        searchQuery = searchInput.value.trim().toLowerCase()
+        updateSearchClear()
+        renderCards()
+        scheduleSearchEmit(searchQuery)
+      })
+      searchInput.dataset.wired = 'true'
+    }
     if (!callbacks.isMobile) {
       setTimeout(() => searchInput.focus(), SEARCH_FOCUS_DELAY_MS)
     }
   }
-  if (searchClear && searchInput) {
+  if (searchClear && searchInput && !searchClear.dataset.wired) {
     searchClear.addEventListener('click', () => {
       searchInput.value = ''
       searchQuery = ''
       updateSearchClear()
       searchInput.focus()
       renderCards()
+      // Clearing is not a search — drop any pending emit so an
+      // in-flight debounce can't fire after the box is empty.
+      if (searchEmitTimer != null) clearTimeout(searchEmitTimer)
+      searchEmitTimer = null
+      searchEmitToken++
     })
+    searchClear.dataset.wired = 'true'
   }
 
   // Sort controls
@@ -193,18 +295,21 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
     sortBar.innerHTML = sortOptions
       .map(o => `<button class="browse-sort-btn${o.key === activeSort ? ' active' : ''}" data-sort="${o.key}" aria-pressed="${o.key === activeSort}">${o.label}</button>`)
       .join('')
-    sortBar.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest('.browse-sort-btn') as HTMLElement | null
-      if (!btn || !btn.dataset.sort) return
-      activeSort = btn.dataset.sort as SortKey
-      sortBar.querySelectorAll('.browse-sort-btn').forEach(b => {
-        b.classList.remove('active')
-        b.setAttribute('aria-pressed', 'false')
+    if (!sortBar.dataset.wired) {
+      sortBar.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('.browse-sort-btn') as HTMLElement | null
+        if (!btn || !btn.dataset.sort) return
+        activeSort = btn.dataset.sort as SortKey
+        sortBar.querySelectorAll('.browse-sort-btn').forEach(b => {
+          b.classList.remove('active')
+          b.setAttribute('aria-pressed', 'false')
+        })
+        btn.classList.add('active')
+        btn.setAttribute('aria-pressed', 'true')
+        renderCards()
       })
-      btn.classList.add('active')
-      btn.setAttribute('aria-pressed', 'true')
-      renderCards()
-    })
+      sortBar.dataset.wired = 'true'
+    }
   }
 
   // Update download button states after render
@@ -443,6 +548,16 @@ export function showBrowseUI(datasets: Dataset[], callbacks: BrowseCallbacks): v
 
   renderCards()
   updateDownloadButtons()
+
+  // Mark the overlay as initialized so subsequent show requests
+  // (e.g. openBrowsePanel) can skip re-running this function and
+  // avoid duplicating the click / input / sort listeners wired
+  // above. The check on the read side lives in main.ts'
+  // openBrowsePanel — keeping the marker set here means every
+  // call site is covered automatically (boot path, go-home,
+  // tools-menu re-show), not just the ones that remembered to
+  // set it themselves.
+  overlay.dataset.browseInitialized = 'true'
 }
 
 /** Hide the browse overlay entirely (aside becomes `display: none`). */
@@ -450,6 +565,10 @@ export function hideBrowseUI(): void {
   const overlay = document.getElementById('browse-overlay')
   overlay?.classList.add('hidden')
   document.body.classList.remove('browse-open')
+  if (browseDwellHandle) {
+    browseDwellHandle.stop()
+    browseDwellHandle = null
+  }
 }
 
 /**
@@ -464,4 +583,11 @@ export function collapseBrowseUI(): void {
   overlay.classList.remove('hidden')
   overlay.classList.add('collapsed')
   document.body.classList.remove('browse-open')
+  // Collapsing hides the overlay from the user's view even though
+  // it stays in the DOM — treat it as a dwell stop so the
+  // "browse panel time" metric reflects user-visible time only.
+  if (browseDwellHandle) {
+    browseDwellHandle.stop()
+    browseDwellHandle = null
+  }
 }

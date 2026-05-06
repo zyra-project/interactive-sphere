@@ -3,12 +3,15 @@
  */
 
 import axios from 'axios'
-import type { Dataset, DatasetMetadata, EnrichedMetadata, TimeInfo } from '../types'
+import type { Dataset, DatasetFormat, DatasetMetadata, EnrichedMetadata, TimeInfo } from '../types'
 import { parseISO8601Duration } from '../utils/time'
 import { logger } from '../utils/logger'
+import { reportError } from '../analytics'
+import { apiFetch, getCatalogSource } from './catalogSource'
 
 const METADATA_URL = 'https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/dataset.json'
 const ENRICHED_METADATA_URL = '/assets/sos_dataset_metadata.json'
+const NODE_CATALOG_URL = '/api/v1/catalog'
 
 /**
  * Tour datasets from the upstream SOS catalog that we suppress from the UI
@@ -34,6 +37,99 @@ interface RawEnrichedEntry {
 }
 
 /**
+ * The wire shape served by `/api/v1/catalog`. Subset of the full
+ * server-side `WireDataset` interface — we only declare the fields
+ * we actually consume, so the frontend doesn't drift if the backend
+ * adds federation-only fields later.
+ */
+interface WireDataset {
+  id: string
+  /** Phase 1d/T — bulk-import provenance (e.g. `INTERNAL_SOS_768`). */
+  legacyId?: string
+  title: string
+  format: string
+  dataLink: string
+  organization?: string
+  abstractTxt?: string
+  thumbnailLink?: string
+  legendLink?: string
+  closedCaptionLink?: string
+  websiteLink?: string
+  startTime?: string
+  endTime?: string
+  period?: string
+  weight?: number
+  isHidden?: boolean
+  runTourOnLoad?: string
+  tags?: string[]
+  enriched?: EnrichedMetadata
+  /**
+   * Set by the node-catalog serializer for tour rows: the resolved
+   * URL the tour engine fetches the tour document from. Bypasses
+   * the manifest endpoint (which 415s tour formats). Older catalog
+   * responses don't carry this field; the tour-load path falls
+   * back to `dataLink`.
+   */
+  tourJsonUrl?: string
+}
+
+/**
+ * Built-in tour datasets shared by the SOS-source and node-source
+ * paths. Pulled out as a function so both call sites get identical
+ * rows; once these are publishable as real `tours/json` rows we can
+ * delete this helper.
+ */
+function sampleTourBuiltins(): Dataset[] {
+  return [
+    {
+      id: 'SAMPLE_TOUR',
+      title: "Climate Connections — How Earth's Systems Tell One Story",
+      format: 'tour/json',
+      dataLink: '/assets/test-tour.json',
+      organization: 'Terraviz',
+      abstractTxt:
+        "An educational tour exploring how climate change shows up across Earth's systems — temperature anomalies, Arctic sea ice loss, sea level rise, ocean acidification, the carbon cycle, and global vegetation. Six datasets, one connected story.",
+      tags: ['Tours'],
+      weight: 50,
+      thumbnailLink: '',
+    },
+    {
+      id: 'SAMPLE_TOUR_CLIMATE_FUTURES',
+      title: 'Climate Futures — Three Paths to 2100',
+      format: 'tour/json',
+      dataLink: '/assets/climate-futures-tour.json',
+      organization: 'Terraviz',
+      abstractTxt:
+        "Compare three possible climate futures side by side using NOAA's SSP scenario models. Single-globe, two-globe, and four-globe layouts walk through air temperature, precipitation, sea surface temperature, and sea ice concentration across the SSP1 (Sustainability), SSP2 (Middle of the Road), and SSP5 (Fossil-fueled Development) pathways from 2015 to 2100.",
+      tags: ['Tours'],
+      weight: 49,
+      thumbnailLink: '',
+    },
+  ]
+}
+
+/**
+ * Phase 1f/L — collapse the legacy SOS catalog's non-standard
+ * JPEG MIME values to the standard `image/jpeg` at the
+ * source-fetch boundary. The publisher API's validator already
+ * canonicalises on the way in (`functions/api/v1/_lib/validators.ts`
+ * `FORMAT_VALUES`); this mirror on the read path means the SPA's
+ * downstream code (logs, analytics, debugger views) only ever
+ * sees one canonical JPEG value regardless of which catalog
+ * source the deploy reads from. The renderer (`isImageDataset`)
+ * still tolerates the legacy values as defense in depth — a
+ * future fork that bypasses this normaliser keeps working
+ * rather than silently dropping rows like the cutover did
+ * pre-1f/K.
+ */
+export function normaliseSourceFormat<T extends { format?: DatasetFormat }>(d: T): T {
+  if (d.format === 'image/jpg' || d.format === 'images/jpg') {
+    return { ...d, format: 'image/jpeg' as DatasetFormat }
+  }
+  return d
+}
+
+/**
  * Fetches and caches the SOS dataset catalog, merges enriched metadata,
  * and provides lookup/filter helpers for the rest of the application.
  *
@@ -46,7 +142,17 @@ export class DataService {
   private enrichedMap: Map<string, EnrichedMetadata> | null = null
 
   /**
-   * Fetch all datasets from SOS metadata API and enrich with local metadata
+   * Fetch all datasets. Branches on `VITE_CATALOG_SOURCE`:
+   *   - `node` (default, post-1d/G cutover): pull from this
+   *     deployment's `/api/v1/catalog`.
+   *   - `legacy`: pull from the upstream SOS S3 + enriched JSON.
+   *     Kept behind the explicit flag for the cutover stabilisation
+   *     window; an operator can roll back with one env-var flip.
+   *
+   * The two paths produce values of the same `Dataset[]` shape; the
+   * sample-tour built-ins and the supported-format filter apply to
+   * both so consumer code in `browseUI.ts` / `datasetLoader.ts` is
+   * source-blind.
    */
   async fetchDatasets(): Promise<Dataset[]> {
     try {
@@ -54,6 +160,15 @@ export class DataService {
       if (this.cache && now - this.cacheTime < this.CACHE_DURATION) {
         logger.info('[DataService] Using cached datasets')
         return this.cache.datasets
+      }
+
+      const source = getCatalogSource()
+      if (source === 'node') {
+        const datasets = await this.fetchDatasetsFromNode()
+        this.cache = { datasets }
+        this.cacheTime = now
+        logger.info(`[DataService] Loaded ${datasets.length} datasets from node catalog`)
+        return datasets
       }
 
       logger.info('[DataService] Fetching datasets from SOS API...')
@@ -74,32 +189,9 @@ export class DataService {
       // Build enriched lookup map by normalized title
       this.enrichedMap = this.buildEnrichedMap(enrichedData)
 
-      const rawDatasets = [...s3Response.data.datasets]
-      // Built-in Climate Connections tour — always available
-      rawDatasets.push({
-        id: 'SAMPLE_TOUR',
-        title: 'Climate Connections — How Earth\'s Systems Tell One Story',
-        format: 'tour/json' as const,
-        dataLink: '/assets/test-tour.json',
-        organization: 'Interactive Sphere',
-        abstractTxt: 'An educational tour exploring how climate change shows up across Earth\'s systems — temperature anomalies, Arctic sea ice loss, sea level rise, ocean acidification, the carbon cycle, and global vegetation. Six datasets, one connected story.',
-        tags: ['Tours'],
-        weight: 50,
-        thumbnailLink: '',
-      })
-      // Built-in Climate Futures tour — showcases the multi-globe
-      // setEnvView capability with SSP1/SSP2/SSP5 scenarios.
-      rawDatasets.push({
-        id: 'SAMPLE_TOUR_CLIMATE_FUTURES',
-        title: 'Climate Futures — Three Paths to 2100',
-        format: 'tour/json' as const,
-        dataLink: '/assets/climate-futures-tour.json',
-        organization: 'Interactive Sphere',
-        abstractTxt: 'Compare three possible climate futures side by side using NOAA\'s SSP scenario models. Single-globe, two-globe, and four-globe layouts walk through air temperature, precipitation, sea surface temperature, and sea ice concentration across the SSP1 (Sustainability), SSP2 (Middle of the Road), and SSP5 (Fossil-fueled Development) pathways from 2015 to 2100.',
-        tags: ['Tours'],
-        weight: 49,
-        thumbnailLink: '',
-      })
+      const rawDatasets = [...s3Response.data.datasets, ...sampleTourBuiltins()].map(
+        normaliseSourceFormat,
+      )
 
       // Filter, sort, and enrich datasets
       const datasets = rawDatasets
@@ -114,9 +206,70 @@ export class DataService {
       logger.info(`[DataService] Loaded ${datasets.length} datasets (${enrichedCount} enriched)`)
       return datasets
     } catch (error) {
-      logger.error('[DataService] Failed to fetch datasets:', error)
+      logger.warn('[DataService] Failed to fetch datasets:', error)
+      reportError('download', error)
       throw new Error(`Failed to fetch datasets: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
+  }
+
+  /**
+   * Node-mode fetch: hit this deployment's own `/api/v1/catalog`.
+   *
+   * The wire shape is the existing `Dataset` interface plus a few
+   * additive Phase-1a fields (originNode, visibility, etc.) which
+   * the frontend can ignore — the renderers only read the original
+   * fields. Backend rows already merge the enriched metadata under
+   * `enriched`, so no second-source lookup is needed.
+   *
+   * Sample tours are injected client-side so the local
+   * `/assets/test-tour.json` and `/assets/climate-futures-tour.json`
+   * built-ins keep working independent of whether the operator has
+   * registered them in the catalog. Once Phase 1a's CLI lands those
+   * tours as real `tours/json` rows, this client-side injection
+   * becomes redundant; we'll remove it then.
+   */
+  private async fetchDatasetsFromNode(): Promise<Dataset[]> {
+    logger.info('[DataService] Fetching datasets from node catalog...')
+    const res = await apiFetch(NODE_CATALOG_URL, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      throw new Error(`Node catalog fetch failed: ${res.status} ${res.statusText}`)
+    }
+    const body = (await res.json()) as { datasets: WireDataset[] }
+    if (!body || !Array.isArray(body.datasets)) {
+      throw new Error('Node catalog: unexpected response shape (missing datasets[]).')
+    }
+
+    const fromNode: Dataset[] = body.datasets.map(d => ({
+      id: d.id,
+      legacyId: d.legacyId,
+      title: d.title,
+      format: d.format as DatasetFormat,
+      dataLink: d.dataLink,
+      organization: d.organization,
+      abstractTxt: d.abstractTxt,
+      thumbnailLink: d.thumbnailLink,
+      legendLink: d.legendLink,
+      closedCaptionLink: d.closedCaptionLink,
+      websiteLink: d.websiteLink,
+      startTime: d.startTime,
+      endTime: d.endTime,
+      period: d.period,
+      weight: d.weight,
+      isHidden: d.isHidden,
+      runTourOnLoad: d.runTourOnLoad,
+      tags: d.tags,
+      enriched: d.enriched,
+      tourJsonUrl: d.tourJsonUrl,
+    }))
+
+    fromNode.push(...sampleTourBuiltins())
+
+    return fromNode
+      .map(normaliseSourceFormat)
+      .filter(d => !d.isHidden && !HIDDEN_TOUR_IDS.has(d.id) && this.isSupportedDataset(d))
+      .sort((a, b) => (b.weight || 0) - (a.weight || 0))
   }
 
   /**
@@ -206,13 +359,21 @@ export class DataService {
   }
 
   /**
-   * Get a single dataset by ID
+   * Get a single dataset by ID. Primary match is `dataset.id` (the
+   * post-cutover ULID); falls back to `dataset.legacyId` (the
+   * `INTERNAL_SOS_*` id from before the SOS bulk import) so tour
+   * files and other long-lived references that hard-code legacy IDs
+   * keep resolving against the new ULID-keyed catalog. The fallback
+   * is the operator-friendly equivalent of doing a one-off rewrite
+   * of every tour file in the wild — see Phase 1d/T.
    */
   getDatasetById(id: string): Dataset | undefined {
     if (!this.cache) {
       return undefined
     }
-    return this.cache.datasets.find(d => d.id === id)
+    const direct = this.cache.datasets.find(d => d.id === id)
+    if (direct) return direct
+    return this.cache.datasets.find(d => d.legacyId === id)
   }
 
   /**
@@ -278,9 +439,40 @@ export class DataService {
     return dataset.format === 'video/mp4'
   }
 
-  /** True if the dataset format is a supported image type (PNG or JPEG). */
+  /**
+   * True if the dataset format is a supported image type. The set
+   * mirrors the publisher API's `FORMAT_VALUES` allow-list
+   * (`functions/api/v1/_lib/validators.ts`) so anything a
+   * publisher can upload, the SPA can render:
+   *
+   *   - `image/png`
+   *   - `image/jpeg` — the standard MIME and what the publisher
+   *     API canonicalises to
+   *   - `image/webp` — accepted by the validator since 1c; no
+   *     catalog rows use it today, but keeping the gate in sync
+   *     with the validator means a future publisher uploading
+   *     WebP doesn't get silently dropped from the browse list
+   *     (Phase 1f/M)
+   *   - `image/jpg` / `images/jpg` — legacy SOS-catalog typos.
+   *     Normalised to `image/jpeg` at the source-fetch boundary
+   *     by `normaliseSourceFormat` (Phase 1f/L); the renderer
+   *     tolerance is defense-in-depth in case a fork bypasses
+   *     the normaliser.
+   *
+   * Pre-Phase-1f-cleanup this function only accepted the legacy
+   * typo'd values, which silently dropped every imported JPEG
+   * row from the browse list — visible to operators as "the
+   * catalog suddenly shrank by ~30 datasets after the cutover"
+   * (1f/K).
+   */
   isImageDataset(dataset: Dataset): boolean {
-    return dataset.format === 'image/png' || dataset.format === 'image/jpg' || dataset.format === 'images/jpg'
+    return (
+      dataset.format === 'image/png' ||
+      dataset.format === 'image/jpeg' ||
+      dataset.format === 'image/webp' ||
+      dataset.format === 'image/jpg' ||
+      dataset.format === 'images/jpg'
+    )
   }
 
   /** True if the dataset format is a guided tour. */

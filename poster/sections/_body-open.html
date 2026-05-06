@@ -1,0 +1,29 @@
+<body>
+  <a class="skip-link" href="#sec-1-hero">Skip to main content</a>
+
+  <!-- Sticky presentation timer.
+       Minimized by default per docs/POSTER_PLAN.md §0; the
+       expanded/collapsed choice is persisted in localStorage. -->
+  <div id="pres-timer" class="pres-timer is-minimized" role="region" aria-label="Presentation timer">
+    <button type="button" class="pres-timer__expand" aria-label="Expand presentation timer" aria-expanded="false">
+      <span aria-hidden="true">⏱</span>
+    </button>
+    <div class="pres-timer__body">
+      <span class="pres-timer__display" aria-live="off">00:00</span>
+      <button type="button" class="pres-timer__btn" data-action="play" aria-label="Start timer">▶</button>
+      <button type="button" class="pres-timer__btn" data-action="reset" aria-label="Reset timer">⟳</button>
+      <button type="button" class="pres-timer__btn" data-action="minimize" aria-label="Minimize timer">–</button>
+    </div>
+  </div>
+
+  <!-- Image lightbox overlay — hidden by default; opens when any
+       supporting <img> in a section <figure> is clicked. Wired up
+       by the IIFE at the bottom of _footer.html. Centralised here
+       so the markup exists exactly once and isn't duplicated per
+       trigger image. -->
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
+    <button type="button" class="lightbox__close" aria-label="Close image preview">&#x2715;</button>
+    <img class="lightbox__img" alt="">
+  </div>
+
+  <main id="poster">

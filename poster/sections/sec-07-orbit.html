@@ -1,0 +1,224 @@
+    <section id="sec-7-orbit"
+             class="section fade-in"
+             aria-labelledby="sec-7-title">
+      <div class="orbit__container">
+        <p class="section__eyebrow">§4 · Orbit — the digital docent</p>
+        <h2 id="sec-7-title" class="orbit__title">A chat surface that drives the app, not just talks about it</h2>
+        <div class="orbit__hero">
+          <div class="orbit__hero-text">
+            <p class="orbit__lede">
+              Orbit is hybrid. A local keyword engine runs concurrently with an LLM stream over any OpenAI-compatible endpoint — instant + offline on one side, depth and provider-of-your-choice on the other. If the LLM errors or is disabled, the local engine's response transparently takes over. When the LLM succeeds, it can drop datasets and tours straight onto the globe via the same <code>&lt;&lt;LOAD:ID&gt;&gt;</code> marker pattern.
+            </p>
+          </div>
+          <aside class="orbit__rail" aria-label="Sample Orbit chat exchange with inline load chips for a dataset and a tour">
+            <div class="orbit__rail-bubble orbit__rail-bubble--user">show me 2024 hurricane activity</div>
+            <div class="orbit__rail-bubble orbit__rail-bubble--orbit">
+              <p>The Atlantic hurricane season from June through November 2024 is in the catalog.</p>
+              <button class="orbit__rail-load" type="button" disabled aria-disabled="true">
+                <span class="orbit__rail-load-arrow">⟶</span>Load · Hurricane Season — 2024
+              </button>
+              <p>Want context for the longer climate trend? Climate Futures compares three SSP scenarios.</p>
+              <button class="orbit__rail-load orbit__rail-load--tour" type="button" disabled aria-disabled="true">
+                <span class="orbit__rail-load-arrow">⟶</span>Take a tour · Climate Futures
+              </button>
+            </div>
+            <p class="orbit__rail-note">Inline action chips resolved from <code>&lt;&lt;LOAD:ID&gt;&gt;</code></p>
+          </aside>
+        </div>
+
+        <div class="orbit__stack-grid">
+          <article class="orbit__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/docentService.ts" target="_blank" rel="noopener">docentService.ts</a></h3>
+            <p>Orchestrator. <code>processMessage()</code> races the local <code>docentEngine</code> match (instant, offline) against the LLM stream. If the LLM fails, the local result is used. If the LLM succeeds, its stream is the sole source of dataset and tour recommendations.</p>
+          </article>
+
+          <article class="orbit__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/docentContext.ts" target="_blank" rel="noopener">docentContext.ts</a></h3>
+            <p>System-prompt builder. Turn-aware — full catalog (ID, title, categories) on turn 0; compact catalog (ID, title) thereafter. Last 3 exchanges sent verbatim; older history summarised. Keeps per-turn cost bounded as a chat grows.</p>
+          </article>
+
+          <article class="orbit__stack-card">
+            <h3><a href="https://github.com/zyra-project/terraviz/blob/main/src/services/llmProvider.ts" target="_blank" rel="noopener">llmProvider.ts</a></h3>
+            <p>Provider-agnostic OpenAI-compatible SSE client. Works against OpenAI, Ollama, LM Studio, Cloudflare AI Gateway, llama.cpp, vLLM. On desktop the API key lives in the OS keychain (Windows Credential Manager / macOS Keychain) instead of <code>localStorage</code>.</p>
+          </article>
+        </div>
+
+        <h3 class="orbit__subhead">Two paths, raced</h3>
+        <p class="orbit__subhead-hint">
+          <code>processMessage()</code> kicks off the local engine and the LLM stream concurrently. Stream chunks reach <code>chatUI</code> as they arrive; the LLM's <code>&lt;&lt;LOAD:ID&gt;&gt;</code> markers are parsed into <code>action</code> chunks that render as inline load buttons.
+        </p>
+
+        <figure class="orbit__sequence">
+          <svg viewBox="0 0 760 320"
+               role="img"
+               aria-label="Sequence diagram showing the hybrid Orbit pipeline. A user message enters processMessage which kicks off two parallel paths. The top path is the local docentEngine that returns a keyword-matched result instantly. The bottom path is the LLM stream over llmProvider that emits delta, delta, action, and done chunks over time. Both paths feed chatUI; the LLM's response is used when available, otherwise the local engine result is the fallback.">
+            <defs>
+              <marker id="arrow-orbit" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <marker id="arrow-orbit-accent" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#4da6ff" />
+              </marker>
+              <style>
+                .ob-box { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .ob-box-emph { fill: rgba(77, 166, 255, 0.10); stroke: #4da6ff; stroke-width: 1.5; }
+                .ob-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .ob-pill { fill: #ffffff; stroke: #4da6ff; stroke-width: 1.2; }
+                .ob-pill-action { fill: rgba(77, 166, 255, 0.18); stroke: #4da6ff; stroke-width: 1.5; }
+                .ob-pill-done { fill: #00172D; stroke: #00529E; stroke-width: 1.2; }
+                .ob-text { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; font-weight: 600; }
+                .ob-text-light { fill: #fafafa; }
+                .ob-mono { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .ob-mono-accent { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #4da6ff; font-weight: 700; }
+                .ob-mono-mist { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #9AB2B1; }
+                .ob-pill-text { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #00529E; font-weight: 600; }
+                .ob-pill-text-done { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #fafafa; font-weight: 600; }
+                .ob-lane { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #737373; font-weight: 700; letter-spacing: 0.1em; }
+                .ob-arrow { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .ob-arrow-accent { stroke: #4da6ff; stroke-width: 1.4; fill: none; }
+                .ob-arrow-dashed { stroke: #737373; stroke-width: 1.2; fill: none; stroke-dasharray: 3 3; }
+              </style>
+            </defs>
+
+            <!-- User input -->
+            <g transform="translate(20,135)">
+              <rect class="ob-box" x="0" y="0" width="120" height="50" rx="8" />
+              <text class="ob-text" x="60" y="22" text-anchor="middle">User</text>
+              <text class="ob-mono" x="60" y="38" text-anchor="middle">processMessage()</text>
+            </g>
+
+            <!-- Branch arrows from User to both lanes -->
+            <path class="ob-arrow" d="M140,150 C 160,150 160,80 180,80" marker-end="url(#arrow-orbit)" />
+            <path class="ob-arrow" d="M140,170 C 160,170 160,225 180,225" marker-end="url(#arrow-orbit)" />
+
+            <!-- Local engine lane -->
+            <text class="ob-lane" x="20" y="40" text-anchor="start">LOCAL ENGINE</text>
+            <g transform="translate(180,50)">
+              <rect class="ob-box" x="0" y="0" width="220" height="60" rx="8" />
+              <text class="ob-text" x="110" y="22" text-anchor="middle">docentEngine.match()</text>
+              <text class="ob-mono" x="110" y="42" text-anchor="middle">keyword · intent · instant</text>
+            </g>
+            <!-- result arrow from local box to chatUI -->
+            <path class="ob-arrow-dashed" d="M400,80 C 480,80 540,130 580,150" marker-end="url(#arrow-orbit)" />
+            <text class="ob-mono" x="490" y="105" text-anchor="middle">result · used as fallback</text>
+
+            <!-- LLM stream lane -->
+            <text class="ob-lane" x="20" y="285" text-anchor="start">LLM STREAM</text>
+            <g transform="translate(180,195)">
+              <rect class="ob-box-emph" x="0" y="0" width="220" height="60" rx="8" />
+              <text class="ob-text" x="110" y="22" text-anchor="middle">llmProvider.stream()</text>
+              <text class="ob-mono-accent" x="110" y="42" text-anchor="middle">OpenAI-compatible SSE</text>
+            </g>
+
+            <!-- Stream chunk pills emitted from the LLM box -->
+            <g transform="translate(420,210)">
+              <rect class="ob-pill" x="0" y="0" width="44" height="30" rx="6" />
+              <text class="ob-pill-text" x="22" y="19" text-anchor="middle">delta</text>
+            </g>
+            <path class="ob-arrow-accent" d="M400,225 L420,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <g transform="translate(474,210)">
+              <rect class="ob-pill" x="0" y="0" width="44" height="30" rx="6" />
+              <text class="ob-pill-text" x="22" y="19" text-anchor="middle">delta</text>
+            </g>
+            <path class="ob-arrow-accent" d="M464,225 L474,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <g transform="translate(528,210)">
+              <rect class="ob-pill-action" x="0" y="0" width="48" height="30" rx="6" />
+              <text class="ob-pill-text" x="24" y="19" text-anchor="middle">action</text>
+            </g>
+            <path class="ob-arrow-accent" d="M518,225 L528,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <g transform="translate(584,210)">
+              <rect class="ob-pill-done" x="0" y="0" width="44" height="30" rx="6" />
+              <text class="ob-pill-text-done" x="22" y="19" text-anchor="middle">done</text>
+            </g>
+            <path class="ob-arrow-accent" d="M576,225 L584,225" marker-end="url(#arrow-orbit-accent)" />
+
+            <!-- chatUI block on the right -->
+            <g transform="translate(640,135)">
+              <rect class="ob-box-final" x="0" y="0" width="100" height="50" rx="8" />
+              <text class="ob-text ob-text-light" x="50" y="22" text-anchor="middle">chatUI</text>
+              <text class="ob-mono-mist" x="50" y="38" text-anchor="middle">renders</text>
+            </g>
+
+            <!-- Arrow from chunk row up into chatUI -->
+            <path class="ob-arrow-accent" d="M628,225 C 660,225 660,200 660,185" marker-end="url(#arrow-orbit-accent)" />
+
+            <!-- Note tying the two paths together -->
+            <text class="ob-mono" x="380" y="305" text-anchor="middle">LLM stream is the response when available · local result is the fallback on error</text>
+          </svg>
+          <figcaption class="orbit__sequence-caption">
+            PROCESSMESSAGE — TWO PATHS RACED · LLM WINS IF AVAILABLE · LOCAL ENGINE IS THE FALLBACK
+          </figcaption>
+        </figure>
+
+        <h3 class="orbit__subhead">Stream chunk types</h3>
+        <p class="orbit__subhead-hint">
+          The four chunk shapes <code>chatUI</code> consumes from <code>processMessage()</code>:
+        </p>
+        <ul class="orbit-chunks-list">
+          <li><code>delta</code> — text fragment to append to the current bubble</li>
+          <li><code>action</code> — <code>&lt;&lt;LOAD:ID&gt;&gt;</code> resolved into a clickable load button</li>
+          <li><code>auto-load</code> — dataset loaded immediately, no click required</li>
+          <li><code>done</code> — stream complete; <code>fallback: true</code> flag if local engine took over</li>
+        </ul>
+
+        <h3 class="orbit__subhead">Does the avatar matter? An open research question.</h3>
+        <p class="orbit__subhead-hint">
+          Anthropomorphic interfaces have a long history in education and tutoring software, but the literature is split — sometimes the avatar lifts engagement, sometimes it pulls attention away from the content. We don't yet know which way it falls for environmental data on a globe. The procedural Orbit character — today reachable at <code>/orbit</code> as a standalone test bench — is the artifact for finding out: a six-state behavior machine (idle, listening, thinking, talking, chatting, confused), Bézier flight presets, four palettes, a postMessage bridge, full <code>prefers-reduced-motion</code> handling. Embedding the character inside the chat panel itself is the planned next experiment: A/B-able, instrumented through the Tier-A analytics pipeline (see §9).
+        </p>
+
+        <aside class="orbit__research-question" role="note">
+          <p>Does an anthropomorphic interface improve engagement and comprehension of environmental data — or does it pull attention away from the content?</p>
+          <p class="orbit__research-cta">If you're studying this and want a partner with a real deployment, we'd love to talk.</p>
+        </aside>
+
+        <h3 class="orbit__subhead">Try both surfaces</h3>
+        <p class="orbit__subhead-hint">
+          The <strong>chat surface</strong> is the docent embedded in the live app. The <strong>character surface</strong> is the standalone <code>/orbit</code> page where the procedural avatar runs in isolation. Toggle between them in the iframe below.
+        </p>
+
+        <div class="demo-frame"
+             id="orbit-demo"
+             data-state="loading"
+             data-default-src="https://terraviz.zyra-project.org/?orbit=open">
+          <button type="button"
+                  class="demo-frame__fullscreen-btn"
+                  data-fullscreen-target="orbit-demo"
+                  aria-label="Toggle fullscreen">⤢ Fullscreen</button>
+          <iframe class="demo-frame__iframe"
+                  src="about:blank"
+                  title="Live TerraViz application — Orbit chat and character demo"
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                  referrerpolicy="strict-origin-when-cross-origin"></iframe>
+          <div class="demo-frame__fallback" role="status" aria-live="polite">
+            <p class="demo-frame__fallback-title">Loading the live demo…</p>
+            <p class="demo-frame__fallback-body">If the embed doesn't load within a few seconds, the network may be blocking framed content. Open <a class="demo-frame__fallback-link" href="https://terraviz.zyra-project.org/?orbit=open" target="_blank" rel="noopener">terraviz.zyra-project.org</a> directly in a new tab.</p>
+          </div>
+        </div>
+
+        <div class="effect-toggle-bar"
+             role="group"
+             aria-label="Surface deep-links — toggle the iframe between the chat docent and the standalone procedural character">
+          <span class="effect-toggle-bar__label">Surface</span>
+          <button type="button" class="effect-toggle is-active"
+                  data-iframe-target="orbit-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/?orbit=open">Chat surface</button>
+          <button type="button" class="effect-toggle"
+                  data-iframe-target="orbit-demo"
+                  data-iframe-src="https://terraviz.zyra-project.org/orbit">Character surface · /orbit</button>
+        </div>
+
+        <p class="effect-note">
+          The <strong>chat surface</strong> reloads the embedded app with <code>?orbit=open</code> so the chat panel is already open when the page paints. The <strong>character surface</strong> swaps the iframe to the standalone <code>/orbit</code> page — the procedural avatar runs there in isolation, with no chat alongside it.
+        </p>
+
+        <aside class="orbit__forward">
+          <p class="section__eyebrow">What's next</p>
+          <h3>Orbit as tour author, not just tour player</h3>
+          <p>Right now Orbit recommends and loads tours from the catalog. The natural next step is having it <em>generate</em> a tour from a question like <em>"walk me through how Atlantic hurricane seasons have changed since 2000"</em> — turning the docent from a chat surface that knows the catalog into an educational-scaffolding generator. Full pitch in <a href="#sec-6-tours">§3 Tours</a>.</p>
+        </aside>
+      </div>
+    </section>

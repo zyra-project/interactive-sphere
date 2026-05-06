@@ -6,9 +6,65 @@
 
 ---
 
+## Working in this repo
+
+The general "one logical change per turn, committed before the
+next" rule from `~/.claude/CLAUDE.md` applies here especially:
+
+- The `docs/CATALOG_*` plan documents are sprawling (the main plan
+  alone exceeds 2000 lines, plus five companion docs). Editing
+  them via `Write` is unsafe — always use `Edit` for additions,
+  reserve `Write` for new files.
+- When adding sections to the catalog plan, commit each section
+  before starting the next. The split into `CATALOG_BACKEND_PLAN`,
+  `CATALOG_DATA_MODEL`, `CATALOG_FEDERATION_PROTOCOL`,
+  `CATALOG_ASSETS_PIPELINE`, `CATALOG_PUBLISHING_TOOLS`, and
+  `CATALOG_BACKEND_DEVELOPMENT` exists specifically to keep edits
+  bounded.
+- For multi-section work in the catalog plan, use TodoWrite. A
+  failed chunk should not lose previous chunks' work.
+- The catalog plan files cross-reference each other; when adding
+  a section that another doc points at, update the cross-link in
+  the same commit.
+- Many of the existing `docs/*_PLAN.md` files follow a consistent
+  voice: substantive prose, "Status: draft for review" markers,
+  named phases, explicit non-goals, tables for comparisons,
+  honest tradeoffs. New plan content should match.
+
+### Federation planning artifact
+
+Federation work — Phase 4 routes (handshake / feed / signing),
+federation tables, peer subscription, the lightweight peer
+appliance, the publisher CLI launch — follows
+[`docs/architecture/federation-scoping.md`](docs/architecture/federation-scoping.md).
+Before designing or implementing federation-related code, read
+**§7** (Phase 4 implementation directives) and **§8** (resolved
+planning decisions). The scoping doc supersedes Phase 4
+sequencing in `docs/CATALOG_BACKEND_PLAN.md` where they conflict.
+
+**Freshness check.** The scoping doc carries a "Last reviewed"
+date and a "Revisit when" trigger list at the top. Before
+applying its directives, verify the doc is still current — if
+the last-reviewed date is more than ~6 months old, or any
+"Revisit when" trigger has been hit (Phase 4 shipped, the
+publisher-CLI pilot revealed auth-flow issues, a non-Cloudflare
+funded partner emerged, the Phase 4 ETA slipped past two
+quarters, any §8 decision changed), surface that to the user
+before proceeding rather than silently applying potentially
+stale guidance. Once the doc's "Supersedes when" condition is
+met, defer to `CATALOG_BACKEND_PLAN.md` and `ROADMAP.md` as the
+active source of truth.
+
+---
+
 ## Codebase Overview
 
 TypeScript SPA built with Vite and MapLibre GL JS. Deployed on Cloudflare Pages (web) and packaged as a native desktop app with Tauri v2 (Windows, macOS, Linux). No runtime framework — vanilla TS with a few focused libraries (MapLibre GL JS, HLS.js).
+
+> Forking to deploy your own instance? See
+> [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) for the
+> end-to-end Cloudflare setup walkthrough (Pages, D1, AE, KV,
+> Access, optional Grafana).
 
 ### Key commands
 
@@ -50,8 +106,30 @@ npm run build:desktop # tsc + vite build + tauri build
 | `src/ui/downloadUI.ts` | Download manager panel — view/delete cached datasets (desktop only) |
 | `src/ui/mapControlsUI.ts` | Map controls positioning helper — keeps the Tools bar above the playback transport |
 | `src/ui/playbackController.ts` | Playback transport controls + portrait-mobile positioning |
-| `src/ui/toolsMenuUI.ts` | Tools popover — Browse button, view toggles (labels, borders, terrain, auto-rotate, info, legend), layout picker, Orbit settings entry point |
+| `src/ui/toolsMenuUI.ts` | Tools popover — Browse button, view toggles (labels, borders, terrain, auto-rotate, info, legend), layout picker, Orbit settings entry point, Meet Orbit link (web only) |
+| `src/ui/vrButton.ts` | Enter AR / Enter VR button — feature-gated (hidden on non-WebXR browsers), lazy-loads Three.js on tap |
+| `src/services/vrSession.ts` | WebXR session lifecycle — requests `immersive-ar` or `immersive-vr`, wires renderer.xr, drives the per-frame loop, handles anchor persistence |
+| `src/services/vrScene.ts` | VR scene framing — background (space blue vs transparent passthrough) + globe placement; delegates the Earth stack to `photorealEarth.ts` |
+| `src/services/photorealEarth.ts` | Reusable photoreal Earth factory — diffuse / night lights / specular / atmosphere / clouds / sun / ground shadow with day/night shading; shared by VR view and Orbit character page |
+| `src/services/vrInteraction.ts` | Controller input — surface-pinned drag, two-hand pinch+rotate, thumbstick zoom, flick-to-spin inertia, raycast hit routing |
+| `src/services/vrHud.ts` | In-VR floating HUD — dataset title + play/pause + exit-VR as a CanvasTexture panel with UV hit regions |
+| `src/services/vrPlacement.ts` | AR spatial placement — reticle + Place button; WebXR hit-test to anchor the globe on a real surface |
+| `src/services/vrLoading.ts` | 3D loading scene — orbiting rings, progress bar, status text; fades out when dataset is ready |
+| `src/utils/vrCapability.ts` | Feature detection — `navigator.xr`, `immersive-vr`, `immersive-ar` support |
+| `src/utils/vrPersistence.ts` | WebXR anchor persistent-handle save/load (localStorage) for cross-session placement stability |
 | `src/utils/viewPreferences.ts` | Persists Dataset info + Legend toggle state to localStorage |
+| `src/analytics/emitter.ts` | Telemetry queue + tier gate + batched dispatch + pagehide beacon flush |
+| `src/analytics/transport.ts` | `fetch()` + `sendBeacon()` transport with response classification (ok/retry/permanent) |
+| `src/analytics/config.ts` | `TelemetryTier` persistence (`sos-telemetry-config`); compile-time `TELEMETRY_BUILD_ENABLED` / `TELEMETRY_CONSOLE_MODE` flags |
+| `src/analytics/session.ts` | `session_start` / `session_end` — platform / OS / viewport / aspect / screen / build channel detection |
+| `src/analytics/dwell.ts` | Multi-handle dwell tracker — visibility-paused, pagehide-flushed; called by chat / browse / info / tools UI |
+| `src/analytics/camera.ts` | Shared `emitCameraSettled` with per-minute throttle; called by 2D map renderer + VR/AR session |
+| `src/analytics/perfSampler.ts` | 60s rAF FPS sampler — `perf_sample` event with WebGL renderer hash, p50/p95 frame time, JS heap |
+| `src/analytics/errorCapture.ts` | `window.onerror` + `unhandledrejection` + Tauri `native_panic` listener; sanitizes messages and (Tier B) stacks |
+| `src/analytics/hash.ts` | 12-hex SHA-256 helper for free-text fields (search queries, error stack signatures) |
+| `src/ui/privacyUI.ts` | Tools → Privacy panel — tier picker (off / essential / research), session-id display, what-we-collect explainer |
+| `src/ui/disclosureBanner.ts` | First-launch privacy disclosure banner — shown once per install, dismisses to default Essential tier |
+| `functions/api/ingest.ts` | Cloudflare Pages Function — receives telemetry batches, stamps `event_type` / `environment` / `country` / `internal` server-side, writes to Workers Analytics Engine |
 
 ---
 
@@ -104,6 +182,82 @@ Stored in `localStorage` under `sos-docent-config`. Defaults:
 
 ---
 
+## VR / AR — Immersive mode
+
+The app ships an optional WebXR immersive mode for Meta Quest (and
+any other WebXR-capable headset). Entirely feature-gated — browsers
+without `navigator.xr` never load the Three.js chunk and see no UI
+change. Design doc: [`docs/VR_INVESTIGATION_PLAN.md`](docs/VR_INVESTIGATION_PLAN.md).
+
+### Key architectural points
+
+- **Two renderers, one DOM.** The 2D app's MapLibre canvas is untouched
+  by VR. When the user taps Enter AR / Enter VR, `vrSession.ts` creates
+  a parallel Three.js `WebGLRenderer` attached to its own canvas,
+  calls `renderer.xr.setSession(session)`, and drives a separate XR
+  render loop. MapLibre keeps running behind the scenes and takes
+  over again on session-end.
+
+- **Lazy-loaded Three.js.** `import('three')` only fires on the
+  first Enter AR/VR tap — same lazy-import pattern used for Tauri
+  plugins in `llmProvider.ts` / `downloadService.ts`. Three.js
+  chunks separately at ~183 KB gzipped; the main bundle is unchanged
+  for non-VR users. `XRControllerModelFactory` chunks alongside at
+  ~16 KB gzipped.
+
+- **AR-first button.** `vrButton.ts` prefers `immersive-ar` when the
+  device supports it (Quest 2/3/Pro all do), falls back to
+  `immersive-vr` on PCVR, hides entirely on non-XR browsers.
+
+- **Dataset texture reuse.** Video datasets reuse the existing HLS
+  `<video>` element directly via `THREE.VideoTexture`. Image datasets
+  reuse the already-decoded `HTMLImageElement` stored in
+  `panelStates[slot].image` (set by `loadImageDataset`). Zero
+  re-fetches.
+
+- **Earth-as-planet vs. data-as-surface modes.** When no dataset is
+  loaded, `photorealEarth.ts` (wired up by `vrScene.ts`) renders the
+  full photoreal Earth stack (diffuse + night lights + specular +
+  atmosphere + clouds + sun + ground shadow + day/night shader gated
+  by real UTC sun position). When a dataset is loaded, all
+  Earth-specific decoration is hidden so the data reads uniformly
+  across the sphere.
+
+- **Spatial placement (AR only).** `vrPlacement.ts` uses WebXR
+  `hit-test` to let the user point at a real-world surface and tap
+  to anchor the globe there. `vrPersistence.ts` stores the anchor's
+  persistent-handle UUID in localStorage so the globe stays in the
+  same physical spot across sessions (Quest's Meta Anchors extension).
+
+### Session-start ordering is subtle
+
+`vrSession.enterImmersive()` has a specific async ordering that
+matters for correctness:
+
+1. `loadThree()` — Three.js chunk
+2. **`import XRControllerModelFactory`** — must finish before
+   `setTexture` fires its synchronous `onReady`, otherwise the
+   loading-scene fade-out race loses (see commit 90279c5)
+3. Build renderer + camera, request session, `setSession`
+4. AR: set up hit-test source + restore persistent anchor
+5. Build `scene`, `hud`, `loading`; hide globe + HUD; show loading
+6. `setTexture` → fires `onReady` → schedules 250 ms → fade-out
+7. Build `interaction`, assign `active`, start animation loop
+
+### Per-frame ordering in the render loop
+
+1. Hit-test (placement, AR only)
+2. Anchor-pose sync (AR only — writes into `globe.position`)
+3. Dataset texture swap (idempotent no-op in steady state)
+4. HUD state update (debounced)
+5. Interaction update (rotation, zoom, inertia)
+6. Scene update (shadow, atmosphere, sun — tracked to `globe.position`)
+7. HUD + Place button position sync (follows globe)
+8. Loading-scene animation (rings spin, fade)
+9. `renderer.render(scene, camera)`
+
+---
+
 ## UI Layout & Panel Coordination
 
 The UI is floating glass-surface overlays on a full-viewport WebGL canvas. See [STYLE_GUIDE.md](STYLE_GUIDE.md) for visual design rules.
@@ -139,6 +293,84 @@ The tour engine (`src/services/tourEngine.ts`) plays back SOS-format tour JSON f
 | `setEnvView` | `callbacks.setEnvView()` — switches layout (1globe/2globes/4globes) |
 | `unloadDataset` | `callbacks.unloadDatasetAt()` — unloads a specific dataset by tour handle |
 | `worldIndex` on `loadDataset` | Routes dataset load to a specific panel slot (1-indexed) |
+
+---
+
+## Analytics
+
+Privacy-first product telemetry. Two-tier consent model with the
+client emitter in `src/analytics/`, server stamping at
+`functions/api/ingest.ts`, storage in Cloudflare Workers Analytics
+Engine, Grafana dashboards under `grafana/dashboards/`.
+
+**Authoritative reference: [`docs/ANALYTICS.md`](docs/ANALYTICS.md).**
+The query/schema reference is [`docs/ANALYTICS_QUERIES.md`](docs/ANALYTICS_QUERIES.md);
+the user-facing privacy policy is [`docs/PRIVACY.md`](docs/PRIVACY.md)
+(generated to `public/privacy.html` by `scripts/build-privacy-page.ts` —
+`npm run build:privacy-page` rebuilds it; `npm run check:privacy-page`
+guards the diff in CI).
+
+### Two tiers
+
+| Tier | Default | Examples |
+|---|---|---|
+| `essential` (Tier A) | on | `session_*`, `layer_*`, `camera_settled`, `map_click`, `playback_action`, `tour_*`, `vr_session_*`, `perf_sample`, `error`, `feedback` |
+| `research` (Tier B) | opt-in | `dwell`, `orbit_*`, `browse_search` (hashed), `vr_interaction` (per gesture, throttled), `error_detail` (sanitized stacks), `tour_question_answered` |
+
+User-controlled in **Tools → Privacy** (`src/ui/privacyUI.ts`).
+First-launch banner in `src/ui/disclosureBanner.ts`. The
+`TIER_B_EVENT_TYPES` tuple in `src/types/index.ts` is the runtime
+gate; adding an event there is the single point that promotes it to
+Research-only.
+
+### Adding a new event
+
+The full walkthrough + reviewer checklist lives in
+[`docs/ANALYTICS_CONTRIBUTING.md`](docs/ANALYTICS_CONTRIBUTING.md).
+Headlines:
+
+1. Add an interface to `src/types/index.ts`, append to
+   `TelemetryEvent` union, decide tier (`TIER_B_EVENT_TYPES`).
+2. `import { emit } from '../analytics'` and call from the call site.
+3. Throttle if it can fire more than ~30/min — pattern lives in
+   `src/analytics/camera.ts` and `src/services/vrInteraction.ts`.
+4. Hash any free-text via `src/analytics/hash.ts` (12-hex SHA-256).
+5. Add a row to the catalog in `ANALYTICS.md`, a positional layout
+   in `ANALYTICS_QUERIES.md`, a panel in `grafana/dashboards/`, and
+   a test (`*.test.ts` next to the call site).
+
+### Reviewing analytics changes
+
+When reviewing a PR (your own or someone else's) that touches
+`src/analytics/**`, `functions/api/ingest.ts`, the `TelemetryEvent`
+union in `src/types/index.ts`, or any `emit({ event_type: ... })`
+call site, run through the **Reviewer checklist** section of
+[`docs/ANALYTICS_CONTRIBUTING.md`](docs/ANALYTICS_CONTRIBUTING.md)
+explicitly. The checklist covers schema, tier choice, the eight
+privacy invariants, throttling, tests, and documentation. Flag
+any item you can't positively confirm; block on missing tier-gate
+or missing hashing/sanitization of free-text fields.
+
+### Privacy invariants
+
+- No IP storage (only `CF-IPCountry` for country).
+- No User-Agent storage (only bucketed OS / viewport / aspect /
+  screen enums from `src/analytics/session.ts`).
+- Search queries hashed before emit; error messages sanitized
+  (`src/analytics/errorCapture.ts:sanitizeMessage()`).
+- Lat/lon rounded to 3 decimals (~111 m) by
+  `src/analytics/camera.ts` before emit.
+- Session id is in-memory only — rotates every launch, never
+  persisted.
+- Server-side `KILL_TELEMETRY=1` env returns 410 → client cools
+  down for the rest of the session.
+
+### Local dev
+
+- `VITE_TELEMETRY_CONSOLE=true` — log batches to console instead
+  of POSTing.
+- `VITE_TELEMETRY_ENABLED=false` — compile out the emitter
+  entirely (call sites tree-shake).
 
 ---
 

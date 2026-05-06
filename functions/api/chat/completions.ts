@@ -6,6 +6,8 @@
  * No external API key needed — uses the AI binding on Cloudflare's edge.
  */
 
+import { isWorkersAiQuotaError } from '../_lib/workers-ai-error'
+
 interface Env {
   AI: {
     run(
@@ -329,6 +331,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return await nonStreamResponse(context.env.AI, cfModel, textMessages, cors)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error'
+    // Phase 1f/D — surface Workers AI quota exhaustion as a typed
+    // 503 so the SPA can flip its degraded-mode badge instead of
+    // showing a generic 502 server_error.
+    if (isWorkersAiQuotaError(err)) {
+      return new Response(
+        JSON.stringify({ error: { message, type: 'quota_exhausted', code: 4006 } }),
+        { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } },
+      )
+    }
     return new Response(JSON.stringify({ error: { message, type: 'server_error' } }), {
       status: 502,
       headers: { ...cors, 'Content-Type': 'application/json' },
@@ -622,6 +633,18 @@ async function toolStreamShim(
     result = (await ai.run(model, inputs)) as WorkersAIResult
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Workers AI error'
+    // Phase 1f/D — distinguish quota-exhausted from generic
+    // upstream errors. The SPA reads the type to flip the
+    // "Reduced functionality" badge and route subsequent turns
+    // through the local-engine fallback.
+    if (isWorkersAiQuotaError(err)) {
+      return new Response(
+        JSON.stringify({
+          error: { message: msg, type: 'quota_exhausted', code: 4006 },
+        }),
+        { status: 503, headers: { ...cors, 'Content-Type': 'application/json' } },
+      )
+    }
     return new Response(
       JSON.stringify({ error: { message: msg, type: 'workers_ai_error' } }),
       { status: 502, headers: { ...cors, 'Content-Type': 'application/json' } },

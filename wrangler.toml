@@ -2,7 +2,7 @@
 # The AI binding gives Pages Functions access to Workers AI models
 # at no extra cost on the free tier (~10k requests/day).
 
-name = "interactive-sphere"
+name = "terraviz"
 compatibility_date = "2024-12-01"
 
 [ai]
@@ -14,3 +14,144 @@ binding = "FEEDBACK_DB"
 database_name = "sphere-feedback"
 database_id = "78fbe5c3-8e40-4504-b183-155b0069222e"
 migrations_dir = "migrations"
+
+# Catalog backend (Phase 1a onward) — datasets, tours, publishers,
+# audit_events. Same physical D1 instance as FEEDBACK_DB above
+# (per CATALOG_BACKEND_PLAN.md "Cloudflare service mapping": "Same
+# DB instance as FEEDBACK_DB, separate tables"); the second binding
+# exists so the catalog migrations live under their own directory
+# and can be applied independently with
+# `wrangler d1 migrations apply CATALOG_DB`.
+#
+# Like the other bindings here, **Pages reads its bindings from the
+# dashboard, not this file** — adding the binding in source control
+# documents the canonical name + directory and makes a future
+# Workers-deploy migration mechanical. Wire it under
+# Settings → Bindings → D1 → variable name CATALOG_DB → database
+# `sphere-feedback`.
+[[d1_databases]]
+binding = "CATALOG_DB"
+database_name = "sphere-feedback"
+database_id = "78fbe5c3-8e40-4504-b183-155b0069222e"
+migrations_dir = "migrations/catalog"
+
+# Analytics Engine dataset for the telemetry event stream.
+# Every datapoint written by functions/api/ingest.ts lands here.
+# Query via the AE SQL API; see docs/ANALYTICS_QUERIES.md.
+#
+# Heads-up: Cloudflare Pages does not auto-pick up bindings from
+# this file — they must be added through the project's
+# Settings → Bindings UI (variable name `ANALYTICS`, dataset
+# `terraviz_events`, attached to both Production and Preview).
+# This declaration is kept in source control because (a) it
+# documents the canonical binding/dataset names, and (b) it works
+# for any future migration to a Workers deploy where wrangler.toml
+# is authoritative.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "terraviz_events"
+
+# KV namespace for the runtime telemetry kill switch. The ingest
+# endpoint reads the key `telemetry_enabled` on every request; when
+# set to `disabled` / `false` / `off` / `0`, clients receive 410 Gone
+# and cool down for the rest of the session. Absent or any other
+# value = allow.
+#
+# Like the other bindings in this file, **Pages reads its bindings
+# from the dashboard, not this block** — `Settings → Bindings → KV →
+# variable name TELEMETRY_KILL_SWITCH, namespace = the one below`.
+# Kept declared (rather than commented out) so the canonical
+# binding name + namespace ID are visible in source control and so
+# any future Workers deploy where wrangler.toml is authoritative
+# picks it up automatically.
+#
+# Operations:
+#   - Activate (clients receive 410):
+#       wrangler kv key put telemetry_enabled disabled \
+#         --namespace-id=9c022b1295314939b76a28769fef6195
+#   - Deactivate (back to normal):
+#       wrangler kv key delete telemetry_enabled \
+#         --namespace-id=9c022b1295314939b76a28769fef6195
+[[kv_namespaces]]
+binding = "TELEMETRY_KILL_SWITCH"
+id = "9c022b1295314939b76a28769fef6195"
+
+# KV namespace for the catalog read API's hot-path snapshot cache.
+# `functions/api/v1/catalog.ts` lazily renders the public catalog
+# response and caches it under a single key keyed by ETag. Cache is
+# invalidated on every publish / retract (wired in Commit F).
+# Without this snapshot, `/api/v1/catalog` would issue ~5 D1 queries
+# per browse-page load and burn the 5 M-row-reads/day free-tier
+# budget — see "Free-tier viability" in CATALOG_BACKEND_PLAN.md.
+#
+# Binding name only; the namespace ID is a placeholder and must be
+# replaced with the operator's real namespace before deploy. Local
+# Wrangler doesn't validate the ID — it provisions an in-memory KV
+# under `.wrangler/state/v3/kv/<id>/` regardless. Pages reads the
+# binding from the dashboard, not this file: wire it under
+# Settings → Bindings → KV → variable name CATALOG_KV → namespace
+# created via `wrangler kv namespace create CATALOG_KV`.
+[[kv_namespaces]]
+binding = "CATALOG_KV"
+id = "00000000000000000000000000000000"
+
+# R2 bucket for catalog assets (Phase 1b onward) — sphere thumbnails,
+# image data refs, legends, captions, and tour JSON. Stream handles
+# video uploads via its own API (see STREAM_ACCOUNT_ID +
+# STREAM_API_TOKEN secrets); R2 carries everything else. Keys are
+# content-addressed (`datasets/{id}/by-digest/sha256/{hex}/asset.{ext}`)
+# per `docs/CATALOG_ASSETS_PIPELINE.md`, so revisions land at new
+# paths without invalidating existing caches.
+#
+# Two parallel access modes:
+#   - The Workers binding below is what server-side handlers use to
+#     read just-uploaded bytes and verify `content_digest`. Wrangler
+#     provisions a local on-disk bucket under
+#     `.wrangler/state/v3/r2/` even without real R2 credentials, so
+#     tests + dev work offline.
+#   - Browser / CLI uploads use S3-compatible presigned PUT URLs
+#     minted by `functions/api/v1/_lib/r2-store.ts`. That path needs
+#     `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY`
+#     in `.dev.vars` (or `MOCK_R2=true` for the contributor
+#     walkthrough, which skips signing).
+#
+# Pages reads the binding from the dashboard, not this file: wire it
+# under Settings → Bindings → R2 → variable name CATALOG_R2 → bucket
+# created via `wrangler r2 bucket create terraviz-assets`. The bucket
+# name override knob is `CATALOG_R2_BUCKET` in `.dev.vars` (default
+# `terraviz-assets`, matching `bucket_name` below).
+[[r2_buckets]]
+binding = "CATALOG_R2"
+bucket_name = "terraviz-assets"
+
+# Vectorize index for the docent's semantic search, Phase 1c
+# onward. Holds 768-dim embeddings — one per published dataset —
+# produced from `@cf/baai/bge-base-en-v1.5` against the canonical
+# embedding text built in `functions/api/v1/_lib/embeddings.ts`.
+# `_lib/vectorize-store.ts` is the only Workers-side consumer:
+# `upsertEmbedding` on publish/update, `deleteEmbedding` on retract,
+# `queryEmbedding` from the public `/api/v1/search?q=` endpoint and
+# the docent's `search_datasets` tool path.
+#
+# The Vectorize index itself is provisioned out-of-band via:
+#
+#   wrangler vectorize create terraviz-datasets \
+#     --dimensions=768 --metric=cosine
+#   wrangler vectorize create-metadata-index terraviz-datasets \
+#     --property-name=peer_id --type=string
+#   wrangler vectorize create-metadata-index terraviz-datasets \
+#     --property-name=category --type=string
+#   wrangler vectorize create-metadata-index terraviz-datasets \
+#     --property-name=visibility --type=string
+#
+# The contributor walkthrough does NOT need a real index: setting
+# `MOCK_VECTORIZE=true` in `.dev.vars` swaps the binding for an
+# in-memory mock that implements cosine similarity end-to-end. See
+# `docs/CATALOG_BACKEND_DEVELOPMENT.md` for the full setup.
+#
+# Pages reads the binding from the dashboard, not this file: wire it
+# under Settings → Bindings → Vectorize → variable name
+# CATALOG_VECTORIZE → index `terraviz-datasets`.
+[[vectorize]]
+binding = "CATALOG_VECTORIZE"
+index_name = "terraviz-datasets"

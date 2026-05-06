@@ -10,7 +10,9 @@
 
 import { logger } from '../utils/logger'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
+import { setBordersVisible } from '../utils/viewPreferences'
 import { getSunPosition } from '../utils/time'
+import { flyToOnGlobe, isVrActive } from './vrSession'
 import type {
   TourFile, TourTaskDef, TourState, TourCallbacks, TourViewLayout,
   LoadDatasetTaskParams,
@@ -30,6 +32,17 @@ import {
   updateTourPlayState,
   showTourLegend, hideTourLegend,
 } from '../ui/tourUI'
+import { emit } from '../analytics'
+
+/** Telemetry context for a tour run. The engine treats this as
+ * opaque metadata used only when constructing analytics events;
+ * it does not affect tour execution. Optional so existing tests
+ * that don't care about analytics can still construct an engine. */
+export interface TourTelemetryMeta {
+  tourId: string
+  tourTitle: string
+  source: 'browse' | 'orbit' | 'deeplink'
+}
 
 // Miles → kilometres
 const MI_TO_KM = 1.60934
@@ -137,9 +150,44 @@ export class TourEngine {
    */
   private flatDeprecationLogged = false
 
-  constructor(tourFile: TourFile, callbacks: TourCallbacks) {
+  /**
+   * Slot this tour is anchored to, if any. Set by `runTourOnLoad`
+   * flows: the tour is scoped to the panel whose dataset triggered
+   * it, and the legacy SOS `worldIndex: 1` convention (meaning "the
+   * current globe") should route to that anchor panel — not slot 0.
+   * `null` for standalone tours, where `worldIndex` is interpreted
+   * as an absolute 1-indexed panel selector.
+   */
+  private anchorSlot: number | null
+
+  /** Telemetry context — captured at construction, used as the
+   * basis for every tour_* event. Null in tests / call sites that
+   * don't supply meta; in that case the events still fire with
+   * `'unknown'` placeholders so the schema stays satisfied. */
+  private meta: TourTelemetryMeta | null
+
+  /** Wall-clock timestamps for tour-event payloads. */
+  private tourStartedAt: number = 0
+  private taskStartedAt: number = 0
+  private pauseStartedAt: number | null = null
+  /** Whether `tour_started` has fired yet. The first play() call
+   * emits it; subsequent play() calls (resume from pause) emit
+   * `tour_resumed` instead. */
+  private startedEmitted = false
+  /** Whether `tour_ended` has already been emitted. Prevents
+   * double-counting when stop() runs as part of natural-end
+   * cleanup. */
+  private endedEmitted = false
+
+  constructor(
+    tourFile: TourFile,
+    callbacks: TourCallbacks,
+    options?: { anchorSlot?: number | null; meta?: TourTelemetryMeta },
+  ) {
     this.tasks = tourFile.tourTasks
     this.callbacks = callbacks
+    this.anchorSlot = options?.anchorSlot ?? null
+    this.meta = options?.meta ?? null
   }
 
   get state(): TourState { return this._state }
@@ -154,6 +202,7 @@ export class TourEngine {
       // Resume from a pauseForInput / pauseSeconds
       this._state = 'playing'
       updateTourPlayState(true)
+      this.emitResumed()
       this.resumeResolver()
       this.resumeResolver = null
       return
@@ -161,8 +210,16 @@ export class TourEngine {
 
     if (this._state === 'playing') return
 
+    const wasPaused = this._state === 'paused'
     this._state = 'playing'
     updateTourPlayState(true)
+    if (wasPaused) {
+      this.emitResumed()
+    } else {
+      this.tourStartedAt = Date.now()
+      this.taskStartedAt = this.tourStartedAt
+      this.emitStarted()
+    }
     await this.runLoop()
   }
 
@@ -171,6 +228,8 @@ export class TourEngine {
   pause(): void {
     if (this._state !== 'playing') return
     this._state = 'paused'
+    this.pauseStartedAt = Date.now()
+    this.emitPaused('user')
     updateTourPlayState(false)
   }
 
@@ -272,6 +331,7 @@ export class TourEngine {
       this.resumeResolver()
       this.resumeResolver = null
     }
+    this.emitEnded('abandoned')
     this.cleanup()
   }
 
@@ -319,6 +379,7 @@ export class TourEngine {
       const task = this.tasks[this.index]
       updateTourProgress(this.index, this.tasks.length)
       logger.debug(`[Tour] Step ${this.index + 1}/${this.tasks.length}:`, task)
+      this.emitTaskFired(task)
 
       try {
         await this.executeTask(task)
@@ -341,8 +402,97 @@ export class TourEngine {
     // Reached the end
     logger.info('[Tour] Tour complete')
     this._state = 'stopped'
+    this.emitEnded('completed')
     this.cleanup()
     this.callbacks.onTourEnd()
+  }
+
+  // ── Telemetry helpers ──────────────────────────────────────────────
+
+  /** Emit `tour_started` once per run. The first play() call hits
+   * this; subsequent play() (resume) calls emit `tour_resumed`
+   * instead. */
+  private emitStarted(): void {
+    if (this.startedEmitted) return
+    this.startedEmitted = true
+    emit({
+      event_type: 'tour_started',
+      tour_id: this.meta?.tourId ?? 'unknown',
+      tour_title: this.meta?.tourTitle ?? 'unknown',
+      source: this.meta?.source ?? 'browse',
+      task_count: this.tasks.length,
+    })
+  }
+
+  /** Emit `tour_task_fired` for the task we're about to run, with
+   * the dwell time spent on the previous task. The first task's
+   * `task_dwell_ms` is 0 by definition — the user hasn't dwelled
+   * on anything yet — and dashboards rely on that invariant. Note
+   * `startedEmitted` flips to true *before* the run loop reaches
+   * task 0, so we can't gate on it; key off `task_index === 0`
+   * instead. Resets the per-task clock. */
+  private emitTaskFired(task: TourTaskDef): void {
+    const now = Date.now()
+    const isFirstTask = this.index === 0
+    const dwell = isFirstTask
+      ? 0
+      : this.taskStartedAt > 0
+        ? Math.max(0, now - this.taskStartedAt)
+        : 0
+    this.taskStartedAt = now
+    emit({
+      event_type: 'tour_task_fired',
+      tour_id: this.meta?.tourId ?? 'unknown',
+      task_type: identifyTask(task)[0],
+      task_index: this.index,
+      task_dwell_ms: dwell,
+    })
+  }
+
+  /** Emit `tour_paused`. Caller picks the reason (`'user'` for the
+   * pause button, `'pauseForInput'` for tour-driven pauses, `'error'`
+   * for runtime failures that halt the tour). Caller is responsible
+   * for setting `pauseStartedAt` so the matching `tour_resumed` can
+   * compute `pause_ms`. */
+  private emitPaused(reason: 'user' | 'pauseForInput' | 'error'): void {
+    emit({
+      event_type: 'tour_paused',
+      tour_id: this.meta?.tourId ?? 'unknown',
+      reason,
+      task_index: this.index,
+    })
+  }
+
+  /** Emit `tour_resumed` with the elapsed pause duration. */
+  private emitResumed(): void {
+    const pauseMs = this.pauseStartedAt !== null
+      ? Math.max(0, Date.now() - this.pauseStartedAt)
+      : 0
+    this.pauseStartedAt = null
+    emit({
+      event_type: 'tour_resumed',
+      tour_id: this.meta?.tourId ?? 'unknown',
+      task_index: this.index,
+      pause_ms: pauseMs,
+    })
+  }
+
+  /** Emit `tour_ended`. Coalesced — natural-completion + stop()
+   * during the same run is one event, not two. */
+  private emitEnded(outcome: 'completed' | 'abandoned' | 'error'): void {
+    if (this.endedEmitted) return
+    if (!this.startedEmitted) return
+    this.endedEmitted = true
+    const duration = this.tourStartedAt > 0
+      ? Math.max(0, Date.now() - this.tourStartedAt)
+      : 0
+    emit({
+      event_type: 'tour_ended',
+      tour_id: this.meta?.tourId ?? 'unknown',
+      outcome,
+      task_index: this.index,
+      duration_ms: duration,
+    })
   }
 
   // ── Task dispatch ──────────────────────────────────────────────────
@@ -472,10 +622,28 @@ export class TourEngine {
       if (map?.jumpTo) {
         const zoom = Math.log2(6371 * 2 / Math.max(altKm, 1))
         map.jumpTo({ center: [params.lon, params.lat], zoom })
-        return
       }
+      // VR path snaps the same way the 2D `map.jumpTo` does above —
+      // duration 0 means the first frame after the call slerps all
+      // the way to the target quaternion, so the rotation is
+      // effectively instant with no pacing. Matches the `animated:
+      // false` contract the tour JSON is asking for.
+      if (isVrActive()) {
+        await flyToOnGlobe(params.lat, params.lon, 0)
+      }
+      return
     }
-    await renderer.flyTo(params.lat, params.lon, altKm)
+
+    // Animated path: run 2D MapLibre flyTo and the VR globe
+    // rotation in parallel. Promise.all resolves when both settle
+    // so the tour's next task waits on the longer of the two.
+    // VR defaults to this app's configured 2.5 s fly-to duration,
+    // matching MapRenderer.flyTo's easeTo duration (see
+    // FLY_TO_DEFAULT_DURATION_MS in vrSession.ts).
+    await Promise.all([
+      renderer.flyTo(params.lat, params.lon, altKm),
+      isVrActive() ? flyToOnGlobe(params.lat, params.lon) : Promise.resolve(),
+    ])
   }
 
   private async execTiltRotateCamera(params: TiltRotateCameraTaskParams): Promise<void> {
@@ -528,6 +696,8 @@ export class TourEngine {
    */
   private async pauseAndWait(message: string): Promise<void> {
     this._state = 'paused'
+    this.pauseStartedAt = Date.now()
+    this.emitPaused('pauseForInput')
     updateTourPlayState(false)
     this.callbacks.announce(message)
     await new Promise<void>(resolve => { this.resumeResolver = resolve })
@@ -562,12 +732,35 @@ export class TourEngine {
     const questionUrl = this.callbacks.resolveMediaUrl(params.imgQuestionFilename)
     const answerUrl = this.callbacks.resolveMediaUrl(params.imgAnswerFilename)
 
+    // Capture wall-clock so onAnswered can compute response_ms.
+    const shownAt = Date.now()
+    let answeredEmitted = false
+    const onAnswered = (chosenIndex: number): void => {
+      // 2D + VR both call this — dedupe so a user who answers in
+      // VR while the 2D panel is also visible (or vice versa)
+      // produces exactly one telemetry event.
+      if (answeredEmitted) return
+      answeredEmitted = true
+      emit({
+        event_type: 'tour_question_answered',
+        tour_id: this.meta?.tourId ?? 'unknown',
+        question_id: params.id,
+        task_index: this.index,
+        choice_count: params.numberOfAnswers,
+        chosen_index: chosenIndex,
+        correct_index: params.correctAnswerIndex,
+        was_correct: chosenIndex === params.correctAnswerIndex,
+        response_ms: Math.max(0, Date.now() - shownAt),
+      })
+    }
+
     return new Promise<void>(resolve => {
       showTourQuestion({
         ...params,
         imgQuestionFilename: questionUrl,
         imgAnswerFilename: answerUrl,
         onComplete: resolve,
+        onAnswered,
       })
     })
   }
@@ -575,16 +768,34 @@ export class TourEngine {
   // ── Dataset executors ──────────────────────────────────────────────
 
   private async execLoadDataset(params: LoadDatasetTaskParams): Promise<void> {
-    // Resolve worldIndex (1-indexed from the tour JSON) to a 0-indexed
-    // slot. Omitted/zero/negative values default to slot 0. Out-of-
-    // range values are clamped to the last active panel so the load
-    // doesn't silently no-op when a tour specifies worldIndex before
-    // the matching setEnvView expands the layout.
-    const raw = typeof params.worldIndex === 'number' ? params.worldIndex : 1
+    // Route the load. Three cases:
+    //
+    // 1. `anchorSlot` is set — this tour was triggered by
+    //    `runTourOnLoad` on that panel. Legacy SOS tour JSON uses
+    //    `"worldIndex": 1` to mean "the current globe"; in a
+    //    multi-globe comparison that convention would clobber slot 0
+    //    instead of staying on the panel the user loaded into. So
+    //    anchor wins and worldIndex is ignored for runTourOnLoad.
+    //
+    // 2. Explicit `worldIndex` in a standalone tour — 1-indexed,
+    //    translated to a 0-indexed slot. Out-of-range values are
+    //    clamped to the last active panel so the load doesn't silently
+    //    no-op when a tour specifies worldIndex before the matching
+    //    setEnvView expands the layout.
+    //
+    // 3. No `worldIndex` — default to the current primary panel.
+    //    Matches the TourCallbacks contract.
     const panelCount = this.callbacks.getAllRenderers().length || 1
-    const slot = Math.max(0, Math.min(panelCount - 1, Math.round(raw) - 1))
-    if (Math.round(raw) - 1 >= panelCount) {
-      logger.warn(`[Tour] loadDataset: worldIndex ${raw} exceeds panel count ${panelCount}, clamped to slot ${slot}`)
+    let slot: number
+    if (this.anchorSlot !== null) {
+      slot = Math.max(0, Math.min(panelCount - 1, this.anchorSlot))
+    } else if (typeof params.worldIndex === 'number') {
+      slot = Math.max(0, Math.min(panelCount - 1, Math.round(params.worldIndex) - 1))
+      if (Math.round(params.worldIndex) - 1 >= panelCount) {
+        logger.warn(`[Tour] loadDataset: worldIndex ${params.worldIndex} exceeds panel count ${panelCount}, clamped to slot ${slot}`)
+      }
+    } else {
+      slot = Math.max(0, Math.min(panelCount - 1, this.callbacks.getPrimarySlot()))
     }
 
     await this.callbacks.loadDataset(params.id, { slot })
@@ -719,6 +930,11 @@ export class TourEngine {
       // command controls only the lines, not labels.
     }
     syncToolsMenuState({ borders: on })
+    // Mirror to the shared preference so a VR session running
+    // alongside this tour picks up the toggle on its next frame.
+    // In a VR-only (non-tour) session the flag is written by the
+    // Tools-menu button instead.
+    setBordersVisible(on)
   }
 
   private execWorldBorderObj(params: { worldBorders: 'on' | 'off' }): void {

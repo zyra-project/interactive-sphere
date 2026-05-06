@@ -38,6 +38,28 @@
 
 import type { ViewportManager, ViewLayout } from '../services/viewportManager'
 import { updateMapControlsPosition } from './mapControlsUI'
+import { openPrivacyUI } from './privacyUI'
+import { emit } from '../analytics'
+import { setBordersVisible } from '../utils/viewPreferences'
+
+/** Fire a `settings_changed` event for a toggle/action in the Tools
+ * popover. `key` is the logical name (labels / borders / etc.) and
+ * `value_class` is a short label describing the new value — for
+ * booleans this is "on" / "off", for categorical values it's the
+ * value itself. Never carries user data. */
+function emitSetting(key: string, valueClass: string): void {
+  emit({ event_type: 'settings_changed', key, value_class: valueClass })
+}
+
+/**
+ * Runtime Tauri-shell detection — matches the same `__TAURI__`
+ * sentinel the rest of the code keys off of. Read fresh inside
+ * initToolsMenu rather than cached at module load so tests can
+ * toggle `window.__TAURI__` between cases.
+ */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && !!(window as unknown as { __TAURI__?: unknown }).__TAURI__
+}
 
 /** Callbacks the tools menu fires out into the rest of the app. */
 export interface ToolsMenuCallbacks {
@@ -51,6 +73,13 @@ export interface ToolsMenuCallbacks {
   onToggleDatasetInfo?: (visible: boolean) => void
   /** User toggled legend visibility. */
   onToggleLegend?: (visible: boolean) => void
+  /** User clicked Credits — open the credits / attribution
+   *  dialog. The Tools menu hands its always-visible toggle
+   *  button as `trigger` so the credits panel can restore focus
+   *  there when it closes (the menu item itself is hidden by
+   *  closePopover() before the dialog opens, so it isn't a
+   *  reliable focus target). */
+  onOpenCredits?: (trigger: HTMLElement) => void
   /** Announce something for screen readers. */
   announce?: (message: string) => void
   /** Get the currently loaded dataset (used by the Share action). */
@@ -77,7 +106,9 @@ export function initToolsMenu(
   // leaks between invocations.
   isOpen = false
 
-  const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, announce } = callbacks
+  const gateMeetOrbit = isTauri()
+
+  const { onSetLayout, onOpenBrowse, onOpenOrbitSettings, onToggleDatasetInfo, onToggleLegend, onOpenCredits, announce } = callbacks
   const currentLayout = viewports.getLayout()
 
   container.classList.remove('hidden')
@@ -149,6 +180,23 @@ export function initToolsMenu(
           <span class="tools-menu-item-check" aria-hidden="true"></span>
           <span class="tools-menu-item-label">Orbit settings&hellip;</span>
         </button>
+        ${gateMeetOrbit ? '' : `
+        <a class="tools-menu-item tools-menu-item-link" id="tools-menu-meet-orbit" href="/orbit" target="_blank" rel="noopener">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Meet Orbit&nbsp;&rarr;</span>
+        </a>`}
+      </section>
+      <section class="tools-menu-section" aria-label="About">
+        <h4 class="tools-menu-section-title">About</h4>
+        ${onOpenCredits ? `
+        <button type="button" class="tools-menu-item" id="tools-menu-credits">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Credits&hellip;</span>
+        </button>` : ''}
+        <button type="button" class="tools-menu-item" id="tools-menu-privacy">
+          <span class="tools-menu-item-check" aria-hidden="true"></span>
+          <span class="tools-menu-item-label">Privacy settings&hellip;</span>
+        </button>
       </section>
     </div>
   `
@@ -218,6 +266,17 @@ export function initToolsMenu(
   const clearBtn = document.getElementById('tools-menu-clear') as HTMLButtonElement
   const shareBtn = document.getElementById('tools-menu-share') as HTMLButtonElement
   const orbitSettingsBtn = document.getElementById('tools-menu-orbit-settings') as HTMLButtonElement
+  const meetOrbitLink = document.getElementById('tools-menu-meet-orbit') as HTMLAnchorElement | null
+
+  // Meet Orbit is a plain anchor with target="_blank" — native
+  // navigation handles opening the character page. We just close
+  // the popover so the main app goes back to its normal state and
+  // announce for screen readers. No-op when Meet Orbit is gated off
+  // (desktop build).
+  meetOrbitLink?.addEventListener('click', () => {
+    closePopover()
+    announce?.('Opening Orbit character page in new tab')
+  })
 
   labelsBtn.addEventListener('click', () => {
     // Target state is derived from the button class, not from any
@@ -227,13 +286,19 @@ export function initToolsMenu(
     const next = !labelsBtn.classList.contains('active')
     for (const r of viewports.getAll()) r.toggleLabels?.(next)
     setButtonState(labelsBtn, next)
+    emitSetting('labels', next ? 'on' : 'off')
     announce?.(next ? 'Labels on' : 'Labels off')
   })
 
   bordersBtn.addEventListener('click', () => {
     const next = !bordersBtn.classList.contains('active')
     for (const r of viewports.getAll()) r.toggleBoundaries?.(next)
+    // Mirror to the shared preference so VR's per-frame poll picks
+    // the same state up on its next frame. 2D-only sessions never
+    // hit that getter, so the cost is just a localStorage write.
+    setBordersVisible(next)
     setButtonState(bordersBtn, next)
+    emitSetting('borders', next ? 'on' : 'off')
     announce?.(next ? 'Borders on' : 'Borders off')
   })
 
@@ -245,6 +310,7 @@ export function initToolsMenu(
       ;(r as unknown as { toggleTerrain?: (v: boolean) => void }).toggleTerrain?.(next)
     }
     setButtonState(terrainBtn, next)
+    emitSetting('terrain', next ? 'on' : 'off')
     announce?.(next ? '3D terrain on' : '3D terrain off')
   })
 
@@ -256,6 +322,7 @@ export function initToolsMenu(
     if (!primary) return
     const next = primary.toggleAutoRotate()
     setButtonState(autoRotateBtn, next)
+    emitSetting('auto_rotate', next ? 'on' : 'off')
     announce?.(next ? 'Auto-rotation enabled' : 'Auto-rotation disabled')
   })
 
@@ -263,6 +330,7 @@ export function initToolsMenu(
     const next = !infoBtn.classList.contains('active')
     setButtonState(infoBtn, next)
     onToggleDatasetInfo?.(next)
+    emitSetting('dataset_info', next ? 'on' : 'off')
     announce?.(next ? 'Dataset info shown' : 'Dataset info hidden')
   })
 
@@ -270,6 +338,7 @@ export function initToolsMenu(
     const next = !legendBtn.classList.contains('active')
     setButtonState(legendBtn, next)
     onToggleLegend?.(next)
+    emitSetting('legend', next ? 'on' : 'off')
     announce?.(next ? 'Legend shown' : 'Legend hidden')
   })
 
@@ -291,7 +360,7 @@ export function initToolsMenu(
     const { shareDataset, buildDatasetShareUrl } = await import('../services/shareService')
     const shared = await shareDataset({
       title: dataset.title,
-      text: `Check out "${dataset.title}" on Interactive Sphere`,
+      text: `Check out "${dataset.title}" on Terraviz`,
       url: buildDatasetShareUrl(dataset.id),
     })
     if (shared) announce?.('Dataset shared')
@@ -300,6 +369,30 @@ export function initToolsMenu(
   orbitSettingsBtn.addEventListener('click', () => {
     closePopover()
     onOpenOrbitSettings?.()
+  })
+
+  // Credits button is only rendered when `onOpenCredits` is wired
+  // (see template above). Skipping the listener entirely when the
+  // callback is absent means there's no dead control in the DOM —
+  // the About section just shows Privacy.
+  if (onOpenCredits) {
+    const creditsBtn = document.getElementById('tools-menu-credits') as HTMLButtonElement | null
+    creditsBtn?.addEventListener('click', () => {
+      closePopover()
+      // Pass the Tools toggle button (which stays visible as the
+      // popover's anchor) as the credits panel's focus-restore
+      // target. The menu item itself is hidden by closePopover()
+      // above, so it can't reliably receive focus on close.
+      onOpenCredits(toggleBtn)
+      announce?.('Credits opened')
+    })
+  }
+
+  const privacyBtn = document.getElementById('tools-menu-privacy') as HTMLButtonElement | null
+  privacyBtn?.addEventListener('click', () => {
+    closePopover()
+    openPrivacyUI(privacyBtn)
+    announce?.('Privacy settings opened')
   })
 
   // --- Layout picker (dev flag only) ---

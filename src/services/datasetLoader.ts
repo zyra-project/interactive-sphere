@@ -4,8 +4,9 @@
  * Extracted from InteractiveSphere to isolate data-loading concerns.
  */
 
-import { HLSService } from './hlsService'
+import { HLSService, type VideoProxyResponse } from './hlsService'
 import { dataService } from './dataService'
+import { apiFetch, isManifestUrl } from './catalogSource'
 import { getDownload, getDownloadPath } from './downloadService'
 import type { Dataset, AppState, GlobeRenderer, VideoTextureHandle } from '../types'
 import { formatDate, isSubDailyPeriod, inferDisplayInterval } from '../utils/time'
@@ -14,6 +15,14 @@ import { escapeHtml, escapeAttr } from '../ui/domUtils'
 import { closeChat } from '../ui/chatUI'
 import type { PlaybackState } from '../ui/playbackController'
 import { updatePlayButton, loadCaptions } from '../ui/playbackController'
+import { startDwell, type DwellHandle } from '../analytics'
+
+/** Tier B dwell handle for the info panel — non-null while the
+ * panel is expanded (collapsed = user can't read the body so it
+ * doesn't count). One handle per displayed dataset; rebuilt on
+ * dataset change. Tier-gated at emit time, wiring is unconditional. */
+let infoPanelDwellHandle: DwellHandle | null = null
+let infoPanelDwellDatasetId: string | null = null
 
 const IS_TAURI = !!(window as any).__TAURI__
 
@@ -63,7 +72,7 @@ export async function loadImageDataset(
   isMobile: boolean,
   callbacks: DatasetLoaderCallbacks,
   options: DatasetLoaderOptions = {},
-): Promise<void> {
+): Promise<HTMLImageElement> {
   const isPrimary = options.isPrimary ?? true
 
   // Check for offline-cached version first
@@ -96,10 +105,40 @@ export async function loadImageDataset(
   }
 
   logger.info(`[App] Image dataset loaded successfully: ${img.src}`)
+  return img
 }
 
 /** Load an image from the network with progressive resolution fallback. */
-function loadImageFromNetwork(dataset: Dataset, isMobile: boolean): Promise<HTMLImageElement> {
+async function loadImageFromNetwork(
+  dataset: Dataset,
+  isMobile: boolean,
+): Promise<HTMLImageElement> {
+  // Node-mode: dataLink is `/api/v1/datasets/{id}/manifest`. The
+  // manifest envelope already lists every variant; just fetch it,
+  // sort by descending width, and try them in order. The legacy
+  // suffix-mangling fallback isn't needed because the backend
+  // synthesises the same ladder for `url:<href>` rows.
+  if (isManifestUrl(dataset.dataLink)) {
+    const res = await apiFetch(dataset.dataLink, { headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`Manifest fetch failed: ${res.status} ${res.statusText}`)
+    const manifest = (await res.json()) as {
+      kind: 'image'
+      variants: Array<{ width: number; url: string }>
+      fallback: string
+    }
+    if (manifest.kind !== 'image') {
+      throw new Error(`Manifest kind=${manifest.kind} for an image dataset is unexpected.`)
+    }
+    const sorted = [...manifest.variants].sort((a, b) => b.width - a.width)
+    // Mobile devices skip the largest variant to keep MSE / decode
+    // memory bounded; matches the legacy `_2048` / `_1024` strategy.
+    const skipLargest = isMobile && sorted.length > 1
+    const candidates = (skipLargest ? sorted.slice(1) : sorted).map(v => v.url)
+    candidates.push(manifest.fallback)
+    return tryLoadImage(candidates)
+  }
+
+  // Legacy / direct-asset path: mangle the suffix as before.
   const url = dataset.dataLink
   const ext = url.match(/(\.\w+)$/)
   const base = ext ? url.slice(0, -ext[1].length) : url
@@ -159,10 +198,34 @@ export async function loadVideoDataset(
     logger.info(`[App] Loading video from offline cache: ${localVideoPath}`)
     await hlsService.loadDirect(await localFileUrl(localVideoPath), video)
   } else {
-    const vimeoId = dataService.extractVimeoId(dataset.dataLink)
-    if (!vimeoId) throw new Error(`Could not extract Vimeo ID from: ${dataset.dataLink}`)
-
-    const manifest = await hlsService.fetchManifest(vimeoId)
+    let manifest: VideoProxyResponse
+    if (isManifestUrl(dataset.dataLink)) {
+      // Node-mode: fetch the manifest envelope directly. The backend
+      // (`functions/api/v1/datasets/[id]/manifest.ts`) returns a
+      // shape that's structurally identical to `VideoProxyResponse`
+      // for the fields the HLS path actually consumes (`hls`,
+      // `files[]`, `duration`, `title`, `id`) MINUS `dash` and
+      // PLUS a `kind: 'video' | 'image'` discriminator. Validate
+      // `kind` first so an image dataset routed to the video loader
+      // fails fast with a clear error rather than throwing at
+      // `manifest.files.find(...)` later.
+      const res = await apiFetch(dataset.dataLink, { headers: { Accept: 'application/json' } })
+      if (!res.ok) throw new Error(`Manifest fetch failed: ${res.status} ${res.statusText}`)
+      const envelope = (await res.json()) as Omit<VideoProxyResponse, 'dash'> & {
+        kind: 'video' | 'image'
+      }
+      if (envelope.kind !== 'video') {
+        throw new Error(`Expected a video manifest; got kind=${envelope.kind}.`)
+      }
+      // Backfill `dash` so the type matches downstream consumers
+      // that only read it via index-access; HLS.js never looks at
+      // it, the desktop offline path doesn't either.
+      manifest = { ...envelope, dash: '' }
+    } else {
+      const vimeoId = dataService.extractVimeoId(dataset.dataLink)
+      if (!vimeoId) throw new Error(`Could not extract Vimeo ID from: ${dataset.dataLink}`)
+      manifest = await hlsService.fetchManifest(vimeoId)
+    }
     logger.info('[App] Video manifest received:', { duration: manifest.duration, qualities: manifest.files.length })
 
     try {
@@ -269,6 +332,16 @@ export function displayDatasetInfo(
   const infoBody = document.getElementById('info-body')
   const infoHeader = document.getElementById('info-header')
   if (!infoPanel || !infoTitle || !infoBody || !infoHeader) return
+
+  // If the panel is showing a different dataset from the one whose
+  // dwell we're currently tracking, close out the previous dwell
+  // before re-rendering. The new dataset's dwell starts fresh on
+  // the next expand click.
+  if (infoPanelDwellHandle && infoPanelDwellDatasetId !== dataset.id) {
+    infoPanelDwellHandle.stop()
+    infoPanelDwellHandle = null
+    infoPanelDwellDatasetId = null
+  }
 
   const e = dataset.enriched
 
@@ -395,6 +468,20 @@ export function displayDatasetInfo(
     infoHeader.setAttribute('aria-expanded', String(expanded))
     // Close chat when expanding info — both can't be tall at the same time
     if (expanded) closeChat()
+    // Tier B dwell — track time the panel is actually expanded
+    // (collapsed reduces it to a one-line header, no body
+    // reading is possible). Targets `dataset:<id>` so dashboards
+    // can split per-dataset reading time without reaching for the
+    // session-scoped layer_loaded join.
+    if (expanded) {
+      if (infoPanelDwellHandle) infoPanelDwellHandle.stop()
+      infoPanelDwellHandle = startDwell(`dataset:${dataset.id}`)
+      infoPanelDwellDatasetId = dataset.id
+    } else if (infoPanelDwellHandle) {
+      infoPanelDwellHandle.stop()
+      infoPanelDwellHandle = null
+      infoPanelDwellDatasetId = null
+    }
   }
   infoHeader.onclick = toggleInfoPanel
   infoHeader.addEventListener('keydown', (e) => {

@@ -8,6 +8,8 @@ import {
   buildCompressedHistory,
   summarizeOlderMessages,
   getSearchCatalogTool,
+  getSearchDatasetsTool,
+  getListFeaturedDatasetsTool,
   getLoadDatasetTool,
   getFlyToTool,
   getSetTimeTool,
@@ -115,15 +117,64 @@ describe('getSearchCatalogTool', () => {
   })
 })
 
+describe('getSearchDatasetsTool (Phase 1c)', () => {
+  it('returns the search_datasets function tool', () => {
+    const tool = getSearchDatasetsTool()
+    expect(tool.type).toBe('function')
+    expect(tool.function.name).toBe('search_datasets')
+  })
+
+  it('requires a query parameter', () => {
+    const tool = getSearchDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    expect(params.required).toEqual(['query'])
+    const props = params.properties as Record<string, { type: string }>
+    expect(props.query.type).toBe('string')
+  })
+
+  it('caps limit at the route-layer maximum (50)', () => {
+    const tool = getSearchDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    const props = params.properties as Record<string, { maximum: number }>
+    expect(props.limit.maximum).toBe(50)
+  })
+
+  it('description flags it as semantic / vector search', () => {
+    const tool = getSearchDatasetsTool()
+    expect(tool.function.description).toMatch(/semantic|vector/i)
+  })
+})
+
+describe('getListFeaturedDatasetsTool (Phase 1c)', () => {
+  it('returns the list_featured_datasets function tool', () => {
+    const tool = getListFeaturedDatasetsTool()
+    expect(tool.type).toBe('function')
+    expect(tool.function.name).toBe('list_featured_datasets')
+  })
+
+  it('takes no required parameters', () => {
+    const tool = getListFeaturedDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    expect(params.required).toBeUndefined()
+  })
+
+  it('caps limit at the route-layer maximum (24)', () => {
+    const tool = getListFeaturedDatasetsTool()
+    const params = tool.function.parameters as Record<string, unknown>
+    const props = params.properties as Record<string, { maximum: number }>
+    expect(props.limit.maximum).toBe(24)
+  })
+
+  it('description targets cold-start prompts', () => {
+    const tool = getListFeaturedDatasetsTool()
+    expect(tool.function.description).toMatch(/cold[- ]start|interesting|where to start/i)
+  })
+})
+
 describe('buildSystemPrompt', () => {
   it('includes docent role description', () => {
     const prompt = buildSystemPrompt(datasets, null)
     expect(prompt).toContain('Orbit')
-  })
-
-  it('includes dataset count', () => {
-    const prompt = buildSystemPrompt(datasets, null)
-    expect(prompt).toContain(String(datasets.length))
   })
 
   it('includes current dataset context', () => {
@@ -162,6 +213,67 @@ describe('buildSystemPrompt', () => {
     // a search_catalog result.
     const prompt = buildSystemPrompt(datasets, null)
     expect(prompt).toMatch(/MANDATORY.*<<LOAD:/i)
+  })
+
+  it('uses placeholder marker payloads in the example, not real legacy IDs (1d/S)', () => {
+    // Real failure observed post-1d cutover: the example used
+    // `<<LOAD:INTERNAL_SOS_5>>` and `<<LOAD:INTERNAL_SOS_12>>` as
+    // illustrative IDs. Smaller LLMs mimicked the example prose
+    // verbatim — emitting markers with `INTERNAL_SOS_5` /
+    // `INTERNAL_SOS_12` regardless of what search_datasets actually
+    // returned. Fix: the example uses obvious placeholder names
+    // that aren't valid ID format in either world (ULID or legacy
+    // SOS).
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).not.toMatch(/<<LOAD:INTERNAL_SOS_\d+>>/)
+    expect(prompt).not.toMatch(/<<LOAD:INTERNAL_SOS_5>>/)
+    // Sanity: the example still demonstrates marker placement.
+    expect(prompt).toMatch(/<<LOAD:COPY_THE_/)
+  })
+
+  it('does not surface specific ID-format templates the LLM could mimic (1d/AA)', () => {
+    // Live test on llama-4-scout produced fabricated IDs like
+    // "internal_sos_476" and "internal_sos_123" — the LLM saw the
+    // pattern `INTERNAL_SOS_*` referenced in the prompt's strict
+    // rules and synthesized plausible variants when it didn't have
+    // a real id to cite. Same root cause as 1d/W's ULID-prefix
+    // mimicry, just in legacy-id shape. Fix: don't mention specific
+    // ID format patterns in places the LLM can copy from. The
+    // "never invent IDs" rule is now phrased without naming a
+    // specific format.
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).not.toMatch(/INTERNAL_SOS_/)
+    // Tool descriptions also examined separately because they're
+    // included in the prompt the LLM sees.
+    const tool = getLoadDatasetTool()
+    expect(JSON.stringify(tool)).not.toMatch(/INTERNAL_SOS_/)
+  })
+
+  it('does not contain any "(Silently)" annotation or ULID-prefix substring (1d/W)', () => {
+    // Two failures observed on llama-3.1-70b after 1d/S:
+    //
+    //   1. "(Silently) Call search_datasets" leaked verbatim into
+    //      the user-visible reply — the model treated the
+    //      "(Silently)" prefix as text to emit, not as a meta-
+    //      instruction.
+    //   2. The example contained the substring `01KQFFCE` as part
+    //      of a placeholder ULID; the model copied it as a literal
+    //      ID and then incremented the prefix to fabricate
+    //      additional ULIDs (`01KQFFCG`, `01KQFFCH`).
+    //
+    // 1d/W rewrites the example with a structural "What you DO /
+    // What you SAY" divider (no narrate-able prefix words) and
+    // placeholders that don't share any prefix with real ULIDs.
+    const prompt = buildSystemPrompt(datasets, null)
+    // The phrase appears once in the don't-list (mention), but
+    // never as a leading annotation (use). Pre-1d/W the example
+    // had `(Silently) Call search_datasets(...)` and
+    // `(Silently) Receive results...`; the model copied it.
+    expect(prompt).not.toMatch(/\(Silently\) (Call|Receive)/)
+    // No ULID-prefix substring the model could mimic — real
+    // post-cutover ULIDs start with `01K...`. Anything that looks
+    // like a real ULID inside the prompt is a mimicry hazard.
+    expect(prompt).not.toMatch(/01K[A-Z0-9]{3,}/)
   })
 
   it('restricts the "I do not have a dataset" preface to zero-results only', () => {
@@ -214,6 +326,83 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Reading Level: Expert')
     expect(prompt).toContain('ignore the default 150-word limit')
     expect(prompt).toContain('300 words')
+  })
+
+  // ------------------------------------------------------------------
+  // Phase 1c — static prompt: catalog state no longer affects content
+  // ------------------------------------------------------------------
+
+  it('does NOT include the per-turn dataset count', () => {
+    // The pre-1c prompt rendered "The collection has N datasets across..."
+    // — it now ships a static description. Same prompt for any catalog
+    // size; only currentDataset / readingLevel / etc shape it.
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).not.toMatch(/has\s+\d+\s+datasets across/i)
+    expect(prompt).not.toMatch(/collection has \d+/i)
+  })
+
+  it('produces an identical prompt for catalogs of different sizes', () => {
+    // Static-prompt invariant: feeding 0 datasets and many datasets
+    // through `buildSystemPrompt` produces the same string when the
+    // other inputs match.
+    const small = buildSystemPrompt([], null)
+    const large = buildSystemPrompt([...datasets, ...datasets, ...datasets], null)
+    expect(large).toBe(small)
+  })
+
+  it('mentions the new search_datasets tool', () => {
+    expect(buildSystemPrompt(datasets, null)).toContain('search_datasets')
+  })
+
+  it('mentions the new list_featured_datasets tool for cold-start prompts', () => {
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).toContain('list_featured_datasets')
+    expect(prompt).toMatch(/cold[- ]start|where to start|something interesting/i)
+  })
+
+  it('lists search_datasets as the primary discovery tool, search_catalog as the fallback (post-1d cutover)', () => {
+    // Phase 1d/E flips the ordering set by 1c/L: with the catalog
+    // backend provisioned and the SOS snapshot imported,
+    // search_datasets is the default and search_catalog is the
+    // empty-result fallback for self-hosters who haven't wired
+    // Vectorize. Reverting this test alongside docentService.ts
+    // and docentContext.ts is what a single git revert of the
+    // cutover commit produces.
+    const prompt = buildSystemPrompt(datasets, null)
+    const searchCatalogAt = prompt.indexOf('search_catalog')
+    const searchDatasetsAt = prompt.indexOf('search_datasets')
+    expect(searchCatalogAt).toBeGreaterThan(-1)
+    expect(searchDatasetsAt).toBeGreaterThan(-1)
+    expect(searchDatasetsAt).toBeLessThan(searchCatalogAt)
+  })
+
+  it('tells the LLM to fall back to search_catalog when search_datasets returns empty', () => {
+    // Critical anti-hallucination guard: production has Vectorize
+    // unwired, so search_datasets returns `{datasets: [],
+    // degraded: 'unconfigured'}`. Without an explicit fallback
+    // instruction, some models invent IDs from training data.
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).toMatch(/empty.*fall back to.*search_catalog/i)
+    expect(prompt).toMatch(/never invent.*titles or IDs|never guess/i)
+  })
+
+  it('forbids inventing "related" dataset names without a fresh tool call', () => {
+    // Real reply seen on PR #59 / catalog(1c/M):
+    //   > Here are some related datasets:
+    //   > This one shows sea ice extent in the Arctic.
+    //   > Another option is
+    //   > which shows ocean color data...
+    // The first dataset was real (tool result, valid chip). The
+    // "related" suggestions were fabricated — the LLM mentioned
+    // dataset names it remembered from training-time knowledge,
+    // markers got stripped, sentences turned into half-formed
+    // prose. Guard the explicit instruction not to do this.
+    const prompt = buildSystemPrompt(datasets, null)
+    // The strict rule must call out related/similar datasets explicitly.
+    expect(prompt).toMatch(/no exceptions for.*related/i)
+    // The Guidelines line that originally said "Suggest related datasets
+    // when relevant" must now require a tool call.
+    expect(prompt).toMatch(/related.*MUST call a discovery tool first|must call.*discovery tool/i)
   })
 })
 

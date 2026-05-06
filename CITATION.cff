@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+title: TerraViz
+message: "If you use this software, please cite it using the metadata below."
+type: software
+authors:
+  - given-names: Eric
+    family-names: Hackathorn
+    email: eric.j.hackathorn@noaa.gov
+    orcid: "https://orcid.org/0000-0002-9693-2093"
+    affiliation: NOAA Global Systems Laboratory
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20043181
+    description: "Concept DOI (always resolves to latest version)"
+repository-code: "https://github.com/zyra-project/terraviz"
+url: "https://terraviz.zyra-project.org/"
+abstract: >-
+  TerraViz is a web-based viewer that brings Science On a Sphere datasets to
+  any device — phone, tablet, or laptop. It streams NOAA's curated
+  environmental data onto a navigable 3D globe, putting the same
+  visualizations that live inside science museums directly in the hands of
+  anyone with a browser. Optional desktop versions for Windows, macOS, and
+  Linux are available for users who need additional performance.
+
+  TerraViz aims to lower the barriers between NOAA's scientific data and the
+  public it was collected to serve, expanding access beyond the geographic
+  and institutional constraints of physical Science On a Sphere
+  installations.
+keywords:
+  - TypeScript
+  - data visualization
+  - scientific visualization
+  - 3D globe
+  - Earth science
+  - open science
+  - NOAA
+  - Science On a Sphere
+license: Apache-2.0
+type: software

@@ -1,13 +1,17 @@
-# Interactive Sphere
+# Terraviz
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-sphere.zyra--project.org-4da6ff)](https://sphere.zyra-project.org)
-[![Windows](https://img.shields.io/badge/Download-Windows-0078D4?logo=windows&logoColor=white)](https://github.com/zyra-project/interactive-sphere/releases/latest/download/Interactive-Sphere-latest-x64.msi)
-[![macOS](https://img.shields.io/badge/Download-macOS-000000?logo=apple&logoColor=white)](https://github.com/zyra-project/interactive-sphere/releases/latest/download/Interactive-Sphere-latest-aarch64.dmg)
-[![Linux](https://img.shields.io/badge/Download-Linux-FCC624?logo=linux&logoColor=black)](https://github.com/zyra-project/interactive-sphere/releases/latest/download/Interactive-Sphere-latest-x64.AppImage)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20043181.svg)](https://doi.org/10.5281/zenodo.20043181)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Poster](https://img.shields.io/badge/poster-view%20online-00172D)](https://poster.terraviz.zyra-project.org/)
+[![Live App](https://img.shields.io/badge/app-terraviz.zyra--project.org-success)](https://terraviz.zyra-project.org/)
 
-A WebGL-based globe that streams environmental data from the [Science On a Sphere](https://sos.noaa.gov/) project. Available as a [web app](https://sphere.zyra-project.org) and a native desktop application for Windows, macOS, and Linux.
+[![Windows](https://img.shields.io/badge/Download-Windows-0078D4?logo=windows&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.msi)
+[![macOS](https://img.shields.io/badge/Download-macOS-000000?logo=apple&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-aarch64.dmg)
+[![Linux](https://img.shields.io/badge/Download-Linux-FCC624?logo=linux&logoColor=black)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.AppImage)
 
-![SOS Explorer interface showing the Earth globe with the dataset browse panel](initial-interface.jpg)
+A WebGL-based globe that streams environmental data from the [Science On a Sphere](https://sos.noaa.gov/) project. Available as a [web app](https://terraviz.zyra-project.org) and a native desktop application for Windows, macOS, and Linux.
+
+![Terraviz interface showing the Earth globe with the dataset browse panel](initial-interface.jpg)
 
 ## ✨ Features
 
@@ -125,10 +129,51 @@ npm run preview
 npm run build:desktop
 ```
 
+### Option 4: Catalog backend (Phase 1a)
+
+The same repo also ships a node-hosted catalog backend that the
+SPA can read from instead of the SOS S3 source. Designed for forks
+that want to operate their own dataset catalog. Self-contained — no
+extra services required for local development.
+
+```bash
+# 1. Generate the node identity keypair (one-time per clone).
+npm run gen:node-key
+
+# 2. Reset the local D1 (apply migrations + seed ~20 SOS rows).
+npm run db:reset
+
+# 3. Configure the publisher-API dev bypass.
+cp .dev.vars.example .dev.vars
+# Edit .dev.vars to keep DEV_BYPASS_ACCESS=true.
+
+# 4. Start the Pages Functions runtime in pane 1.
+npm run dev:functions
+# → Ready on http://localhost:8788
+
+# 5. (Optional) Run the SPA against the local backend.
+cp .env.example .env.local
+# Edit .env.local to set VITE_DEV_API_TARGET=http://localhost:8788
+# (the SPA defaults to VITE_CATALOG_SOURCE=node post-1d cutover —
+# set VITE_CATALOG_SOURCE=legacy to fall back to the SOS S3 path).
+# Dev-container contributors should also set VITE_HOST=0.0.0.0.
+npm run dev    # in pane 2
+
+# 6. Verify.
+curl http://localhost:8788/api/v1/catalog | jq '.datasets | length'
+# → 20
+```
+
+The full developer walkthrough — bindings, data model, and the
+publishing CLI — lives in
+[docs/CATALOG_BACKEND_DEVELOPMENT.md](docs/CATALOG_BACKEND_DEVELOPMENT.md);
+the architectural plan is
+[docs/CATALOG_BACKEND_PLAN.md](docs/CATALOG_BACKEND_PLAN.md).
+
 ## 📁 Project Structure
 
 ```
-interactive-sphere/
+terraviz/
 ├── src/                         # Web app (shared by web + desktop)
 │   ├── index.html               #   Single-page app shell
 │   ├── main.ts                  #   App entry point, dataset loading orchestration
@@ -242,6 +287,39 @@ window.app.appState.datasets.length
 window.app.appState.currentDataset
 ```
 
+### Remote-debugging WebXR on Meta Quest
+
+The immersive AR/VR mode only runs on a real headset, so the browser console
+output has to come from the headset itself. Chrome on the PC can attach to the
+Meta Quest Browser over USB:
+
+1. **Enable Developer Mode on the Quest** — Meta account → Devices → pair the
+   headset → toggle Developer Mode on.
+2. **Install adb + the Quest USB driver** — macOS: `brew install android-platform-tools`,
+   Linux: `apt install android-tools-adb`, Windows: Meta Quest ADB driver.
+3. **Plug the Quest into the PC via USB-C**. Put on the headset and accept the
+   "Allow USB debugging" prompt.
+4. **Verify the device is visible:**
+   ```bash
+   adb devices
+   ```
+5. **Reverse-forward the dev server port** so the Quest can reach it as localhost:
+   ```bash
+   adb reverse tcp:5173 tcp:5173
+   ```
+   (WebXR requires HTTPS or localhost; reverse forwarding keeps you on localhost.)
+6. **Start the dev server** on the PC: `npm run dev`.
+7. **In the Quest browser**, navigate to `http://localhost:5173`.
+8. **On the PC**, open Chrome and visit `chrome://inspect#devices`. Under
+   **Remote Target → Quest**, click **inspect** next to your app's tab.
+9. In the DevTools Console, open the **Default levels** dropdown and check
+   **Verbose** so `logger.debug` lines show up.
+10. Put the headset back on, tap **Enter AR** / **Enter VR**, and return to the
+    PC DevTools Console — the `[VR]` logs will be there.
+
+If you unplug the headset at any point the port forward drops and needs to be
+re-run (step 5). `adb reverse --list` shows active forwards.
+
 ### Common Issues
 
 **"Failed to fetch datasets"**
@@ -281,6 +359,10 @@ See **[ROADMAP.md](ROADMAP.md)** for the web app roadmap and **[docs/DESKTOP_APP
 ## 📚 Key Files to Review
 
 - **[ROADMAP.md](ROADMAP.md)** - Prioritized web app roadmap
+- **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** - Deploy your own Terraviz instance on Cloudflare Pages (Pages, D1, AE, KV, Access, Grafana)
+- **[docs/ANALYTICS.md](docs/ANALYTICS.md)** - Analytics pipeline reference (schema, privacy posture, how to add events)
+- **[docs/ANALYTICS_CONTRIBUTING.md](docs/ANALYTICS_CONTRIBUTING.md)** - Contributor + reviewer guide for analytics changes (privacy invariants, review checklist)
+- **[docs/PRIVACY.md](docs/PRIVACY.md)** - User-facing privacy policy
 - **[docs/DESKTOP_APP_PLAN.md](docs/DESKTOP_APP_PLAN.md)** - Desktop app architecture and phases
 - **[STYLE_GUIDE.md](STYLE_GUIDE.md)** - UI design language (colors, surfaces, components)
 - **[CLAUDE.md](CLAUDE.md)** - Codebase instructions for AI-assisted development
@@ -308,6 +390,8 @@ When you find issues, note:
 
 ## 🔗 Resources
 
+- **Live web app**: https://terraviz.zyra-project.org
+- **Presentation poster**: https://poster.terraviz.zyra-project.org — scrollable companion to the [`zyra`](https://noaa-gsl.github.io/zyra/poster/), [`depot-explorer`](https://noaa-gsl.github.io/depot-explorer/), and [`zyra-editor`](https://zyra-project.github.io/zyra-editor/) posters; covers the architecture, AI docent, immersive WebXR, multi-platform delivery, federated catalog, and analytics pipeline. Source under [`poster/`](poster/).
 - **SOS Project**: https://sos.noaa.gov/
 - **Dataset Metadata**: https://s3.dualstack.us-east-1.amazonaws.com/metadata.sosexplorer.gov/dataset.json
 - **Video Proxy**: https://video-proxy.zyra-project.org/video/{VIMEO_ID}

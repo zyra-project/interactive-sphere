@@ -1,13 +1,81 @@
 /**
  * Cloudflare Pages Function — /api/feedback-admin
  *
- * Self-contained admin dashboard page for viewing feedback.
- * Prompts for the admin token, then fetches and renders dashboard data.
- * No build step — serves inline HTML.
+ * Self-contained admin dashboard for viewing feedback. Auth
+ * happens at the Cloudflare Access edge — by the time any
+ * request reaches this function, the staff member is already
+ * signed in via SSO.
+ *
+ * The single `/api/feedback-admin` path is the only Access
+ * destination needed: this function also dispatches all data
+ * operations via an `?action=` query parameter, so every admin
+ * operation inherits the same Access gate. The legacy
+ * stand-alone endpoints (`/api/feedback-dashboard`, `/api/feedback-export`,
+ * `/api/general-feedback-{dashboard,export,screenshot}`) still
+ * exist for direct scripting under the bearer-token fallback,
+ * but the dashboard UI no longer touches them.
+ *
+ *   GET /api/feedback-admin                            → HTML
+ *   GET /api/feedback-admin?action=ai-dashboard        → JSON
+ *   GET /api/feedback-admin?action=general-dashboard   → JSON
+ *   GET /api/feedback-admin?action=ai-export           → JSONL
+ *   GET /api/feedback-admin?action=general-export      → CSV
+ *   GET /api/feedback-admin?action=screenshot&id=N     → JSON
  */
 
-export const onRequestGet: PagesFunction = async (context) => {
-  const baseUrl = new URL(context.request.url).origin
+import { isInternalRequest } from './ingest'
+import {
+  fetchAiDashboard,
+  fetchGeneralDashboard,
+  fetchScreenshot,
+  streamAiExport,
+  streamGeneralExport,
+} from './_feedback-helpers'
+
+interface Env {
+  FEEDBACK_DB?: D1Database
+  FEEDBACK_ADMIN_TOKEN?: string
+}
+
+function authenticate(request: Request, token?: string): boolean {
+  if (isInternalRequest(request)) return true
+  if (!token) return false
+  const auth = request.headers.get('Authorization')
+  if (!auth) return false
+  const bearer = auth.replace(/^Bearer\s+/i, '')
+  return bearer === token
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+function jsonError(message: string, status: number): Response {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: JSON_HEADERS,
+  })
+}
+
+export const onRequestGet: PagesFunction<Env> = async (context) => {
+  const url = new URL(context.request.url)
+  const action = url.searchParams.get('action')
+
+  // Treat the param as "present" the moment it appears in the URL,
+  // even if blank — so `?action=` 400s rather than silently rendering
+  // the dashboard HTML the caller didn't ask for.
+  if (action !== null) {
+    return handleAction(context, action, url)
+  }
+
+  // Defense-in-depth: the HTML page only ships from inside an Access
+  // gate in production, but if the destination is ever removed or the
+  // policy misconfigures, fail closed instead of exposing the admin
+  // shell. Same auth surface as the data actions so behaviour is
+  // uniform — Access in prod, bearer token in `wrangler dev`.
+  if (!authenticate(context.request, context.env.FEEDBACK_ADMIN_TOKEN)) {
+    return jsonError('Unauthorized', 401)
+  }
+
+  const baseUrl = url.origin
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -161,23 +229,13 @@ export const onRequestGet: PagesFunction = async (context) => {
   </style>
 </head>
 <body>
-  <div class="login-overlay" id="login">
-    <div class="login-box">
-      <h1>Feedback Dashboard</h1>
-      <p>Enter the admin token to view the dashboard</p>
-      <input type="password" id="token-input" placeholder="Admin token" autocomplete="off">
-      <button id="login-btn">Sign in</button>
-      <div class="login-error" id="login-error"></div>
-    </div>
-  </div>
-
-  <div class="dashboard hidden" id="dashboard">
+  <div class="dashboard" id="dashboard">
     <div class="dash-header">
       <h1>Feedback Dashboard</h1>
       <div class="dash-actions">
         <button id="refresh-btn">Refresh</button>
         <button id="export-btn">Export JSONL</button>
-        <button id="logout-btn">Logout</button>
+        <button id="logout-btn">Sign out</button>
       </div>
     </div>
     <div class="tab-bar" role="tablist">
@@ -189,25 +247,22 @@ export const onRequestGet: PagesFunction = async (context) => {
 
   <script>
     const BASE = ${JSON.stringify(baseUrl)};
-    let token = sessionStorage.getItem('feedback-token') || '';
     let activeTab = 'ai';
 
-    // Auto-login if token is stored
-    if (token) { tryLogin(token); }
+    // Auth happens at the Cloudflare Access edge — by the time
+    // this script runs, the staff member is already signed in
+    // and the Access session cookie travels with every fetch
+    // automatically. No bearer token in code.
+    loadDashboard();
 
-    document.getElementById('login-btn').addEventListener('click', () => {
-      const t = document.getElementById('token-input').value.trim();
-      if (t) tryLogin(t);
-    });
-    document.getElementById('token-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('login-btn').click();
-    });
     document.getElementById('refresh-btn').addEventListener('click', () => loadDashboard());
     document.getElementById('logout-btn').addEventListener('click', () => {
-      token = '';
-      sessionStorage.removeItem('feedback-token');
-      document.getElementById('login').classList.remove('hidden');
-      document.getElementById('dashboard').classList.add('hidden');
+      // Cloudflare Access logout URL — invalidates the team-wide
+      // session so visiting any gated app forces re-authentication.
+      // The team subdomain is the same one Access redirected the
+      // user to during sign-in, so a relative /cdn-cgi path works
+      // from any application origin gated by the same team.
+      window.location.href = '/cdn-cgi/access/logout';
     });
     document.getElementById('export-btn').addEventListener('click', exportActiveTab);
 
@@ -231,11 +286,9 @@ export const onRequestGet: PagesFunction = async (context) => {
     async function exportActiveTab() {
       try {
         const endpoint = activeTab === 'ai'
-          ? '/api/feedback-export?include_prompt=true'
-          : '/api/general-feedback-export';
-        const res = await fetch(BASE + endpoint, {
-          headers: { 'Authorization': 'Bearer ' + token }
-        });
+          ? '/api/feedback-admin?action=ai-export&include_prompt=true'
+          : '/api/feedback-admin?action=general-export';
+        const res = await fetch(BASE + endpoint);
         if (!res.ok) throw new Error('Export failed');
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -249,32 +302,17 @@ export const onRequestGet: PagesFunction = async (context) => {
       } catch (err) { alert(err.message); }
     }
 
-    async function tryLogin(t) {
-      const err = document.getElementById('login-error');
-      try {
-        const res = await fetch(BASE + '/api/feedback-dashboard', {
-          headers: { 'Authorization': 'Bearer ' + t }
-        });
-        if (res.status === 401) { err.textContent = 'Invalid token'; return; }
-        if (!res.ok) { err.textContent = 'Server error: ' + res.status; return; }
-        token = t;
-        sessionStorage.setItem('feedback-token', t);
-        document.getElementById('login').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-        const data = await res.json();
-        renderDashboard(data);
-      } catch (e) { err.textContent = 'Connection failed'; }
-    }
-
     async function loadDashboard() {
       document.getElementById('content').innerHTML = '<div class="loading">Loading...</div>';
       const endpoint = activeTab === 'ai'
-        ? '/api/feedback-dashboard?days=30&recent=100'
-        : '/api/general-feedback-dashboard?days=30&recent=100';
+        ? '/api/feedback-admin?action=ai-dashboard&days=30&recent=100'
+        : '/api/feedback-admin?action=general-dashboard&days=30&recent=100';
       try {
-        const res = await fetch(BASE + endpoint, {
-          headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await fetch(BASE + endpoint);
+        if (!res.ok) {
+          document.getElementById('content').innerHTML = '<div class="loading">Server error: ' + res.status + '</div>';
+          return;
+        }
         const data = await res.json();
         if (activeTab === 'ai') renderDashboard(data);
         else renderGeneralDashboard(data);
@@ -460,9 +498,8 @@ export const onRequestGet: PagesFunction = async (context) => {
 
       // Lazy-fetch the screenshot
       if (r.hasScreenshot) {
-        fetch(BASE + '/api/general-feedback-screenshot?id=' + encodeURIComponent(r.id), {
-          headers: { 'Authorization': 'Bearer ' + token }
-        }).then(res => res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status)))
+        fetch(BASE + '/api/feedback-admin?action=screenshot&id=' + encodeURIComponent(r.id))
+          .then(res => res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status)))
           .then(data => {
             const slot = document.getElementById('detail-screenshot-slot');
             if (!slot || !data.screenshot) return;
@@ -570,4 +607,76 @@ export const onRequestGet: PagesFunction = async (context) => {
   return new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
+}
+
+async function handleAction(
+  context: EventContext<Env, string, unknown>,
+  action: string,
+  url: URL,
+): Promise<Response> {
+  if (!authenticate(context.request, context.env.FEEDBACK_ADMIN_TOKEN)) {
+    return jsonError('Unauthorized', 401)
+  }
+
+  const db = context.env.FEEDBACK_DB
+  if (!db) {
+    return jsonError('Database not configured', 503)
+  }
+
+  try {
+    switch (action) {
+      case 'ai-dashboard': {
+        const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '30') || 30, 1), 365)
+        const recent = Math.min(Math.max(parseInt(url.searchParams.get('recent') ?? '50') || 50, 1), 200)
+        const data = await fetchAiDashboard(db, days, recent)
+        return new Response(JSON.stringify(data), { headers: JSON_HEADERS })
+      }
+      case 'general-dashboard': {
+        const days = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '30') || 30, 1), 365)
+        const recent = Math.min(Math.max(parseInt(url.searchParams.get('recent') ?? '100') || 100, 1), 200)
+        const data = await fetchGeneralDashboard(db, days, recent)
+        return new Response(JSON.stringify(data), { headers: JSON_HEADERS })
+      }
+      case 'ai-export': {
+        const since = url.searchParams.get('since')
+        const rating = url.searchParams.get('rating')
+        const includePrompt = url.searchParams.get('include_prompt') === 'true'
+        const limit = parseInt(url.searchParams.get('limit') ?? '1000') || 1000
+        const stream = await streamAiExport(db, { since, rating, includePrompt, limit })
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'application/jsonl',
+            'Content-Disposition': `attachment; filename="feedback-export-${new Date().toISOString().slice(0, 10)}.jsonl"`,
+          },
+        })
+      }
+      case 'general-export': {
+        const since = url.searchParams.get('since')
+        const kind = url.searchParams.get('kind')
+        const limit = parseInt(url.searchParams.get('limit') ?? '10000') || 10000
+        const stream = await streamGeneralExport(db, { since, kind, limit })
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="general-feedback-export-${new Date().toISOString().slice(0, 10)}.csv"`,
+          },
+        })
+      }
+      case 'screenshot': {
+        const idParam = url.searchParams.get('id')
+        const id = idParam ? parseInt(idParam, 10) : NaN
+        if (!Number.isFinite(id) || id <= 0) {
+          return jsonError('Invalid id', 400)
+        }
+        const result = await fetchScreenshot(db, id)
+        if (!result) return jsonError('Not found', 404)
+        return new Response(JSON.stringify(result), { headers: JSON_HEADERS })
+      }
+      default:
+        return jsonError('Unknown action', 400)
+    }
+  } catch (err) {
+    console.error(`feedback-admin action=${action} failed:`, err)
+    return jsonError('Query failed', 500)
+  }
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Dataset, ChatMessage, DocentConfig } from '../types'
-import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime } from './docentService'
+import { processMessage, loadConfig, saveConfig, getDefaultConfig, validateAndCleanText, captureViewContext, readCurrentTime, executeSearchDatasets, executeListFeaturedDatasets, clearPreSearchCache } from './docentService'
+import { getDegradedReason, resetForTests as resetDegradedForTests } from './docentDegradedState'
 import type { DocentStreamChunk } from './docentService'
 
 vi.mock('./llmProvider', () => ({
@@ -38,6 +39,11 @@ beforeEach(() => {
   vi.restoreAllMocks()
   // Clear localStorage
   try { localStorage.clear() } catch { /* ok */ }
+  // Drop the per-session pre-search LRU so cache hits from one
+  // test don't leak into the next.
+  clearPreSearchCache()
+  // Reset Phase 1f/D degraded-mode state between tests.
+  resetDegradedForTests()
 })
 
 describe('processMessage — local fallback', () => {
@@ -329,17 +335,51 @@ describe('processMessage — LLM path', () => {
   })
 })
 
-describe('processMessage — auto-inject Load buttons', () => {
-  it('auto-injects action when LLM mentions a pre-search title without markers', async () => {
-    // Regression test: the auto-inject safety net should emit a load-dataset
-    // action when the LLM mentions a dataset title from the pre-search results
-    // in its prose but doesn't include a <<LOAD:...>> marker for it.
+describe('processMessage — pre-search injection (1d/AC)', () => {
+  it('injects [RELEVANT DATASETS] from search_datasets results for discovery intents', async () => {
+    // The pre-search safety net (1d/F removed it, 1d/AC restored
+    // it sourced from Vectorize). For a discovery-intent query the
+    // server-side runs search_datasets BEFORE calling the LLM and
+    // inlines the results into the user message so the LLM has
+    // grounded IDs without having to tool-call. This closes the
+    // chip-render reliability gap on small/mid LLMs that
+    // confabulate id-shaped strings.
     const { streamChat } = await import('./llmProvider')
     const mockedStream = vi.mocked(streamChat)
 
-    // LLM response mentions the dataset by title but NO <<LOAD:...>> marker
-    mockedStream.mockImplementation(async function* () {
-      yield { type: 'delta' as const, text: 'Here is a great dataset: Sea Surface Temperature — it shows global ocean temperatures.' }
+    // Stub the /api/v1/search call to return one real-looking ULID hit.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        return new Response(
+          JSON.stringify({
+            datasets: [
+              {
+                id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+                title: 'Hurricane Season - 2024',
+                abstract_snippet: 'Atlantic hurricane track animation.',
+                categories: ['Tropical Cyclones'],
+                peer_id: 'local',
+                score: 0.91,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    let userMessageContent = ''
+    mockedStream.mockImplementation(async function* (msgs) {
+      const userMsg = msgs.find(m => m.role === 'user')
+      if (userMsg) {
+        userMessageContent =
+          typeof userMsg.content === 'string'
+            ? userMsg.content
+            : JSON.stringify(userMsg.content)
+      }
+      yield { type: 'delta' as const, text: 'Reply.' }
       yield { type: 'done' as const }
     })
 
@@ -353,8 +393,185 @@ describe('processMessage — auto-inject Load buttons', () => {
     }
 
     const chunks: DocentStreamChunk[] = []
-    // Query "sea surface temperature" triggers pre-search which returns
-    // the SST dataset. The LLM mentions it by title but skips the marker.
+    for await (const chunk of processMessage('show me datasets about hurricanes', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // The user message that reached the LLM should contain the
+    // [RELEVANT DATASETS] block with the real ULID.
+    expect(userMessageContent).toContain('[RELEVANT DATASETS')
+    expect(userMessageContent).toContain('01KQFFCEE4Q7NQGJNFB0Z042MC')
+    expect(userMessageContent).toContain('Hurricane Season - 2024')
+  })
+
+  it('does not inject [RELEVANT DATASETS] for non-discovery (knowledge) queries', async () => {
+    // Knowledge questions ("what are hurricanes") shouldn't burn
+    // the pre-search round-trip. parseIntent classifies them as
+    // 'search' too (anything with content is search by default),
+    // but greetings / explanations of the current view should
+    // skip the injection. This test pins the gate.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let userMessageContent = ''
+    let searchFetchCount = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        searchFetchCount++
+        return new Response(JSON.stringify({ datasets: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    mockedStream.mockImplementation(async function* (msgs) {
+      const userMsg = msgs.find(m => m.role === 'user')
+      if (userMsg) {
+        userMessageContent =
+          typeof userMsg.content === 'string'
+            ? userMsg.content
+            : JSON.stringify(userMsg.content)
+      }
+      yield { type: 'delta' as const, text: 'Hi!' }
+      yield { type: 'done' as const }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('hello', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // 'hello' classifies as a greeting; no pre-search should fire,
+    // and the injected block should not appear.
+    expect(searchFetchCount).toBe(0)
+    expect(userMessageContent).not.toContain('[RELEVANT DATASETS')
+  })
+
+  it('1f/O — short-circuits to local engine when pre-search returns degraded', async () => {
+    // The brief promised "the docent transparently routes through
+    // the local-engine fallback" when search degrades. Pre-1f/O the
+    // search-side path only flipped the badge and returned empty
+    // hits — the LLM still got called with an empty
+    // [RELEVANT DATASETS] block and either confabulated IDs (chips
+    // stripped) or short-circuited with no recommendations. This
+    // test pins the new behaviour: degraded pre-search → no LLM
+    // round, local-engine result wins, fallback flag set.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/api/v1/search')) {
+        return new Response(
+          JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    mockedStream.mockImplementation(async function* () {
+      // If the short-circuit works, this generator never runs.
+      yield { type: 'delta' as const, text: 'LLM SHOULD NOT FIRE' }
+      yield { type: 'done' as const }
+    })
+    // `vi.mocked(streamChat)` is module-scoped — call counts
+    // leak from prior tests in the file. Reset just before our
+    // assertion to scope the count to this case only.
+    mockedStream.mockClear()
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me datasets about hurricanes', [], datasets, null, config)) {
+      chunks.push(chunk)
+    }
+
+    // The LLM stream must NOT have been invoked.
+    expect(mockedStream).not.toHaveBeenCalled()
+    // The terminal chunk must mark this turn as a fallback.
+    const done = chunks.find(c => c.type === 'done') as
+      | { type: 'done'; fallback: boolean }
+      | undefined
+    expect(done?.fallback).toBe(true)
+    // None of the emitted text should be the LLM's stub.
+    const text = chunks
+      .filter(c => c.type === 'delta')
+      .map(c => (c as { type: 'delta'; text: string }).text)
+      .join('')
+    expect(text).not.toContain('LLM SHOULD NOT FIRE')
+  })
+})
+
+describe('processMessage — auto-inject Load buttons', () => {
+  it('auto-injects action when LLM mentions a tool-result title without markers', async () => {
+    // Regression test: when the LLM calls a discovery tool, gets a
+    // result, and then mentions a dataset title from that result in
+    // prose without an accompanying <<LOAD:...>> marker, the
+    // auto-inject safety net should emit a load-dataset action. This
+    // catches the failure mode where small models drop markers under
+    // pressure but still recommend the right dataset.
+    //
+    // Pre-1d/F this test seeded `searchResultsThisAttempt` via the
+    // [RELEVANT DATASETS] pre-search injection; with that injection
+    // removed the seed has to come from a tool call instead.
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let callCount = 0
+    mockedStream.mockImplementation(async function* () {
+      callCount++
+      if (callCount === 1) {
+        // Round 1: LLM calls search_catalog to discover the SST dataset.
+        yield {
+          type: 'tool_call' as const,
+          call: {
+            id: 'call_search_1',
+            name: 'search_catalog',
+            arguments: { query: 'sea surface temperature' },
+          },
+        }
+        yield { type: 'done' as const }
+      } else {
+        // Round 2: LLM has the search result and mentions the dataset
+        // by title but forgets the <<LOAD:...>> marker.
+        yield {
+          type: 'delta' as const,
+          text: 'Here is a great dataset: Sea Surface Temperature — it shows global ocean temperatures.',
+        }
+        yield { type: 'done' as const }
+      }
+    })
+
+    const config: DocentConfig = {
+      apiUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      model: 'test',
+      enabled: true,
+      readingLevel: 'general',
+      visionEnabled: false,
+    }
+
+    const chunks: DocentStreamChunk[] = []
     for await (const chunk of processMessage('sea surface temperature', [], datasets, null, config)) {
       chunks.push(chunk)
     }
@@ -497,6 +714,18 @@ describe('validateAndCleanText', () => {
     expect(invalidIds.has('INTERNAL_FAKE_OCEAN')).toBe(true)
   })
 
+  it('strips bare invalid INTERNAL_ IDs case-insensitively (1d/AD)', () => {
+    // 1d/Z added the `i` flag to detection but the strip pass kept
+    // the case-sensitive form, so lowercase invalid mentions like
+    // `internal_sos_123` were detected and added to invalidIds but
+    // not removed from the user-visible prose. Detection and
+    // stripping now both run case-insensitively.
+    const text = 'Check out internal_fake_ocean for ocean data'
+    const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
+    expect(cleanedText).not.toContain('internal_fake_ocean')
+    expect(invalidIds.has('internal_fake_ocean')).toBe(true)
+  })
+
   it('keeps bare valid INTERNAL_ IDs in prose', () => {
     const ds = [makeDataset({ id: 'INTERNAL_SST_001' })]
     const text = 'Check out INTERNAL_SST_001 for SST data'
@@ -505,11 +734,168 @@ describe('validateAndCleanText', () => {
     expect(validIds.has('INTERNAL_SST_001')).toBe(true)
   })
 
+  // -------------------------------------------------------------
+  // Phase 1c — title-overlap fallback (catalog(1c/N))
+  // -------------------------------------------------------------
+
+  it('resolves a marker whose contents are a near-title via token overlap', () => {
+    // Real failure mode from PR #59: the LLM put a title-shaped
+    // payload in the marker that didn't share a prefix with the
+    // catalog title. Token-overlap rescues it.
+    const ds = [
+      makeDataset({ id: 'INTERNAL_SOS_42', title: 'Sea Ice Extent (Arctic 1979-2020)' }),
+      makeDataset({ id: 'INTERNAL_SOS_99', title: 'Wildfire Smoke Tracking' }),
+    ]
+    const text = 'Take a look at this one.\n<<LOAD:Arctic Sea Ice Extent>>\nIt covers 1979 onward.'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(validIds.has('INTERNAL_SOS_42')).toBe(true)
+    expect(invalidIds.size).toBe(0)
+    // The marker contents get rewritten to the canonical id so the
+    // chat UI's [[LOAD:...]] roundtrip in conversation history sees
+    // a stable payload.
+    expect(cleanedText).toContain('<<LOAD:INTERNAL_SOS_42>>')
+    expect(cleanedText).not.toContain('Arctic Sea Ice Extent>>')
+  })
+
+  it('strips when the overlap is ambiguous (tie at the top)', () => {
+    // Two datasets share an equal token overlap on a marker that
+    // is NOT a prefix of either title — better strip than load the
+    // wrong dataset. The marker word order is shuffled so the
+    // existing startsWith rescue can't resolve it first.
+    const ds = [
+      makeDataset({ id: 'INTERNAL_A', title: 'Atlantic Sea Surface Temperature Anomaly' }),
+      makeDataset({ id: 'INTERNAL_B', title: 'Pacific Sea Surface Temperature Anomaly' }),
+    ]
+    const text = '<<LOAD:Surface Temperature Anomaly Sea>>\n'
+    const { invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.has('Surface Temperature Anomaly Sea')).toBe(true)
+  })
+
+  it('strips when the marker has fewer than 2 content tokens', () => {
+    // `idTokens.size < 2` short-circuit. "Specific" is one content
+    // token (the rest are stop words / under length); not enough
+    // for a confident match.
+    const ds = [makeDataset({ id: 'INTERNAL_X', title: 'Some Specific Climate Reanalysis Project' })]
+    const text = '<<LOAD:specific>>\n'
+    const { invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.has('specific')).toBe(true)
+  })
+
+  it('strips when the marker has 2+ tokens but overlap is below the 3-shared-tokens floor', () => {
+    // Two distinct content tokens, only one shared with the catalog
+    // title — falls below the ≥ 3 floor.
+    const ds = [makeDataset({ id: 'INTERNAL_X', title: 'Volcanic Eruption Plume Tracking 2010' })]
+    const text = '<<LOAD:Aurora Borealis Volcanic>>\n'
+    const { invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.has('Aurora Borealis Volcanic')).toBe(true)
+  })
+
+  it('strips when the marker is mostly stop words (token-overlap rescue must not fire on noise)', () => {
+    const ds = [makeDataset({ id: 'INTERNAL_X', title: 'Global Earth Data Visualization' })]
+    const text = '<<LOAD:Global Data>>\n'
+    const { invalidIds } = validateAndCleanText(text, ds)
+    // "global" and "data" are both stop words for the matcher, so
+    // the marker has zero content tokens and falls through to invalid.
+    expect(invalidIds.has('Global Data')).toBe(true)
+  })
+
+  it('strips malformed single-bracket marker shapes too', () => {
+    // Regression for Copilot review on PR #59: the strip regex
+    // had tightened to `<<LOAD:...>>` while the collect regex
+    // remained tolerant `<?<LOAD:...>>?`. Single-bracket variants
+    // got classified as invalid yet stayed visible in the prose.
+    const ds = [makeDataset()]
+    const text = 'Try this <LOAD:UNKNOWN_ID> here.\nAnd this <<LOAD:OTHER>.'
+    const { cleanedText, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.has('UNKNOWN_ID')).toBe(true)
+    expect(invalidIds.has('OTHER')).toBe(true)
+    // Both malformed markers must be removed from prose.
+    expect(cleanedText).not.toContain('LOAD:')
+  })
+
   it('returns empty invalidIds when all IDs are valid', () => {
     const text = 'No dataset references here, just plain text.'
     const { cleanedText, invalidIds } = validateAndCleanText(text, datasets)
     expect(cleanedText).toBe(text)
     expect(invalidIds.size).toBe(0)
+  })
+
+  it('resolves <<LOAD:legacy_id>> to the canonical ULID via legacyId fallback (1d/U)', () => {
+    // Post-cutover the catalog's primary id is a ULID, but tour
+    // files and LLM responses sometimes carry the row's bulk-import
+    // provenance id (e.g. INTERNAL_SOS_768). The marker validator
+    // should resolve those rather than stripping them, mirroring
+    // the dataService.getDatasetById fallback added in 1d/T.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        legacyId: 'INTERNAL_SOS_768',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = 'Here you go.\n<<LOAD:INTERNAL_SOS_768>>\n'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+    // The marker payload gets rewritten to the canonical ULID so
+    // the chat UI's [[LOAD:...]] round-trip stays consistent.
+    expect(cleanedText).toContain('<<LOAD:01KQFFCEE4Q7NQGJNFB0Z042MC>>')
+    expect(cleanedText).not.toContain('INTERNAL_SOS_768')
+  })
+
+  it('resolves bare INTERNAL_* mentions in prose via legacyId fallback (1d/U)', () => {
+    // The bare-INTERNAL pattern at the bottom of validateAndCleanText
+    // also gains the legacyId fallback so an LLM that mentions a
+    // legacy id outside a marker still resolves to the right
+    // dataset.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        legacyId: 'INTERNAL_SOS_768',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = 'See INTERNAL_SOS_768 for more.\n'
+    const { validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+  })
+
+  it('resolves lowercase marker IDs by case-normalising before lookup (1d/Z)', () => {
+    // Llama-4-scout (and other models) sometimes lowercase the id
+    // when emitting a marker — `<<LOAD:internal_sos_476>>` for a row
+    // whose canonical legacy_id is `INTERNAL_SOS_476`. Pre-1d/Z the
+    // exact case-sensitive lookup stripped these as hallucinated.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCXXXXXXXXXXXXXXXXXX1',
+        legacyId: 'INTERNAL_SOS_476',
+        title: 'Demo Dataset',
+      }),
+    ]
+    const text = '<<LOAD:internal_sos_476>>\n'
+    const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, ds)
+    expect(invalidIds.size).toBe(0)
+    expect(validIds.has('01KQFFCXXXXXXXXXXXXXXXXXX1')).toBe(true)
+    // Marker payload rewritten to the canonical ULID so the chat UI
+    // round-trip stays consistent.
+    expect(cleanedText).toContain('<<LOAD:01KQFFCXXXXXXXXXXXXXXXXXX1>>')
+  })
+
+  it('resolves lowercase ULID markers by case-normalising before lookup (1d/Z)', () => {
+    // Same case-insensitivity needed for ULIDs themselves — Crockford
+    // base32 is uppercase canonical but small models sometimes
+    // lowercase the entire id.
+    const ds = [
+      makeDataset({
+        id: '01KQFFCEE4Q7NQGJNFB0Z042MC',
+        title: 'Hurricane Season - 2024',
+      }),
+    ]
+    const text = '<<LOAD:01kqffcee4q7nqgjnfb0z042mc>>\n'
+    const { cleanedText, validIds } = validateAndCleanText(text, ds)
+    expect(validIds.has('01KQFFCEE4Q7NQGJNFB0Z042MC')).toBe(true)
+    expect(cleanedText).toContain('<<LOAD:01KQFFCEE4Q7NQGJNFB0Z042MC>>')
   })
 
   it('extracts <<FLY:lat,lon>> markers', () => {
@@ -664,7 +1050,7 @@ describe('config management', () => {
   it('returns default config when nothing saved', () => {
     const config = loadConfig()
     expect(config.apiUrl).toBe('/api')
-    expect(config.model).toBe('llama-3.1-70b')
+    expect(config.model).toBe('llama-4-scout')
     expect(config.enabled).toBe(true)
   })
 
@@ -917,7 +1303,7 @@ describe('processMessage — vision mode', () => {
     const config: DocentConfig = {
       apiUrl: '/api',
       apiKey: '',
-      model: 'llama-3.1-70b',
+      model: 'llama-4-scout',
       enabled: true,
       readingLevel: 'general',
       visionEnabled: true,
@@ -945,7 +1331,7 @@ describe('processMessage — vision mode', () => {
     const config: DocentConfig = {
       apiUrl: '/api/',
       apiKey: '',
-      model: 'llama-3.1-70b',
+      model: 'llama-4-scout',
       enabled: true,
       readingLevel: 'general',
       visionEnabled: true,
@@ -1444,5 +1830,427 @@ describe('processMessage — rewrite for Phase 5 markers', () => {
     const rewrite = chunks.find(c => c.type === 'rewrite') as { type: 'rewrite'; text: string } | undefined
     expect(rewrite).toBeDefined()
     expect(rewrite!.text).not.toContain('REGION')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 1c — backend discovery tools
+// ---------------------------------------------------------------------------
+
+const baseConfig: DocentConfig = {
+  apiUrl: '/api',
+  apiKey: '',
+  model: 'test',
+  enabled: true,
+  readingLevel: 'general',
+  visionEnabled: false,
+}
+
+describe('executeSearchDatasets', () => {
+  it('returns empty for blank query without hitting the network', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const result = await executeSearchDatasets({ query: '   ' }, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('returns empty when apiUrl is unset', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const result = await executeSearchDatasets(
+      { query: 'hurricane' },
+      { ...baseConfig, apiUrl: '' },
+    )
+    expect(result).toEqual({ datasets: [] })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('hits /api/v1/search?q= with the right params and surfaces the dataset list', async () => {
+    const datasetsResp = [
+      { id: 'DS001', title: 'Atlantic Hurricane Tracks', abstract_snippet: 'A.', categories: ['Atmosphere'], peer_id: 'local', score: 0.91 },
+    ]
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: datasetsResp }), { status: 200 }))
+
+    const result = await executeSearchDatasets({ query: 'hurricane', limit: 7 }, baseConfig)
+    expect(result.datasets).toEqual(datasetsResp)
+
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.pathname).toBe('/api/v1/search')
+    expect(url.searchParams.get('q')).toBe('hurricane')
+    expect(url.searchParams.get('limit')).toBe('7')
+  })
+
+  it('clamps limit to the route-layer max (50)', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeSearchDatasets({ query: 'hurricane', limit: 9999 }, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.searchParams.get('limit')).toBe('50')
+  })
+
+  it('soft-degrades to empty on non-OK response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream', { status: 500 }))
+    const result = await executeSearchDatasets({ query: 'hurricane' }, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+  })
+
+  it('soft-degrades to empty on fetch throw', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'))
+    const result = await executeSearchDatasets({ query: 'hurricane' }, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+  })
+
+  it('treats a degraded response as an empty dataset list (the LLM moves on)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ datasets: [], degraded: 'unconfigured' }), { status: 200 }),
+    )
+    const result = await executeSearchDatasets({ query: 'hurricane' }, baseConfig)
+    expect(result.datasets).toEqual([])
+  })
+})
+
+describe('executeListFeaturedDatasets', () => {
+  it('hits /api/v1/featured with the limit param', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeListFeaturedDatasets({ limit: 4 }, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.pathname).toBe('/api/v1/featured')
+    expect(url.searchParams.get('limit')).toBe('4')
+  })
+
+  it('defaults limit to 6 when none is supplied', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeListFeaturedDatasets({}, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.searchParams.get('limit')).toBe('6')
+  })
+
+  it('caps limit at 24', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    await executeListFeaturedDatasets({ limit: 200 }, baseConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.searchParams.get('limit')).toBe('24')
+  })
+
+  it('soft-degrades to empty on fetch error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('boom'))
+    const result = await executeListFeaturedDatasets({}, baseConfig)
+    expect(result).toEqual({ datasets: [] })
+  })
+
+  it('targets the same-origin /api base regardless of config.apiUrl (LLM endpoint)', async () => {
+    // Regression for Copilot review on PR #59: `config.apiUrl` is
+    // the LLM chat-completions endpoint (often `https://api.openai.com/v1`
+    // or `http://localhost:11434/v1`); the catalog backend lives at
+    // the app origin. The pre-fix code did
+    // `${config.apiUrl}/v1/featured`, hitting `…/v1/v1/featured` and
+    // 404-ing on every call.
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    const llmConfig: DocentConfig = {
+      ...baseConfig,
+      apiUrl: 'https://api.openai.com/v1',
+    }
+    await executeListFeaturedDatasets({}, llmConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    // Path is `/api/v1/featured` regardless of the LLM endpoint.
+    expect(url.pathname).toBe('/api/v1/featured')
+    // Host is the app origin (window.location), NOT api.openai.com.
+    expect(url.host).not.toBe('api.openai.com')
+  })
+})
+
+describe('executeSearchDatasets — per-session pre-search cache (1f/C)', () => {
+  it('serves a repeat call within the TTL window from cache without a second fetch', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ datasets: [{ id: 'X', title: 't', abstract_snippet: '', categories: [], peer_id: 'p', score: 0.5 }] }), { status: 200 }),
+      )
+    const a = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    const b = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(a).toEqual(b)
+  })
+
+  it('canonicalises trivial query variations onto the same cache entry', async () => {
+    // mockImplementation returns a fresh Response each call — Response
+    // bodies are single-read, so mockResolvedValue would re-share a
+    // consumed body across calls and route through the catch path.
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    await executeSearchDatasets({ query: 'Hurricanes  ', limit: 5 }, baseConfig)
+    await executeSearchDatasets({ query: 'hurricanes!', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches when the limit changes', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    await executeSearchDatasets({ query: 'hurricanes', limit: 10 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache transient failures (non-OK or thrown)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    // First call: server 500. Second call: server 200. The 500 should
+    // not poison the cache — the second call must re-issue.
+    fetchSpy
+      .mockResolvedValueOnce(new Response('upstream', { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ datasets: [{ id: 'Y', title: 't', abstract_snippet: '', categories: [], peer_id: 'p', score: 0.5 }] }), { status: 200 }),
+      )
+    const first = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    expect(first.datasets).toEqual([])
+    const second = await executeSearchDatasets({ query: 'hurricanes', limit: 5 }, baseConfig)
+    expect(second.datasets).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('expires entries past the TTL', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-05-01T12:00:00.000Z'))
+      await executeSearchDatasets({ query: 'tides', limit: 5 }, baseConfig)
+      // 5 min + 1 ms past the TTL.
+      vi.setSystemTime(new Date('2026-05-01T12:05:00.001Z'))
+      await executeSearchDatasets({ query: 'tides', limit: 5 }, baseConfig)
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('evicts the least-recently-touched entry past the LRU limit', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    // Fill 16 distinct queries — exactly at the limit.
+    for (let i = 0; i < 16; i++) {
+      await executeSearchDatasets({ query: `topic-${i}`, limit: 5 }, baseConfig)
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(16)
+    // 17th query evicts topic-0.
+    await executeSearchDatasets({ query: 'topic-16', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(17)
+    // topic-1 was the next-oldest; assert it's still cached BEFORE
+    // the topic-0 lookup, because that lookup is a miss + insert
+    // that would itself evict topic-1.
+    await executeSearchDatasets({ query: 'topic-1', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(17)
+    // topic-0 is no longer cached → re-fetches.
+    await executeSearchDatasets({ query: 'topic-0', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(18)
+  })
+
+  it('clearPreSearchCache forces the next call to refetch', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+    await executeSearchDatasets({ query: 'aurora', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    clearPreSearchCache()
+    await executeSearchDatasets({ query: 'aurora', limit: 5 }, baseConfig)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('executeSearchDatasets — quota-exhausted degraded handling (1f/D)', () => {
+  it('marks the SPA degraded when the response carries degraded=quota_exhausted', async () => {
+    expect(getDegradedReason()).toBeNull()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+        { status: 200 },
+      ),
+    )
+    const result = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(result.datasets).toEqual([])
+    expect(getDegradedReason()).toBe('quota_exhausted')
+  })
+
+  it('does not flip the badge for the unconfigured degraded reason', async () => {
+    expect(getDegradedReason()).toBeNull()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ datasets: [], degraded: 'unconfigured' }),
+        { status: 200 },
+      ),
+    )
+    await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(getDegradedReason()).toBeNull()
+  })
+
+  it('does not cache a degraded response (1f/J — transient by nature)', async () => {
+    // First call: server returns degraded=quota_exhausted (empty hits).
+    // Second call (same query): server now returns real hits — quota
+    // recovered. Without the 1f/J fix the second call would hit the
+    // cache and serve empty hits for the rest of the TTL window.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ datasets: [], degraded: 'quota_exhausted' }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            datasets: [
+              {
+                id: 'DS001',
+                title: 'A',
+                abstract_snippet: '',
+                categories: [],
+                peer_id: 'p',
+                score: 0.8,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+    const first = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(first.datasets).toEqual([])
+    const second = await executeSearchDatasets({ query: 'thunder', limit: 5 }, baseConfig)
+    expect(second.datasets).toHaveLength(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('executeSearchDatasets — catalog URL is decoupled from LLM apiUrl', () => {
+  it('always targets /api/v1/search regardless of LLM endpoint', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ datasets: [] }), { status: 200 }))
+
+    const llmConfig: DocentConfig = {
+      ...baseConfig,
+      apiUrl: 'http://localhost:11434/v1', // Ollama-style endpoint
+    }
+    await executeSearchDatasets({ query: 'hurricane' }, llmConfig)
+    const url = new URL(fetchSpy.mock.calls[0][0] as string)
+    expect(url.pathname).toBe('/api/v1/search')
+    expect(url.host).not.toBe('localhost:11434')
+  })
+})
+
+describe('processMessage — backend tool round-trip', () => {
+  it('feeds a search_datasets tool result back to the LLM on the next round', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let callCount = 0
+    let round2Messages: any[] | null = null
+    mockedStream.mockImplementation(async function* (msgs) {
+      callCount++
+      if (callCount === 1) {
+        yield {
+          type: 'tool_call' as const,
+          call: {
+            id: 'call_search_dat_1',
+            name: 'search_datasets',
+            arguments: { query: 'hurricane' },
+          },
+        }
+        yield { type: 'done' as const }
+      } else {
+        round2Messages = [...msgs]
+        yield { type: 'delta' as const, text: 'Here are some matching datasets.' }
+        yield { type: 'done' as const }
+      }
+    })
+
+    const datasetsResp = [
+      { id: 'DS_HURR', title: 'Atlantic Hurricane Tracks', abstract_snippet: 'A.', categories: ['Atmosphere'], peer_id: 'local', score: 0.9 },
+    ]
+    // mockImplementation rather than mockResolvedValue — each fetch
+    // call gets a fresh Response. Pre-search injection (1d/AC) now
+    // calls /api/v1/search before the LLM does too, so a stale
+    // Response object whose body was already consumed would leave
+    // the tool-call-dispatch round with `{datasets:[]}`.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ datasets: datasetsResp }), { status: 200 }),
+    )
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('hurricane', [], datasets, null, baseConfig)) {
+      chunks.push(chunk)
+    }
+
+    expect(callCount).toBe(2)
+    expect(round2Messages).not.toBeNull()
+    const toolMsg = round2Messages!.find((m: any) => m.role === 'tool')
+    expect(toolMsg).toBeDefined()
+    expect(toolMsg.tool_call_id).toBe('call_search_dat_1')
+    const content = typeof toolMsg.content === 'string' ? toolMsg.content : ''
+    expect(content).toContain('Atlantic Hurricane Tracks')
+  })
+
+  it('feeds a list_featured_datasets tool result back to the LLM', async () => {
+    const { streamChat } = await import('./llmProvider')
+    const mockedStream = vi.mocked(streamChat)
+
+    let callCount = 0
+    let round2Messages: any[] | null = null
+    mockedStream.mockImplementation(async function* (msgs) {
+      callCount++
+      if (callCount === 1) {
+        yield {
+          type: 'tool_call' as const,
+          call: {
+            id: 'call_feat_1',
+            name: 'list_featured_datasets',
+            arguments: { limit: 3 },
+          },
+        }
+        yield { type: 'done' as const }
+      } else {
+        round2Messages = [...msgs]
+        yield { type: 'delta' as const, text: 'Featured today.' }
+        yield { type: 'done' as const }
+      }
+    })
+
+    const featuredResp = [
+      { id: 'DS_FEAT', title: 'Climate Reanalysis 2024', abstract_snippet: 'F.', thumbnail_url: null, categories: ['Climate'], position: 0 },
+    ]
+    // 1d/AC — see the search_datasets tool round-trip test for why
+    // mockImplementation is required instead of mockResolvedValue.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ datasets: featuredResp }), { status: 200 }),
+    )
+
+    const chunks: DocentStreamChunk[] = []
+    for await (const chunk of processMessage('show me something interesting', [], datasets, null, baseConfig)) {
+      chunks.push(chunk)
+    }
+
+    expect(callCount).toBe(2)
+    const toolMsg = round2Messages!.find((m: any) => m.role === 'tool')
+    expect(toolMsg.tool_call_id).toBe('call_feat_1')
+    expect(toolMsg.content).toContain('Climate Reanalysis 2024')
   })
 })

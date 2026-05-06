@@ -1,0 +1,208 @@
+    <section id="sec-11-publishing"
+             class="section fade-in"
+             aria-labelledby="sec-11-publishing-title">
+      <div class="fed__container">
+        <p class="section__eyebrow">§8 · Publishing &amp; search</p>
+        <h2 id="sec-11-publishing-title" class="fed__title">Publish datasets. Build tours. Index for search.</h2>
+        <div class="pub__hero">
+          <div class="pub__hero-text">
+            <p class="fed__lede">
+              <strong>Publish once · seen on every TerraViz install.</strong> The publisher portal at <code>/publish</code> is a single-form workflow — dataset entry, tour authoring, asset upload, semantic-search indexing, federation visibility — behind staff SSO. The companion <code>@zyra/terraviz-cli</code> ships first to npm with signed binaries: <a href="#fed-tiers"><strong>Tier 0 publishing</strong></a> is <code>terraviz publish dataset.yaml</code> on a schedule against the canonical node, scriptable from any CI — the federation arc's first deliverable, with one partner pilot driving auth ergonomics. A subscribing peer's catalog pulls your row on its next sync; no separate distribution, no CDN hand-off, no museum partnership required. Both paths run through the same edge-compute + SQL DB + object-storage backend that powers the rest of the catalog stack — same edge, same auth, no separate moving parts. The Cloudflare-flavoured names below (Pages Functions, D1, R2, Stream, Images, Vectorize, Workers AI, Access) are the today-deploy; <a href="#sec-10-federation">§7</a> covers the portability story for operators wanting a different cloud. Full spec in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+            </p>
+          </div>
+          <aside class="pub__rail" aria-label="terraviz-cli session">
+            <div class="pub__rail-chrome">
+              <span class="pub__demo-dot pub__demo-dot--r"></span>
+              <span class="pub__demo-dot pub__demo-dot--y"></span>
+              <span class="pub__demo-dot pub__demo-dot--g"></span>
+              <span class="pub__rail-title">terraviz-cli</span>
+            </div>
+            <pre class="pub__rail-cli"><code><span class="pub__rail-prompt">$</span> terraviz publish dataset.yaml
+<span class="pub__rail-line">↑ uploading dataset.yaml ··· 2 KB</span>
+<span class="pub__rail-line">↑ resolving asset (vimeo) ··· 4.2 GB</span>
+<span class="pub__rail-line pub__rail-ok">✓ published as climate-futures-2024</span>
+<span class="pub__rail-line pub__rail-ok">✓ federation manifest reindexed</span>
+<span class="pub__rail-line pub__rail-meta">ETA on subscribing peers ≤ 15 min</span></code></pre>
+          </aside>
+        </div>
+
+        <h3 class="fed__subhead">Try the portal</h3>
+        <p class="fed__subhead-hint">
+          An interactive publisher dashboard will live here once the portal UI ships behind staff SSO — mock the dataset-entry form, run a draft preview against the live globe, watch the asset pipeline transcode in real time. Until then, the full form spec, validation rules, and CLI surface live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_PUBLISHING_TOOLS.md" target="_blank" rel="noopener"><code>CATALOG_PUBLISHING_TOOLS.md</code></a>.
+        </p>
+
+        <figure class="pub__demo" aria-labelledby="pub-demo-caption">
+          <div class="pub__demo-frame">
+            <div class="pub__demo-chrome">
+              <span class="pub__demo-dot pub__demo-dot--r"></span>
+              <span class="pub__demo-dot pub__demo-dot--y"></span>
+              <span class="pub__demo-dot pub__demo-dot--g"></span>
+              <span class="pub__demo-url"><code>terraviz.zyra-project.org/publish</code></span>
+            </div>
+            <div class="pub__demo-body">
+              <div class="pub__demo-label">Interactive publisher dashboard</div>
+              <div class="pub__demo-tag">embed pending · drafted</div>
+            </div>
+          </div>
+          <figcaption id="pub-demo-caption" class="pub__demo-caption">
+            What lands here: a sandboxed embed of the publisher portal that lets visitors fill out a draft dataset entry, click <strong>Preview</strong> to see it on the globe, then walk through how the same payload reaches D1 + R2 + Vectorize via the publish path below. No real publish (read-only sandbox); same form, same validation, same preview.
+          </figcaption>
+        </figure>
+
+        <div class="fed__stack-grid">
+          <article class="fed__stack-card">
+            <h3>Publisher portal</h3>
+            <p>A single-form workflow at <code>/publish</code> behind staff SSO (Cloudflare Access today). Title, slug, abstract, asset upload, thumbnail, captions, time range, categories, license, visibility. <strong>Preview</strong> opens the app in a new tab against the draft row — same renderer, same playback, same chat — so publishers see exactly what visitors will see before pressing <strong>Publish</strong>. Lazy-loaded the same way Three.js is; non-publisher visitors never pay the bundle cost.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Tour creator</h3>
+            <p>Capture-mode UI: hit <em>Record</em>, fly the camera, swap layouts, drop in captions, and the recorder emits <code>flyTo</code> / <code>loadDataset</code> / <code>setEnvView</code> / <code>showRect</code> / <code>pauseForInput</code> tasks into a <code>tour.json</code> the existing engine plays back identically. Same format Science On a Sphere's tour-builder produces — tours authored elsewhere import unchanged.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Asset &amp; decimation pipeline</h3>
+            <p>Cloudflare Stream transcodes uploaded video into the rendition ladder (replaces today's Vimeo proxy). Cloudflare Images derives the 4096 → 2048 → 1024 image variants on demand instead of the hand-rolled fallback ladder. Sphere thumbnails auto-generate at upload time as 2:1 equirectangular crops. Content-addressed R2 keys so revisions never invalidate caches. Full flow lives in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_ASSETS_PIPELINE.md" target="_blank" rel="noopener"><code>CATALOG_ASSETS_PIPELINE.md</code></a>.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Authoring CLI</h3>
+            <p>Alternative to the portal for research orgs running scheduled visualization pipelines, CI jobs, or anyone who'd rather script than click. Hits the same publisher API as the portal, with server-side validation as the source of truth. Distributed as signed standalone binaries plus an npm package; verification keys checked into the repo so downstreams can audit the supply chain.</p>
+          </article>
+
+          <article class="fed__stack-card">
+            <h3>Semantic search</h3>
+            <p>Cloudflare Vectorize stores a 768-dim embedding per dataset. The docent's <code>search_datasets</code> LLM tool queries it directly today (used by Orbit when a visitor asks "show me something about hurricanes"); a follow-on swaps the public <code>/api/v1/search</code> URL from D1 <code>LIKE</code> to Vectorize semantic behind the same path. Federated rows reindex locally on sync, so each node owns its own search experience without phoning home.</p>
+          </article>
+        </div>
+
+        <h3 class="fed__subhead">The publish path</h3>
+        <p class="fed__subhead-hint">
+          A dataset goes through five steps from a publisher's upload to a visitor's search hit. Each step is owned by a different cloud primitive (Cloudflare today — see <a href="#sec-10-federation">§7</a> for the portability story); the whole chain runs on the same edge.
+        </p>
+
+        <figure class="fed__arch">
+          <svg viewBox="0 0 920 240"
+               role="img"
+               aria-label="Publish-path diagram, five steps left to right. Step 1: Publisher portal or CLI accepts the form submission and the asset upload. Step 2: Pages Functions validate fields, write the draft row to D1, and stage the asset upload. Step 3: The asset pipeline routes video to Cloudflare Stream for transcoding and images to Cloudflare Images for variants, returning content-addressed URLs. Step 4: Workers AI generates a 768-dim embedding from the dataset's text fields and writes it to Vectorize. Step 5: The dataset is now reachable via the public catalog API, the public search endpoint, the docent's search_datasets LLM tool, and the federation manifest.">
+            <defs>
+              <marker id="arrow-pub" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <style>
+                .pub-step       { fill: rgba(175, 180, 43, 0.08); stroke: #afb42b; stroke-width: 1.4; }
+                .pub-step-out   { fill: rgba(77, 166, 255, 0.06); stroke: #4da6ff; stroke-width: 1.4; }
+                .pub-text       { font-family: 'Source Sans 3', sans-serif; font-size: 12px; fill: #171717; font-weight: 700; }
+                .pub-mono       { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #525252; }
+                .pub-tag        { font-family: 'Source Code Pro', monospace; font-size: 9px; fill: #737373; text-transform: uppercase; letter-spacing: 0.06em; }
+                .pub-arrow      { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .pub-num        { font-family: 'Source Code Pro', monospace; font-size: 11px; font-weight: 700; fill: #afb42b; }
+              </style>
+            </defs>
+
+            <!-- Step 1 · Publisher portal / CLI -->
+            <g transform="translate(20,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">01</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Publisher</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">portal · CLI</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">/publish (Access)</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">terraviz publish ...</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted</text>
+            </g>
+
+            <path class="pub-arrow" d="M180,100 L200,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 2 · Pages Functions validate + stage -->
+            <g transform="translate(200,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">02</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Pages Functions</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">validate · stage</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">/api/v1/publish</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">/api/v1/ingest</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">live (dev-bypass)</text>
+            </g>
+
+            <path class="pub-arrow" d="M360,100 L380,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 3 · Asset pipeline -->
+            <g transform="translate(380,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">03</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Asset pipeline</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">decimate · variant</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">Stream (video)</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">Images (variants)</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">drafted</text>
+            </g>
+
+            <path class="pub-arrow" d="M540,100 L560,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 4 · Embeddings -->
+            <g transform="translate(560,40)">
+              <rect class="pub-step" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">04</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Workers AI</text>
+              <text class="pub-text" x="80" y="62" text-anchor="middle">embed · index</text>
+              <text class="pub-mono" x="80" y="84" text-anchor="middle">768-dim vector</text>
+              <text class="pub-mono" x="80" y="98" text-anchor="middle">→ Vectorize</text>
+              <text class="pub-tag" x="80" y="114" text-anchor="middle">live (Orbit tool)</text>
+            </g>
+
+            <path class="pub-arrow" d="M720,100 L740,100" marker-end="url(#arrow-pub)" />
+
+            <!-- Step 5 · Reachable -->
+            <g transform="translate(740,40)">
+              <rect class="pub-step-out" x="0" y="0" width="160" height="120" rx="8" />
+              <text class="pub-num" x="14" y="22">05</text>
+              <text class="pub-text" x="80" y="46" text-anchor="middle">Reachable</text>
+              <text class="pub-mono" x="80" y="68" text-anchor="middle">/api/v1/catalog</text>
+              <text class="pub-mono" x="80" y="82" text-anchor="middle">/api/v1/search</text>
+              <text class="pub-mono" x="80" y="96" text-anchor="middle">search_datasets()</text>
+              <text class="pub-mono" x="80" y="110" text-anchor="middle">.well-known/...</text>
+            </g>
+
+            <!-- Caption row at bottom -->
+            <text class="pub-tag" x="100" y="200" text-anchor="middle">PUBLISHER</text>
+            <text class="pub-tag" x="280" y="200" text-anchor="middle">VALIDATE</text>
+            <text class="pub-tag" x="460" y="200" text-anchor="middle">DECIMATE</text>
+            <text class="pub-tag" x="640" y="200" text-anchor="middle">INDEX</text>
+            <text class="pub-tag" x="820" y="200" text-anchor="middle">REACHABLE</text>
+          </svg>
+          <figcaption class="fed__arch-caption">
+            Five steps from upload to reachable. Step 2 is live behind a dev-bypass; step 4's Vectorize index is live and powers Orbit's search tool today; the portal UI (step 1), the Stream / Images cutover (step 3), and the public <code>/api/v1/search</code> swap (step 5) are drafted and phased. The reachable wire shape (step 5) is a <strong>STAC Item</strong> profile and the catalog response is a STAC Collection — recognised by the geospatial ecosystem out of the box, no custom client work to consume.
+          </figcaption>
+        </figure>
+
+        <h3 class="fed__subhead">Where it stands</h3>
+        <p class="fed__subhead-hint">
+          The shape is drafted across the catalog plan docs; pieces are landing in phases. Mirrors §7's federation cadence — work the model first, then the auth, then the UI.
+        </p>
+
+        <div class="fed__phase-grid">
+          <article class="fed__phase fed__phase--shipped">
+            <p class="fed__phase-tag">Today · shipped</p>
+            <h3>Backend, dev-bypass, search index</h3>
+            <ul>
+              <li>Publisher API endpoints in Pages Functions (<code>/api/v1/publish</code>, <code>/api/v1/ingest</code>)</li>
+              <li>Publisher dev-bypass via <code>.dev.vars</code> for local iteration</li>
+              <li>Vectorize index live; drives Orbit's <code>search_datasets</code> LLM tool</li>
+              <li>D1 schema covers <code>publishers</code>, <code>publisher_keys</code>, <code>publish_audit</code> — see <a href="https://github.com/zyra-project/terraviz/blob/main/docs/CATALOG_DATA_MODEL.md" target="_blank" rel="noopener"><code>CATALOG_DATA_MODEL.md</code></a></li>
+            </ul>
+          </article>
+
+          <article class="fed__phase fed__phase--draft">
+            <p class="fed__phase-tag">Forthcoming · drafted</p>
+            <h3>Portal, pipeline, public search</h3>
+            <ul>
+              <li>Publisher portal UI behind staff SSO</li>
+              <li>Tour creator capture mode</li>
+              <li>Stream + Images cutover, replacing the Vimeo proxy and the hand-rolled image ladder</li>
+              <li>Public <code>/api/v1/search</code> swaps D1 <code>LIKE</code> → Vectorize semantic behind the same path</li>
+              <li>Authoring CLI with signed binaries + npm package</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>

@@ -8,8 +8,10 @@
 import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext, LLMContextSnapshot, ReadingLevel } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart, type LLMToolCall } from './llmProvider'
 import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './appleIntelligenceProvider'
-import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
+import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
+import { clearDegraded as clearDegradedState, markDegraded as markDegradedState } from './docentDegradedState'
+import { apiFetch } from './catalogSource'
 import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { resolveRegion, boundsToGeoJSON } from '../data/regions'
 import { logger } from '../utils/logger'
@@ -221,11 +223,12 @@ const tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unk
 const DEFAULT_CONFIG: DocentConfig = {
   apiUrl: IS_TAURI ? '' : '/api',
   apiKey: '',
-  // Default to llama-3.1-70b on the CF proxy. It reliably follows the
-  // <<LOAD:...>> marker format in prose, which produces inline Load buttons.
-  // llama-4-scout is available via the settings dropdown for users who want
-  // multimodal + tool-calling support, but it doesn't emit markers reliably.
-  model: IS_TAURI ? '' : 'llama-3.1-70b',
+  // Default to llama-4-scout on the CF proxy. It's natively multimodal
+  // (text + images in one model, no vision auto-switch needed) and
+  // supports function calling (tools forwarded via toolStreamShim),
+  // which enables highlight_region, add_marker, fly_to, and other
+  // globe control tools to work on the CF path.
+  model: IS_TAURI ? '' : 'llama-4-scout',
   enabled: true,
   readingLevel: 'general',
   visionEnabled: false,
@@ -392,6 +395,271 @@ export function executeSearchCatalog(
   })
 }
 
+// ---------------------------------------------------------------------------
+// Phase 1c — backend discovery tools (search_datasets + list_featured_datasets)
+//
+// Both call into the node catalog backend (`/api/v1/search?q=...` and
+// `/api/v1/featured`) and shape the response into a payload the LLM can
+// consume on the next round. Failures soft-degrade to an empty result —
+// the legacy `search_catalog` tool stays in the tool list as a fallback,
+// and the local engine fallback handles full LLM unavailability.
+// ---------------------------------------------------------------------------
+
+/** Hit shape forwarded back to the LLM after a search_datasets tool call. */
+export interface SearchDatasetsHit {
+  id: string
+  title: string
+  abstract_snippet: string
+  categories: string[]
+  peer_id: string
+  score: number
+}
+
+/** Hit shape forwarded back to the LLM after a list_featured_datasets tool call. */
+export interface FeaturedDatasetHit {
+  id: string
+  title: string
+  abstract_snippet: string
+  thumbnail_url: string | null
+  categories: string[]
+  position: number
+}
+
+/**
+ * Default + max forwarded to `/api/v1/search` from the docent tool.
+ * The MAX matches the route's server-side ceiling (50). The DEFAULT
+ * is intentionally lower than the route's URL default (10): the
+ * docent's LLM consumer prefers a tighter result set so the JSON
+ * blob fed back into the model stays small. The tool definition
+ * also advertises 5 to the LLM, so this is the value the model
+ * gets when it omits `limit` from a tool call. Tests:
+ * `getSearchDatasetsTool.accepts an optional limit parameter`.
+ */
+const SEARCH_DATASETS_DEFAULT_LIMIT = 5
+const SEARCH_DATASETS_MAX_LIMIT = 50
+/** Defaults match the route layer (`functions/api/v1/featured.ts`). */
+const LIST_FEATURED_DEFAULT_LIMIT = 6
+const LIST_FEATURED_MAX_LIMIT = 24
+
+/**
+ * Catalog backend base URL. Always relative — the catalog
+ * endpoints live at the app origin (Cloudflare Pages Functions),
+ * NOT at the LLM provider's URL. We deliberately do NOT route
+ * through `config.apiUrl` because that's the chat-completions
+ * endpoint and frequently points at OpenAI / Ollama / LM Studio
+ * (`https://api.openai.com/v1`, `http://localhost:11434/v1`, …);
+ * appending `/v1/search` to those would yield `…/v1/v1/search`,
+ * 404 on every call, and silently break the docent's discovery
+ * tools for anyone not using the bundled Cloudflare proxy.
+ *
+ * In Tauri contexts the webview origin is `tauri://localhost/`
+ * with no Pages Functions backend, so the URL constructed below
+ * is rewritten to the production deployment by `apiFetch` (see
+ * `catalogSource.ts`). If the rewrite or the cross-origin request
+ * fails, `executeSearchDatasets` / `executeListFeaturedDatasets`
+ * catch the error and return `{ datasets: [] }`, falling through
+ * to the legacy in-process `search_catalog` tool.
+ */
+const CATALOG_API_BASE = '/api'
+
+/**
+ * Per-session LRU cache for pre-search results. Phase 1f/C —
+ * follow-up to 1d/AC restoring the [RELEVANT DATASETS] block.
+ *
+ * The hot path: every discovery turn (intent.type === 'search' /
+ * 'category' / 'related') runs `executeSearchDatasets` to ground
+ * the user message before the LLM stream starts (1d/AC, line 1099
+ * below). Two follow-ups within a turn exchange — "show me
+ * hurricanes" then "any others?" — re-run the same canonicalised
+ * query and re-burn Workers AI embed neurons.
+ *
+ * The cache is module-level (= per-session, since the SPA
+ * re-initialises this module on every page load) with:
+ *   - 16-entry LRU eviction (small enough to keep memory tiny,
+ *     large enough to absorb most multi-turn discovery flows).
+ *   - 5-minute TTL (expires concurrent with the catalog snapshot's
+ *     KV-side cache TTL — same staleness contract).
+ *   - Canonical-query keying: lowercase + collapsed whitespace +
+ *     stripped trailing punctuation. Conservative — no stemming
+ *     or stop-word removal because those change semantics.
+ *
+ * The catalog backend's KV snapshot cache (`functions/api/v1/_lib/
+ * snapshot.ts`) is the precedent for "5-minute staleness is OK
+ * because publish/retract invalidate"; this is the same contract
+ * applied at the docent-client layer, before the request leaves
+ * the SPA.
+ *
+ * Decision-list note (Phase 1f #2 — cache scope): per-session
+ * in-memory was chosen over per-user (localStorage — privacy
+ * surface for raw queries) and per-deploy (CATALOG_KV — would
+ * still re-burn Workers AI without caching the embedding too).
+ * Revisit per-deploy after the cost panel (Commit E) shows
+ * cross-session hot queries.
+ */
+const PRE_SEARCH_CACHE_LIMIT = 16
+const PRE_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000
+
+interface PreSearchCacheEntry {
+  hits: SearchDatasetsHit[]
+  expiresAt: number
+}
+
+const preSearchCache = new Map<string, PreSearchCacheEntry>()
+
+function canonicalisePreSearchQuery(q: string): string {
+  return q.toLowerCase().replace(/\s+/g, ' ').trim().replace(/[.!?,;:]+$/u, '')
+}
+
+function preSearchCacheKey(query: string, limit: number): string {
+  return `${canonicalisePreSearchQuery(query)}|${limit}`
+}
+
+/**
+ * Test hook: drop every cached entry. The SPA never calls this in
+ * production (the cache lives for the lifetime of the page); tests
+ * call it from `beforeEach` to keep cases independent.
+ */
+export function clearPreSearchCache(): void {
+  preSearchCache.clear()
+}
+
+/**
+ * Execute a `search_datasets` tool call against the node catalog
+ * backend. Returns the result shape the LLM expects to see in a
+ * `tool` message reply. On error / unreachable / degraded, returns
+ * an empty `{ datasets: [] }` so the LLM can move on (or call the
+ * legacy `search_catalog` fallback).
+ *
+ * Phase 1f/C: results pass through the per-session pre-search
+ * cache. The cache key normalises trivial query variations
+ * ("hurricanes" / "Hurricanes  " / "hurricanes!" all hit the same
+ * entry), bounded by limit. Empty results are cached too — a
+ * genuine no-match shouldn't re-burn neurons in the same window.
+ */
+export async function executeSearchDatasets(
+  args: Record<string, unknown>,
+  config: DocentConfig,
+): Promise<{ datasets: SearchDatasetsHit[]; degraded?: 'unconfigured' | 'quota_exhausted' }> {
+  // Phase 1f/I — canonicalise once and use the canonical form for
+  // BOTH the cache key and the wire `q=` parameter. Pre-1f/I the
+  // cache keyed off the canonical form but sent the raw query on
+  // the wire, so two queries that canonicalise the same ("Hurricanes!"
+  // and "hurricanes") could produce different server responses but
+  // collide on the cache. Sending the canonical form keeps the
+  // cache contract honest: same canonical key ↔ same server input.
+  const rawQuery = typeof args.query === 'string' ? args.query.trim() : ''
+  const query = canonicalisePreSearchQuery(rawQuery)
+  if (!query) return { datasets: [] }
+  if (!config.apiUrl) return { datasets: [] }
+
+  const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : SEARCH_DATASETS_DEFAULT_LIMIT
+  const limit = Math.max(1, Math.min(SEARCH_DATASETS_MAX_LIMIT, Math.floor(limitArg)))
+
+  // `query` is already canonicalised — preSearchCacheKey re-canonicalises
+  // defensively (idempotent on canonical input) so a future caller
+  // that bypasses the canonical-rawQuery normalisation above can't
+  // poison the cache.
+  const cacheKey = preSearchCacheKey(query, limit)
+  const now = Date.now()
+  const cached = preSearchCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    // Touch the entry's LRU position so a long-running session
+    // keeps the active query set hot rather than rotating it out.
+    preSearchCache.delete(cacheKey)
+    preSearchCache.set(cacheKey, cached)
+    return { datasets: cached.hits }
+  }
+
+  const url = new URL(`${CATALOG_API_BASE}/v1/search`, window.location.origin)
+  url.searchParams.set('q', query)
+  url.searchParams.set('limit', String(limit))
+
+  let degradedReason: string | undefined
+  let hits: SearchDatasetsHit[]
+  try {
+    const res = await apiFetch(url.toString(), { method: 'GET' })
+    if (!res.ok) {
+      logger.warn(`[Docent] search_datasets returned ${res.status}`)
+      // Don't cache transient failures — the next turn should retry.
+      return { datasets: [] }
+    }
+    const body = (await res.json()) as { datasets?: SearchDatasetsHit[]; degraded?: string }
+    if (body.degraded) {
+      logger.info(`[Docent] search_datasets degraded: ${body.degraded}`)
+      degradedReason = body.degraded
+      // Phase 1f/D — quota_exhausted on the search path drives the
+      // same SPA-side badge as the LLM-side detection. Other
+      // degraded reasons (`unconfigured`) are operator-misconfig
+      // cases that surface their own messaging elsewhere.
+      if (body.degraded === 'quota_exhausted') {
+        markDegradedState('quota_exhausted')
+      }
+    }
+    hits = Array.isArray(body.datasets) ? body.datasets : []
+  } catch (err) {
+    logger.warn('[Docent] search_datasets fetch failed:', err)
+    // Network errors are also transient — same as non-OK responses.
+    return { datasets: [] }
+  }
+
+  // Phase 1f/J — never cache a degraded response. quota_exhausted
+  // is by definition transient (the badge clears as soon as a
+  // subsequent successful round lands), and unconfigured points
+  // at a binding that may get wired up mid-session. Caching either
+  // would lock the same query into the empty result for the full
+  // 5-minute TTL even after the underlying condition clears.
+  //
+  // Phase 1f/O — also propagate `degraded` up to processMessage so
+  // it can short-circuit the LLM round on discovery turns and use
+  // the local engine instead of burning another quota check on a
+  // search-degraded session.
+  if (degradedReason !== undefined) {
+    return {
+      datasets: hits,
+      degraded: degradedReason as 'unconfigured' | 'quota_exhausted',
+    }
+  }
+
+  preSearchCache.set(cacheKey, { hits, expiresAt: now + PRE_SEARCH_CACHE_TTL_MS })
+  if (preSearchCache.size > PRE_SEARCH_CACHE_LIMIT) {
+    // Map iteration order is insertion order; the first key is the
+    // least-recently-touched (since touches re-insert above).
+    const oldest = preSearchCache.keys().next().value
+    if (oldest !== undefined) preSearchCache.delete(oldest)
+  }
+  return { datasets: hits }
+}
+
+/**
+ * Execute a `list_featured_datasets` tool call. Same soft-degrade
+ * semantics as `executeSearchDatasets`.
+ */
+export async function executeListFeaturedDatasets(
+  args: Record<string, unknown>,
+  config: DocentConfig,
+): Promise<{ datasets: FeaturedDatasetHit[] }> {
+  if (!config.apiUrl) return { datasets: [] }
+
+  const limitArg = typeof args.limit === 'number' && Number.isFinite(args.limit) ? args.limit : LIST_FEATURED_DEFAULT_LIMIT
+  const limit = Math.max(1, Math.min(LIST_FEATURED_MAX_LIMIT, Math.floor(limitArg)))
+
+  const url = new URL(`${CATALOG_API_BASE}/v1/featured`, window.location.origin)
+  url.searchParams.set('limit', String(limit))
+
+  try {
+    const res = await apiFetch(url.toString(), { method: 'GET' })
+    if (!res.ok) {
+      logger.warn(`[Docent] list_featured_datasets returned ${res.status}`)
+      return { datasets: [] }
+    }
+    const body = (await res.json()) as { datasets?: FeaturedDatasetHit[] }
+    return { datasets: Array.isArray(body.datasets) ? body.datasets : [] }
+  } catch (err) {
+    logger.warn('[Docent] list_featured_datasets fetch failed:', err)
+    return { datasets: [] }
+  }
+}
+
 /**
  * Test if the configured LLM is reachable and the model is available.
  */
@@ -416,6 +684,116 @@ export type ExtractedGlobeAction =
   | { type: 'highlight-region'; geojson: GeoJSON.GeoJSON; label: string; bounds: [number, number, number, number] }
 
 /**
+ * Try to resolve the contents of a `<<LOAD:...>>` marker to a real
+ * dataset. The LLM is supposed to put an `id` in there, but in
+ * practice it often puts a title instead — sometimes verbatim from
+ * a tool result, sometimes a slightly-massaged version
+ * ("Arctic Sea Ice Extent" vs the catalog's
+ * "Sea Ice Extent (Arctic 1979-2020)"). The chip pipeline punishes
+ * any miss by stripping the marker entirely, so we resolve as
+ * generously as we can without crossing into "load the wrong
+ * dataset" territory.
+ *
+ * Resolution order:
+ *   1. Exact id (post-`trim`).
+ *   2. Title exact / startsWith bidirectional — original behaviour.
+ *   3. Token-overlap fallback: split both into content words, drop
+ *      stop words and stems shorter than 3 chars, count shared
+ *      tokens. Resolve if the best dataset's overlap is unambiguous
+ *      AND covers ≥ 60% of the marker's content words AND has
+ *      ≥ 3 shared content words. The "unambiguous" gate forbids
+ *      a tie at the top — better a stripped chip than the wrong
+ *      dataset loaded.
+ */
+function resolveMarkerToDataset(
+  rawId: string,
+  datasetIdSet: Set<string>,
+  datasets: Dataset[],
+): Dataset | string | null {
+  const id = rawId.trim()
+  if (datasetIdSet.has(id)) return id
+  if (id.length === 0) return null
+
+  // Phase 1d/Z — case-insensitive id fallback. ULIDs are
+  // Crockford base32 (uppercase canonical) and legacy_ids are
+  // `INTERNAL_*` (uppercase). Llama-4-scout (and other models)
+  // sometimes lowercase the id when emitting markers; an exact
+  // case-sensitive lookup misses these. Re-try with the
+  // upper-cased form before falling through to the legacy / title
+  // / token-overlap heuristics.
+  const idUpper = id.toUpperCase()
+  if (idUpper !== id && datasetIdSet.has(idUpper)) return idUpper
+
+  // Phase 1d/U — legacy_id fallback. Tour files and LLM responses
+  // sometimes carry the row's bulk-import provenance id (e.g.
+  // `INTERNAL_SOS_768`) instead of the post-cutover ULID. Resolve
+  // those to the dataset's primary id before falling through to the
+  // title-overlap heuristics; mirrors `dataService.getDatasetById`'s
+  // legacyId fallback. The caller rewrites the marker payload to
+  // `dataset.id` so the chat UI's marker round-trip works. 1d/Z
+  // makes the comparison case-insensitive too.
+  const byLegacy = datasets.find(
+    d => d.legacyId === id || (d.legacyId && d.legacyId === idUpper),
+  )
+  if (byLegacy) return byLegacy
+
+  const idLower = id.toLowerCase()
+
+  // Existing exact / startsWith bidirectional fallback.
+  const byTitle = datasets.find(d => {
+    const tLower = d.title.toLowerCase()
+    return tLower === idLower || tLower.startsWith(idLower) || idLower.startsWith(tLower)
+  })
+  if (byTitle) return byTitle
+
+  // Token-overlap fallback.
+  const idTokens = tokeniseTitle(idLower)
+  if (idTokens.size < 2) return null
+
+  let best: { dataset: Dataset; overlap: number } | null = null
+  let bestIsAmbiguous = false
+  for (const d of datasets) {
+    const titleTokens = tokeniseTitle(d.title.toLowerCase())
+    if (titleTokens.size === 0) continue
+    let overlap = 0
+    for (const t of idTokens) if (titleTokens.has(t)) overlap++
+    if (overlap === 0) continue
+    if (best === null || overlap > best.overlap) {
+      best = { dataset: d, overlap }
+      bestIsAmbiguous = false
+    } else if (overlap === best.overlap && d.id !== best.dataset.id) {
+      bestIsAmbiguous = true
+    }
+  }
+
+  if (!best || bestIsAmbiguous) return null
+  if (best.overlap < 3) return null
+  if (best.overlap / idTokens.size < 0.6) return null
+
+  return best.dataset
+}
+
+/**
+ * Stop words for the title-overlap matcher. Domain-generic words
+ * ("data", "dataset", "global") show up in many titles and must not
+ * drive a match by themselves.
+ */
+const TITLE_TOKEN_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'into', 'over', 'this', 'that', 'are',
+  'data', 'datasets', 'dataset', 'global', 'world', 'earth',
+])
+
+function tokeniseTitle(s: string): Set<string> {
+  const out = new Set<string>()
+  for (const raw of s.split(/[^a-z0-9]+/)) {
+    if (raw.length < 3) continue
+    if (TITLE_TOKEN_STOP_WORDS.has(raw)) continue
+    out.add(raw)
+  }
+  return out
+}
+
+/**
  * Validate dataset IDs found in LLM text against the catalog.
  * Also extracts <<FLY:...>> and <<TIME:...>> inline markers
  * (and bare `fly_to:` / `set_time:` fallback patterns).
@@ -431,37 +809,54 @@ export function validateAndCleanText(
   const invalidIds = new Set<string>()
   const globeActions: ExtractedGlobeAction[] = []
   const datasetIdSet = new Set(datasets.map(d => d.id))
+  // When the title-overlap fallback rescues a marker, remember the
+  // mapping so the strip step downstream can rewrite the marker to
+  // the canonical id (rather than leaving the LLM's title-shaped
+  // payload in there, which would break the chat UI's [[LOAD:...]]
+  // round-trip when history is replayed).
+  const markerRewrites = new Map<string, string>()
 
   // Collect all referenced IDs for validation
   for (const match of text.matchAll(/<?<LOAD:([^>]+)>>?/g)) {
     const id = match[1].trim()
-    if (datasetIdSet.has(id)) {
-      validIds.add(id)
+    const resolved = resolveMarkerToDataset(id, datasetIdSet, datasets)
+    if (typeof resolved === 'string') {
+      validIds.add(resolved)
+      // 1d/Z — when the resolver case-normalised the id (e.g. the
+      // LLM emitted lowercase but the canonical form is uppercase),
+      // record the rewrite so the marker payload in the cleaned
+      // text matches the canonical id the chat UI expects.
+      if (id !== resolved) markerRewrites.set(id, resolved)
+    } else if (resolved) {
+      // Title or token-overlap match.
+      validIds.add(resolved.id)
+      if (id !== resolved.id) markerRewrites.set(id, resolved.id)
     } else {
-      // The LLM often puts a dataset TITLE in the marker instead of the
-      // internal ID (e.g. <<LOAD:Sea Level Rise>> instead of
-      // <<LOAD:INTERNAL_SOS_123>>). Check titles as a fallback so the
-      // marker still produces a Load button.
-      const idLower = id.toLowerCase()
-      const byTitle = datasets.find(d => {
-        const tLower = d.title.toLowerCase()
-        return tLower === idLower || tLower.startsWith(idLower) || idLower.startsWith(tLower)
-      })
-      if (byTitle) {
-        validIds.add(byTitle.id)
-      } else {
-        invalidIds.add(id)
-      }
+      invalidIds.add(id)
     }
   }
-  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/g)) {
+  for (const match of text.matchAll(/\bINTERNAL_[A-Z0-9_]+\b/gi)) {
     const id = match[0]
     // Skip IDs already captured via markers
     if (validIds.has(id) || invalidIds.has(id)) continue
-    if (datasetIdSet.has(id)) {
-      validIds.add(id)
+    // Phase 1d/Z — `i` flag added so the bare-mention path catches
+    // lowercase emissions too (some LLMs lowercase identifiers).
+    // The legacy_id fallback also normalises to uppercase before
+    // comparing so `internal_sos_768` resolves to the
+    // `INTERNAL_SOS_768`-keyed row.
+    const idUpper = id.toUpperCase()
+    if (datasetIdSet.has(id) || datasetIdSet.has(idUpper)) {
+      validIds.add(datasetIdSet.has(id) ? id : idUpper)
+      if (id !== idUpper) markerRewrites.set(id, idUpper)
     } else {
-      invalidIds.add(id)
+      // Phase 1d/U — same legacy_id fallback the marker path uses.
+      const byLegacy = datasets.find(d => d.legacyId === idUpper)
+      if (byLegacy) {
+        validIds.add(byLegacy.id)
+        markerRewrites.set(id, byLegacy.id)
+      } else {
+        invalidIds.add(id)
+      }
     }
   }
 
@@ -565,15 +960,33 @@ export function validateAndCleanText(
     }
   }
 
-  // Strip invalid <<LOAD:ID>> markers
-  let cleanedText = text.replace(/<?<LOAD:([^>]+)>>?\n?/g, (match, id) => {
+  // Strip invalid <<LOAD:ID>> markers, and rewrite resolved-via-
+  // fallback markers (where the LLM put a title in the marker
+  // contents) so the marker carries the canonical id. The chat UI's
+  // [[LOAD:...]]-roundtrip stores the marker in conversation
+  // history; without rewriting, a follow-up turn would see the
+  // title-shaped payload again and have to re-resolve it.
+  //
+  // The regex matches the same tolerant shape as the collect loop
+  // above (`<?<LOAD:...>>?`) — small LLMs occasionally emit
+  // single-bracket variants `<LOAD:ID>` or `<<LOAD:ID>` and we
+  // collected those into `invalidIds`. Use the matched markers in
+  // the rewrite step too, otherwise malformed shapes would be
+  // classified as invalid yet stay visible in the prose.
+  let cleanedText = text.replace(/<?<LOAD:([^>]+)>>?(\n?)/g, (match, id, trailing) => {
     const trimmedId = id.trim()
     if (invalidIds.has(trimmedId)) return ''
+    const canonicalId = markerRewrites.get(trimmedId)
+    if (canonicalId) return `<<LOAD:${canonicalId}>>${trailing}`
     return match
   })
 
-  // Strip bare invalid INTERNAL_... IDs from prose
-  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/g, (id) => {
+  // Strip bare invalid INTERNAL_... IDs from prose. Case-insensitive
+  // to match the detection regex above (1d/Z added the `i` flag for
+  // detection but the strip pass kept the case-sensitive form, so
+  // lowercase invalid mentions like `internal_sos_123` were detected
+  // and reported but left in the user-visible text — 1d/AD).
+  cleanedText = cleanedText.replace(/\bINTERNAL_[A-Z0-9_]+\b/gi, (id) => {
     if (invalidIds.has(id)) return ''
     return id
   })
@@ -790,45 +1203,108 @@ export async function* processMessage(
       ? `[GLOBE STATE: "${currentDataset.title}" is currently loaded on the globe.${currentTime ? ` Showing: ${currentTime}.` : ''}]\n`
       : '[GLOBE STATE: No dataset is loaded. The globe shows the default Earth view.]\n'
 
-    // Phase 3 discovery: pre-search the catalog locally and inject the top
-    // results into the user message as [RELEVANT DATASETS] context. This is
-    // the primary discovery path — it works on every model regardless of
-    // function-calling support. The system prompt tells the LLM to prefer
-    // these pre-searched results and only call `search_catalog` as a
-    // fallback for follow-up queries on a different topic.
+    // Pre-search injection — Phase 1d/AC.
     //
-    // Strip punctuation and common question/stop words so the scoring in
-    // searchDatasets isn't diluted. "What datasets show sea level rise?" →
-    // search query "sea level rise", which scores well against real titles.
-    const PRE_SEARCH_STOP_WORDS = new Set([
-      'what', 'which', 'show', 'me', 'about', 'tell', 'the', 'a', 'an',
-      'is', 'are', 'do', 'does', 'did', 'can', 'how', 'where', 'when',
-      'why', 'i', 'my', 'your', 'you', 'we', 'us', 'it', 'its', 'of',
-      'in', 'on', 'for', 'to', 'and', 'or', 'with', 'this', 'that',
-      'some', 'any', 'have', 'has', 'there', 'here', 'please', 'thanks',
-      'datasets', 'dataset', 'data', 'find', 'search', 'look', 'give',
-      'want', 'like', 'need', 'related', 'something', 'anything',
-    ])
-    const preSearchQuery = input
-      .replace(/[?!.,;:'"()[\]{}]/g, '')
-      .split(/\s+/)
-      .filter(w => w.length > 1 && !PRE_SEARCH_STOP_WORDS.has(w.toLowerCase()))
-      .join(' ')
-    // Only pre-search for intents that actually need dataset discovery.
-    // Greetings, help, explain-current, and what-is-this don't benefit
-    // from injecting a [RELEVANT DATASETS] block and would just add
-    // noise tokens + risk steering the model toward irrelevant recs.
-    const needsPreSearch = intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
-    const preSearchCatalogResults = needsPreSearch
-      ? executeSearchCatalog({ query: preSearchQuery || input, limit: 5 }, datasets)
-      : []
+    // Re-introduced after 1d/F's removal because the cutover's
+    // tool-call-only grounding path turned out to be unreliable
+    // on small/mid LLMs (llama-4-scout, sometimes 70b): when the
+    // LLM short-circuits and doesn't call search_datasets, it
+    // confabulates id-shaped strings the validator strips, and
+    // the user sees prose without chips.
+    //
+    // 1d/F removed an in-memory keyword-scan injection; 1d/AC
+    // restores the same SHAPE of injection but sources results
+    // from the Vectorize-backed `search_datasets` instead.
+    // Architectural cleanup of 1d (Vectorize as the single source
+    // of search truth, no in-memory legacy keyword scan in the
+    // primary path) is preserved; only the grounding mechanism
+    // reverts to "hand the LLM real IDs in the user message".
+    //
+    // The `search_datasets` LLM tool stays in the tool list so the
+    // model can refine for follow-up queries — it's no longer the
+    // only path to grounded IDs.
+    const needsPreSearch =
+      intent.type === 'search' || intent.type === 'category' || intent.type === 'related'
+    const preSearchQuery =
+      intent.type === 'search' ? intent.query : intent.type === 'category' ? intent.category : input
+    const preSearchResult = needsPreSearch
+      ? await executeSearchDatasets({ query: preSearchQuery, limit: 5 }, cfg)
+      : { datasets: [] as SearchDatasetsHit[] }
+    const preSearchHits = preSearchResult.datasets
+    // Phase 1f/O — search returned degraded (Workers AI quota
+    // exhausted or embed bindings unconfigured). Short-circuit the
+    // LLM round and fall through to the local engine: the LLM
+    // would receive an empty [RELEVANT DATASETS] block and either
+    // confabulate IDs (validator strips them, no chips) or
+    // short-circuit with no recommendations. The local engine
+    // searches the in-memory catalog and produces real chips
+    // immediately, which is the better degraded UX. The badge
+    // (already flipped via markDegradedState inside
+    // executeSearchDatasets when degraded='quota_exhausted')
+    // signals the state to the user. Only triggers on discovery
+    // intents — non-discovery turns don't pre-search and aren't
+    // affected.
+    if (needsPreSearch && preSearchResult.degraded) {
+      logger.warn(
+        `[Docent] Pre-search degraded (${preSearchResult.degraded}) — ` +
+          'short-circuiting to local engine to avoid an ungrounded LLM round',
+      )
+      // Mirror the !llmEnabled local-fallback path: run
+      // `evaluateAutoLoad` for exact-match search intents BEFORE
+      // emitting the load-dataset action chunks. Without this an
+      // exact-title query during a degraded session would surface
+      // the dataset as a button rather than auto-loading the best
+      // match — a regression vs the chat-side-only fallback that
+      // 1f/O introduced and Copilot's 6th-round review caught.
+      if (intent.type === 'search' && searchResults) {
+        const autoResult = evaluateAutoLoad(searchResults)
+        if (autoResult) {
+          const action = {
+            type: 'load-dataset' as const,
+            datasetId: autoResult.autoLoad.id,
+            datasetTitle: autoResult.autoLoad.title,
+          }
+          const alternatives = autoResult.alternatives.map(d => ({
+            type: 'load-dataset' as const,
+            datasetId: d.id,
+            datasetTitle: d.title,
+          }))
+          yieldedIds.add(action.datasetId)
+          for (const alt of alternatives) yieldedIds.add(alt.datasetId)
+          yield { type: 'auto-load', action, alternatives }
+        }
+      }
+      // Emit the local engine's load-dataset actions (chips) that
+      // were skipped above because llmEnabled was true at the
+      // top-of-function check. Mirrors the !llmEnabled action
+      // emission but inlined here because we only know to fire it
+      // after the pre-search returns degraded.
+      if (localResponse.actions) {
+        for (const action of localResponse.actions) {
+          if (action.type === 'load-dataset' && !yieldedIds.has(action.datasetId)) {
+            yieldedIds.add(action.datasetId)
+            yield { type: 'action', action }
+          }
+        }
+      }
+      yield { type: 'delta', text: localResponse.text }
+      yield { type: 'done', fallback: true }
+      return
+    }
 
     let preSearchContext = ''
-    if (preSearchCatalogResults.length > 0) {
-      const lines = preSearchCatalogResults.map(r =>
-        `- ${r.id} | ${r.title}${r.isTour ? ' [Tour]' : ''} | ${r.categories.join(', ')} | ${r.description}`
-      )
-      preSearchContext = `[RELEVANT DATASETS for your query:\n${lines.join('\n')}\nRefer to these by exact title and include <<LOAD:ID>> markers.]\n`
+    if (preSearchHits.length > 0) {
+      const lines = preSearchHits.map(h => {
+        const cats = h.categories.join(', ')
+        const snippet = h.abstract_snippet
+          ? h.abstract_snippet.length > 200
+            ? h.abstract_snippet.slice(0, 200) + '…'
+            : h.abstract_snippet
+          : ''
+        return `- ${h.id} | ${h.title} | ${cats} | ${snippet}`
+      })
+      preSearchContext =
+        `[RELEVANT DATASETS for your query:\n${lines.join('\n')}\nRefer to these by exact title and copy the id field verbatim into <<LOAD:ID>> markers.]\n`
     }
 
     const userMessage: LLMMessage = visionActive
@@ -843,9 +1319,26 @@ export async function* processMessage(
       ...buildCompressedHistory(history),
       userMessage,
     ]
-    // search_catalog is first because it's the primary discovery mechanism
-    // now that the catalog is no longer in the system prompt.
+    // Tool ordering — Phase 1d cutover (catalog(1d/E)).
+    //
+    // search_datasets ranks first now that the catalog backend is
+    // provisioned and the SOS snapshot has been imported (1d/B).
+    // Semantic vector search is the primary discovery tool; the
+    // empty-result fallback to search_catalog stays in the prompt
+    // for self-hosting deploys that haven't wired Vectorize yet.
+    // list_featured_datasets is the cold-start path. search_catalog
+    // (legacy in-memory keyword scan) stays in the tool list as a
+    // graceful-degradation fallback, but is no longer the default.
+    //
+    // 1c/L pinned search_catalog first to avoid the
+    // unwired-Vectorize hallucination path; with the cutover in
+    // place that mitigation is unnecessary. A regression here —
+    // empty Vectorize, search_datasets first — would surface as
+    // missing Load chips and is reverted by `git revert` of this
+    // commit.
     const tools = [
+      getSearchDatasetsTool(),
+      getListFeaturedDatasetsTool(),
       getSearchCatalogTool(),
       getLoadDatasetTool(),
       getFlyToTool(),
@@ -888,13 +1381,21 @@ export async function* processMessage(
       const conversationMessages: LLMMessage[] = [...llmMessages]
       let attemptErrored = false
       let round = 0
-      // Track all datasets returned by search_catalog across rounds in this
-      // attempt so we can auto-inject Load buttons for any the LLM mentions
-      // by title but forgets to tag with <<LOAD:...>> markers.
-      // Seed with pre-search results so the auto-inject safety net can match
-      // dataset titles in the LLM's prose even when the model doesn't call
-      // the search_catalog tool. Any tool-call results are appended later.
-      const searchResultsThisAttempt: CatalogSearchResult[] = [...preSearchCatalogResults]
+      // Track all datasets returned by discovery tools across rounds in
+      // this attempt so we can auto-inject Load buttons for any the LLM
+      // mentions by title but forgets to tag with <<LOAD:...>> markers.
+      // Tool-call results (search_datasets / list_featured_datasets /
+      // legacy search_catalog) land here, normalised to the same minimal
+      // shape. catalog(1d/AC) seeds with the pre-search results so the
+      // safety net catches title-mentions when the LLM doesn't call a
+      // tool (which post-1d/AC is the common case for discovery
+      // intents — they're already grounded via [RELEVANT DATASETS]).
+      const searchResultsThisAttempt: CatalogSearchResult[] = preSearchHits.map(h => ({
+        id: h.id,
+        title: h.title,
+        categories: h.categories,
+        description: h.abstract_snippet,
+      }))
 
       try {
         toolLoop: while (round < MAX_TOOL_CALL_ROUNDS) {
@@ -932,8 +1433,14 @@ export async function* processMessage(
                 break
 
               case 'tool_call':
-                if (chunk.call.name === 'search_catalog') {
-                  // Needs a tool result sent back — queue for end of round.
+                if (
+                  chunk.call.name === 'search_catalog' ||
+                  chunk.call.name === 'search_datasets' ||
+                  chunk.call.name === 'list_featured_datasets'
+                ) {
+                  // All three discovery tools need a tool-result message
+                  // sent back to the LLM — queue for the end-of-round
+                  // dispatch below.
                   pendingSearchCalls.push(chunk.call)
                 } else if (chunk.call.name === 'load_dataset') {
                   const args = chunk.call.arguments as { dataset_id?: string; dataset_title?: string }
@@ -1054,6 +1561,12 @@ export async function* processMessage(
                 logger.warn(`[Docent] LLM error (attempt ${attempt}, round ${round}):`, chunk.message)
                 attemptErrored = true
                 llmProducedText = false
+                // Phase 1f/D — surface the SPA-side degraded badge
+                // when the error is a 4006 quota signal. Other
+                // errors leave the existing fallback path untouched.
+                if (chunk.code === 'quota_exhausted') {
+                  markDegradedState('quota_exhausted')
+                }
                 break toolLoop
 
               case 'done':
@@ -1090,14 +1603,51 @@ export async function* processMessage(
           })
 
           for (const call of pendingSearchCalls) {
-            const results = executeSearchCatalog(call.arguments, datasets)
-            searchResultsThisAttempt.push(...results)
-            logger.info(`[Docent] search_catalog("${String(call.arguments.query ?? '')}") → ${results.length} result(s)`)
-            conversationMessages.push({
-              role: 'tool',
-              tool_call_id: call.id,
-              content: JSON.stringify(results),
-            })
+            if (call.name === 'search_datasets') {
+              const result = await executeSearchDatasets(call.arguments, cfg)
+              for (const hit of result.datasets) {
+                searchResultsThisAttempt.push({
+                  id: hit.id,
+                  title: hit.title,
+                  categories: hit.categories,
+                  description: hit.abstract_snippet,
+                })
+              }
+              logger.info(
+                `[Docent] search_datasets("${String(call.arguments.query ?? '')}") → ${result.datasets.length} result(s)`,
+              )
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(result),
+              })
+            } else if (call.name === 'list_featured_datasets') {
+              const result = await executeListFeaturedDatasets(call.arguments, cfg)
+              for (const hit of result.datasets) {
+                searchResultsThisAttempt.push({
+                  id: hit.id,
+                  title: hit.title,
+                  categories: hit.categories,
+                  description: hit.abstract_snippet,
+                })
+              }
+              logger.info(`[Docent] list_featured_datasets → ${result.datasets.length} result(s)`)
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(result),
+              })
+            } else {
+              // Legacy in-process search_catalog.
+              const results = executeSearchCatalog(call.arguments, datasets)
+              searchResultsThisAttempt.push(...results)
+              logger.info(`[Docent] search_catalog("${String(call.arguments.query ?? '')}") → ${results.length} result(s)`)
+              conversationMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(results),
+              })
+            }
           }
         }
 
@@ -1106,6 +1656,11 @@ export async function* processMessage(
         }
 
         if (!attemptErrored && llmProducedText) {
+          // Phase 1f/D — a successful LLM round means quota is back
+          // (Workers AI accepted the request and produced output).
+          // Self-heal the degraded badge so the user knows
+          // functionality is restored without a manual reload.
+          clearDegradedState()
           yield* emitValidatedActions(accumulatedText, datasets, yieldedIds)
 
           // Safety net: if the LLM mentioned dataset titles from search_catalog
@@ -1144,7 +1699,11 @@ export async function* processMessage(
             }
           }
 
-          yield { type: 'done', fallback: false, llmContext }
+          yield {
+            type: 'done',
+            fallback: false,
+            llmContext: { ...llmContext, roundsCount: round },
+          }
           return
         }
 
