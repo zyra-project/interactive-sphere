@@ -44,6 +44,36 @@ const STAR_BRIGHTNESS = 0.2
 const SKYBOX_FACES = ['px', 'nx', 'py', 'ny', 'pz', 'nz'] as const
 const SKYBOX_URL_BASE = '/assets/skybox/'
 
+// --- Texture utility ---
+
+/**
+ * Returns either the original source or a canvas-downscaled copy that fits
+ * within `gl.MAX_TEXTURE_SIZE`. macOS Firefox caps this at 8192, while the
+ * cloud asset is 10000×5000 — without this clamp the upload silently fails
+ * (INVALID_VALUE) and the texture stays as the 1×1 placeholder. Dataset
+ * image fallbacks may also exceed the cap when the `_4096`/`_2048` variants
+ * 404 and we fetch the upstream original.
+ */
+function fitImageToMaxTextureSize(
+  gl: WebGL2RenderingContext,
+  source: HTMLImageElement | HTMLCanvasElement,
+): HTMLImageElement | HTMLCanvasElement {
+  const max = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
+  if (source.width <= max && source.height <= max) return source
+  const scale = Math.min(max / source.width, max / source.height)
+  const w = Math.floor(source.width * scale)
+  const h = Math.floor(source.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return source
+  ctx.drawImage(source, 0, 0, w, h)
+  logger.warn('[EarthTileLayer] Texture %dx%d exceeds MAX_TEXTURE_SIZE %d — downscaled to %dx%d',
+    source.width, source.height, max, w, h)
+  return canvas
+}
+
 // --- Matrix utility ---
 
 /** Invert a 4x4 column-major matrix. Returns false if singular. */
@@ -945,7 +975,11 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       cloudImg.onload = () => {
         if (disposed) return
         gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
-        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, cloudImg)
+        // The cloud asset is 10000x5000, which exceeds MAX_TEXTURE_SIZE on
+        // some GPUs (notably macOS Firefox, capped at 8192). Downscale via
+        // canvas when needed so the upload doesn't silently fail.
+        const source = fitImageToMaxTextureSize(gl2, cloudImg)
+        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, source)
         gl2.generateMipmap(gl2.TEXTURE_2D)
         gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR_MIPMAP_LINEAR)
         gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
@@ -954,7 +988,8 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         cloudTexReady = true
         checkReady()
         _map.triggerRepaint()
-        logger.info('[EarthTileLayer] Cloud texture loaded (%dx%d)', cloudImg.width, cloudImg.height)
+        logger.info('[EarthTileLayer] Cloud texture loaded (%dx%d → %dx%d)',
+          cloudImg.width, cloudImg.height, source.width, source.height)
       }
       cloudImg.onerror = () => {
         if (disposed) return
@@ -1337,7 +1372,8 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         datasetTex = glRef.createTexture()
       }
       glRef.bindTexture(glRef.TEXTURE_2D, datasetTex)
-      glRef.texImage2D(glRef.TEXTURE_2D, 0, glRef.RGBA, glRef.RGBA, glRef.UNSIGNED_BYTE, image)
+      const source = fitImageToMaxTextureSize(glRef, image)
+      glRef.texImage2D(glRef.TEXTURE_2D, 0, glRef.RGBA, glRef.RGBA, glRef.UNSIGNED_BYTE, source)
       glRef.generateMipmap(glRef.TEXTURE_2D)
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_MIN_FILTER, glRef.LINEAR_MIPMAP_LINEAR)
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_MAG_FILTER, glRef.LINEAR)
