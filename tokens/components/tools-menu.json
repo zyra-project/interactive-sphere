@@ -1,0 +1,104 @@
+{
+  "component": {
+    "tools-menu": {
+      "btn-min-height": {
+        "$value": "34px",
+        "$type": "dimension",
+        "$description": "Tools menu button minimum height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "34px",
+            "tablet": "38px"
+          }
+        }
+      },
+      "btn-font-size": {
+        "$value": "0.72rem",
+        "$type": "dimension",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "0.72rem",
+            "tablet": "0.78rem"
+          }
+        }
+      },
+      "btn-radius": {
+        "$value": "999px",
+        "$type": "dimension"
+      },
+      "toggle-min-width": {
+        "$value": "34px",
+        "$type": "dimension",
+        "$description": "Gear icon toggle button width",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "34px",
+            "tablet": "38px"
+          }
+        }
+      },
+      "popover-min-width": {
+        "$value": "240px",
+        "$type": "dimension",
+        "$description": "Tools popover minimum width",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "240px",
+            "tablet": "260px"
+          }
+        }
+      },
+      "popover-radius": {
+        "$value": "10px",
+        "$type": "dimension"
+      },
+      "item-font-size": {
+        "$value": "0.75rem",
+        "$type": "dimension",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "0.75rem",
+            "tablet": "0.82rem"
+          }
+        }
+      },
+      "item-radius": {
+        "$value": "6px",
+        "$type": "dimension"
+      },
+      "layout-btn-min-height": {
+        "$value": "30px",
+        "$type": "dimension",
+        "$description": "Layout picker button height",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "30px",
+            "tablet": "36px"
+          }
+        }
+      },
+      "layout-btn-font-size": {
+        "$value": "0.7rem",
+        "$type": "dimension",
+        "$extensions": {
+          "com.tokens-studio.modes": {
+            "default": "0.7rem",
+            "tablet": "0.78rem"
+          }
+        }
+      },
+      "layout-btn-radius": {
+        "$value": "5px",
+        "$type": "dimension"
+      },
+      "section-title-size": {
+        "$value": "0.6rem",
+        "$type": "dimension"
+      },
+      "section-title-weight": {
+        "$value": "600",
+        "$type": "fontWeight"
+      }
+    }
+  }
+}
