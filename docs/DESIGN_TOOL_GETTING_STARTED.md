@@ -1,17 +1,48 @@
-# Getting Started with Figma — Interactive Sphere Design System
+# Getting Started — Interactive Sphere Design System
 
 This guide walks you through building the Interactive Sphere component
-library in Figma from scratch. It assumes you have Figma installed
-and the Tokens Studio plugin connected (see Phase 3 in
-`FIGMA_SYNC_PLAN.md`).
+library from scratch using a visual design tool that consumes the
+synced design tokens.
+
+## Recommended tool: Penpot
+
+We recommend [Penpot](https://penpot.app/), the open-source design
+tool with **native** W3C Design Tokens import/export — no plugin,
+no Personal Access Token, and no GitHub integration to set up.
+
+**Quickstart:**
+
+1. Sign up at [design.penpot.app](https://design.penpot.app) (free)
+   or self-host the open-source release
+2. Create a new file named "Interactive Sphere — Design System"
+3. Open the **Tokens** panel and import the token JSON files from
+   this repo:
+   - `tokens/global.json`
+   - `tokens/components/browse.json`
+   - `tokens/components/chat.json`
+   - `tokens/components/playback.json`
+   - `tokens/components/tools-menu.json`
+4. All colors, dimensions, and font weights — including the
+   responsive modes declared in `$extensions` — appear in Penpot's
+   Tokens panel, ready to apply to your designs
+
+> **Note on terminology.** The tutorials below were originally
+> written for Figma + the Tokens Studio plugin and still use Figma
+> terms (Frame, Auto Layout, Components, Variants, Tokens Studio).
+> The concepts translate directly to Penpot: Penpot has Boards
+> (Figma's Frames), Flex Layout (Auto Layout), Components,
+> Variants, and a built-in Tokens panel that replaces Tokens Studio.
+> Apply tokens via Penpot's right-click **Apply Token** menu instead
+> of the Tokens Studio "Apply to selection" button. The visual
+> outcome is identical.
 
 ## Table of Contents
 
-1. [Create the Figma File](#1-create-the-figma-file)
+1. [Create the Design File](#1-create-the-figma-file)
 2. [Understand the Figma Interface](#2-understand-the-figma-interface)
 3. [Set Up Your First Page Structure](#3-set-up-your-first-page-structure)
 4. [Build the Glass Surface Foundation](#4-build-the-glass-surface-foundation)
-5. [Apply Tokens with Tokens Studio](#5-apply-tokens-with-tokens-studio)
+5. [Apply Tokens](#5-apply-tokens)
 6. [Build Your First Component: Transport Button](#6-build-your-first-component-transport-button)
 7. [Build the Browse Card Component](#7-build-the-browse-card-component)
 8. [Build the Search Bar Component](#8-build-the-search-bar-component)
@@ -142,30 +173,54 @@ app. You'll reuse it as a component.
 
 ---
 
-## 5. Apply Tokens with Tokens Studio
+## 5. Apply Tokens
 
-Here's the general workflow for applying any token:
+Here's the general workflow for applying any token. Both tools bind
+the property to the token, so when the token value changes the
+design updates automatically.
 
-### For colors (fills, strokes)
+### In Penpot (recommended)
+
+1. Select the layer or frame on the canvas
+2. Open the **Tokens** panel (left sidebar)
+3. Find the token (e.g., `color.accent` or
+   `component.browse.card-radius`)
+4. Right-click the token → **Apply Token** → choose the property
+   (Fill, Stroke, Width, Height, Border Radius, Gap, Padding, Font
+   Size, Font Weight, etc.)
+5. The property in the right-hand inspector now shows the token
+   name instead of the raw value — confirming the binding
+
+### In Figma + Tokens Studio (alternative)
+
+#### For colors (fills, strokes)
 1. Select the layer
 2. In Tokens Studio, find the color token (e.g., `color > accent`)
 3. Right-click the token → choose **"Fill"** or **"Stroke"**
-4. Or just click the token and hit "Apply to selection"
+4. Or click the token and hit "Apply to selection"
 
-### For dimensions (width, height, padding, gap, radius)
+#### For dimensions (width, height, padding, gap, radius)
 1. Select the frame or layer
 2. In Tokens Studio, find the dimension token
 3. Right-click → choose the property: **"Width"**, **"Height"**,
    **"Border Radius"**, **"Gap"**, **"Padding"**, etc.
 
-### For font sizes and weights
+#### For font sizes and weights
 1. Select a text layer
 2. Find the token in Tokens Studio
 3. Right-click → **"Font Size"** or **"Font Weight"**
 
-> **Important:** Always apply tokens through Tokens Studio rather than
-> typing values manually. This binds the Figma property to the token
-> so it updates automatically when the token changes.
+> **Important:** Always apply tokens through the design tool's token
+> binding, never by typing values manually. Binding is what keeps
+> the design synced to the source-of-truth JSON.
+
+> **Font weight caveat.** Numeric font weights (`400`, `500`, `600`,
+> `700`) sometimes don't map cleanly through Tokens Studio's font
+> weight property — Figma expects a named style ("Regular", "Medium",
+> "Semi Bold", "Bold"). Penpot accepts numeric weights directly. If
+> the weight doesn't take in Figma, set it manually in the text
+> panel: `400` = Regular, `500` = Medium, `600` = Semi Bold,
+> `700` = Bold.
 
 ---
 
@@ -519,27 +574,42 @@ the Components page and paste — it automatically becomes an instance.
 
 ## 14. Keeping Things in Sync
 
+The token JSON files in `tokens/` are the single source of truth.
+Designers and developers stay in sync by importing/exporting that
+JSON — no plugin sync, no GitHub PAT, no live integration.
+
 ### When a developer changes a token value
 
-1. Open Tokens Studio in Figma
-2. Click the sync icon → **Pull from GitHub**
-3. The updated values appear in the plugin
-4. Any layers with those tokens applied will reflect the new values
+1. Pull the latest `tokens/*.json` from the repo (or have the file
+   handed to you directly)
+2. **Penpot:** open the Tokens panel → import the updated JSON files
+   (Penpot merges on token name)
+   **Figma + Tokens Studio:** click the sync icon → **Pull from
+   GitHub**
+3. Any layers with those tokens applied reflect the new values
+   automatically
 
-### When you change a value in Figma
+### When you change a value in the design tool
 
-1. Edit the token in Tokens Studio (click the token → edit value)
-2. Click the sync icon → **Push to GitHub**
-3. Tokens Studio creates a commit in the repo
-4. A developer runs `npm run tokens` to regenerate the CSS
+1. Edit the token (click → edit value) in the Tokens panel /
+   Tokens Studio
+2. **Penpot:** export the tokens (Tokens panel → Export tokens →
+   download the JSON files)
+   **Figma + Tokens Studio:** click the sync icon → **Push to
+   GitHub**
+3. Hand the updated JSON to a developer (or open a PR yourself)
+   replacing the matching files under `tokens/`
+4. The developer runs `npm run tokens` to regenerate
+   `src/styles/tokens.css`
 
 ### What NOT to do
 
 - Don't edit `src/styles/tokens.css` directly — it's generated
-- Don't type hardcoded values in Figma when a token exists — always
-  apply through Tokens Studio
-- Don't rename tokens in Figma without coordinating with developers —
-  the CSS references will break
+- Don't type hardcoded values in the design tool when a token
+  exists — always apply via the Tokens panel / Tokens Studio so
+  the binding sticks
+- Don't rename tokens without coordinating with developers — the
+  CSS references will break
 
 ---
 
@@ -553,7 +623,7 @@ the Components page and paste — it automatically becomes an instance.
 | **Instance** | A copy of a component that stays linked to the main. |
 | **Variant** | A state of a component (default, hover, expanded). |
 | **Token** | A named design value (color, size, radius) stored in JSON. |
-| **Tokens Studio** | Figma plugin that syncs tokens between Figma and Git. |
+| **Penpot** | Open-source design tool with native W3C Design Tokens import/export. The recommended tool for this design system. |
 | **Fill** | Background color of a shape or frame. |
 | **Stroke** | Border around a shape or frame. |
 | **Effects** | Shadows, blurs. "Background blur" = CSS backdrop-filter. |
@@ -562,9 +632,9 @@ the Components page and paste — it automatically becomes an instance.
 
 ## Reference
 
-- `docs/FIGMA_COMPONENT_BRIEF.md` — exact token-to-property mapping
+- `docs/COMPONENT_BRIEF.md` — exact token-to-property mapping
   for every component
-- `docs/FIGMA_SYNC_PLAN.md` — architecture and decisions
+- `docs/DESIGN_SYSTEM_PLAN.md` — architecture and decisions
 - `tokens/README.md` — developer workflow for editing tokens
 - `STYLE_GUIDE.md` — visual design rules and auto-generated token
   tables

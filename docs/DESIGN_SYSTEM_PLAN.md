@@ -1,7 +1,7 @@
-# Design System Figma Sync — Implementation Plan
+# Design System — Implementation Plan
 
 Establish a two-way sync pipeline between the CSS design system and
-Figma across two layers:
+the design tool across two layers:
 
 1. **Global tokens** — colors, radii, glass effects, touch targets
 2. **Component tokens** — per-component dimensions, typography, spacing
@@ -17,28 +17,26 @@ tokens/
   │   ├── chat.json       ← chat panel component tokens
   │   ├── playback.json   ← playback controls component tokens
   │   └── tools-menu.json ← tools menu component tokens
-  ├── style-dictionary.config.mjs
-  ├── $metadata.json      ← Tokens Studio metadata
-  └── $themes.json        ← Tokens Studio theme definitions
+  └── style-dictionary.config.mjs
 
           │                                    ▲
           ▼                                    │
-  Style Dictionary build                Tokens Studio
-  (npm run tokens)                    (Figma plugin, Git sync)
+  Style Dictionary build                  Penpot
+  (npm run tokens)                  (native JSON import/export)
           │                                    │
           ▼                                    │
-  src/styles/tokens.css  ◄─── generated ───►  Figma Variables
+  src/styles/tokens.css  ◄─── generated ───►  Penpot Tokens
   (gitignored build artifact;                & Components
    global + component custom properties)
 ```
 
 **Round-trip flow:**
 
-- **Designer edits in Figma** → Tokens Studio pushes a commit updating
-  token JSON files → CI (or local `npm run tokens`) regenerates
-  `tokens.css`
+- **Designer edits in Penpot** → exports the updated tokens JSON →
+  commits the diff to `tokens/*.json` → CI (or local `npm run tokens`)
+  regenerates `tokens.css`
 - **Developer edits token JSON** → runs `npm run tokens` to regenerate
-  CSS → Tokens Studio pulls changes into Figma on next sync
+  CSS → designer imports the updated JSON into Penpot on next sync
 
 **Gitignore strategy:** `tokens.css` is a generated build artifact and
 is gitignored. A `postinstall` hook runs `npm run tokens` automatically
@@ -211,7 +209,7 @@ Tokens JSON file.
 - [ ] Include mode extensions for `.mobile-native` overrides
 - [ ] Validate JSON against W3C Design Tokens Community Group spec
 - [ ] Create `tokens/README.md` — contributor guide explaining the
-      workflow (`npm run tokens`, how to add/edit tokens, Tokens Studio
+      workflow (`npm run tokens`, how to add/edit tokens, design tool
       setup link)
 
 ### Phase 1b: Component token extraction (components/*.json)
@@ -384,50 +382,46 @@ required for our single-file architecture.
       be zero meaningful changes for the global section; component
       tokens will be net-new custom properties)
 
-### Phase 3: Tokens Studio configuration
+### Phase 3: Penpot configuration
 
-Configure the Figma-side integration so the Tokens Studio plugin can
-read/write the token JSON files in this repository.
+Configure the design-tool side of the pipeline. We use
+[Penpot](https://penpot.app/), an open-source design tool with native
+W3C Design Tokens support (MPL 2.0). Penpot reads and writes the same
+token JSON format Style Dictionary consumes, so **no plugin, no
+Personal Access Token, and no third-party Git integration are
+required**. Designers import the JSON directly; round-trip happens by
+exporting JSON back out and committing the diff.
+
+**Why Penpot instead of Figma + Tokens Studio:**
+
+- Native W3C Design Tokens JSON import/export — no plugin install,
+  no marketplace dependency
+- Free tier supports themes and modes (Figma's native variable modes
+  are gated behind the Professional plan)
+- Open source (MPL 2.0) — self-hostable; no per-seat lock-in
+- No Personal Access Token, no GitHub integration to maintain — token
+  files are dragged in or downloaded out of the Penpot tokens panel
 
 **Tasks:**
-- [ ] **Verify Tokens Studio free tier supports multi-file Git sync.**
-      If it only supports single-file, collapse `global.json` +
-      `components/*.json` into one `tokens.json` and adjust the Style
-      Dictionary config accordingly.
-- [ ] Add `tokens/$metadata.json` and `tokens/$themes.json` files
-      (Tokens Studio uses these to store mode/theme mappings and
-      multi-file token set references)
-- [ ] Configure `$metadata.json` with token set order:
-      `["global", "components/browse", "components/chat", ...]`
-- [ ] Document Tokens Studio setup steps in this plan (below)
-- [ ] Test round-trip: edit a color in Figma → push → verify JSON
-      change → run `npm run tokens` → verify CSS output
-- [ ] Test component round-trip: change browse panel width in Figma →
-      push → verify component JSON → regenerate CSS → verify
+
+- [ ] Create a free account at [design.penpot.app](https://design.penpot.app)
+      (or self-host)
+- [ ] Create the project file and import `tokens/global.json` and
+      each `tokens/components/*.json` via Penpot's Tokens panel
+      (File → Tokens → Import)
+- [ ] Verify all global and component values appear with the correct
+      types (color, dimension, fontWeight)
+- [ ] Set up themes/modes in Penpot's Tokens panel:
+      - Global: "Default", "Mobile Native"
+      - Components: "Default", "Tablet", "Phone Portrait",
+        "Mobile Native" (only where modes are defined in the JSON
+        `$extensions`)
+- [ ] Test round-trip: edit a color in Penpot → export tokens JSON →
+      diff against `tokens/global.json` → commit changes → run
+      `npm run tokens` → verify CSS output
+- [ ] Test component round-trip: change browse panel width in
+      Penpot → export → diff component JSON → regenerate CSS → verify
       `--component-browse-panel-width` value
-
-**Tokens Studio setup (manual, in Figma):**
-
-1. Install the [Tokens Studio](https://www.figma.com/community/plugin/843461159747178978)
-   plugin in Figma
-2. Open plugin → Settings → Add new sync provider → **GitHub**
-3. Configure:
-   - Repository: `zyra-project/interactive-sphere`
-   - Branch: `main` (or feature branch for testing)
-   - File path: `tokens` (Tokens Studio reads `$metadata.json` to
-     discover all token files in the directory)
-   - Personal access token: (a GitHub PAT with `repo` scope)
-4. Pull tokens → verify all global and component values appear
-5. Create Figma variable collections:
-   - **Global** collection → colors, radii, spacing, glass, touch
-   - **Components** collection → per-component design values
-6. Set up modes using **Tokens Studio's mode UI** (not native Figma
-   variable modes — those require Figma Professional):
-   - Global: "Default", "Mobile Native"
-   - Components: "Default", "Tablet", "Phone Portrait", "Mobile Native"
-     (only where modes are defined in the JSON)
-   - Designers switch modes in the Tokens Studio plugin panel to
-     preview platform variants
 
 ### Phase 4: CI and contributor setup
 
@@ -566,8 +560,6 @@ prose outside the markers is preserved.
 | Create | `tokens/global.json` | W3C Design Tokens — all values from `tokens.css` |
 | Create | `tokens/components/*.json` (4 files) | Tier 1 per-component design values with responsive modes |
 | Create | `tokens/style-dictionary.config.mjs` | Style Dictionary build config |
-| Create | `tokens/$metadata.json` | Tokens Studio metadata (token set order) |
-| Create | `tokens/$themes.json` | Tokens Studio theme definitions |
 | Create | `tokens/README.md` | Contributor guide for the token workflow |
 | Create | `tokens/scripts/update-style-guide.mjs` | Script to inject token tables into STYLE_GUIDE.md |
 | Delete | `src/styles/tokens.css` | Removed from git — now a **generated** build artifact (gitignored) |
@@ -585,21 +577,19 @@ prose outside the markers is preserved.
 |---|---|---|---|
 | `style-dictionary` | `^5.0.0` | Token → CSS build | Free (Apache 2.0) |
 | `@tokens-studio/sd-transforms` | latest | Token transforms (color, dimension, etc.) | Free (open source) |
-| Tokens Studio plugin | latest | Figma ↔ Git sync | Free tier |
-| Figma | Free plan | Design tool | $0 — modes managed via Tokens Studio UI |
+| Penpot | Latest | Design tool — native W3C Design Tokens JSON import/export | Free (MPL 2.0, open source) |
 
 ## Risks & Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Generated `tokens.css` drifts from hand-edited version | Broken styles | Phase 2 validation: diff generated vs. current before switching over |
-| `rgba()` values don't round-trip perfectly through Figma | Slight color shifts | Pin exact values in JSON; Tokens Studio preserves raw values |
+| `rgba()` values don't round-trip perfectly through the design tool | Slight color shifts | Pin exact values in JSON; Penpot preserves raw values from import |
 | Composite tokens (`--glass-border`) can't be expressed in W3C format | Manual maintenance | Keep composites as a hand-written appendix in the generated file, or use Style Dictionary references |
 | `env()` safe-area tokens are runtime-only | Can't be in JSON | Append as static lines via a custom Style Dictionary format |
 | Developer edits `tokens.css` directly instead of JSON | Changes lost on next build | File is gitignored so direct edits are never committed; contributors learn the workflow naturally |
 | Component CSS migration introduces visual regressions | Broken UI | Migrate one file at a time with visual regression check; keep `@media` structure intact |
 | Token naming collisions between components | Conflicting custom properties | Namespace all component tokens: `--component-{name}-{property}` |
-| Tokens Studio free tier may not support multi-file Git sync | Architecture change | Verify in Phase 3; fall back to single `tokens.json` if needed |
 | `postinstall` adds time to `npm install` | Slower install | Token build is fast (~1s); acceptable tradeoff for zero-friction contributor experience |
 
 ## Phasing & Sequencing
@@ -612,7 +602,7 @@ Phase 1a (global tokens)
     └──▶ Phase 2 (build pipeline + postinstall) ──▶ Phase 4 (CI)
 Phase 1b (Tier 1 component tokens) ─────────────────┘
     └──▶ Phase 5 (CSS migration)
-Phase 3 (Tokens Studio) — can start after Phase 1a
+Phase 3 (Penpot) — can start after Phase 1a
 Phase 6 (STYLE_GUIDE auto-update) — after Phase 1a + 1b
 ```
 
@@ -620,7 +610,7 @@ Phase 6 (STYLE_GUIDE auto-update) — after Phase 1a + 1b
 1. Phase 1a + Phase 2 — get global tokens building, `tokens.css`
    gitignored, `postinstall` hook working
 2. Phase 4 — verify CI passes, update docs
-3. Phase 3 — verify Figma round-trip works with global tokens
+3. Phase 3 — verify Penpot round-trip works with global tokens
 4. Phase 1b — add Tier 1 component tokens
 5. Phase 5 — migrate Tier 1 component CSS to use token vars
 6. Phase 6 — add auto-generated sections to STYLE_GUIDE.md
@@ -635,10 +625,13 @@ Phase 6 (STYLE_GUIDE auto-update) — after Phase 1a + 1b
 2. **Token naming convention:** `--component-{name}-{property}`. The
    `component-` prefix avoids collisions with global tokens.
 
-3. **Figma free plan.** All modes are managed in Tokens Studio's own
-   mode UI (free tier), not Figma's native variable modes. This keeps
-   the entire pipeline at $0/mo — important for contributor adoption on
-   an open-source project.
+3. **Penpot is the design tool.** [Penpot](https://penpot.app/) is
+   open-source (MPL 2.0) and ships native W3C Design Tokens support —
+   including free-tier theming and modes. No plugin, no Personal
+   Access Token, no per-seat costs, and self-hostable. Keeps the
+   entire pipeline at $0/mo and removes the Figma + Tokens Studio
+   plugin / GitHub PAT chain that would otherwise be required for an
+   open-source contributor workflow.
 
 4. **Granularity threshold:** tokenize values documented in
    STYLE_GUIDE.md and values with responsive/platform overrides.
@@ -668,15 +661,24 @@ Phase 6 (STYLE_GUIDE auto-update) — after Phase 1a + 1b
 
 These items depend on prerequisites that don't exist yet:
 
-- **Figma Code Connect** — links Figma component frames to CSS source
-  files. Requires a Figma component library to exist first. Add once
-  the Figma file is created. Uses `@figma/code-connect` (free, open
-  source).
+- **Penpot component library** — Build the Tier 1 component frames
+  (browse panel, chat panel, playback controls, tools menu) in Penpot
+  using the imported tokens. Penpot stores components and tokens in
+  the same file, so designers can iterate on dimensions and have the
+  changes flow back through `tokens/*.json` → `tokens.css`. Requires
+  the Tier 1 token JSON files to be imported (Phase 3) first.
 
-- **Figma file creation** — a Figma MCP server could automate
-  populating variable collections, modes, and token values (~100+
-  variables). The visual component frames must be designed manually.
-  Requires: blank Figma file (manual), Figma MCP server access.
+- **Layout configuration system** — JSON-driven layout configs that
+  let installations target specific display contexts: kiosk (single
+  touchscreen), video wall (high-resolution, large viewing distance),
+  planetarium (dome projection), multi-monitor (synchronized
+  viewports), and spherical display (Science On a Sphere globe).
+  Each context needs its own typography scale, touch target sizing,
+  spacing density, and panel positioning rules — all expressible as
+  token modes layered on top of the responsive modes already in
+  place. Requires: design exploration in Penpot per context, mode
+  extensions to the `multi-mode-css` format if more than the current
+  four modes are needed.
 
 - **Tier 2 component tokens** — info-panel, help panel. Add after
   Tier 1 pipeline is stable.

@@ -54,7 +54,11 @@ and `.mobile-native` overrides.
 
 ### Platform modes
 
-Tokens with platform-specific overrides use Tokens Studio extensions:
+Tokens with platform-specific overrides use **mode extensions** in
+the standard W3C Design Tokens Community Group `$extensions` slot.
+The `com.tokens-studio.modes` namespace below is the de-facto
+extension key supported by both [Penpot](https://penpot.app/)
+(natively) and the Tokens Studio Figma plugin:
 
 ```jsonc
 {
@@ -75,19 +79,31 @@ Tokens with platform-specific overrides use Tokens Studio extensions:
 
 The `mobile-native` mode generates a `.mobile-native { }` CSS block.
 
-## Figma Sync (Tokens Studio)
+## Design Tool Sync (Penpot)
 
-The token JSON files can be synced with Figma via the
-[Tokens Studio](https://www.figma.com/community/plugin/843461159747178978)
-plugin. See `docs/FIGMA_SYNC_PLAN.md` for setup instructions.
+The token JSON files in this directory are imported directly into
+[Penpot](https://penpot.app/), the open-source design tool we use
+for the Interactive Sphere component library. Penpot natively reads
+and writes the W3C Design Tokens JSON format — **no plugin, no
+Personal Access Token, no GitHub integration required**:
+
+1. Open the Penpot file → Tokens panel → **Import**
+2. Select `tokens/global.json` and each `tokens/components/*.json`
+3. Designers edit values in the Tokens panel; **Export** writes
+   updated JSON files that drop straight back into this directory
+4. Run `npm run tokens` to regenerate `src/styles/tokens.css` from
+   the updated JSON
+
+See [`docs/DESIGN_SYSTEM_PLAN.md`](../docs/DESIGN_SYSTEM_PLAN.md)
+for the full architecture and
+[`docs/DESIGN_TOOL_GETTING_STARTED.md`](../docs/DESIGN_TOOL_GETTING_STARTED.md)
+for the designer-facing walkthrough.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `global.json` | All global design tokens (colors, radii, glass, touch) |
-| `components/*.json` | Per-component tokens with responsive modes (future) |
+| `components/*.json` | Per-component tokens with responsive modes |
 | `style-dictionary.config.mjs` | Build configuration |
 | `multi-mode-css.mjs` | Custom output format for single-file multi-mode CSS |
-| `$metadata.json` | Tokens Studio metadata (future) |
-| `$themes.json` | Tokens Studio theme definitions (future) |

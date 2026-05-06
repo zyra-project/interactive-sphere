@@ -1,22 +1,34 @@
-# Figma Component Library — Design Brief
+# Component Library — Design Brief
 
-This document describes how to build the Figma component library for
+This document describes how to build the component library for
 Interactive Sphere using the synced design tokens. Every dimension,
-color, and radius should reference a **Tokens Studio variable** rather
-than a hardcoded value — this keeps the Figma file in sync with the
+color, and radius should reference a **design token** rather than a
+hardcoded value — this keeps the design file in sync with the
 codebase.
 
 ## Prerequisites
 
-- Tokens Studio plugin installed with GitHub sync pointed at
-  `zyra-project/interactive-sphere` (branch `main` once merged)
-- All token sets pulled and active (global, browse, chat, playback,
-  tools-menu)
+- A design tool with W3C Design Tokens support. We recommend
+  [Penpot](https://penpot.app/) (native JSON import/export, no
+  plugin) — Figma + the Tokens Studio plugin also works.
+- All token sets imported / pulled and active (global, browse,
+  chat, playback, tools-menu).
+- See [`DESIGN_TOOL_GETTING_STARTED.md`](DESIGN_TOOL_GETTING_STARTED.md)
+  for setup.
 
 ## How to Apply Tokens
 
-In Figma, select a layer and use Tokens Studio's "Apply to selection"
-to bind a property to a token. For example:
+Select a layer and use the design tool's token-binding action to
+attach a property to a token:
+
+- **Penpot:** open the Tokens panel → right-click the token →
+  **Apply Token** → choose the property (Fill, Stroke, Width,
+  Padding, Font Size, …)
+- **Figma + Tokens Studio:** select the layer, then click
+  "Apply to selection" on the token, or right-click the token →
+  choose the property
+
+Examples:
 
 - Select a rectangle → apply `color > surface` to its fill
 - Select a frame → apply `component > browse > card-padding` to its
@@ -24,7 +36,7 @@ to bind a property to a token. For example:
 - Select text → apply `component > browse > title-size` to its font
   size
 
-Tokens Studio maps token types to Figma properties automatically:
+Both tools map token types to design properties automatically:
 `color` → fill/stroke, `dimension` → width/height/padding/gap,
 `fontWeight` → font weight.
 
