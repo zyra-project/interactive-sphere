@@ -35,6 +35,12 @@ yarn-debug.log*
 yarn-error.log*
 .playwright-mcp/
 
+# Local MCP client config — Claude Code reads `.mcp.json` at the
+# repo root for project-scoped MCP server connections. Per-contributor;
+# typically contains auth tokens (e.g. Penpot MCP). Never commit.
+# A redacted `.mcp.json.example` may be committed as a template.
+.mcp.json
+
 # Runtime
 .turbo/
 
