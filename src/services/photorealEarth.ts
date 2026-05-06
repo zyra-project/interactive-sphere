@@ -668,12 +668,24 @@ export function createPhotorealEarth(
         // Convert luminance channel to alpha on an offscreen canvas:
         // solid white RGB, varying alpha from source brightness with
         // gamma to boost contrast between wisps and dense cover.
+        //
+        // Clamp dimensions to MAX_CLOUD_TEXTURE_SIZE: the asset is
+        // 10000×5000, which exceeds gl.MAX_TEXTURE_SIZE on macOS
+        // Firefox (capped at 8192) — Three.js's upload would silently
+        // fail and leave the cloud mesh untextured. The clamp also
+        // bounds the getImageData allocation (10000×5000×4 ≈ 200 MB).
+        const MAX_CLOUD_TEXTURE_SIZE = 8192
+        const scale = Math.min(1,
+          MAX_CLOUD_TEXTURE_SIZE / img.width,
+          MAX_CLOUD_TEXTURE_SIZE / img.height)
+        const w = Math.floor(img.width * scale)
+        const h = Math.floor(img.height * scale)
         const canvas = document.createElement('canvas')
-        canvas.width = img.width
-        canvas.height = img.height
+        canvas.width = w
+        canvas.height = h
         const ctx = canvas.getContext('2d')
         if (!ctx) throw new Error('[photorealEarth] 2D canvas context unavailable')
-        ctx.drawImage(img, 0, 0, img.width, img.height)
+        ctx.drawImage(img, 0, 0, w, h)
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = imageData.data
         for (let i = 0; i < data.length; i += 4) {
