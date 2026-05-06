@@ -57,7 +57,7 @@ const SKYBOX_URL_BASE = '/assets/skybox/'
 function fitImageToMaxTextureSize(
   gl: WebGL2RenderingContext,
   source: HTMLImageElement | HTMLCanvasElement,
-): TexImageSource {
+): HTMLImageElement | HTMLCanvasElement {
   const max = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
   if (source.width <= max && source.height <= max) return source
   const scale = Math.min(max / source.width, max / source.height)
