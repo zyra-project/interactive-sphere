@@ -467,14 +467,16 @@ the empty TerraViz - Design System file created 53 tokens — 44
 that is a `color` or `dimension`. Every subsequent run with no JSON
 edits is a no-op (`0 created / 0 updated / 53 unchanged`).
 
-**Out of scope for this pass** (deferred to follow-up branches):
+**Out of scope for this script** (covered separately or deferred):
 
-- Component token sets sourced from `tokens/components/*.json`
+- Component token sets sourced from `tokens/components/*.json` —
+  handled by the sibling `scripts/sync-penpot-components.ts`
+  (see below).
 - Mode overrides (`com.tokens-studio.modes`) — `default` `$value`
   only for now; modes will be wired through Penpot themes once the
-  Global set is stable
+  Global set is stable.
 - Library typographies and component scaffolding (Glass Surface,
-  Transport Button, etc.)
+  Transport Button, etc.).
 - Round-trip in the other direction (Penpot → JSON export). The
   designer-side export-and-commit flow described above remains the
   canonical channel for now; a future script will diff Penpot's
@@ -485,6 +487,74 @@ the plugin tab has focused. Verify with
 `penpot.currentFile?.name` / `penpotUtils.getPages()` before any
 write — if the plugin is attached to the wrong file, every
 `addToken` call lands in the wrong library.
+
+#### Bootstrap tooling: `scripts/sync-penpot-components.ts`
+
+Sibling script to the Global seeder for the per-component JSONs in
+`tokens/components/`. Same CLI surface (`--code` default, `--list`
+flag) and the same idempotent upsert semantics — but emits a
+multi-set plan, one Penpot set per component file:
+
+| File | Penpot set |
+|---|---|
+| `tokens/components/browse.json` | `Components/Browse` |
+| `tokens/components/chat.json` | `Components/Chat` |
+| `tokens/components/playback.json` | `Components/Playback` |
+| `tokens/components/tools-menu.json` | `Components/Tools-Menu` |
+
+Token names mirror the full JSON path so they line up with Style
+Dictionary's emitted CSS variables:
+
+| JSON path | CSS variable | Penpot token name |
+|---|---|---|
+| `component.browse.panel-width` | `--component-browse-panel-width` | `component.browse.panel-width` |
+| `component.chat.send-btn-min-size` | `--component-chat-send-btn-min-size` | `component.chat.send-btn-min-size` |
+| `component.tools-menu.section-title-weight` | `--component-tools-menu-section-title-weight` | `component.tools-menu.section-title-weight` |
+
+**Type mapping** (W3C `$type` → Penpot `TokenType`):
+
+| W3C | Penpot | Notes |
+|---|---|---|
+| `color` | `color` | — |
+| `dimension` | `dimension` | px, rem, vh, %, unitless all accepted |
+| `fontWeight` | `fontWeights` | string value (e.g. `"600"`) |
+| `number` | — | **skipped with stderr warning** — Penpot's `addToken` enum has no unitless-number/line-height variant. The only such token in the JSON is `chat.msg-line-height = 1.55` |
+
+**Value caveat: `calc(...)` is skipped.** Penpot's `addToken`
+rejects CSS `calc()` expressions on `dimension` tokens with
+`Value not valid` (verified empirically — every other unit
+including `100vh`, `88%`, and unitless values is fine). The script
+detects `calc(` substrings during the walk and skips with a stderr
+warning. The only calc value in the JSON is
+`component.chat.panel-max-height = calc(100vh - 8rem)`. Style
+Dictionary keeps the canonical value for `tokens.css`; designers
+can override it inside Penpot if needed without affecting the
+JSON source of truth.
+
+**Initial seed (May 2026).** Seeded 62 tokens across 4 sets:
+
+| Set | tokens | dimension | fontWeights |
+|---|---:|---:|---:|
+| Components/Browse | 20 | 19 | 1 |
+| Components/Chat | 20 | 18 | 2 |
+| Components/Playback | 9 | 8 | 1 |
+| Components/Tools-Menu | 13 | 12 | 1 |
+
+Two tokens skipped (1 `number`-typed line-height,
+1 `calc()`-valued max-height); both surface as stderr warnings
+on every run. Idempotent re-run is `0 created / 0 updated / 62
+unchanged`.
+
+**Out of scope for this pass** (deferred to follow-up branches):
+
+- Mode overrides (`com.tokens-studio.modes`) — same as for Global;
+  default `$value` only here too. Once Penpot themes are wired,
+  components will gain `Tablet` / `Phone Portrait` / `Mobile Native`
+  variants alongside the Global `Mobile Native` set.
+- A second-pass script to land `calc()`/`number` tokens via a
+  different Penpot mechanism (manual override at the shape level,
+  or as plain library values rather than design tokens) if a
+  designer needs to interact with them.
 
 ### Phase 4: CI and contributor setup
 
