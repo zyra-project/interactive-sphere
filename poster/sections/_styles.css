@@ -4530,14 +4530,36 @@ a.stack__item-name:focus-visible::after,
 }
 
 /* =========================================================
-   §14 Footer
+   §14 Footer — closing block. Picks up the same vocabulary the
+   rest of the poster uses: glass-surface chips, terra-accent
+   mono labels, hero-style logo strip. The top accent rule
+   visually closes the section instead of letting the footer
+   bleed out of the last content section.
    ========================================================= */
+#sec-14-footer-block {
+  position: relative;
+  border-top: 1px solid var(--surface-border);
+}
+#sec-14-footer-block::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--terra-accent) 0%,
+    var(--terra-accent) 28%,
+    rgba(77, 166, 255, 0.0) 100%);
+  pointer-events: none;
+}
+
 .footer-block__container {
   max-width: var(--container-max);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 2rem;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 3rem;
   align-items: start;
 }
 
@@ -4548,7 +4570,25 @@ a.stack__item-name:focus-visible::after,
   text-transform: uppercase;
   color: var(--terra-accent);
   font-weight: 700;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.85rem;
+}
+
+/* Logo strip — mirrors the hero's NOAA + GSL pairing so the
+   institutional affiliation reads consistently top and bottom. */
+.footer-block__logos {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin: 0 0 1.25rem;
+}
+.footer-block__logo {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  opacity: 0.92;
+}
+.footer-block__logo--wide {
+  height: 36px;
 }
 
 .footer-block__authors {
@@ -4564,6 +4604,51 @@ a.stack__item-name:focus-visible::after,
 }
 
 .footer-block__authors a {
+  color: var(--terra-accent-text);
+  text-decoration: none;
+}
+.footer-block__authors a:hover {
+  text-decoration: underline;
+}
+
+/* Metadata chips — DOI / License / Source. Glass-surface pills
+   that match the .hero__pill / .demo-frame__interact-hint
+   vocabulary, so the footer doesn't introduce a new chip style. */
+.footer-block__chips {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.footer-block__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.34rem 0.75rem;
+  background: var(--surface-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+.footer-block__chip-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--terra-accent-text);
+}
+.footer-block__chip a {
+  color: var(--neutral-100);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.footer-block__chip a:hover {
   color: var(--terra-accent);
 }
 
@@ -4571,12 +4656,12 @@ a.stack__item-name:focus-visible::after,
   font-size: 0.85rem;
   color: var(--mist);
   line-height: 1.55;
-  margin: 0 0 1rem;
+  margin: 0 0 0.85rem;
 }
 
 .footer-block__meta {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: #5d7a89;
   line-height: 1.6;
   margin: 0;
@@ -4586,13 +4671,9 @@ a.stack__item-name:focus-visible::after,
   display: block;
 }
 
-.footer-block__poster-series {
-  font-size: 0.85rem;
-  color: var(--mist);
-  line-height: 1.6;
-  margin: 0;
-}
-
+/* Companion posters — small glass cards with a trailing arrow
+   so each one reads as an actionable destination, not just a
+   bullet-list link. */
 .footer-block__poster-series h4 {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -4600,31 +4681,99 @@ a.stack__item-name:focus-visible::after,
   text-transform: uppercase;
   color: var(--terra-accent);
   font-weight: 700;
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.85rem;
 }
 
 .footer-block__poster-series ul {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: 0 0 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
 .footer-block__poster-series a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  background: var(--surface-glass);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
   color: white;
   text-decoration: none;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
+  transition: border-color 0.15s ease, background 0.15s ease,
+              transform 0.15s ease;
+}
+.footer-block__poster-series a:hover {
+  background: rgba(13, 13, 18, 0.94);
+  border-color: var(--terra-accent);
+  transform: translateX(2px);
 }
 
-.footer-block__poster-series a:hover {
-  color: var(--terra-accent);
-  text-decoration: underline;
+.footer-block__poster-name {
+  color: white;
+}
+
+.footer-block__poster-arrow {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--terra-accent-text);
+}
+
+/* QR chip — pairs the poster's own QR (assets/qr/poster.png)
+   with a short "scan to view online" caption. White-fielded
+   image because QR codes need an opaque white background to
+   scan reliably against the dark footer surface. */
+.footer-block__qr {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem;
+  background: var(--surface-glass);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+.footer-block__qr img {
+  width: 72px;
+  height: 72px;
+  background: white;
+  border-radius: 4px;
+  padding: 4px;
+  flex-shrink: 0;
+  display: block;
+}
+.footer-block__qr figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  line-height: 1.35;
+}
+.footer-block__qr-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--terra-accent-text);
+}
+.footer-block__qr-url {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--mist);
 }
 
 @media (max-width: 700px) {
-  .footer-block__container { grid-template-columns: 1fr; }
+  .footer-block__container {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  .footer-block__logos { gap: 1rem; }
+  .footer-block__logo { height: 40px; }
+  .footer-block__logo--wide { height: 30px; }
 }
 
 /* =========================================================

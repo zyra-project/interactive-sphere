@@ -2,31 +2,88 @@
             class="section section--dark fade-in"
             aria-labelledby="sec-14-title">
       <div class="footer-block__container">
-        <div>
+        <div class="footer-block__col footer-block__col--main">
           <h2 id="sec-14-title" class="footer-block__title">TerraViz</h2>
+
+          <div class="footer-block__logos" aria-label="Institutional affiliations">
+            <img src="assets/logos/noaa-logo.svg"
+                 alt="NOAA"
+                 class="footer-block__logo">
+            <img src="assets/logos/noaa-gsl-logo.png"
+                 alt="NOAA Global Systems Laboratory"
+                 class="footer-block__logo footer-block__logo--wide">
+          </div>
+
           <p class="footer-block__authors">
             <strong>Eric Hackathorn</strong> · NOAA Global Systems Laboratory<br>
-            <a href="https://orcid.org/0000-0002-9693-2093" rel="noopener" target="_blank" aria-label="ORCID 0000-0002-9693-2093">ORCID 0000-0002-9693-2093</a>
+            <a href="https://orcid.org/0000-0002-9693-2093"
+               rel="noopener"
+               target="_blank"
+               aria-label="ORCID 0000-0002-9693-2093">ORCID 0000-0002-9693-2093</a>
           </p>
+
+          <ul class="footer-block__chips" aria-label="Project metadata">
+            <li class="footer-block__chip">
+              <span class="footer-block__chip-label">DOI</span>
+              <a href="https://doi.org/10.5281/zenodo.20044517"
+                 rel="noopener"
+                 target="_blank">10.5281/zenodo.20044517</a>
+            </li>
+            <li class="footer-block__chip">
+              <span class="footer-block__chip-label">License</span>
+              <a href="https://github.com/zyra-project/terraviz/blob/main/LICENSE"
+                 rel="noopener"
+                 target="_blank">Apache-2.0</a>
+            </li>
+            <li class="footer-block__chip">
+              <span class="footer-block__chip-label">Source</span>
+              <a href="https://github.com/zyra-project/terraviz"
+                 rel="noopener"
+                 target="_blank">github.com/zyra-project/terraviz</a>
+            </li>
+          </ul>
+
           <p class="footer-block__attribution">
-            A NOAA Global Systems Laboratory project, developed under the Zyra Project umbrella. Source available under the Apache License 2.0.
+            A NOAA Global Systems Laboratory project, developed under the Zyra Project umbrella.
           </p>
           <p class="footer-block__meta">
-            <span>github.com/zyra-project/terraviz · Apache-2.0</span>
-            <span>poster.terraviz.zyra-project.org · live · auto-deploy on poster commits</span>
+            <span>poster.terraviz.zyra-project.org · auto-deploy on poster commits</span>
             <span>Built with vanilla TypeScript, MapLibre GL JS, Three.js, Tauri v2, Cloudflare Pages.</span>
           </p>
         </div>
 
-        <div>
+        <div class="footer-block__col footer-block__col--side">
           <div class="footer-block__poster-series">
             <h4>Companion posters</h4>
             <ul>
-              <li><a href="https://noaa-gsl.github.io/zyra/poster/" target="_blank" rel="noopener">Zyra</a></li>
-              <li><a href="https://noaa-gsl.github.io/depot-explorer/" target="_blank" rel="noopener">Depot Explorer</a></li>
-              <li><a href="https://zyra-project.github.io/zyra-editor/" target="_blank" rel="noopener">Zyra Editor</a></li>
+              <li>
+                <a href="https://noaa-gsl.github.io/zyra/poster/" target="_blank" rel="noopener">
+                  <span class="footer-block__poster-name">Zyra</span>
+                  <span class="footer-block__poster-arrow" aria-hidden="true">→</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://noaa-gsl.github.io/depot-explorer/" target="_blank" rel="noopener">
+                  <span class="footer-block__poster-name">Depot Explorer</span>
+                  <span class="footer-block__poster-arrow" aria-hidden="true">→</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://zyra-project.github.io/zyra-editor/" target="_blank" rel="noopener">
+                  <span class="footer-block__poster-name">Zyra Editor</span>
+                  <span class="footer-block__poster-arrow" aria-hidden="true">→</span>
+                </a>
+              </li>
             </ul>
           </div>
+
+          <figure class="footer-block__qr">
+            <img src="assets/qr/poster.png" alt="QR code to view this poster online">
+            <figcaption>
+              <span class="footer-block__qr-label">Scan to view online</span>
+              <span class="footer-block__qr-url">poster.terraviz.zyra-project.org</span>
+            </figcaption>
+          </figure>
         </div>
       </div>
     </footer>
