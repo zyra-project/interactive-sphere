@@ -27,7 +27,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { marked } from 'marked'
 
 const HERE = resolve(fileURLToPath(import.meta.url), '..')
@@ -315,10 +315,12 @@ function run(): void {
 }
 
 // Only run the CLI when invoked as a script, not when imported by
-// the unit test.
+// the unit test. `pathToFileURL` normalizes `process.argv[1]`
+// across platforms (Windows backslashes + drive letter, POSIX
+// slashes) so the comparison matches `import.meta.url`.
 if (
-  import.meta.url === `file://${process.argv[1]}` ||
-  import.meta.url.endsWith(process.argv[1] ?? '')
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   run()
 }

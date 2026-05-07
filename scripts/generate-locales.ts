@@ -18,7 +18,7 @@
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve, basename } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = resolve(fileURLToPath(import.meta.url), '..')
 const REPO_ROOT = resolve(HERE, '..')
@@ -333,9 +333,16 @@ function run(): void {
   }
 }
 
+// CLI-mode detection — `pathToFileURL` normalizes `process.argv[1]`
+// across platforms (Windows backslashes + drive letter, POSIX slashes)
+// so the comparison matches `import.meta.url`. The naive
+// `file://${process.argv[1]}` template silently misses on Windows
+// runners, leaving `run()` un-invoked and the codegen producing no
+// output — which then fails the downstream vite build with an
+// unresolved-import error pointing at `./messages`.
 if (
-  import.meta.url === `file://${process.argv[1]}` ||
-  import.meta.url.endsWith(process.argv[1] ?? '')
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   run()
 }
