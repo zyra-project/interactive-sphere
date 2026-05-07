@@ -6,12 +6,18 @@ import {
 } from './sync-penpot-components.ts'
 
 describe('sync-penpot-components', () => {
-  const plans = buildComponentTokenSets()
+  const { plans, skipped } = buildComponentTokenSets()
   const planByName = new Map(plans.map((p) => [p.name, p]))
 
   it('produces one set per JSON file in tokens/components/', () => {
     const fileCount = listComponentFiles().length
     expect(plans.length).toBe(fileCount)
+  })
+
+  it('returns the skipped list (number type + calc values)', () => {
+    const skippedPaths = skipped.map((s) => `${s.path}|${s.reason.split(' ')[0]}`)
+    expect(skippedPaths).toContain('component.chat.msg-line-height|unsupported')
+    expect(skippedPaths).toContain('component.chat.panel-max-height|calc()')
   })
 
   it('names sets under the Components/ namespace, title-cased per file stem', () => {
@@ -88,5 +94,10 @@ describe('sync-penpot-components', () => {
     expect(code).toContain('"component.browse.panel-width"')
     expect(code).toContain('penpot.library.local.tokens')
     expect(code).toContain('addToken')
+  })
+
+  it('plugin code summary includes the unchanged-token list per set', () => {
+    const code = buildPluginCode(plans)
+    expect(code).toMatch(/created,\s*updated,\s*unchanged,\s*orphans,\s*typeMismatches/)
   })
 })

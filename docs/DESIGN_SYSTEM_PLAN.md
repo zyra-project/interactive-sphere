@@ -518,7 +518,7 @@ Dictionary's emitted CSS variables:
 | `color` | `color` | — |
 | `dimension` | `dimension` | px, rem, vh, %, unitless all accepted |
 | `fontWeight` | `fontWeights` | string value (e.g. `"600"`) |
-| `number` | — | **skipped with stderr warning** — Penpot's `addToken` enum has no unitless-number/line-height variant. The only such token in the JSON is `chat.msg-line-height = 1.55` |
+| `number` | — | **skipped with stderr warning** — Penpot's `addToken` enum has no unitless-number/line-height variant. The only such token in the JSON is `component.chat.msg-line-height = 1.55` |
 
 **Value caveat: `calc(...)` is skipped.** Penpot's `addToken`
 rejects CSS `calc()` expressions on `dimension` tokens with

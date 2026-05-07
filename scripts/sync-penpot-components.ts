@@ -23,15 +23,16 @@
  *   number      → SKIPPED with stderr warning. Penpot's TokenType
  *                 enum has no unitless-number / line-height variant
  *                 (see Penpot API docs for `addToken`); the only such
- *                 token in the JSON is `chat.msg-line-height = 1.55`.
+ *                 token in the JSON is
+ *                 `component.chat.msg-line-height = 1.55`.
  *
  * Value caveat: Penpot's `addToken` rejects CSS `calc(...)` expressions
  * with "Value not valid" — verified empirically against the design
  * system file. Such tokens are skipped with the same stderr warning.
  * The only calc value in the JSON is
- * `chat.panel-max-height = calc(100vh - 8rem)`; designers can override
- * it manually if needed, and the JSON keeps the canonical value for
- * Style Dictionary.
+ * `component.chat.panel-max-height = calc(100vh - 8rem)`; designers
+ * can override it manually if needed, and the JSON keeps the canonical
+ * value for Style Dictionary.
  *
  * Like the Global script, this pass intentionally seeds the default
  * `$value` only — `com.tokens-studio.modes` overrides are deferred
@@ -45,6 +46,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isInvokedAsScript } from './lib/cli.ts'
 
 export type PenpotTokenType =
   | 'color'
@@ -61,6 +63,17 @@ export interface TokenSpec {
 export interface TokenSetPlan {
   name: string
   specs: TokenSpec[]
+}
+
+export interface SkippedToken {
+  file: string
+  path: string
+  reason: string
+}
+
+export interface BuildPlansResult {
+  plans: TokenSetPlan[]
+  skipped: SkippedToken[]
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -86,9 +99,9 @@ export function readJson(path: string): unknown {
 
 export function buildComponentTokenSets(
   files: string[] = listComponentFiles(),
-): TokenSetPlan[] {
+): BuildPlansResult {
   const plans: TokenSetPlan[] = []
-  const skipped: { file: string; path: string; reason: string }[] = []
+  const skipped: SkippedToken[] = []
   for (const file of files) {
     const json = readJson(file)
     const stem = basename(file, '.json')
@@ -97,14 +110,7 @@ export function buildComponentTokenSets(
     walk(json, [], specs, skipped, file)
     plans.push({ name: setName, specs })
   }
-  if (skipped.length > 0) {
-    for (const s of skipped) {
-      process.stderr.write(
-        `[sync-penpot-components] skipped ${basename(s.file)}:${s.path}: ${s.reason}\n`,
-      )
-    }
-  }
-  return plans
+  return { plans, skipped }
 }
 
 function componentSetName(stem: string): string {
@@ -125,7 +131,7 @@ function walk(
   node: unknown,
   path: string[],
   specs: TokenSpec[],
-  skipped: { file: string; path: string; reason: string }[],
+  skipped: SkippedToken[],
   file: string,
 ) {
   if (!isPlainObject(node)) return
@@ -218,26 +224,21 @@ for (const plan of PLAN.plans) {
       orphans: orphans.length,
       typeMismatches: typeMismatches.length,
     },
-    created, updated, orphans, typeMismatches,
+    created, updated, unchanged, orphans, typeMismatches,
   });
 }
 return summary;
 `
 }
 
-const invokedAsCli = (() => {
-  const entry = process.argv[1]
-  if (!entry) return false
-  try {
-    return fileURLToPath(import.meta.url) === resolve(entry)
-  } catch {
-    return false
-  }
-})()
-
-if (invokedAsCli) {
+if (isInvokedAsScript(import.meta.url)) {
   const arg = process.argv[2]
-  const plans = buildComponentTokenSets()
+  const { plans, skipped } = buildComponentTokenSets()
+  for (const s of skipped) {
+    process.stderr.write(
+      `[sync-penpot-components] skipped ${basename(s.file)}:${s.path}: ${s.reason}\n`,
+    )
+  }
   if (arg === '--list') {
     process.stdout.write(JSON.stringify(plans, null, 2) + '\n')
   } else if (arg && arg !== '--code') {
