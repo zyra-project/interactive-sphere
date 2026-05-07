@@ -2204,11 +2204,22 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   margin: 0;
 }
 
+/* Plain-language sentence — the everyday-words takeaway, sits
+   above the technical implementation note. Slightly larger /
+   higher contrast so a non-engineer scanning the loop gets the
+   point without parsing the jargon line below. */
+.xr__loop-plain {
+  font-size: 0.92rem;
+  color: var(--neutral-800);
+  line-height: 1.5;
+  margin: 0.25rem 0 0;
+}
+
 .xr__loop-desc {
-  font-size: 0.88rem;
-  color: var(--neutral-700);
+  font-size: 0.8rem;
+  color: var(--neutral-500);
   line-height: 1.45;
-  margin: 0.15rem 0 0;
+  margin: 0.35rem 0 0;
 }
 
 .xr__loop-tag {

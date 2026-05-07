@@ -108,6 +108,7 @@
             <div>
               <span class="xr__loop-name">Hit-test</span>
               <span class="xr__loop-tag">AR only</span>
+              <p class="xr__loop-plain">Each frame the headset re-checks where real-world surfaces are, so the targeting reticle stays accurate as the user moves.</p>
               <p class="xr__loop-desc">Query the WebXR hit-test source for surface intersections. Drives the placement reticle.</p>
             </div>
           </li>
@@ -115,48 +116,56 @@
             <div>
               <span class="xr__loop-name">Anchor-pose sync</span>
               <span class="xr__loop-tag">AR only</span>
+              <p class="xr__loop-plain">Once the user has placed the globe on a desk, snap it back to that exact spot every frame so it stays glued there as they walk around.</p>
               <p class="xr__loop-desc">If the globe is anchored, read the anchor's current pose and write it into <code>globe.position</code>.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name">Dataset texture swap</span>
+              <p class="xr__loop-plain">If the user picked a new dataset, wrap the globe in it — reusing the video or image already loaded by the 2D app, so nothing re-downloads.</p>
               <p class="xr__loop-desc">Idempotent no-op in steady state; updates if the dataset changed since the last frame. Reuses the existing <code>&lt;video&gt;</code> via <code>THREE.VideoTexture</code> or the decoded <code>HTMLImageElement</code> — zero re-fetch.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name">HUD state update</span>
+              <p class="xr__loop-plain">Refresh the floating control panel only when something has actually changed, instead of redrawing the same pixels 90 times a second.</p>
               <p class="xr__loop-desc">Debounced. Updates the in-VR floating panel's title, play/pause label, and exit-VR icon as the underlying state changes.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name">Interaction update</span>
+              <p class="xr__loop-plain">Turn the user's hand and thumbstick movements into globe motion — grab to spin, pinch to twist and zoom, flick to send it rotating.</p>
               <p class="xr__loop-desc">Controller input — rotation, zoom, inertia. Surface-pinned drag, two-hand pinch + rotate, thumbstick zoom, flick-to-spin.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name">Scene update</span>
+              <p class="xr__loop-plain">Move the atmosphere, ground shadow, and sunlight to follow the globe's new position. The day/night line is computed from the real current time.</p>
               <p class="xr__loop-desc">Earth-stack tracking — shadow, atmosphere, sun positions follow <code>globe.position</code>. Day/night shader updated against real UTC.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name">HUD + Place button position sync</span>
+              <p class="xr__loop-plain">Slide the control panel and Place button along with the globe so the controls never drift away from the planet.</p>
               <p class="xr__loop-desc">Floating UI follows the globe so the HUD never drifts away from the data the user is looking at.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name">Loading-scene animation</span>
+              <p class="xr__loop-plain">While a dataset is still loading, keep the spinning rings and progress bar moving; fade them out the moment the data is ready.</p>
               <p class="xr__loop-desc">Orbiting rings + progress bar + status text on the 3D loading scene. Fades out when the dataset is ready.</p>
             </div>
           </li>
           <li class="xr__loop-step">
             <div>
               <span class="xr__loop-name"><code>renderer.render(scene, camera)</code></span>
+              <p class="xr__loop-plain">Hand the finished frame to the GPU. It's drawn twice — once per eye, slightly offset — which is what produces stereo depth.</p>
               <p class="xr__loop-desc">Submit the frame. WebGL2 + the XR session's compositor handle the per-eye projection.</p>
             </div>
           </li>
