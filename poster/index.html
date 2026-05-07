@@ -464,6 +464,22 @@ code, kbd, pre {
   color: var(--terra-accent-text);
 }
 
+/* Image-variant QR slot — used when a real QR PNG fills the slot.
+   QR codes need an opaque white field for reliable scanning, so we
+   drop the dark placeholder treatment and let the image fill the
+   box. Mirrors the .hero__logo--img modifier. */
+.hero__qr--img {
+  background: #fff;
+  border: none;
+  padding: 0;
+}
+.hero__qr--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .hero__center { text-align: center; }
 
 .hero__title {
@@ -4357,6 +4373,22 @@ a.stack__item-name:focus-visible::after,
   line-height: 1.4;
 }
 
+/* Image-variant CTA QR slot — drops the dashed placeholder
+   treatment and lets the QR PNG fill the square. The opaque
+   white field comes from the image itself. */
+.cta__qr-ph--img {
+  background: #fff;
+  border: none;
+  padding: 0;
+}
+.cta__qr-ph--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 6px;
+}
+
 .cta__qr-label {
   font-size: 0.85rem;
   color: var(--neutral-700);
@@ -4617,9 +4649,10 @@ a.stack__item-name:focus-visible::after,
 }
 
 /* Cursor hint on click-zoomable images. Excludes hero logos
-   (no <figure> wrapper) and QR placeholders (text divs, not
-   <img>) — they're not lightbox-eligible. */
-section figure img {
+   (no <figure> wrapper) and QR figures (.hero__qr-figure,
+   .cta__qr — visitors scan, not zoom). Selector is mirrored by
+   the lightbox JS in _footer.html. */
+section figure:not(.hero__qr-figure):not(.cta__qr) img {
   cursor: zoom-in;
 }
   </style>
@@ -4697,7 +4730,9 @@ section figure img {
             <img src="assets/logos/noaa-gsl-logo.png" alt="NOAA Global Systems Laboratory">
           </div>
           <figure class="hero__qr-figure">
-            <div class="hero__qr" aria-hidden="true">QR<br>poster</div>
+            <div class="hero__qr hero__qr--img">
+              <img src="assets/qr/poster.png" alt="QR code to view this poster online">
+            </div>
             <figcaption class="hero__qr-caption">View Online</figcaption>
           </figure>
         </div>
@@ -7528,12 +7563,16 @@ section figure img {
             <h3>Try it now <small class="cta__audience">for visitors</small></h3>
             <div class="cta__qrs">
               <figure class="cta__qr">
-                <div class="cta__qr-ph">QR · web app<br>(asset to land)</div>
+                <div class="cta__qr-ph cta__qr-ph--img">
+                  <img src="assets/qr/web-app.png" alt="QR code to the live web app at terraviz.zyra-project.org">
+                </div>
                 <span class="cta__qr-label">Live web app</span>
                 <span class="cta__qr-url">terraviz.zyra-project.org</span>
               </figure>
               <figure class="cta__qr">
-                <div class="cta__qr-ph">QR · desktop downloads<br>(asset to land)</div>
+                <div class="cta__qr-ph cta__qr-ph--img">
+                  <img src="assets/qr/desktop.png" alt="QR code to the latest desktop downloads on GitHub">
+                </div>
                 <span class="cta__qr-label">Desktop downloads</span>
                 <span class="cta__qr-url">github.com/zyra-project/terraviz/releases</span>
               </figure>
@@ -7562,12 +7601,16 @@ section figure img {
             <h3>Read · Run · Publish <small class="cta__audience">for operators &amp; publishers</small></h3>
             <div class="cta__qrs">
               <figure class="cta__qr">
-                <div class="cta__qr-ph">QR · GitHub repo<br>(asset to land)</div>
+                <div class="cta__qr-ph cta__qr-ph--img">
+                  <img src="assets/qr/github.png" alt="QR code to the TerraViz source on GitHub">
+                </div>
                 <span class="cta__qr-label">Source on GitHub</span>
                 <span class="cta__qr-url">github.com/zyra-project/terraviz</span>
               </figure>
               <figure class="cta__qr">
-                <div class="cta__qr-ph">QR · self-hosting guide<br>(asset to land)</div>
+                <div class="cta__qr-ph cta__qr-ph--img">
+                  <img src="assets/qr/self-hosting.png" alt="QR code to the self-hosting guide">
+                </div>
                 <span class="cta__qr-label">Self-hosting guide</span>
                 <span class="cta__qr-url">SELF_HOSTING.md</span>
               </figure>
@@ -7954,16 +7997,18 @@ section figure img {
     // can render small on portrait phones; click any of them to
     // open at viewport size. Close via the X button, the dark
     // backdrop, or Escape. Selector matches the same images the
-    // .lightbox CSS hint targets — `section figure img` — which
-    // skips hero logos (no <figure> wrapper) and QR placeholders
-    // (text divs, no <img>).
+    // .lightbox CSS hint targets, which skips hero logos (no
+    // <figure> wrapper) and QR figures (.hero__qr-figure,
+    // .cta__qr — visitors scan those, they don't want to zoom).
     (function () {
       'use strict';
       var lightbox = document.getElementById('lightbox');
       if (!lightbox) return;
       var img = lightbox.querySelector('.lightbox__img');
       var closeBtn = lightbox.querySelector('.lightbox__close');
-      var triggers = document.querySelectorAll('section figure img');
+      var triggers = document.querySelectorAll(
+        'section figure:not(.hero__qr-figure):not(.cta__qr) img'
+      );
       if (!triggers.length) return;
 
       var lastFocus = null;

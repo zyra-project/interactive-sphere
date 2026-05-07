@@ -334,16 +334,18 @@
     // can render small on portrait phones; click any of them to
     // open at viewport size. Close via the X button, the dark
     // backdrop, or Escape. Selector matches the same images the
-    // .lightbox CSS hint targets — `section figure img` — which
-    // skips hero logos (no <figure> wrapper) and QR placeholders
-    // (text divs, no <img>).
+    // .lightbox CSS hint targets, which skips hero logos (no
+    // <figure> wrapper) and QR figures (.hero__qr-figure,
+    // .cta__qr — visitors scan those, they don't want to zoom).
     (function () {
       'use strict';
       var lightbox = document.getElementById('lightbox');
       if (!lightbox) return;
       var img = lightbox.querySelector('.lightbox__img');
       var closeBtn = lightbox.querySelector('.lightbox__close');
-      var triggers = document.querySelectorAll('section figure img');
+      var triggers = document.querySelectorAll(
+        'section figure:not(.hero__qr-figure):not(.cta__qr) img'
+      );
       if (!triggers.length) return;
 
       var lastFocus = null;

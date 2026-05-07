@@ -441,6 +441,22 @@ code, kbd, pre {
   color: var(--terra-accent-text);
 }
 
+/* Image-variant QR slot — used when a real QR PNG fills the slot.
+   QR codes need an opaque white field for reliable scanning, so we
+   drop the dark placeholder treatment and let the image fill the
+   box. Mirrors the .hero__logo--img modifier. */
+.hero__qr--img {
+  background: #fff;
+  border: none;
+  padding: 0;
+}
+.hero__qr--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .hero__center { text-align: center; }
 
 .hero__title {
@@ -4334,6 +4350,22 @@ a.stack__item-name:focus-visible::after,
   line-height: 1.4;
 }
 
+/* Image-variant CTA QR slot — drops the dashed placeholder
+   treatment and lets the QR PNG fill the square. The opaque
+   white field comes from the image itself. */
+.cta__qr-ph--img {
+  background: #fff;
+  border: none;
+  padding: 0;
+}
+.cta__qr-ph--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 6px;
+}
+
 .cta__qr-label {
   font-size: 0.85rem;
   color: var(--neutral-700);
@@ -4594,8 +4626,9 @@ a.stack__item-name:focus-visible::after,
 }
 
 /* Cursor hint on click-zoomable images. Excludes hero logos
-   (no <figure> wrapper) and QR placeholders (text divs, not
-   <img>) — they're not lightbox-eligible. */
-section figure img {
+   (no <figure> wrapper) and QR figures (.hero__qr-figure,
+   .cta__qr — visitors scan, not zoom). Selector is mirrored by
+   the lightbox JS in _footer.html. */
+section figure:not(.hero__qr-figure):not(.cta__qr) img {
   cursor: zoom-in;
 }
