@@ -36,31 +36,23 @@ describe('i18n runtime', () => {
   })
 
   describe('t', () => {
-    it('returns the key string when nothing is registered', () => {
-      // Empty bundles → t('foo') falls all the way through to the key.
-      // Wave 0 ships en.json = {} so this is the steady-state behavior
-      // until Wave 1 starts populating keys.
-      // Cast — MessageKey is `string` while en.json is empty.
-      expect(t('app.unknown' as never)).toBe('app.unknown')
+    it('returns the raw key when neither active nor English has it', () => {
+      // Both lookup tables miss → t() returns the key itself so a
+      // missing translation surfaces visibly rather than rendering blank.
+      expect(t('totally.bogus.key' as never)).toBe('totally.bogus.key')
     })
 
     it('returns the active locale value when set', () => {
-      __installMessagesForTests('en', { 'app.title': 'Terraviz' })
-      expect(t('app.title' as never)).toBe('Terraviz')
+      __installMessagesForTests('en', { 'app.title': 'Override' })
+      expect(t('app.title' as never)).toBe('Override')
     })
 
     it('falls back to English when the active locale is missing the key', () => {
-      // Inject English baseline first.
-      __installMessagesForTests('en', { 'app.title': 'Terraviz' })
-      // Then "switch" to a Spanish bundle that's missing the key. We
-      // simulate by re-installing — the runtime's English fallback is
-      // always `enMessages` from the generated module, which is `{}`
-      // in Wave 0. So the fall-through here is from active → key, not
-      // active → English. Tighten this once en.json has entries.
+      // Empty Spanish bundle → resolution falls through to the
+      // baked-in `enMessages` (whose `app.title` is "Terraviz" once
+      // Wave 1 populated en.json).
       __installMessagesForTests('es', {})
-      // Active 'es' bundle is empty; enMessages is empty in Wave 0;
-      // resolution falls through to the raw key.
-      expect(t('app.title' as never)).toBe('app.title')
+      expect(t('app.title' as never)).toBe('Terraviz')
     })
 
     it('interpolates params when supplied', () => {

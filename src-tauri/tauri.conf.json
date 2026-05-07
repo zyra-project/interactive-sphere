@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npx vite build",
+    "beforeBuildCommand": "npm run tokens && npm run build:privacy-page && npm run locales && npx vite build",
     "frontendDist": "../dist"
   },
   "app": {
