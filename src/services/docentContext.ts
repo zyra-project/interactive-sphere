@@ -7,6 +7,7 @@
 
 import type { Dataset, ChatMessage, MapViewContext, ReadingLevel } from '../types'
 import type { LLMMessage, LLMTool } from './llmProvider'
+import { getLocale, SOURCE_LOCALE, t } from '../i18n'
 
 // --- Constants ---
 const MAX_HISTORY_MESSAGES = 50
@@ -145,6 +146,7 @@ export function buildSystemPrompt(
   mapViewContext?: Parameters<typeof buildViewContextSection>[0],
 ): string {
   const currentContext = buildCurrentDatasetContext(currentDataset, legendDescription, currentTime)
+  const languageDirective = buildLanguageDirective()
 
   return `You are Orbit, a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
 
@@ -259,7 +261,29 @@ CRITICAL: The attached image is a SCIENTIFIC DATA VISUALIZATION rendered on a 3D
 - The user's message starts with metadata in brackets: dataset name, description, coordinates, and time. READ this carefully before answering.
 - Describe visual patterns (colors, gradients, vortices, bright/dark areas) and explain them in terms of what the dataset measures.
 - Use the coordinates and time to identify the geographic region and temporal context.
-- If no dataset is loaded, describe the default Earth view.` : ''}`
+- If no dataset is loaded, describe the default Earth view.` : ''}${languageDirective}`
+}
+
+/**
+ * Append a "respond in {language}" directive to the system prompt when
+ * the user's active locale isn't the source locale (English). The
+ * directive is rendered in the target language so the LLM sees the
+ * instruction in the same language it should reply in — empirically
+ * this gets better adherence from smaller models than asking in
+ * English. Markers (<<LOAD:...>>, etc.) and tool-call syntax stay
+ * intact per the directive's wording. No-op for English users.
+ */
+function buildLanguageDirective(): string {
+  const active = getLocale()
+  if (active === SOURCE_LOCALE) return ''
+  let languageName: string
+  try {
+    languageName =
+      new Intl.DisplayNames(active, { type: 'language' }).of(active) ?? active
+  } catch {
+    languageName = active
+  }
+  return '\n\n' + t('docent.system.respondInLanguage', { language: languageName })
 }
 
 /**

@@ -8,6 +8,8 @@
 
 import type { Dataset, ChatMessage, ChatAction } from '../types'
 import { getBestAnswer } from './qaService'
+import { t } from '../i18n'
+import { formatDate } from '../i18n/format'
 
 // --- Constants ---
 const MAX_RESULTS = 5
@@ -200,29 +202,18 @@ function describeDataset(dataset: Dataset): string {
   }
   const cats = Object.keys(dataset.enriched?.categories ?? {})
   if (cats.length > 0) {
-    return `This is a ${cats.join(', ')} dataset.`
+    return t('docent.describe.categories', { categories: cats.join(', ') })
   }
   return ''
 }
 
 // --- Response generators ---
 
-const GREETINGS = [
-  "Welcome to Science on a Sphere! I'm Orbit, your digital docent — ask me about any topic and I'll find a dataset to show you. Try asking about oceans, climate, hurricanes, or anything else that interests you.",
-  "Hello! I'm here to guide you through over 500 visualizations of our planet and beyond. What would you like to explore? You can ask about a topic, or I can tell you more about whatever's on the globe right now.",
-  "Hi there! Think of me as your personal guide to Earth science data. Ask me about weather, the ocean floor, space, volcanoes — or just say \"show me something interesting\" and I'll pick something out.",
-]
-
-const HELP_TEXT = `Here's how I can help:
-
-• **Ask about a topic** — "Tell me about hurricanes" or "Show me ocean temperatures"
-• **Explore categories** — "Show me atmosphere datasets" or "What about space?"
-• **Learn about what's showing** — "Explain this" or "What am I looking at?"
-• **Find related data** — "Show me something similar" or "More like this"
-• **Search freely** — Just type any question and I'll find relevant datasets`
+const GREETING_KEYS = ['docent.greeting.1', 'docent.greeting.2', 'docent.greeting.3'] as const
 
 function randomGreeting(): string {
-  return GREETINGS[Math.floor(Math.random() * GREETINGS.length)]
+  const key = GREETING_KEYS[Math.floor(Math.random() * GREETING_KEYS.length)]
+  return t(key)
 }
 
 /**
@@ -239,22 +230,27 @@ export function generateResponse(
       return { text: randomGreeting() }
 
     case 'help':
-      return { text: HELP_TEXT }
+      return { text: t('docent.help') }
 
     case 'what-is-this':
     case 'explain-current': {
       if (!currentDataset) {
-        return {
-          text: "You're looking at Earth with real-time cloud cover. Browse the datasets or ask me about a topic — I'll load something onto the globe for you.",
-        }
+        return { text: t('docent.explain.noDataset') }
       }
       const desc = describeDataset(currentDataset)
       const cats = Object.keys(currentDataset.enriched?.categories ?? {})
       const timeRange = currentDataset.startTime && currentDataset.endTime
-        ? ` This data covers ${new Date(currentDataset.startTime).toLocaleDateString()} through ${new Date(currentDataset.endTime).toLocaleDateString()}.`
+        ? t('docent.explain.timeRange', {
+            start: formatDate(currentDataset.startTime),
+            end: formatDate(currentDataset.endTime),
+          })
         : ''
-      const catText = cats.length > 0 ? ` It falls under: ${cats.join(', ')}.` : ''
-      const source = currentDataset.organization ? ` Source: ${currentDataset.organization}.` : ''
+      const catText = cats.length > 0
+        ? t('docent.explain.categories', { categories: cats.join(', ') })
+        : ''
+      const source = currentDataset.organization
+        ? t('docent.explain.source', { source: currentDataset.organization })
+        : ''
 
       // Try to enrich with Q&A knowledge
       const qaAnswer = getBestAnswer(
@@ -270,14 +266,14 @@ export function generateResponse(
 
     case 'related': {
       if (!currentDataset) {
-        return { text: "There's no dataset loaded right now. Ask me about a topic and I'll find something to show you!" }
+        return { text: t('docent.related.noDataset') }
       }
       const related = findRelated(datasets, currentDataset)
       if (related.length === 0) {
-        return { text: `I couldn't find datasets closely related to "${currentDataset.title}". Try asking about a specific topic instead.` }
+        return { text: t('docent.related.none', { title: currentDataset.title }) }
       }
       return {
-        text: `Here are datasets related to **${currentDataset.title}**:`,
+        text: t('docent.related.list', { title: currentDataset.title }),
         actions: datasetActions(related),
       }
     }
@@ -285,10 +281,10 @@ export function generateResponse(
     case 'category': {
       const results = findByCategory(datasets, intent.category)
       if (results.length === 0) {
-        return { text: `I didn't find datasets in the "${intent.category}" category. Try a different topic or search term.` }
+        return { text: t('docent.category.none', { category: intent.category }) }
       }
       return {
-        text: `Here are some **${intent.category}** datasets:`,
+        text: t('docent.category.list', { category: intent.category }),
         actions: datasetActions(results),
       }
     }
@@ -303,14 +299,12 @@ export function generateResponse(
           const fallback = searchDatasets(datasets, word, 3)
           if (fallback.length > 0) {
             return {
-              text: `I didn't find an exact match for "${intent.query}", but here are some results for "${word}":`,
+              text: t('docent.search.fallbackResults', { query: intent.query, word }),
               actions: datasetActions(fallback.map(r => r.dataset)),
             }
           }
         }
-        return {
-          text: `I couldn't find datasets matching "${intent.query}". Try different keywords, or ask me about a broad topic like "ocean", "climate", or "space".`,
-        }
+        return { text: t('docent.search.none', { query: intent.query }) }
       }
 
       const top = results[0].dataset
@@ -320,8 +314,14 @@ export function generateResponse(
         ? `\n${qaSearchAnswer.length > 400 ? qaSearchAnswer.substring(0, 400) + '…' : qaSearchAnswer}`
         : ''
       const introText = results.length === 1
-        ? `I found a dataset that matches: **${top.title}**\n\n${topDesc}${qaSnippet}`
-        : `I found ${results.length} datasets matching "${intent.query}". Here's the best match:\n\n**${top.title}**\n${topDesc}${qaSnippet}`
+        ? t('docent.search.singleMatch', { title: top.title, desc: topDesc, qa: qaSnippet })
+        : t('docent.search.multipleMatches', {
+            count: results.length,
+            query: intent.query,
+            title: top.title,
+            desc: topDesc,
+            qa: qaSnippet,
+          })
 
       return {
         text: introText,
