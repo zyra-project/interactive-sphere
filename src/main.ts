@@ -61,6 +61,7 @@ import {
 import { initVrButton } from './ui/vrButton'
 import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
+import { bootstrapI18n } from './i18n/bootstrap'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
 // (larger touch targets, bottom sheets, etc.) without JS per-component.
@@ -2446,6 +2447,11 @@ async function checkForUpdates(): Promise<void> {
 
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
+  // Resolve user locale and apply data-i18n attributes before any
+  // UI module renders. English is bundled inline; non-English
+  // locales lazy-load here. See docs/I18N_PLAN.md.
+  await bootstrapI18n()
+
   const app = new InteractiveSphere()
   app.setupEventListeners()
   await app.initialize()
