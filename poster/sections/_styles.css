@@ -488,14 +488,13 @@ code, kbd, pre {
   font-weight: 600;
   font-size: 1rem;
 }
-.hero__author .orcid {
-  color: #a6ce39;
+.hero__author .doi {
+  color: var(--terra-accent-text);
 }
-.hero__author .orcid::before {
-  content: "iD ";
+.hero__author .doi::before {
+  content: "DOI ";
   font-weight: 700;
-  font-style: italic;
-  color: #a6ce39;
+  color: var(--terra-accent-text);
   margin-right: 0.15em;
 }
 
