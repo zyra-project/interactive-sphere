@@ -3,7 +3,11 @@
 // indefinitely and serve from cache on every subsequent request.
 
 // v2 — dropped Earth_Normal_2K.jpg (dead asset, no longer shipped).
-const CACHE_NAME = 'gibs-tiles-v2'
+// v3 — honor user-driven cache bypass (Ctrl+Shift+R) in the fetch handler;
+//      reject 206 Partial Content from cache writes so a truncated cloud
+//      texture can't poison the cache and persist across normal reloads.
+//      Bumping the name evicts any caches already holding bad bytes.
+const CACHE_NAME = 'gibs-tiles-v3'
 
 // External URLs to cache — scoped to specific paths, not entire hostnames
 const CACHEABLE_EXTERNAL = [
@@ -79,20 +83,45 @@ self.addEventListener('fetch', event => {
         return fetch(request.clone())
       }
 
-      // Cache-first: serve from cache if available
-      const cached = await cache.match(request)
-      if (cached) {
-        return cached
+      // Honor user-driven cache bypass. Ctrl+Shift+R / Cmd+Shift+R
+      // sets request.cache === 'reload'; a normal Reload may pass
+      // 'no-cache'; some clients use 'no-store'. In all three cases
+      // skip the cached entry and re-populate so the next visitor
+      // benefits from the fresh fetch — that's the recovery path
+      // when the cache holds a poisoned response (truncated cloud
+      // texture, etc.).
+      const bypass =
+        request.cache === 'reload' ||
+        request.cache === 'no-cache' ||
+        request.cache === 'no-store'
+
+      if (!bypass) {
+        const cached = await cache.match(request)
+        if (cached) {
+          return cached
+        }
       }
 
-      // Not cached — fetch from network, cache the response, return it
+      // Not cached (or bypass requested) — fetch from network
       const response = await fetch(request.clone())
 
-      if (response.ok) {
+      // Cache only verified-complete 200 responses. Specifically reject
+      // 206 Partial Content (range responses are truncated bodies that
+      // would silently decode to a gray/white band on the globe) and
+      // opaque cross-origin responses (status 0). 'no-store' opts out
+      // of writing too. response.ok would also accept 201-299, but
+      // those don't apply to static assets and aren't safe to cache.
+      const writable =
+        response.status === 200 &&
+        request.cache !== 'no-store'
+
+      if (writable) {
         try {
           await cache.put(request, response.clone())
         } catch {
-          // Cache write failed (e.g. quota exceeded) — still return the response
+          // Cache write failed (e.g. quota exceeded, or the body
+          // stream errored mid-read because the connection dropped) —
+          // still return the response we already have headers for.
         }
       }
 
