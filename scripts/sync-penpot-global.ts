@@ -27,6 +27,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isInvokedAsScript } from './lib/cli.ts'
 
 export type PenpotTokenType = 'color' | 'dimension'
 
@@ -35,6 +36,16 @@ export interface TokenSpec {
   type: PenpotTokenType
   value: string
   description?: string
+}
+
+export interface SkippedToken {
+  path: string
+  reason: string
+}
+
+export interface BuildSpecsResult {
+  specs: TokenSpec[]
+  skipped: SkippedToken[]
 }
 
 interface W3CTokenLike {
@@ -53,23 +64,18 @@ export function readGlobalTokensJson(): unknown {
   return JSON.parse(readFileSync(GLOBAL_TOKENS_PATH, 'utf-8'))
 }
 
-export function buildGlobalTokenSpecs(json: unknown = readGlobalTokensJson()): TokenSpec[] {
+export function buildGlobalTokenSpecs(json: unknown = readGlobalTokensJson()): BuildSpecsResult {
   const specs: TokenSpec[] = []
-  const skipped: { path: string; reason: string }[] = []
+  const skipped: SkippedToken[] = []
   walk(json, [], specs, skipped)
-  if (skipped.length > 0) {
-    for (const s of skipped) {
-      process.stderr.write(`[sync-penpot-global] skipped ${s.path}: ${s.reason}\n`)
-    }
-  }
-  return specs
+  return { specs, skipped }
 }
 
 function walk(
   node: unknown,
   path: string[],
   specs: TokenSpec[],
-  skipped: { path: string; reason: string }[],
+  skipped: SkippedToken[],
 ) {
   if (!isPlainObject(node)) return
   if (looksLikeW3CToken(node)) {
@@ -153,19 +159,12 @@ return {
 `
 }
 
-const invokedAsCli = (() => {
-  const entry = process.argv[1]
-  if (!entry) return false
-  try {
-    return fileURLToPath(import.meta.url) === resolve(entry)
-  } catch {
-    return false
-  }
-})()
-
-if (invokedAsCli) {
+if (isInvokedAsScript(import.meta.url)) {
   const arg = process.argv[2]
-  const specs = buildGlobalTokenSpecs()
+  const { specs, skipped } = buildGlobalTokenSpecs()
+  for (const s of skipped) {
+    process.stderr.write(`[sync-penpot-global] skipped ${s.path}: ${s.reason}\n`)
+  }
   if (arg === '--list') {
     process.stdout.write(JSON.stringify(specs, null, 2) + '\n')
   } else if (arg && arg !== '--code') {

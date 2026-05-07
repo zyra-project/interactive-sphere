@@ -7,7 +7,7 @@ import {
 } from './sync-penpot-global.ts'
 
 describe('sync-penpot-global', () => {
-  const specs = buildGlobalTokenSpecs(readGlobalTokensJson())
+  const { specs, skipped } = buildGlobalTokenSpecs(readGlobalTokensJson())
   const byName = new Map(specs.map((s) => [s.name, s]))
 
   it('emits dotted names mirroring the JSON path', () => {
@@ -73,22 +73,28 @@ describe('sync-penpot-global', () => {
     expect(planMatch, 'embedded specs array must be present').toBeTruthy()
   })
 
-  it('includes every entry under tokens/global.json color/dimension leaves', () => {
-    const json = readGlobalTokensJson() as Record<string, Record<string, unknown>>
-    let leafCount = 0
-    for (const group of Object.values(json)) {
-      for (const v of Object.values(group)) {
-        if (
-          v &&
-          typeof v === 'object' &&
-          '$type' in (v as object) &&
-          ((v as { $type: string }).$type === 'color' ||
-            (v as { $type: string }).$type === 'dimension')
-        ) {
-          leafCount++
-        }
+  it('includes every entry under tokens/global.json that is a color or dimension leaf', () => {
+    const SUPPORTED = new Set(['color', 'dimension'])
+    function countLeaves(node: unknown): number {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) return 0
+      const obj = node as Record<string, unknown>
+      if ('$type' in obj && '$value' in obj) {
+        return SUPPORTED.has(obj.$type as string) ? 1 : 0
       }
+      let count = 0
+      for (const v of Object.values(obj)) count += countLeaves(v)
+      return count
     }
-    expect(specs.length).toBe(leafCount)
+    expect(specs.length + skipped.length).toBe(countLeavesIncludingUnsupported(readGlobalTokensJson()))
+    expect(specs.length).toBe(countLeaves(readGlobalTokensJson()))
   })
 })
+
+function countLeavesIncludingUnsupported(node: unknown): number {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return 0
+  const obj = node as Record<string, unknown>
+  if ('$type' in obj && '$value' in obj) return 1
+  let count = 0
+  for (const v of Object.values(obj)) count += countLeavesIncludingUnsupported(v)
+  return count
+}
