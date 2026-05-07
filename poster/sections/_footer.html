@@ -252,6 +252,44 @@
       };
     })();
 
+    // Click-to-activate wheel guard — embedded TerraViz captures
+    // wheel events to zoom the globe; without this guard, scrolling
+    // over the iframe hijacks page scroll. CSS gates pointer-events
+    // on (hover: hover) and (pointer: fine) and toggles via
+    // .is-interactive (see _styles.css). Here we inject the
+    // "Click to interact" hint pill, wire the click → activate
+    // and mouseleave → deactivate transitions, and skip everything
+    // on touch devices where wheel doesn't apply.
+    (function () {
+      'use strict';
+      if (typeof window.matchMedia === 'function' &&
+          !window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        return;
+      }
+      var frames = document.querySelectorAll('.demo-frame[data-default-src]');
+      if (!frames.length) return;
+      frames.forEach(function (frame) {
+        var hint = document.createElement('div');
+        hint.className = 'demo-frame__interact-hint';
+        hint.setAttribute('aria-hidden', 'true');
+        hint.textContent = 'Click to interact';
+        frame.appendChild(hint);
+
+        frame.addEventListener('click', function (e) {
+          // Skip activation when the click is on a control that has
+          // its own affordance (fullscreen toggle, fallback link) —
+          // those shouldn't unlock wheel-zoom as a side effect.
+          if (e.target.closest('.demo-frame__fullscreen-btn')) return;
+          if (e.target.closest('.demo-frame__fallback-link')) return;
+          frame.classList.add('is-interactive');
+        });
+
+        frame.addEventListener('mouseleave', function () {
+          frame.classList.remove('is-interactive');
+        });
+      });
+    })();
+
     // Effect-toggle bar — buttons swap an iframe's src to a
     // deep-linked URL. Marks the clicked button .is-active
     // within its bar and routes the change through the

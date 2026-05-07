@@ -1180,6 +1180,54 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   background: var(--navy);
 }
 
+/* Click-to-activate wheel guard — desktop pointers only. The
+   embedded TerraViz app captures wheel events to zoom the globe;
+   without this guard, scrolling over the iframe hijacks page
+   scroll. The iframe is pointer-events: none by default so wheel
+   passes through to the page; .is-interactive (added by the
+   demo-frame manager in _footer.html on first click, removed on
+   mouseleave) flips it to auto. Touch devices skip the guard —
+   wheel doesn't exist there, and the existing browser touch-action
+   rules already pick the right gesture per surface. */
+@media (hover: hover) and (pointer: fine) {
+  .demo-frame .demo-frame__iframe {
+    pointer-events: none;
+  }
+  .demo-frame.is-interactive .demo-frame__iframe {
+    pointer-events: auto;
+  }
+}
+
+.demo-frame__interact-hint {
+  position: absolute;
+  bottom: 0.85rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  pointer-events: none;
+  padding: 0.38rem 0.85rem;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  color: var(--neutral-100);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: opacity 0.18s ease;
+  opacity: 0;
+}
+.demo-frame[data-state="ready"]:not(.is-interactive) .demo-frame__interact-hint {
+  opacity: 1;
+}
+@media (hover: none) {
+  .demo-frame__interact-hint { display: none; }
+}
+
 .demo-frame__fallback {
   position: absolute;
   inset: 0;
@@ -7932,6 +7980,44 @@ section figure:not(.hero__qr-figure):not(.cta__qr) img {
           // time this frame becomes most-visible.
         }
       };
+    })();
+
+    // Click-to-activate wheel guard — embedded TerraViz captures
+    // wheel events to zoom the globe; without this guard, scrolling
+    // over the iframe hijacks page scroll. CSS gates pointer-events
+    // on (hover: hover) and (pointer: fine) and toggles via
+    // .is-interactive (see _styles.css). Here we inject the
+    // "Click to interact" hint pill, wire the click → activate
+    // and mouseleave → deactivate transitions, and skip everything
+    // on touch devices where wheel doesn't apply.
+    (function () {
+      'use strict';
+      if (typeof window.matchMedia === 'function' &&
+          !window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        return;
+      }
+      var frames = document.querySelectorAll('.demo-frame[data-default-src]');
+      if (!frames.length) return;
+      frames.forEach(function (frame) {
+        var hint = document.createElement('div');
+        hint.className = 'demo-frame__interact-hint';
+        hint.setAttribute('aria-hidden', 'true');
+        hint.textContent = 'Click to interact';
+        frame.appendChild(hint);
+
+        frame.addEventListener('click', function (e) {
+          // Skip activation when the click is on a control that has
+          // its own affordance (fullscreen toggle, fallback link) —
+          // those shouldn't unlock wheel-zoom as a side effect.
+          if (e.target.closest('.demo-frame__fullscreen-btn')) return;
+          if (e.target.closest('.demo-frame__fallback-link')) return;
+          frame.classList.add('is-interactive');
+        });
+
+        frame.addEventListener('mouseleave', function () {
+          frame.classList.remove('is-interactive');
+        });
+      });
     })();
 
     // Effect-toggle bar — buttons swap an iframe's src to a
