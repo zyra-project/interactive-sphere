@@ -240,6 +240,37 @@
     background: var(--white-o08);
 }
 
+.tools-menu-language-row {
+    display: flex;
+    align-items: center;
+}
+.tools-menu-language-select {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 1.6rem 0.4rem 0.55rem;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--color-text);
+    background-color: var(--color-surface);
+    border: 1px solid var(--white-o12);
+    border-radius: 4px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.55rem center;
+    background-size: 10px 6px;
+}
+.tools-menu-language-select:focus {
+    outline: none;
+    border-color: var(--accent-o50);
+}
+.tools-menu-language-select option {
+    background: #1a1a24;
+    color: var(--color-text);
+}
+
 .tools-menu-layout-row {
     display: flex;
     gap: 0.25rem;
