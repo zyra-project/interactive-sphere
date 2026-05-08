@@ -225,6 +225,7 @@
   "docent.search.multipleMatches": "I found {count} datasets matching \"{query}\". Here's the best match:\n\n**{title}**\n{desc}{qa}",
   "docent.describe.categories": "This is a {categories} dataset.",
   "docent.system.respondInLanguage": "Respond in {language}. Even when the user writes in English, your reply, dataset summaries, and any captions must be in {language}. Keep <<LOAD:DATASET_ID>> markers and tool-call syntax exactly as specified.",
+  "docent.system.respondInLanguageReminder": "REMINDER: Reply only in {language} — even if the user typed in another language. Keep <<LOAD:...>> markers and tool-call syntax literal.",
 
   "docent.patterns.greeting": "hi, hello, hey, howdy, greetings, good morning, good afternoon, good evening, sup, yo",
   "docent.patterns.help": "help, what can you do, how does this work, how do this work, how does it work, how do it work, commands, options",

@@ -225,6 +225,7 @@
   "docent.search.multipleMatches": "Encontré {count} conjuntos que coinciden con \"{query}\". Aquí está la mejor coincidencia:\n\n**{title}**\n{desc}{qa}",
   "docent.describe.categories": "Este es un conjunto de datos de {categories}.",
   "docent.system.respondInLanguage": "Responde en {language}. Aunque el usuario escriba en inglés, tu respuesta, los resúmenes de conjuntos de datos y los pies de imagen deben estar en {language}. Mantén los marcadores <<LOAD:DATASET_ID>> y la sintaxis de las llamadas a herramientas exactamente como se especifica.",
+  "docent.system.respondInLanguageReminder": "RECORDATORIO: Responde únicamente en {language}, aunque el usuario haya escrito en otro idioma. Conserva los marcadores <<LOAD:...>> y la sintaxis de las llamadas a herramientas literales.",
 
   "docent.patterns.greeting": "hola, buenos días, buenas tardes, buenas noches, buenas, saludos, qué tal, que tal, hi, hello, hey",
   "docent.patterns.help": "ayuda, qué puedes hacer, que puedes hacer, cómo funciona, como funciona, cómo se usa, como se usa, comandos, opciones, help",

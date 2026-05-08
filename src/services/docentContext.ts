@@ -317,6 +317,32 @@ function buildLanguageDirective(): string {
 }
 
 /**
+ * Build a freshness-anchored reminder LLM message that goes right
+ * before the user's current turn. Mid-tier models tend to mirror
+ * the user's input language ("user wrote English → reply English")
+ * even with a respond-in-{language} directive at the top of the
+ * system prompt — by the time the model generates its final
+ * response (post-tool-call), the system prompt is many messages
+ * back and gets crowded out by the model's own English tool-call
+ * thinking + the tool results.
+ *
+ * Placing a terse system-role reminder immediately before the
+ * user's message keeps the directive in the model's most-recent
+ * attention window. Empirically this is the single most effective
+ * lever for language adherence on smaller models. Returns `null`
+ * for English users (no-op) so callers can safely splat the
+ * result with `?? []`.
+ */
+export function buildLanguageReminderMessage(): LLMMessage | null {
+  const languageName = activeLanguageName()
+  if (!languageName) return null
+  return {
+    role: 'system' as const,
+    content: t('docent.system.respondInLanguageReminder', { language: languageName }),
+  }
+}
+
+/**
  * Restore [[LOAD:ID]] placeholders (set by the chat UI for inline buttons)
  * back to <<LOAD:ID>> so the LLM sees a consistent marker format in history.
  */

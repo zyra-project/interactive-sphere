@@ -206,6 +206,30 @@ describe('buildSystemPrompt', () => {
     expect(prompt.trimStart().startsWith('You are Orbit')).toBe(true)
   })
 
+  it('exposes a per-turn language reminder that anchors the directive close to generation', async () => {
+    // When the LLM does tool calls, the system prompt is many
+    // messages back from the final response generation point.
+    // buildLanguageReminderMessage returns a fresh system-role
+    // message that docentService injects right before the user's
+    // turn — keeps the respond-in-{language} instruction in the
+    // model's most-recent attention window.
+    const { buildLanguageReminderMessage } = await import('./docentContext')
+    const { setLocale, SOURCE_LOCALE } = await import('../i18n')
+    expect(buildLanguageReminderMessage()).toBeNull() // no-op for English
+    await setLocale('es')
+    try {
+      const reminder = buildLanguageReminderMessage()
+      expect(reminder).not.toBeNull()
+      expect(reminder?.role).toBe('system')
+      expect(reminder?.content).toContain('RECORDATORIO')
+      expect(reminder?.content).toContain('español')
+      // Tool-call markers explicitly preserved.
+      expect(reminder?.content).toContain('<<LOAD:')
+    } finally {
+      await setLocale(SOURCE_LOCALE)
+    }
+  })
+
   it('includes current dataset context', () => {
     const prompt = buildSystemPrompt(datasets, makeDataset())
     expect(prompt).toContain('Sea Surface Temperature')

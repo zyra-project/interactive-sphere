@@ -8,7 +8,7 @@
 import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext, LLMContextSnapshot, ReadingLevel } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart, type LLMToolCall } from './llmProvider'
 import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './appleIntelligenceProvider'
-import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
+import { buildSystemPrompt, buildCompressedHistory, buildLanguageReminderMessage, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
 import { clearDegraded as clearDegradedState, markDegraded as markDegradedState } from './docentDegradedState'
 import { apiFetch } from './catalogSource'
@@ -1314,9 +1314,15 @@ export async function* processMessage(
         ] as LLMContentPart[] }
       : { role: 'user', content: statePrefix + preSearchContext + input }
 
+    // Anchor a fresh language-reminder system message right before
+    // the user's turn — the system prompt's respond-in-{language}
+    // directive gets crowded out by tool-call back-and-forth on
+    // mid-tier models. See buildLanguageReminderMessage for context.
+    const languageReminder = buildLanguageReminderMessage()
     const llmMessages: LLMMessage[] = [
       { role: 'system' as const, content: systemPrompt },
       ...buildCompressedHistory(history),
+      ...(languageReminder ? [languageReminder] : []),
       userMessage,
     ]
     // Tool ordering — Phase 1d cutover (catalog(1d/E)).
