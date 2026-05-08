@@ -26,6 +26,7 @@ import { isImmersiveVrSupported, isImmersiveArSupported } from '../utils/vrCapab
 import { enterImmersive, loadThree, type VrMode, type VrSessionContext } from '../services/vrSession'
 import { pauseForVrEntry, resumeForVrExit, TELEMETRY_BUILD_ENABLED } from '../analytics'
 import { logger } from '../utils/logger'
+import { t } from '../i18n'
 
 const BUTTON_ID = 'vr-enter-btn'
 
@@ -63,11 +64,8 @@ export async function initVrButton(ctx: VrSessionContext): Promise<void> {
   // Prefer AR — it's the better SOS experience. Fall back to VR for
   // hardware that lacks passthrough.
   const mode: VrMode = arSupported ? 'ar' : 'vr'
-  const labelText = mode === 'ar' ? 'Enter AR' : 'Enter VR'
-  const titleText =
-    mode === 'ar'
-      ? 'Enter passthrough AR mode (globe appears in your room)'
-      : 'Enter immersive VR mode'
+  const labelText = t(mode === 'ar' ? 'vr.enter.ar.label' : 'vr.enter.label')
+  const titleText = t(mode === 'ar' ? 'vr.enter.ar.title' : 'vr.enter.title')
 
   // Update the visible label + accessibility attributes for whichever
   // mode the device picked. The DOM ships with "Enter VR" as a
@@ -122,7 +120,7 @@ export async function initVrButton(ctx: VrSessionContext): Promise<void> {
       // Surface a simple user-facing message via the title tooltip;
       // a polished version would route through the app's
       // #error-message banner.
-      button.title = err instanceof Error ? err.message : `Failed to enter ${mode.toUpperCase()}`
+      button.title = err instanceof Error ? err.message : t('vr.error.failed', { mode: mode.toUpperCase() })
     } finally {
       button.classList.remove('pending')
       button.removeAttribute('aria-busy')
