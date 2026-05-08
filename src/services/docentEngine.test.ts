@@ -10,7 +10,9 @@ import {
   generateResponse,
   processUserMessage,
   createMessageId,
+  __resetIntentCacheForTests,
 } from './docentEngine'
+import { setLocale, SOURCE_LOCALE } from '../i18n'
 
 // --- Test fixtures ---
 
@@ -105,6 +107,34 @@ describe('parseIntent', () => {
     expect(parseIntent('show me something similar').type).toBe('related')
     expect(parseIntent('more like this').type).toBe('related')
     expect(parseIntent('related').type).toBe('related')
+  })
+
+  it('matches the active locale\'s phrase list (Spanish)', async () => {
+    // Patterns are sourced from the active locale's docent.patterns.*
+    // keys, so a non-English user typing their own greetings/help
+    // words should hit the right intents — not fall through to a
+    // search for "hola", which was the bug report that motivated
+    // moving the alternation lists into the locale files.
+    __resetIntentCacheForTests()
+    await setLocale('es')
+    try {
+      expect(parseIntent('hola').type).toBe('greeting')
+      expect(parseIntent('Buenos días').type).toBe('greeting')
+      expect(parseIntent('qué tal').type).toBe('greeting')
+      expect(parseIntent('ayuda').type).toBe('help')
+      expect(parseIntent('qué es esto').type).toBe('what-is-this')
+      expect(parseIntent('explica esto').type).toBe('explain-current')
+      expect(parseIntent('cuéntame sobre esto').type).toBe('explain-current')
+      // "cuéntame sobre el cambio climático" must NOT match
+      // explain-current — the deictic ("esto" / "eso") is required,
+      // mirroring the English "tell me about this/it/the current"
+      // restriction.
+      expect(parseIntent('cuéntame sobre el cambio climático').type).not.toBe('explain-current')
+      expect(parseIntent('muéstrame algo similar').type).toBe('related')
+    } finally {
+      await setLocale(SOURCE_LOCALE)
+      __resetIntentCacheForTests()
+    }
   })
 
   it('detects category queries', () => {

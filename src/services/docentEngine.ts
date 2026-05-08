@@ -8,7 +8,7 @@
 
 import type { Dataset, ChatMessage, ChatAction } from '../types'
 import { getBestAnswer } from './qaService'
-import { t } from '../i18n'
+import { getLocale, t, type Locale, type MessageKey } from '../i18n'
 import { formatDate } from '../i18n/format'
 
 // --- Constants ---
@@ -38,25 +38,97 @@ export interface DocentResponse {
   actions?: ChatAction[]
 }
 
-// --- Greeting / help patterns ---
-const GREETING_PATTERNS = /^(hi|hello|hey|howdy|greetings|good\s+(morning|afternoon|evening)|sup|yo)\b/i
-const HELP_PATTERNS = /^(help|what can you do|how do(es)? (this|it) work|commands|options)\b/i
-const WHAT_IS_PATTERNS = /^(what('?s| is) this|where am i|what am i (looking at|seeing))\b/i
-const EXPLAIN_PATTERNS = /^(explain( this| it)?|tell me (about |more about )?(this|it|the current|what'?s showing)|describe (this|it|the current)|what does this (show|mean))/i
-const RELATED_PATTERNS = /^(show me (something )?(similar|related|like this)|related|more like this|similar)/i
+// --- Greeting / help / explain / related patterns ---
+//
+// The conversational-intent matchers (greeting, help, what-is-this,
+// explain, related) read their alternation lists from the active
+// locale's `docent.patterns.*` keys — comma-separated phrases the
+// translator writes in their language. Compiled patterns are cached
+// per-locale; locale changes require a reload (the canonical
+// language-switch UX), so the cache is steady-state across a
+// session and never grows beyond the SUPPORTED_LOCALES set.
+//
+// Category matching stays English-only: dataset metadata is English
+// in L1, and translating a category trigger word ("huracán") to its
+// English category name ("hurricane") needs a dedicated mapping
+// that belongs to the L3 dataset-metadata effort. A non-English
+// user typing "huracán" falls through to free-text search, which
+// will not match the English "Hurricane" tag — known L1 limitation.
 const CATEGORY_PATTERNS = /^(show me |find |browse |look at )?(atmosphere|ocean|land|space|climate|sun|moon|ice|snow|weather|solar|model|hurricane|coral|temperature|earthquake|tsunami|volcano|fire|ozone|magnetic|gravity|tectonic|water|carbon|satellite)/i
+
+/** Escape a string for inclusion in a RegExp source. */
+function escapeRegex(s: string): string {
+  return s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+}
+
+/** Compile a comma-separated phrase list (from a locale file) into
+ * a RegExp anchored at the input start. Each phrase's internal
+ * whitespace is matched as `\s+` so single/multi-space input
+ * variations match. The `u` flag makes `\b` Unicode-aware so
+ * letters with diacritics (`í`, `é`, `ñ`) count as word characters
+ * and don't create spurious word-boundary matches. Returns `null`
+ * if the phrase list is empty (no matcher for that intent in this
+ * locale). */
+function compilePatternList(phrases: string): RegExp | null {
+  const alternatives = phrases
+    .split(',')
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => p.split(/\s+/).map(escapeRegex).join('\\s+'))
+  if (alternatives.length === 0) return null
+  return new RegExp(`^(?:${alternatives.join('|')})\\b`, 'iu')
+}
+
+interface CompiledPatterns {
+  greeting: RegExp | null
+  help: RegExp | null
+  whatIs: RegExp | null
+  explain: RegExp | null
+  related: RegExp | null
+}
+
+const PATTERN_KEYS: ReadonlyArray<{ field: keyof CompiledPatterns; key: MessageKey }> = [
+  { field: 'greeting', key: 'docent.patterns.greeting' },
+  { field: 'help', key: 'docent.patterns.help' },
+  { field: 'whatIs', key: 'docent.patterns.whatIs' },
+  { field: 'explain', key: 'docent.patterns.explain' },
+  { field: 'related', key: 'docent.patterns.related' },
+]
+
+const patternCache = new Map<Locale, CompiledPatterns>()
+
+function getPatterns(): CompiledPatterns {
+  const locale = getLocale()
+  let cached = patternCache.get(locale)
+  if (cached) return cached
+  cached = {
+    greeting: null, help: null, whatIs: null, explain: null, related: null,
+  }
+  for (const { field, key } of PATTERN_KEYS) {
+    cached[field] = compilePatternList(t(key))
+  }
+  patternCache.set(locale, cached)
+  return cached
+}
+
+/** Test-only: drop the compiled-pattern cache so locale-mocked tests
+ * see a fresh compilation against whatever `t()` returns. */
+export function __resetIntentCacheForTests(): void {
+  patternCache.clear()
+}
 
 /**
  * Parse raw user input into a structured intent.
  */
 export function parseIntent(input: string): DocentIntent {
   const trimmed = input.trim()
+  const p = getPatterns()
 
-  if (GREETING_PATTERNS.test(trimmed)) return { type: 'greeting' }
-  if (HELP_PATTERNS.test(trimmed)) return { type: 'help' }
-  if (WHAT_IS_PATTERNS.test(trimmed)) return { type: 'what-is-this' }
-  if (EXPLAIN_PATTERNS.test(trimmed)) return { type: 'explain-current' }
-  if (RELATED_PATTERNS.test(trimmed)) return { type: 'related' }
+  if (p.greeting?.test(trimmed)) return { type: 'greeting' }
+  if (p.help?.test(trimmed)) return { type: 'help' }
+  if (p.whatIs?.test(trimmed)) return { type: 'what-is-this' }
+  if (p.explain?.test(trimmed)) return { type: 'explain-current' }
+  if (p.related?.test(trimmed)) return { type: 'related' }
 
   const catMatch = trimmed.match(CATEGORY_PATTERNS)
   if (catMatch) {

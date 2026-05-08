@@ -206,6 +206,12 @@
   "docent.describe.categories": "Este es un conjunto de datos de {categories}.",
   "docent.system.respondInLanguage": "Responde en {language}. Aunque el usuario escriba en inglés, tu respuesta, los resúmenes de conjuntos de datos y los pies de imagen deben estar en {language}. Mantén los marcadores <<LOAD:DATASET_ID>> y la sintaxis de las llamadas a herramientas exactamente como se especifica.",
 
+  "docent.patterns.greeting": "hola, buenos días, buenas tardes, buenas noches, buenas, saludos, qué tal, que tal, hi, hello, hey",
+  "docent.patterns.help": "ayuda, qué puedes hacer, que puedes hacer, cómo funciona, como funciona, cómo se usa, como se usa, comandos, opciones, help",
+  "docent.patterns.whatIs": "qué es esto, que es esto, qué es eso, que es eso, dónde estoy, donde estoy, qué estoy viendo, que estoy viendo, qué estoy mirando, que estoy mirando",
+  "docent.patterns.explain": "explica, explica esto, explica eso, cuéntame sobre esto, cuentame sobre esto, cuéntame sobre eso, cuentame sobre eso, cuéntame más sobre esto, cuentame mas sobre esto, describe esto, describe eso, qué muestra esto, que muestra esto, qué significa esto, que significa esto",
+  "docent.patterns.related": "muéstrame similar, muestrame similar, muéstrame algo similar, muestrame algo similar, muéstrame relacionado, muestrame relacionado, relacionado, más como esto, mas como esto, similar",
+
   "chat.announce.opened": "Chat abierto",
   "chat.announce.closed": "Chat cerrado",
   "chat.announce.cleared": "Chat borrado",

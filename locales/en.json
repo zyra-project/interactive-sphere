@@ -206,6 +206,12 @@
   "docent.describe.categories": "This is a {categories} dataset.",
   "docent.system.respondInLanguage": "Respond in {language}. Even when the user writes in English, your reply, dataset summaries, and any captions must be in {language}. Keep <<LOAD:DATASET_ID>> markers and tool-call syntax exactly as specified.",
 
+  "docent.patterns.greeting": "hi, hello, hey, howdy, greetings, good morning, good afternoon, good evening, sup, yo",
+  "docent.patterns.help": "help, what can you do, how does this work, how do this work, how does it work, how do it work, commands, options",
+  "docent.patterns.whatIs": "what's this, what is this, where am i, what am i looking at, what am i seeing",
+  "docent.patterns.explain": "explain, explain this, explain it, tell me about this, tell me about it, tell me about the current, tell me about what's showing, tell me more about this, tell me more about it, describe this, describe it, describe the current, what does this show, what does this mean",
+  "docent.patterns.related": "show me something similar, show me something related, show me similar, show me related, show me like this, related, more like this, similar",
+
   "chat.announce.opened": "Chat opened",
   "chat.announce.closed": "Chat closed",
   "chat.announce.cleared": "Chat cleared",
