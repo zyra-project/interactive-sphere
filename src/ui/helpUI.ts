@@ -18,6 +18,7 @@ import { closeChat } from './chatUI'
 import { logger } from '../utils/logger'
 import { emit } from '../analytics'
 import { t, type MessageKey } from '../i18n'
+import { sanitizeGuideHtml } from './sanitizeHtml'
 
 const IS_TAURI = !!(window as any).__TAURI__
 const MESSAGE_MAX = 2000
@@ -59,8 +60,14 @@ function renderGuideHtml(): string {
   if (IS_TAURI) sectionKeys.push('help.guide.section.downloads')
   sectionKeys.push('help.guide.section.shortcuts', 'help.guide.section.privacy')
 
+  // Each section's HTML body is translator-supplied (Weblate). Run
+  // it through the allowlist sanitizer before injecting into
+  // innerHTML so a malicious or accidental translation can't
+  // smuggle <script>, on*-handlers, or javascript: hrefs.
+  // scripts/generate-locales.ts catches obvious cases at build
+  // time too; this is the runtime backstop.
   return sectionKeys
-    .map((key) => `<section class="help-guide-section">${t(key)}</section>`)
+    .map((key) => `<section class="help-guide-section">${sanitizeGuideHtml(t(key))}</section>`)
     .join('\n')
 }
 
@@ -68,7 +75,7 @@ function renderGuideHtml(): string {
 function renderFeedbackHtml(): string {
   return `
     <form id="help-feedback-form" novalidate>
-      <fieldset class="help-form-kind" role="radiogroup" aria-label="${t('help.feedback.kind.bug')}">
+      <fieldset class="help-form-kind" role="radiogroup" aria-label="${t('help.feedback.kind.aria')}">
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="bug" checked />
           <span>${t('help.feedback.kind.bug')}</span>

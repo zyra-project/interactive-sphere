@@ -375,6 +375,7 @@
   "help.guide.section.shortcuts": "<h3>Atajos de teclado</h3><ul><li><kbd>Esc</kbd> — cierra el panel activo</li><li><kbd>Enter</kbd> — envía un mensaje del chat</li><li><kbd>Espacio</kbd> — alterna la reproducción cuando hay un conjunto de vídeo cargado</li></ul>",
   "help.guide.section.privacy": "<h3>Privacidad</h3><p>La aplicación envía eventos de uso anónimos &mdash; qué capas se cargan, cuánto tiempo se ven, si algo dio error. No hay cuentas, ni cookies de seguimiento, ni servicios de analítica de terceros. Los comentarios que envías se almacenan junto con el user-agent del navegador y la URL de la página; adjuntar una captura de pantalla es opcional.</p><p>Puedes cambiar entre Esencial, Investigación y Desactivado en <strong>Herramientas &rarr; Privacidad</strong>; el cambio tiene efecto inmediato. <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">Lee la política de privacidad completa &rarr;</a></p>",
 
+  "help.feedback.kind.aria": "Tipo de comentarios",
   "help.feedback.kind.bug": "Reportar un fallo",
   "help.feedback.kind.feature": "Sugerir una función",
   "help.feedback.kind.other": "Otro",

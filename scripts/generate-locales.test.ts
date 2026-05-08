@@ -46,6 +46,31 @@ describe('validateLocale', () => {
   it('accepts an empty object', () => {
     expect(() => validateLocale('en', {})).not.toThrow()
   })
+
+  it('rejects values that contain script-class HTML', () => {
+    // Translator input flows into innerHTML in a few places (notably
+    // help-guide section blobs). The runtime sanitizer in
+    // src/ui/sanitizeHtml.ts is the primary defense; the codegen
+    // tripwire below catches the obvious classes at build time so
+    // hostile substrings can't ship at all.
+    expect(() => validateLocale('en', { 'help.foo': '<script>x</script>' })).toThrow(/forbidden/)
+    expect(() => validateLocale('en', { 'help.foo': '<iframe src=x>' })).toThrow(/forbidden/)
+    expect(() => validateLocale('en', { 'help.foo': '<a onclick="alert(1)">x</a>' })).toThrow(/forbidden/)
+    expect(() => validateLocale('en', { 'help.foo': 'click <a href="javascript:1">here</a>' })).toThrow(/forbidden/)
+    expect(() => validateLocale('en', { 'help.foo': '<a href="data:text/html,foo">x</a>' })).toThrow(/forbidden/)
+  })
+
+  it('keeps benign HTML intact (the help-guide blobs use it)', () => {
+    expect(() => validateLocale('en', {
+      'help.guide.section.x': '<h3>Title</h3><ul><li><strong>Bold</strong></li></ul>',
+    })).not.toThrow()
+    expect(() => validateLocale('en', {
+      'help.foo': 'Press <kbd>Esc</kbd> to close',
+    })).not.toThrow()
+    expect(() => validateLocale('en', {
+      'help.foo': 'See <a href="/privacy" target="_blank">policy</a>',
+    })).not.toThrow()
+  })
 })
 
 describe('diffAgainstSource', () => {

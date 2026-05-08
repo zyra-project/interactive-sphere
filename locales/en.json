@@ -375,6 +375,7 @@
   "help.guide.section.shortcuts": "<h3>Keyboard shortcuts</h3><ul><li><kbd>Esc</kbd> — close the active panel</li><li><kbd>Enter</kbd> — send a chat message</li><li><kbd>Space</kbd> — toggle playback when a video dataset is loaded</li></ul>",
   "help.guide.section.privacy": "<h3>Privacy</h3><p>The app reports anonymous usage events &mdash; which layers load, how long they're viewed, whether anything errored. There is no account, no tracking cookie, and no third-party analytics service. Feedback you submit is stored with your browser's user agent and the page URL; attaching a screenshot is opt-in.</p><p>You can switch between Essential, Research, and Off under <strong>Tools &rarr; Privacy</strong>; the change takes effect immediately. <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">Read the full privacy policy &rarr;</a></p>",
 
+  "help.feedback.kind.aria": "Feedback type",
   "help.feedback.kind.bug": "Bug report",
   "help.feedback.kind.feature": "Feature request",
   "help.feedback.kind.other": "Other",

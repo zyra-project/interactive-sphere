@@ -3,6 +3,7 @@ import {
   __installMessagesForTests,
   __resetI18nForTests,
   getLocale,
+  initI18n,
   interpolate,
   plural,
   setLocale,
@@ -94,24 +95,34 @@ describe('i18n runtime', () => {
     })
   })
 
+  describe('initI18n', () => {
+    it('takes no parameter — it always installs the source bundle', () => {
+      // Pin the no-arg contract: initI18n previously accepted a
+      // `locale` argument but always set the English bundle, which
+      // produced a half-translated UI when callers passed
+      // anything else. The function is now arg-less.
+      expect(initI18n.length).toBe(0)
+    })
+
+    it('writes the active locale + DOM attributes on call', () => {
+      // Previous setLocale call may have left state — reset.
+      __resetI18nForTests()
+      initI18n()
+      expect(getLocale()).toBe(SOURCE_LOCALE)
+      expect(document.documentElement.lang).toBe(SOURCE_LOCALE)
+    })
+  })
+
   describe('setLocale', () => {
     it('returns the source locale by default', () => {
       expect(getLocale()).toBe(SOURCE_LOCALE)
     })
 
-    it('updates document lang and dir attributes when locale changes', async () => {
-      // Default English has no entry for 'es' loader yet (Wave 0
-      // generates an empty messages.es). Calling setLocale('es')
-      // should still update DOM attributes via the en→es transition
-      // before resolution. Verify the document side-effects.
-      expect(document.documentElement.lang).toBe('') // happy-dom default
-      // We can't easily test setLocale to non-en without the
-      // generated loader returning real data. Instead, exercise the
-      // attribute writer via initI18n indirectly by calling the
-      // already-installed test helper, which calls applyHtmlAttributes
-      // through __installMessagesForTests is not the one wiring DOM.
-      // Use the public setLocale on the source locale (no-op transition
-      // but still safe) to confirm the API contract.
+    it('is callable on the source locale without throwing (no-op transition)', async () => {
+      // setLocale to the already-active locale is a no-op fast
+      // path. The DOM-attribute side effects of switching ARE
+      // exercised by the initI18n test above; here we just pin
+      // the public API contract.
       await setLocale(SOURCE_LOCALE)
       expect(getLocale()).toBe(SOURCE_LOCALE)
     })

@@ -19,7 +19,7 @@ import {
 } from './index'
 
 export async function bootstrapI18n(): Promise<Locale> {
-  initI18n(SOURCE_LOCALE)
+  initI18n()
   const detected = detectLocale({
     supported: SUPPORTED_LOCALES,
     fallback: SOURCE_LOCALE,

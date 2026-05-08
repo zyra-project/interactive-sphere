@@ -49,6 +49,7 @@ import {
   type Locale,
 } from '../i18n'
 import { saveLocalePref } from '../i18n/persistence'
+import { escapeAttr, escapeHtml } from './domUtils'
 
 /** Fire a `settings_changed` event for a toggle/action in the Tools
  * popover. `key` is the logical name (labels / borders / etc.) and
@@ -120,8 +121,13 @@ export function initToolsMenu(
   const currentLayout = viewports.getLayout()
 
   const activeLocale = getLocale()
+  // Both BCP-47 tags (validated at codegen time against ^[a-z]…$)
+  // and the curated NATIVE_NAMES are trusted today, but escape
+  // anyway — defense in depth keeps this safe if either source is
+  // ever extended to translator input or runtime overrides (see
+  // L2 partner-overrides plan in docs/I18N_PLAN.md).
   const localeOptions = SUPPORTED_LOCALES
-    .map((l) => `<option value="${l}"${l === activeLocale ? ' selected' : ''}>${NATIVE_NAMES[l]}</option>`)
+    .map((l) => `<option value="${escapeAttr(l)}"${l === activeLocale ? ' selected' : ''}>${escapeHtml(NATIVE_NAMES[l])}</option>`)
     .join('')
 
   container.classList.remove('hidden')

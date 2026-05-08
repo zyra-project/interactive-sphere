@@ -53,6 +53,32 @@ class LocaleBuildError extends Error {}
 
 // ---- Pure functions (exported for testing) ─────────────────────────
 
+/** Patterns that must not appear in any locale value. Translator
+ *  input arrives via Weblate (untrusted) and gets injected into
+ *  innerHTML in a few places (notably the help-guide section
+ *  blobs). The runtime sanitizer in `src/ui/sanitizeHtml.ts` is
+ *  the primary defense; this is a build-time tripwire that fails
+ *  CI on the obvious script-class hostile substrings before they
+ *  ever ship. Pairs with `validateLocale` so any drift in the
+ *  threat model gets caught here, with a clear error message
+ *  pointing at the offending key. */
+const FORBIDDEN_VALUE_PATTERNS: ReadonlyArray<{ name: string; re: RegExp }> = [
+  { name: '<script>', re: /<\s*script\b/i },
+  { name: '<iframe>', re: /<\s*iframe\b/i },
+  { name: '<object>', re: /<\s*object\b/i },
+  { name: '<embed>', re: /<\s*embed\b/i },
+  { name: '<form>', re: /<\s*form\b/i },
+  { name: '<style>', re: /<\s*style\b/i },
+  { name: 'inline event handler (onfoo=)', re: /\son[a-z]+\s*=/i },
+  { name: 'javascript: URL', re: /javascript\s*:/i },
+  { name: 'vbscript: URL', re: /vbscript\s*:/i },
+  // data: URLs can carry text/html — block in locale strings (the
+  // app uses base64 image data URIs at the dataset layer, not in
+  // copy). If a future locale needs to embed an image, it should
+  // use a normal http(s) URL through the runtime sanitizer.
+  { name: 'data: URL', re: /\bdata\s*:[a-z/+]*[;,]/i },
+]
+
 /**
  * Validate one parsed locale object against the schema rules. Throws
  * `LocaleBuildError` on the first violation; the message names the
@@ -79,6 +105,14 @@ export function validateLocale(
       throw new LocaleBuildError(
         `[locales] ${locale}.json: value for "${key}" must be a string, got ${typeof value}`,
       )
+    }
+    for (const { name, re } of FORBIDDEN_VALUE_PATTERNS) {
+      if (re.test(value)) {
+        throw new LocaleBuildError(
+          `[locales] ${locale}.json: value for "${key}" contains forbidden pattern (${name}). ` +
+          `Translator input flows into innerHTML in a few places; script-class HTML is rejected at build time.`,
+        )
+      }
     }
   }
 }

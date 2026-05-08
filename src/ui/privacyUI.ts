@@ -27,20 +27,35 @@ import {
   setTier,
 } from '../analytics'
 import type { TelemetryTier } from '../types'
-import { t } from '../i18n'
+import { t, type MessageKey } from '../i18n'
 
 let mounted = false
 let isOpen = false
 let lastTrigger: HTMLElement | null = null
 let listenerController: AbortController | null = null
 
+/** Tier → MessageKey lookup. Lives at module scope so the type-
+ *  check verifies all three tiers map to valid keys, with no
+ *  template-string casting. Compile-time enforcement that we
+ *  haven't dropped a tier on either axis. */
+const TIER_LABEL_KEY: Record<TelemetryTier, MessageKey> = {
+  essential: 'privacy.tier.essential.label',
+  research: 'privacy.tier.research.label',
+  off: 'privacy.tier.off.label',
+}
+const TIER_DESC_KEY: Record<TelemetryTier, MessageKey> = {
+  essential: 'privacy.tier.essential.desc',
+  research: 'privacy.tier.research.desc',
+  off: 'privacy.tier.off.desc',
+}
+
 /** Resolve tier label (`Essential` / `Research` / `Off`) at call time
  * so a locale switch + reload picks up new copy without a rebuild. */
 function tierLabel(tier: TelemetryTier): string {
-  return t(`privacy.tier.${tier}.label` as `privacy.tier.essential.label`)
+  return t(TIER_LABEL_KEY[tier])
 }
 function tierDesc(tier: TelemetryTier): string {
-  return t(`privacy.tier.${tier}.desc` as `privacy.tier.essential.desc`)
+  return t(TIER_DESC_KEY[tier])
 }
 
 /** Build the panel HTML. Called once on first open. */

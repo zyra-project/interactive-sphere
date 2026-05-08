@@ -32,13 +32,21 @@ let activeLocale: Locale = SOURCE_LOCALE
 let activeMessages: Readonly<Record<string, string>> = enMessages
 
 /**
- * Initialize the runtime. Synchronous — must be called before any
- * `t()` invocation. The bootstrap path in `src/main.ts` calls this
- * with English first, then optionally `await setLocale(detected)`
- * for non-English locales.
+ * Initialize the runtime synchronously with the inlined English
+ * source bundle. Must be called before any `t()` invocation.
+ *
+ * No locale parameter on purpose — install always lands the
+ * source locale (English). Switching to a non-English locale is
+ * the job of the async {@link setLocale}, which actually loads
+ * the matching message chunk; passing a non-English tag here
+ * would set `<html lang>`/`dir` to that locale while the message
+ * bundle stays English, producing a half-translated UI. The
+ * `bootstrap.ts` flow follows the right order: `initI18n()` first,
+ * then `await setLocale(detected)` only if detection picks a
+ * non-source locale.
  */
-export function initI18n(locale: Locale = SOURCE_LOCALE): void {
-  activeLocale = locale
+export function initI18n(): void {
+  activeLocale = SOURCE_LOCALE
   activeMessages = enMessages
   applyHtmlAttributes()
 }

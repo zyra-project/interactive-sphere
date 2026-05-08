@@ -885,9 +885,12 @@ function renderMessages(): void {
   if (messages.length === 0) {
     // Inline render — markdown-lite **bold** is parsed below in renderMarkdownLite
     // for chat messages, but the welcome block hard-codes its <strong> tags so
-    // it can keep its specific p/strong markup. The Wave 4 t() values include
-    // the **markers** for translator parity; we strip them here before injection.
-    const intro = t('chat.welcome.intro').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // it can keep its specific p/strong markup. Escape the translation FIRST
+    // so a translator-supplied "</p><script>" or HTML/event attribute can't
+    // smuggle markup; then apply the **bold** → <strong> transform on the
+    // already-escaped text. escapeHtml doesn't touch the asterisks so the
+    // regex still matches the markdown markers.
+    const intro = escapeHtml(t('chat.welcome.intro')).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     const hint = escapeHtml(t('chat.welcome.hint'))
     container.innerHTML = `<div class="chat-welcome">
       <div class="chat-welcome-icon" aria-hidden="true">&#x1F30D;</div>
