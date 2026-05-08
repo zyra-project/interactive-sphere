@@ -1,0 +1,29 @@
+# CODEOWNERS — auto-assign reviewers to PRs touching specific paths.
+#
+# GitHub looks at the *last matching pattern* per file, so order
+# from most general to most specific. Lines starting with `#` are
+# comments; blank lines are ignored.
+#
+# Locale review routing
+# ---------------------
+# Translation PRs need at least one native-speaker review before
+# merging. Each locale routes to a small reviewer team named
+# `@zyra-project/terraviz-i18n-<locale>`. Add yourself by opening
+# a PR against this file with the team you want to join (or start);
+# without a review team, locales stay in `experimental` status —
+# reachable via `?locale=<code>` query flag for testing but hidden
+# from the public Tools → Language picker.
+#
+# See CONTRIBUTING-TRANSLATIONS.md for the full reviewer workflow.
+
+# Spanish — L1 seed locale.
+# TODO: replace placeholder with the actual review team handle
+# once it exists. Until then, locale PRs fall through to repo
+# default reviewers and a maintainer does a best-effort review.
+# locales/es.json    @zyra-project/terraviz-i18n-es
+
+# Source of truth — only maintainers add new keys to en.json so
+# the codegen's orphan-key check stays meaningful (orphan keys in
+# non-source locales fail the build).
+# locales/en.json    @zyra-project/terraviz-maintainers
+# locales/schema.json @zyra-project/terraviz-maintainers

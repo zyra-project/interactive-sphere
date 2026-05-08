@@ -370,10 +370,15 @@ existing fallback chain at the front of the merge order.
 Per user decision: **Weblate as canonical inbound, GitHub PRs
 always available as the developer escape hatch.**
 
-- **Weblate** (free libre tier at hosted.weblate.org) connects to
-  the GitHub repo and round-trips translations as commits/PRs.
-  Translators get glossaries, translation memory, voting, and
-  progress dashboards.
+- **Live Weblate project**:
+  <https://hosted.weblate.org/projects/terraviz/> — translator
+  landing page is the engage URL,
+  <https://hosted.weblate.org/engage/terraviz/>. Connected to
+  the GitHub repo on the libre-project free tier; round-trips
+  translations as commits/PRs against `main`. Translators get
+  glossaries, translation memory, voting, and progress
+  dashboards. Workflow + glossary documented in
+  [`CONTRIBUTING-TRANSLATIONS.md`](../CONTRIBUTING-TRANSLATIONS.md).
 - **GitHub PRs** remain available; Weblate's output _is_ a PR, so
   there is one canonical inbound channel with two on-ramps
   (Weblate UI for translators, git CLI for developers).
