@@ -7,6 +7,7 @@
 import type { HLSService } from '../services/hlsService'
 import type { AppState, Dataset } from '../types'
 import { logger } from '../utils/logger'
+import { t } from '../i18n'
 
 // --- Playback constants ---
 const LOOP_RESTART_DELAY_MS = 2000
@@ -117,7 +118,7 @@ export function togglePlayPause(
     appState.isPlaying = false
   }
   updatePlayButton(hlsService.paused)
-  announce(hlsService.paused ? 'Playback paused' : 'Playback started')
+  announce(t(hlsService.paused ? 'playback.announce.paused' : 'playback.announce.started'))
 }
 
 /** Seek to the beginning of the video and pause playback. */
@@ -132,7 +133,7 @@ export function rewind(
   hlsService.pause()
   appState.isPlaying = false
   updatePlayButton(true)
-  announce('Playback paused')
+  announce(t('playback.announce.paused'))
   state.scrubbing = true
 }
 
@@ -150,7 +151,7 @@ export function fastForward(
     hlsService.pause()
     appState.isPlaying = false
     updatePlayButton(true)
-    announce('Playback paused')
+    announce(t('playback.announce.paused'))
     state.scrubbing = true
   }
 }
@@ -171,7 +172,7 @@ export function stepFrame(
     hlsService.pause()
     appState.isPlaying = false
     updatePlayButton(true)
-    announce('Playback paused')
+    announce(t('playback.announce.paused'))
   }
 
   let step: number
@@ -207,7 +208,7 @@ export function updatePlayButton(paused: boolean): void {
   const playBtn = document.getElementById('play-btn')
   if (playBtn) {
     playBtn.textContent = paused ? '\u25B6\uFE0E' : '\u23F8\uFE0E'
-    playBtn.setAttribute('aria-label', paused ? 'Play' : 'Pause')
+    playBtn.setAttribute('aria-label', t(paused ? 'playback.play.aria' : 'playback.pause.aria'))
   }
 }
 
@@ -251,7 +252,11 @@ export async function loadCaptions(
       return
     }
 
-    const track = video.addTextTrack('captions', 'Closed Captions', 'en')
+    // Third arg is the LANGUAGE OF THE CAPTIONS themselves (BCP-47),
+    // not the UI language — SOS captions are English regardless of the
+    // viewer's locale, so this stays 'en'. Only the human-readable
+    // label routes through t().
+    const track = video.addTextTrack('captions', t('playback.captions.label'), 'en')
     track.mode = 'hidden'
     for (const cue of cues) {
       track.addCue(new VTTCue(cue.start, cue.end, cue.text))
@@ -320,29 +325,29 @@ export function seekToDate(
   state: PlaybackState,
 ): { success: boolean; message: string } {
   if (!hlsService) {
-    return { success: false, message: 'No video dataset loaded' }
+    return { success: false, message: t('playback.error.noVideoDataset') }
   }
 
   const video = hlsService.getVideo()
   if (!video || !video.duration) {
-    return { success: false, message: 'Video not ready' }
+    return { success: false, message: t('playback.error.videoNotReady') }
   }
 
   const dataset = appState.currentDataset
   if (!dataset?.startTime || !dataset?.endTime) {
-    return { success: false, message: 'Dataset has no time range' }
+    return { success: false, message: t('playback.error.noTimeRange') }
   }
 
   const targetDate = new Date(isoDate)
   if (isNaN(targetDate.getTime())) {
-    return { success: false, message: 'Invalid date format' }
+    return { success: false, message: t('playback.error.invalidDate') }
   }
 
   const start = new Date(dataset.startTime).getTime()
   const end = new Date(dataset.endTime).getTime()
   const totalMs = end - start
   if (totalMs <= 0) {
-    return { success: false, message: 'Dataset has invalid time range' }
+    return { success: false, message: t('playback.error.invalidTimeRange') }
   }
 
   // Check if date falls outside the dataset's time range
@@ -352,7 +357,7 @@ export function seekToDate(
     const endStr = dataset.endTime!.split('T')[0]
     return {
       success: false,
-      message: `Date ${isoDate} is outside this dataset's range (${startStr} to ${endStr})`,
+      message: t('playback.error.dateOutsideRange', { date: isoDate, start: startStr, end: endStr }),
     }
   }
 
@@ -368,7 +373,7 @@ export function seekToDate(
     updatePlayButton(true)
   }
 
-  return { success: true, message: `Seeking to ${isoDate}` }
+  return { success: true, message: t('playback.seekingTo', { date: isoDate }) }
 }
 
 // --- Info panel positioning ---
