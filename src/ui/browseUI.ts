@@ -14,6 +14,8 @@ import { closeDownloadPanel } from './downloadUI'
 import { toggleHelp } from './helpUI'
 import { escapeHtml, escapeAttr } from './domUtils'
 import { emit, startDwell, hashQuery, type DwellHandle } from '../analytics'
+import { plural, t } from '../i18n'
+import { formatDate, formatNumber } from '../i18n/format'
 
 /** Tier B dwell handle for the browse overlay — non-null while the
  * overlay is visible. Started on showBrowseUI when the overlay
@@ -111,7 +113,7 @@ export function showBrowseUI(
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       hideBrowseUI()
-      callbacks.announce('Dataset browser closed')
+      callbacks.announce(t('browse.announce.closed'))
     })
     closeBtn.dataset.wired = 'true'
   }
@@ -123,7 +125,7 @@ export function showBrowseUI(
   // Update search placeholder with actual count
   const searchEl = document.getElementById('browse-search') as HTMLInputElement | null
   if (searchEl) {
-    searchEl.placeholder = `Search ${visible.length} datasets\u2026`
+    searchEl.placeholder = t('browse.search.placeholderCount', { count: visible.length })
   }
 
   // Collect unique category keys
@@ -138,9 +140,13 @@ export function showBrowseUI(
   }
   catSet.delete('Movies')
   catSet.delete('Layers')
-  const categories = ['All', ...Array.from(catSet).sort()]
+  // 'All' is the programmatic sentinel for "no category filter" — kept
+  // as a literal string in code (data attributes, comparisons) so the
+  // logic is locale-independent. The visible label is translated below.
+  const ALL = 'All'
+  const categories = [ALL, ...Array.from(catSet).sort()]
 
-  let activeCategory = 'All'
+  let activeCategory = ALL
   let activeSubCategory: string | null = null
   type SortKey = 'relevance' | 'newest' | 'az'
   let activeSort: SortKey = 'relevance'
@@ -163,14 +169,17 @@ export function showBrowseUI(
   const chipBar = document.getElementById('browse-category-bar')
   if (chipBar) {
     chipBar.innerHTML = categories
-      .map(cat => `<button class="browse-chip${cat === 'All' ? ' active' : ''}" data-cat="${escapeAttr(cat)}" aria-pressed="${cat === 'All'}">${escapeHtml(cat)}</button>`)
+      .map(cat => {
+        const display = cat === ALL ? t('browse.category.all') : cat
+        return `<button class="browse-chip${cat === ALL ? ' active' : ''}" data-cat="${escapeAttr(cat)}" aria-pressed="${cat === ALL}">${escapeHtml(display)}</button>`
+      })
       .join('')
 
     if (!chipBar.dataset.wired) {
       chipBar.addEventListener('click', (e) => {
         const btn = (e.target as HTMLElement).closest('.browse-chip') as HTMLElement | null
         if (!btn) return
-        activeCategory = btn.dataset.cat ?? 'All'
+        activeCategory = btn.dataset.cat ?? ALL
         activeSubCategory = null
         chipBar.querySelectorAll('.browse-chip').forEach(c => {
           c.classList.remove('active')
@@ -195,7 +204,7 @@ export function showBrowseUI(
   const subChipBar = document.getElementById('browse-subcategory-bar')
   const renderSubChips = () => {
     if (!subChipBar) return
-    if (activeCategory === 'All' || !subCatMap.has(activeCategory)) {
+    if (activeCategory === ALL || !subCatMap.has(activeCategory)) {
       subChipBar.innerHTML = ''
       return
     }
@@ -287,9 +296,9 @@ export function showBrowseUI(
   // Sort controls
   const sortBar = document.getElementById('browse-sort')
   const sortOptions: Array<{ key: SortKey; label: string }> = [
-    { key: 'relevance', label: 'Relevance' },
-    { key: 'newest', label: 'Newest' },
-    { key: 'az', label: 'A\u2013Z' },
+    { key: 'relevance', label: t('browse.sort.relevance') },
+    { key: 'newest', label: t('browse.sort.newest') },
+    { key: 'az', label: t('browse.sort.az') },
   ]
   if (sortBar) {
     sortBar.innerHTML = sortOptions
@@ -325,12 +334,12 @@ export function showBrowseUI(
         btn.classList.add('downloading')
         btn.classList.remove('downloaded')
         btn.innerHTML = '&#8987;'
-        btn.title = 'Downloading…'
+        btn.title = t('browse.download.downloading.title')
       } else if (downloaded) {
         btn.classList.add('downloaded')
         btn.classList.remove('downloading')
         btn.innerHTML = '&#10003;'
-        btn.title = `Downloaded (${formatBytes(downloaded.total_bytes)})`
+        btn.title = t('browse.download.downloaded.title', { size: formatBytes(downloaded.total_bytes) })
       }
     }
   }
@@ -347,14 +356,14 @@ export function showBrowseUI(
 
     btn.classList.add('downloading')
     btn.innerHTML = '&#8987;'
-    btn.title = 'Downloading…'
+    btn.title = t('browse.download.downloading.title')
 
     try {
       await downloadDataset(dataset)
     } catch {
       btn.classList.remove('downloading')
       btn.innerHTML = '&#8615;'
-      btn.title = 'Download for offline use'
+      btn.title = t('browse.download.title')
     }
   }
 
@@ -366,7 +375,7 @@ export function showBrowseUI(
     let filtered = [...visible]
 
     // Category filter
-    if (activeCategory !== 'All') {
+    if (activeCategory !== ALL) {
       filtered = filtered.filter(d =>
         (d.enriched?.categories != null && activeCategory in d.enriched.categories) ||
         (d.tags != null && d.tags.includes(activeCategory))
@@ -406,14 +415,18 @@ export function showBrowseUI(
     }
 
     if (countEl) {
-      countEl.textContent = `${filtered.length.toLocaleString()} dataset${filtered.length !== 1 ? 's' : ''}`
+      countEl.textContent = plural(
+        filtered.length,
+        { one: 'browse.count.one', other: 'browse.count.other' },
+        { count: formatNumber(filtered.length) },
+      )
     }
 
     if (filtered.length === 0) {
       const docentHint = callbacks.onOpenChat
-        ? `<button class="browse-docent-hint">Not sure what you need? Ask Orbit \u2192</button>`
+        ? `<button class="browse-docent-hint">${escapeHtml(t('browse.docentHint'))}</button>`
         : ''
-      grid.innerHTML = `<div class="browse-no-results" role="status">No datasets match your search.${docentHint ? `<br>${docentHint}` : ''}</div>`
+      grid.innerHTML = `<div class="browse-no-results" role="status">${escapeHtml(t('browse.noResults'))}${docentHint ? `<br>${docentHint}` : ''}</div>`
       if (callbacks.onOpenChat) {
         grid.querySelector('.browse-docent-hint')?.addEventListener('click', () => {
           callbacks.onOpenChat!(searchQuery || undefined)
@@ -444,27 +457,27 @@ export function showBrowseUI(
       const keywords = [...(d.enriched?.keywords ?? []), ...(d.tags ?? [])]
       const catalogUrl = d.enriched?.catalogUrl
       const timeRange = d.startTime && d.endTime
-        ? `${new Date(d.startTime).toLocaleDateString()} \u2013 ${new Date(d.endTime).toLocaleDateString()}`
+        ? `${formatDate(d.startTime)} \u2013 ${formatDate(d.endTime)}`
         : ''
 
       let metaHtml = ''
-      if (org) metaHtml += `<div class="browse-card-meta"><strong>Source:</strong> ${escapeHtml(org)}</div>`
-      if (dev) metaHtml += `<div class="browse-card-meta"><strong>Dataset developer:</strong> ${escapeHtml(dev)}</div>`
-      if (visDev) metaHtml += `<div class="browse-card-meta"><strong>Visualization:</strong> ${escapeHtml(visDev)}</div>`
-      if (timeRange) metaHtml += `<div class="browse-card-meta"><strong>Time range:</strong> ${timeRange}</div>`
-      if (dateAdded) metaHtml += `<div class="browse-card-meta"><strong>Added:</strong> ${escapeHtml(dateAdded)}</div>`
-      if (catalogUrl) metaHtml += `<div class="browse-card-meta"><a href="${escapeAttr(catalogUrl)}" target="_blank" rel="noopener" style="color: #4da6ff; text-decoration: none; font-size: 0.65rem;">View in SOS catalog \u2197</a></div>`
+      if (org) metaHtml += `<div class="browse-card-meta"><strong>${escapeHtml(t('browse.card.meta.source'))}</strong> ${escapeHtml(org)}</div>`
+      if (dev) metaHtml += `<div class="browse-card-meta"><strong>${escapeHtml(t('browse.card.meta.datasetDeveloper'))}</strong> ${escapeHtml(dev)}</div>`
+      if (visDev) metaHtml += `<div class="browse-card-meta"><strong>${escapeHtml(t('browse.card.meta.visualization'))}</strong> ${escapeHtml(visDev)}</div>`
+      if (timeRange) metaHtml += `<div class="browse-card-meta"><strong>${escapeHtml(t('browse.card.meta.timeRange'))}</strong> ${timeRange}</div>`
+      if (dateAdded) metaHtml += `<div class="browse-card-meta"><strong>${escapeHtml(t('browse.card.meta.added'))}</strong> ${escapeHtml(dateAdded)}</div>`
+      if (catalogUrl) metaHtml += `<div class="browse-card-meta"><a href="${escapeAttr(catalogUrl)}" target="_blank" rel="noopener" style="color: #4da6ff; text-decoration: none; font-size: 0.65rem;">${escapeHtml(t('browse.card.catalogLink'))}</a></div>`
 
       const keywordsHtml = keywords.length
-        ? `<div class="browse-card-keywords">${keywords.slice(0, MAX_CARD_KEYWORDS).map(k => `<span class="browse-card-keyword" data-keyword="${escapeAttr(k)}" role="button" tabindex="0" aria-label="Filter by ${escapeAttr(k)}">${escapeHtml(k)}</span>`).join('')}</div>`
+        ? `<div class="browse-card-keywords">${keywords.slice(0, MAX_CARD_KEYWORDS).map(k => `<span class="browse-card-keyword" data-keyword="${escapeAttr(k)}" role="button" tabindex="0" aria-label="${escapeAttr(t('browse.card.keyword.aria', { keyword: k }))}">${escapeHtml(k)}</span>`).join('')}</div>`
         : ''
 
       const thumbHtml = d.thumbnailLink
-        ? `<img class="browse-card-thumb" src="${escapeAttr(d.thumbnailLink)}" alt="${escapeAttr(d.title)} thumbnail" loading="lazy">`
+        ? `<img class="browse-card-thumb" src="${escapeAttr(d.thumbnailLink)}" alt="${escapeAttr(t('browse.card.thumb.alt', { title: d.title }))}" loading="lazy">`
         : ''
 
       const downloadBtn = isDownloadAvailable()
-        ? `<button class="browse-card-download" data-id="${escapeAttr(d.id)}" aria-label="Download ${escapeAttr(d.title)} for offline use" title="Download for offline use">&#8615;</button>`
+        ? `<button class="browse-card-download" data-id="${escapeAttr(d.id)}" aria-label="${escapeAttr(t('browse.download.aria', { title: d.title }))}" title="${escapeAttr(t('browse.download.title'))}">&#8615;</button>`
         : ''
 
       return `<div class="browse-card" data-id="${escapeAttr(d.id)}" role="listitem" tabindex="0" aria-label="${escapeAttr(d.title)}" aria-expanded="false">
@@ -473,7 +486,7 @@ export function showBrowseUI(
             <div class="browse-card-header">
               <span class="browse-card-title">${escapeHtml(d.title)}</span>
               ${downloadBtn}
-              <button class="browse-card-load" data-id="${escapeAttr(d.id)}" aria-label="Load ${escapeAttr(d.title)}">Load</button>
+              <button class="browse-card-load" data-id="${escapeAttr(d.id)}" aria-label="${escapeAttr(t('browse.card.load.aria', { title: d.title }))}">${escapeHtml(t('browse.card.load'))}</button>
             </div>
             ${catsHtml}${shortDescHtml}
             <div class="browse-card-details">

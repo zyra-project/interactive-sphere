@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Poster](https://img.shields.io/badge/poster-view%20online-00172D)](https://poster.terraviz.zyra-project.org/)
 [![Live App](https://img.shields.io/badge/app-terraviz.zyra--project.org-success)](https://terraviz.zyra-project.org/)
+[![Translation status](https://hosted.weblate.org/widget/terraviz/svg-badge.svg)](https://hosted.weblate.org/engage/terraviz/)
 
 [![Windows](https://img.shields.io/badge/Download-Windows-0078D4?logo=windows&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.msi)
 [![macOS](https://img.shields.io/badge/Download-macOS-000000?logo=apple&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-aarch64.dmg)

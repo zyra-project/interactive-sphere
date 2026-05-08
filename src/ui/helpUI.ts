@@ -17,6 +17,8 @@ import { submitGeneralFeedback } from '../services/generalFeedbackService'
 import { closeChat } from './chatUI'
 import { logger } from '../utils/logger'
 import { emit } from '../analytics'
+import { t, tAttr, tHtml, type MessageKey } from '../i18n'
+import { sanitizeGuideHtml } from './sanitizeHtml'
 
 const IS_TAURI = !!(window as any).__TAURI__
 const MESSAGE_MAX = 2000
@@ -40,116 +42,57 @@ function isPortraitPhone(): boolean {
     && window.matchMedia('(max-width: 600px) and (orientation: portrait)').matches
 }
 
-/** Build the guide tab HTML. Content is static; desktop-only sections gated on IS_TAURI. */
+/** Build the guide tab HTML. Each section is one translated HTML
+ *  blob in `locales/*.json` so translators can render it whole;
+ *  the structural <section> wrapper + ordering live here. */
 function renderGuideHtml(): string {
-  const downloadsSection = IS_TAURI
-    ? `
-    <section class="help-guide-section">
-      <h3>Offline downloads</h3>
-      <ul>
-        <li>Click the download icon on any dataset card to cache it locally.</li>
-        <li>Downloaded datasets open instantly, even without an internet connection.</li>
-        <li>Manage cached datasets from the download panel to see sizes or delete old ones.</li>
-      </ul>
-    </section>`
-    : ''
+  // Section keys in display order. The downloads section is gated
+  // on Tauri (desktop builds) so the web build doesn't show
+  // instructions for a feature it lacks.
+  const sectionKeys: MessageKey[] = [
+    'help.guide.section.navigating',
+    'help.guide.section.exploring',
+    'help.guide.section.tools',
+    'help.guide.section.multiglobe',
+    'help.guide.section.tours',
+    'help.guide.section.orbit',
+  ]
+  if (IS_TAURI) sectionKeys.push('help.guide.section.downloads')
+  sectionKeys.push('help.guide.section.shortcuts', 'help.guide.section.privacy')
 
-  return `
-    <section class="help-guide-section">
-      <h3>Navigating the globe</h3>
-      <ul>
-        <li>Drag to rotate the Earth.</li>
-        <li>Scroll or pinch to zoom.</li>
-        <li>Double-click a location to focus on it.</li>
-      </ul>
-    </section>
-    <section class="help-guide-section">
-      <h3>Exploring datasets</h3>
-      <ul>
-        <li>Tap the <strong>Browse</strong> button in the bottom-right to open the dataset list.</li>
-        <li>Filter by category or search by keyword to narrow the list.</li>
-        <li>Click any card to load that dataset onto the globe.</li>
-        <li>The home button (top-left) returns you to the default Earth view and reopens browse.</li>
-      </ul>
-    </section>
-    <section class="help-guide-section">
-      <h3>Tools &amp; settings</h3>
-      <ul>
-        <li>The wrench icon next to Browse opens the <strong>Tools</strong> popover.</li>
-        <li><strong>View</strong> — toggle labels, borders, 3D terrain, auto-rotation, the dataset info panel, and dataset legends.</li>
-        <li><strong>Dataset info</strong> — show or hide the dataset metadata panel in the bottom-left. Hidden by default if you've turned it off previously; your preference is remembered.</li>
-        <li><strong>Legend</strong> — show or hide the legend for each loaded dataset. In multi-globe layouts each panel shows its own legend; tap a legend to enlarge.</li>
-        <li><strong>Layout</strong> — switch between a single globe or 2–4 synchronised globes that move together but can show different datasets side-by-side.</li>
-        <li><strong>Clear</strong> — remove any markers or highlighted regions.</li>
-        <li><strong>Orbit settings</strong> — configure the AI docent's endpoint, model, and preferences.</li>
-        <li>Tap outside the popover or press <kbd>Esc</kbd> to close it.</li>
-      </ul>
-    </section>
-    <section class="help-guide-section">
-      <h3>Multi-globe comparisons</h3>
-      <ul>
-        <li>In a multi-panel layout, camera motion syncs across every globe — drag any panel to rotate them all.</li>
-        <li>Each panel has a small numbered button in its top-left corner. Tap one to make it the active (primary) panel.</li>
-        <li>The next dataset you load goes into the active panel. Use the Browse button to pick another dataset for the next panel.</li>
-        <li>Time-series animations sync by <em>real-world date</em>, not video seconds — two datasets with different date ranges still line up correctly during any overlap. A panel whose dataset doesn't cover the current time is dimmed and marked "No data for current time".</li>
-      </ul>
-    </section>
-    <section class="help-guide-section">
-      <h3>Guided tours</h3>
-      <ul>
-        <li>Tours are scripted sequences that fly the camera, swap datasets, and narrate a topic.</li>
-        <li>Start a tour from the browse panel — tour cards are marked with a play icon.</li>
-        <li>Use the on-screen transport controls to play, pause, or skip between tour steps.</li>
-        <li>Some tours pause for questions or user input; click continue to resume.</li>
-      </ul>
-    </section>
-    <section class="help-guide-section">
-      <h3>Talking to Orbit</h3>
-      <ul>
-        <li>Orbit is the digital docent — an AI assistant that can recommend datasets and explain what you're seeing.</li>
-        <li>Open the chat panel from the bottom-left trigger or the speech-bubble button in the browse panel.</li>
-        <li>Orbit can embed load buttons directly in its replies — click one to jump straight to that dataset.</li>
-        <li>Use the thumbs-up / thumbs-down buttons under each reply to rate Orbit's answers.</li>
-        <li>Configure the AI endpoint, model, and reading level from <strong>Tools → Orbit settings</strong>.</li>
-      </ul>
-    </section>${downloadsSection}
-    <section class="help-guide-section">
-      <h3>Keyboard shortcuts</h3>
-      <ul>
-        <li><kbd>Esc</kbd> — close the active panel</li>
-        <li><kbd>Enter</kbd> — send a chat message</li>
-        <li><kbd>Space</kbd> — toggle playback when a video dataset is loaded</li>
-      </ul>
-    </section>
-    <section class="help-guide-section">
-      <h3>Privacy</h3>
-      <p>The app reports anonymous usage events &mdash; which layers load, how long they're viewed, whether anything errored. There is no account, no tracking cookie, and no third-party analytics service. Feedback you submit is stored with your browser's user agent and the page URL; attaching a screenshot is opt-in.</p>
-      <p>You can switch between Essential, Research, and Off under <strong>Tools &rarr; Privacy</strong>; the change takes effect immediately. <a href="/privacy" target="_blank" rel="noopener">Read the full privacy policy &rarr;</a></p>
-    </section>
-  `
+  // Each section's HTML body is translator-supplied (Weblate). Run
+  // it through the allowlist sanitizer before injecting into
+  // innerHTML so a malicious or accidental translation can't
+  // smuggle <script>, on*-handlers, or javascript: hrefs.
+  // scripts/generate-locales.ts catches obvious cases at build
+  // time too; this is the runtime backstop.
+  return sectionKeys
+    .map((key) => `<section class="help-guide-section">${sanitizeGuideHtml(t(key))}</section>`)
+    .join('\n')
 }
 
-/** Build the feedback tab HTML (form). */
+/** Build the feedback tab HTML (form). Translator content arrives
+ *  via Weblate (untrusted); every t() lands in innerHTML so each
+ *  one flows through tHtml (text content) or tAttr (quoted attr
+ *  value) for defense in depth. */
 function renderFeedbackHtml(): string {
   return `
     <form id="help-feedback-form" novalidate>
-      <fieldset class="help-form-kind" role="radiogroup" aria-label="Feedback type">
+      <fieldset class="help-form-kind" role="radiogroup" aria-label="${tAttr('help.feedback.kind.aria')}">
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="bug" checked />
-          <span>Bug report</span>
+          <span>${tHtml('help.feedback.kind.bug')}</span>
         </label>
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="feature" />
-          <span>Feature request</span>
+          <span>${tHtml('help.feedback.kind.feature')}</span>
         </label>
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="other" />
-          <span>Other</span>
+          <span>${tHtml('help.feedback.kind.other')}</span>
         </label>
       </fieldset>
-      <label class="help-form-label" for="help-feedback-message">
-        Describe what happened or what you'd like to see
-      </label>
+      <label class="help-form-label" for="help-feedback-message">${tHtml('help.feedback.message.label')}</label>
       <textarea
         id="help-feedback-message"
         name="message"
@@ -157,29 +100,27 @@ function renderFeedbackHtml(): string {
         maxlength="${MESSAGE_MAX}"
         required
         aria-describedby="help-feedback-counter"
-        placeholder="Tell us as much as you can — steps to reproduce, what you expected, and what actually happened."
+        placeholder="${tAttr('help.feedback.message.placeholder')}"
       ></textarea>
       <div class="help-form-meta">
-        <span id="help-feedback-counter" aria-live="polite">0 / ${MESSAGE_MAX}</span>
+        <span id="help-feedback-counter" aria-live="polite">${tHtml('help.feedback.counter', { count: 0, max: MESSAGE_MAX })}</span>
       </div>
-      <label class="help-form-label" for="help-feedback-contact">
-        Contact (optional)
-      </label>
+      <label class="help-form-label" for="help-feedback-contact">${tHtml('help.feedback.contact.label')}</label>
       <input
         id="help-feedback-contact"
         name="contact"
         type="text"
         maxlength="200"
-        placeholder="Email or handle — only used to follow up if we have questions"
+        placeholder="${tAttr('help.feedback.contact.placeholder')}"
         autocomplete="off"
       />
       <label class="help-form-check">
         <input type="checkbox" id="help-feedback-screenshot" name="screenshot" />
-        <span>Attach a screenshot of the current view</span>
+        <span>${tHtml('help.feedback.screenshot.label')}</span>
       </label>
       <div id="help-feedback-status" class="help-form-status" role="status" aria-live="polite"></div>
       <div class="help-form-actions">
-        <button type="submit" id="help-feedback-submit" class="help-btn-primary">Send feedback</button>
+        <button type="submit" id="help-feedback-submit" class="help-btn-primary">${tHtml('help.feedback.submit')}</button>
       </div>
     </form>
   `
@@ -285,7 +226,7 @@ function wireFeedbackForm(): void {
   const signal = listenerController?.signal
 
   const updateCounter = () => {
-    counter.textContent = `${textarea.value.length} / ${MESSAGE_MAX}`
+    counter.textContent = t('help.feedback.counter', { count: textarea.value.length, max: MESSAGE_MAX })
   }
   textarea.addEventListener('input', updateCounter, signal ? { signal } : undefined)
   updateCounter()
@@ -300,7 +241,7 @@ function wireFeedbackForm(): void {
     try {
       const message = textarea.value.trim()
       if (message.length < MESSAGE_MIN) {
-        status.textContent = `Please enter at least ${MESSAGE_MIN} characters.`
+        status.textContent = t('help.feedback.status.tooShort', { min: MESSAGE_MIN })
         status.className = 'help-form-status error'
         textarea.focus()
         return
@@ -312,7 +253,7 @@ function wireFeedbackForm(): void {
 
       let screenshot: string | undefined
       if (screenshotEl?.checked) {
-        status.textContent = 'Capturing screenshot\u2026'
+        status.textContent = t('help.feedback.status.capturing')
         status.className = 'help-form-status'
         const captured = await captureFullScreen()
         if (captured) {
@@ -323,7 +264,7 @@ function wireFeedbackForm(): void {
           // user, surface a clear message and continue with the
           // text-only report — the description is usually the
           // most valuable part of a bug report anyway.
-          status.textContent = "Couldn't capture screenshot — sending text only\u2026"
+          status.textContent = t('help.feedback.status.captureFailed')
           status.className = 'help-form-status'
           // Brief pause so the user reads the message before the
           // status flips to "Sending…".
@@ -341,7 +282,7 @@ function wireFeedbackForm(): void {
         screenshot,
       }
 
-      status.textContent = 'Sending\u2026'
+      status.textContent = t('help.feedback.status.sending')
       status.className = 'help-form-status'
 
       const result = await submitGeneralFeedback(payload)
@@ -357,15 +298,15 @@ function wireFeedbackForm(): void {
       if (result.ok) {
         form.reset()
         updateCounter()
-        status.textContent = 'Thanks! Your feedback was received.'
+        status.textContent = t('help.feedback.status.success')
         status.className = 'help-form-status success'
       } else {
         // status.textContent does not interpret HTML, so pass the raw
         // server error string — escaping would show users literal
         // '&lt;' etc. instead of the intended characters.
         status.textContent = result.error
-          ? `Couldn't send feedback: ${result.error}`
-          : "Couldn't send feedback"
+          ? t('help.feedback.status.failedReason', { error: result.error })
+          : t('help.feedback.status.failed')
         status.className = 'help-form-status error'
         logger.warn('[helpUI] submit failed', result)
       }

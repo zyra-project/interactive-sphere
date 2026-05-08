@@ -14,7 +14,7 @@
     <!-- All <style>-block CSS extracted to src/styles/*.css — see src/styles/index.css -->
 </head>
 <body>
-    <a href="#container" class="skip-link">Skip to globe visualization</a>
+    <a href="#container" class="skip-link" data-i18n="app.skipLink">Skip to globe visualization</a>
 
     <div id="loading-screen" aria-live="assertive" aria-busy="true">
         <div class="loading-globe" aria-hidden="true">
@@ -22,40 +22,40 @@
             <div class="loading-ring"></div>
             <div class="loading-ring-2"></div>
         </div>
-        <h1 class="loading-title">Terraviz</h1>
-        <div class="loading-subtitle">Science On a Sphere</div>
-        <div class="loading-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Loading progress">
+        <h1 class="loading-title" data-i18n="app.title">Terraviz</h1>
+        <div class="loading-subtitle" data-i18n="loading.subtitle">Science On a Sphere</div>
+        <div class="loading-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Loading progress" data-i18n-aria-label="loading.progress.aria">
             <div id="loading-progress-fill" class="loading-progress-fill"></div>
         </div>
-        <div id="loading-status" role="status">Initializing&hellip;</div>
+        <div id="loading-status" role="status" data-i18n="loading.status.initializing">Initializing&hellip;</div>
     </div>
     <!-- Browse overlay — opened via the Tools menu's Browse button. -->
-    <aside id="browse-overlay" class="hidden" aria-label="Dataset browser">
+    <aside id="browse-overlay" class="hidden" aria-label="Dataset browser" data-i18n-aria-label="browse.overlay.aria">
         <div id="browse-inner">
             <div id="browse-header">
-                <h2 class="browse-title">Terraviz</h2>
-                <div class="browse-subtitle">Browse environmental datasets from NOAA Science On a Sphere</div>
-                <button id="browse-close" type="button" title="Close dataset browser" aria-label="Close dataset browser">&#x2715;</button>
-                <button id="help-trigger-browse" type="button" title="Help and feedback" aria-label="Open help and feedback" aria-expanded="false">?</button>
+                <h2 class="browse-title" data-i18n="app.title">Terraviz</h2>
+                <div class="browse-subtitle" data-i18n="browse.subtitle">Browse environmental datasets from NOAA Science On a Sphere</div>
+                <button id="browse-close" type="button" title="Close dataset browser" aria-label="Close dataset browser" data-i18n-title="browse.close.aria" data-i18n-aria-label="browse.close.aria">&#x2715;</button>
+                <button id="help-trigger-browse" type="button" title="Help and feedback" aria-label="Open help and feedback" aria-expanded="false" data-i18n-title="help.trigger.title" data-i18n-aria-label="help.trigger.aria">?</button>
             </div>
             <div role="search" class="browse-search-wrap">
-                <label for="browse-search" class="sr-only">Search datasets</label>
-                <input type="search" id="browse-search" placeholder="Search datasets…" autocomplete="off" spellcheck="false" aria-describedby="browse-count" />
-                <button id="browse-search-clear" class="browse-search-clear hidden" aria-label="Clear search" type="button">&times;</button>
-                <button id="browse-chat-btn" class="browse-chat-btn" type="button" title="Ask Orbit" aria-label="Open Orbit, your digital docent">&#x1F4AC;&#xFE0E;</button>
+                <label for="browse-search" class="sr-only" data-i18n="browse.search.label">Search datasets</label>
+                <input type="search" id="browse-search" placeholder="Search datasets…" data-i18n-placeholder="browse.search.placeholder" autocomplete="off" spellcheck="false" aria-describedby="browse-count" />
+                <button id="browse-search-clear" class="browse-search-clear hidden" aria-label="Clear search" data-i18n-aria-label="browse.search.clear.aria" type="button">&times;</button>
+                <button id="browse-chat-btn" class="browse-chat-btn" type="button" title="Ask Orbit" aria-label="Open Orbit, your digital docent" data-i18n-title="browse.askOrbit.title" data-i18n-aria-label="browse.askOrbit.aria">&#x1F4AC;&#xFE0E;</button>
             </div>
-            <div id="browse-category-bar" role="group" aria-label="Filter by category"></div>
-            <div id="browse-subcategory-bar" role="group" aria-label="Filter by sub-category"></div>
+            <div id="browse-category-bar" role="group" aria-label="Filter by category" data-i18n-aria-label="browse.filter.category.aria"></div>
+            <div id="browse-subcategory-bar" role="group" aria-label="Filter by sub-category" data-i18n-aria-label="browse.filter.subcategory.aria"></div>
             <div id="browse-toolbar">
                 <div id="browse-count" aria-live="polite"></div>
-                <div id="browse-sort" role="group" aria-label="Sort datasets"></div>
+                <div id="browse-sort" role="group" aria-label="Sort datasets" data-i18n-aria-label="browse.sort.aria"></div>
             </div>
             <div id="browse-grid" role="list"></div>
         </div>
     </aside>
 
     <div id="app">
-        <div id="container" role="main" aria-label="Globe visualization" tabindex="-1">
+        <div id="container" role="main" aria-label="Globe visualization" data-i18n-aria-label="app.globe.aria" tabindex="-1">
             <div id="map-grid" aria-hidden="true"></div>
             <div id="status" class="hidden"></div>
             <div id="ui">
@@ -63,157 +63,157 @@
                     <span id="time-display">--</span>
                 </div>
 
-                <button id="home-btn" class="hidden" title="Browse datasets" aria-label="Browse datasets" style="position: absolute; top: 0.75rem; left: 0.75rem; pointer-events: auto; padding: 0.3rem 0.55rem; font-size: 0.85rem; background: var(--glass-bg-light); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--white-o08); border-radius: 6px; color: var(--color-text-secondary); min-width: 36px; min-height: 36px; line-height: 1;">&#8962;</button>
+                <button id="home-btn" class="hidden" title="Browse datasets" aria-label="Browse datasets" data-i18n-title="home.aria" data-i18n-aria-label="home.aria" style="position: absolute; top: 0.75rem; left: 0.75rem; pointer-events: auto; padding: 0.3rem 0.55rem; font-size: 0.85rem; background: var(--glass-bg-light); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--white-o08); border-radius: 6px; color: var(--color-text-secondary); min-width: 36px; min-height: 36px; line-height: 1;">&#8962;</button>
 
                 <div id="latlng-display" class="hidden" aria-hidden="true" style="position: absolute; top: 0.75rem; left: 6.5rem; font-size: 0.72rem; letter-spacing: 0.03em; padding: 0.4rem 0.7rem; background: var(--glass-bg-light); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--white-o08); border-radius: 6px; font-variant-numeric: tabular-nums; pointer-events: none;"></div>
 
 
-                <section id="info-panel" class="ui-panel hidden" aria-label="Dataset information">
+                <section id="info-panel" class="ui-panel hidden" aria-label="Dataset information" data-i18n-aria-label="info.panel.aria">
                     <div id="info-header" role="button" tabindex="0" aria-expanded="false" aria-controls="info-body">
                         <span id="info-title"></span>
                         <span id="info-toggle" aria-hidden="true">&#9660;</span>
                     </div>
-                    <div id="info-panel-picker" class="hidden" aria-label="Select dataset to view">
-                        <label for="info-selector" class="sr-only">Showing info for</label>
-                        <select id="info-selector" aria-label="Select dataset to view"></select>
+                    <div id="info-panel-picker" class="hidden" aria-label="Select dataset to view" data-i18n-aria-label="info.picker.aria">
+                        <label for="info-selector" class="sr-only" data-i18n="info.picker.label">Showing info for</label>
+                        <select id="info-selector" aria-label="Select dataset to view" data-i18n-aria-label="info.picker.aria"></select>
                     </div>
                     <div id="info-body"></div>
                 </section>
 
-                <div id="playback-controls" class="ui-panel hidden" role="toolbar" aria-label="Playback controls" style="position: absolute; bottom: 0.75rem; right: 0.75rem; padding: 0.5rem 0.6rem; display: inline-flex; flex-direction: column; align-items: stretch;">
+                <div id="playback-controls" class="ui-panel hidden" role="toolbar" aria-label="Playback controls" data-i18n-aria-label="playback.toolbar.aria" style="position: absolute; bottom: 0.75rem; right: 0.75rem; padding: 0.5rem 0.6rem; display: inline-flex; flex-direction: column; align-items: stretch;">
                     <div style="display: flex; gap: 0.2rem; margin-bottom: 0.35rem; justify-content: center;">
-                        <button id="rewind-btn" class="transport-btn" title="Rewind to start" aria-label="Rewind to start">&#x23EE;&#xFE0E;</button>
-                        <button id="step-back-btn" class="transport-btn" title="Step back one frame" aria-label="Step back one frame">&#x23EA;&#xFE0E;</button>
-                        <button id="play-btn" class="transport-btn" title="Play / Pause" aria-label="Play">&#x25B6;&#xFE0E;</button>
-                        <button id="step-fwd-btn" class="transport-btn" title="Step forward one frame" aria-label="Step forward one frame">&#x23E9;&#xFE0E;</button>
-                        <button id="ff-btn" class="transport-btn" title="Fast-forward to end" aria-label="Fast-forward to end">&#x23ED;&#xFE0E;</button>
-                        <button id="mute-btn" class="transport-btn" title="Unmute audio" aria-label="Unmute audio" style="margin-left: 0.25rem;">&#x1F507;&#xFE0E;</button>
-                        <button id="cc-btn" class="transport-btn hidden" title="Toggle closed captions" aria-label="Toggle closed captions" style="margin-left: 0.1rem; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;">CC</button>
+                        <button id="rewind-btn" class="transport-btn" title="Rewind to start" aria-label="Rewind to start" data-i18n-title="playback.rewind.aria" data-i18n-aria-label="playback.rewind.aria">&#x23EE;&#xFE0E;</button>
+                        <button id="step-back-btn" class="transport-btn" title="Step back one frame" aria-label="Step back one frame" data-i18n-title="playback.stepBack.aria" data-i18n-aria-label="playback.stepBack.aria">&#x23EA;&#xFE0E;</button>
+                        <button id="play-btn" class="transport-btn" title="Play / Pause" aria-label="Play" data-i18n-title="playback.playPause.title" data-i18n-aria-label="playback.play.aria">&#x25B6;&#xFE0E;</button>
+                        <button id="step-fwd-btn" class="transport-btn" title="Step forward one frame" aria-label="Step forward one frame" data-i18n-title="playback.stepForward.aria" data-i18n-aria-label="playback.stepForward.aria">&#x23E9;&#xFE0E;</button>
+                        <button id="ff-btn" class="transport-btn" title="Fast-forward to end" aria-label="Fast-forward to end" data-i18n-title="playback.fastForward.aria" data-i18n-aria-label="playback.fastForward.aria">&#x23ED;&#xFE0E;</button>
+                        <button id="mute-btn" class="transport-btn" title="Unmute audio" aria-label="Unmute audio" data-i18n-title="playback.unmute.aria" data-i18n-aria-label="playback.unmute.aria" style="margin-left: 0.25rem;">&#x1F507;&#xFE0E;</button>
+                        <button id="cc-btn" class="transport-btn hidden" title="Toggle closed captions" aria-label="Toggle closed captions" data-i18n-title="playback.captions.aria" data-i18n-aria-label="playback.captions.aria" style="margin-left: 0.1rem; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.03em;">CC</button>
                     </div>
-                    <input type="range" id="scrubber" min="0" max="1000" value="0" aria-label="Playback position" style="width: 100%; margin: 0;">
+                    <input type="range" id="scrubber" min="0" max="1000" value="0" aria-label="Playback position" data-i18n-aria-label="playback.scrubber.aria" style="width: 100%; margin: 0;">
                 </div>
 
                 <!-- Tools menu host — holds the Browse + Tools buttons
                      and the collapsible popover. Populated by
                      initToolsMenu(). Hidden until the app boots. -->
-                <div id="map-controls" class="hidden" aria-label="Tools and settings"></div>
-                <div id="download-manager" class="hidden" aria-label="Download manager"></div>
+                <div id="map-controls" class="hidden" aria-label="Tools and settings" data-i18n-aria-label="tools.menu.aria"></div>
+                <div id="download-manager" class="hidden" aria-label="Download manager" data-i18n-aria-label="download.manager.aria"></div>
 
                 <!-- Tour controls — shown when a tour is playing -->
-                <div id="tour-controls" class="hidden" role="toolbar" aria-label="Tour controls">
-                    <button id="tour-prev-btn" class="transport-btn hidden" title="Previous section" aria-label="Previous section">&#x23EA;&#xFE0E;</button>
-                    <button id="tour-play-btn" class="transport-btn" title="Play tour" aria-label="Play tour">&#x25B6;&#xFE0E;</button>
-                    <button id="tour-next-btn" class="transport-btn hidden" title="Next section" aria-label="Next section">&#x23E9;&#xFE0E;</button>
+                <div id="tour-controls" class="hidden" role="toolbar" aria-label="Tour controls" data-i18n-aria-label="tour.toolbar.aria">
+                    <button id="tour-prev-btn" class="transport-btn hidden" title="Previous section" aria-label="Previous section" data-i18n-title="tour.previous.aria" data-i18n-aria-label="tour.previous.aria">&#x23EA;&#xFE0E;</button>
+                    <button id="tour-play-btn" class="transport-btn" title="Play tour" aria-label="Play tour" data-i18n-title="tour.play.aria" data-i18n-aria-label="tour.play.aria">&#x25B6;&#xFE0E;</button>
+                    <button id="tour-next-btn" class="transport-btn hidden" title="Next section" aria-label="Next section" data-i18n-title="tour.next.aria" data-i18n-aria-label="tour.next.aria">&#x23E9;&#xFE0E;</button>
                     <span id="tour-step-counter">1 / 1</span>
-                    <button id="tour-stop-btn" class="transport-btn" title="Stop tour" aria-label="Stop tour">&#x23F9;&#xFE0E;</button>
+                    <button id="tour-stop-btn" class="transport-btn" title="Stop tour" aria-label="Stop tour" data-i18n-title="tour.stop.aria" data-i18n-aria-label="tour.stop.aria">&#x23F9;&#xFE0E;</button>
                 </div>
 
                 <!-- Orbit Chat -->
-                <button id="chat-trigger" title="Ask the docent" aria-label="Open digital docent chat" aria-expanded="false"><span class="chat-trigger-icon" aria-hidden="true">&#x1F4AC;&#xFE0E;</span><span class="chat-trigger-label">Ask Orbit</span></button>
+                <button id="chat-trigger" title="Ask the docent" aria-label="Open digital docent chat" data-i18n-title="chat.trigger.title" data-i18n-aria-label="chat.trigger.aria" aria-expanded="false"><span class="chat-trigger-icon" aria-hidden="true">&#x1F4AC;&#xFE0E;</span><span class="chat-trigger-label" data-i18n="chat.trigger.label">Ask Orbit</span></button>
                 <div id="chat-dataset-prompt" class="hidden" role="status" aria-live="polite"></div>
 
-                <div id="chat-panel" class="ui-panel hidden" role="dialog" aria-label="Orbit — digital docent">
+                <div id="chat-panel" class="ui-panel hidden" role="dialog" aria-label="Orbit — digital docent" data-i18n-aria-label="chat.panel.aria">
                     <div class="chat-header">
-                        <span class="chat-header-title">Orbit <span class="chat-header-subtitle">· digital docent</span></span>
-                        <button id="chat-settings-btn" class="chat-header-btn" title="Settings" aria-label="Chat settings">&#x2699;&#xFE0E;</button>
-                        <button id="chat-clear" class="chat-header-btn" title="Clear chat" aria-label="Clear chat history">&#x1F5D1;&#xFE0E;</button>
-                        <button id="chat-close" class="chat-header-btn" title="Close chat" aria-label="Close chat">&#x2715;</button>
+                        <span class="chat-header-title"><span data-i18n="chat.header.title">Orbit</span> <span class="chat-header-subtitle" data-i18n="chat.header.subtitle">· digital docent</span></span>
+                        <button id="chat-settings-btn" class="chat-header-btn" title="Settings" aria-label="Chat settings" data-i18n-title="chat.settings.title" data-i18n-aria-label="chat.settings.aria">&#x2699;&#xFE0E;</button>
+                        <button id="chat-clear" class="chat-header-btn" title="Clear chat" aria-label="Clear chat history" data-i18n-title="chat.clear.title" data-i18n-aria-label="chat.clear.aria">&#x1F5D1;&#xFE0E;</button>
+                        <button id="chat-close" class="chat-header-btn" title="Close chat" aria-label="Close chat" data-i18n-title="chat.close.title" data-i18n-aria-label="chat.close.aria">&#x2715;</button>
                     </div>
 
                     <div id="chat-settings" class="hidden">
                         <div class="chat-settings-row">
-                            <label for="chat-settings-url">API URL</label>
-                            <input type="text" id="chat-settings-url" placeholder="/api (or http://localhost:11434/v1)" spellcheck="false" />
+                            <label for="chat-settings-url" data-i18n="chat.settings.url.label">API URL</label>
+                            <input type="text" id="chat-settings-url" placeholder="/api (or http://localhost:11434/v1)" data-i18n-placeholder="chat.settings.url.placeholder" spellcheck="false" />
                         </div>
                         <div class="chat-settings-row">
-                            <label for="chat-settings-key">API Key (optional)</label>
-                            <input type="password" id="chat-settings-key" placeholder="Not needed for built-in AI" />
+                            <label for="chat-settings-key" data-i18n="chat.settings.key.label">API Key (optional)</label>
+                            <input type="password" id="chat-settings-key" placeholder="Not needed for built-in AI" data-i18n-placeholder="chat.settings.key.placeholder" />
                         </div>
                         <div class="chat-settings-row">
-                            <label for="chat-settings-model">Model</label>
-                            <select id="chat-settings-model" aria-label="Model"><option value="" disabled>Loading models…</option></select>
+                            <label for="chat-settings-model" data-i18n="chat.settings.model.label">Model</label>
+                            <select id="chat-settings-model" aria-label="Model" data-i18n-aria-label="chat.settings.model.aria"><option value="" disabled data-i18n="chat.settings.model.loading">Loading models…</option></select>
                         </div>
                         <div class="chat-settings-row">
-                            <label for="chat-settings-reading-level">Reading Level</label>
-                            <select id="chat-settings-reading-level" aria-label="Reading level">
-                                <option value="young-learner">Young Learner</option>
-                                <option value="general" selected>General</option>
-                                <option value="in-depth">In-Depth</option>
-                                <option value="expert">Expert</option>
+                            <label for="chat-settings-reading-level" data-i18n="chat.settings.readingLevel.label">Reading Level</label>
+                            <select id="chat-settings-reading-level" aria-label="Reading level" data-i18n-aria-label="chat.settings.readingLevel.aria">
+                                <option value="young-learner" data-i18n="chat.settings.readingLevel.youngLearner">Young Learner</option>
+                                <option value="general" selected data-i18n="chat.settings.readingLevel.general">General</option>
+                                <option value="in-depth" data-i18n="chat.settings.readingLevel.inDepth">In-Depth</option>
+                                <option value="expert" data-i18n="chat.settings.readingLevel.expert">Expert</option>
                             </select>
                         </div>
                         <div class="chat-settings-row">
                             <label class="chat-settings-check">
                                 <input type="checkbox" id="chat-settings-enabled" checked />
-                                Enable LLM (disable for local-only mode)
+                                <span data-i18n="chat.settings.enabled.label">Enable LLM (disable for local-only mode)</span>
                             </label>
                         </div>
                         <div class="chat-settings-row">
                             <label class="chat-settings-check">
                                 <input type="checkbox" id="chat-settings-vision" />
-                                Vision mode — send a globe screenshot with each message so Orbit can describe what you see. Uses a vision-capable model automatically.
+                                <span data-i18n="chat.settings.vision.label">Vision mode — send a globe screenshot with each message so Orbit can describe what you see. Uses a vision-capable model automatically.</span>
                             </label>
                         </div>
                         <div class="chat-settings-row">
                             <label class="chat-settings-check">
                                 <input type="checkbox" id="chat-settings-debug" />
-                                Debug — show all log messages in browser console
+                                <span data-i18n="chat.settings.debug.label">Debug — show all log messages in browser console</span>
                             </label>
                         </div>
                         <div class="chat-settings-actions">
-                            <button id="chat-settings-test" type="button">Test Connection</button>
-                            <button id="chat-settings-save" type="button">Save</button>
+                            <button id="chat-settings-test" type="button" data-i18n="chat.settings.test">Test Connection</button>
+                            <button id="chat-settings-save" type="button" data-i18n="chat.settings.save">Save</button>
                             <span id="chat-settings-status" class="chat-settings-status"></span>
                         </div>
                     </div>
 
-                    <div id="chat-messages" role="log" aria-label="Conversation"></div>
+                    <div id="chat-messages" role="log" aria-label="Conversation" data-i18n-aria-label="chat.messages.aria"></div>
 
                     <div id="chat-typing" class="chat-typing hidden" aria-live="polite">
                         <span class="chat-typing-dots"><span></span><span></span><span></span></span>
                     </div>
 
                     <div id="chat-vision-hint" class="chat-vision-hint" aria-live="polite">
-                        <strong>Vision on</strong> — Orbit can see the globe. A screenshot of the current view is sent with each message for visual analysis.
+                        <strong data-i18n="chat.visionHint.label">Vision on</strong><span data-i18n="chat.visionHint.body"> — Orbit can see the globe. A screenshot of the current view is sent with each message for visual analysis.</span>
                     </div>
                     <div class="chat-input-wrap">
-                        <label for="chat-input" class="sr-only">Ask Orbit</label>
-                        <button id="chat-vision-toggle" class="chat-vision-btn" aria-label="Toggle vision analysis" aria-pressed="false" title="Vision: analyze globe screenshot">
+                        <label for="chat-input" class="sr-only" data-i18n="chat.input.label">Ask Orbit</label>
+                        <button id="chat-vision-toggle" class="chat-vision-btn" aria-label="Toggle vision analysis" aria-pressed="false" title="Vision: analyze globe screenshot" data-i18n-title="chat.vision.title" data-i18n-aria-label="chat.vision.aria">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
-                        <textarea id="chat-input" rows="1" placeholder="Ask about any dataset…" autocomplete="off" spellcheck="true"></textarea>
-                        <button id="chat-send" aria-label="Send message">&#x27A4;</button>
+                        <textarea id="chat-input" rows="1" placeholder="Ask about any dataset…" data-i18n-placeholder="chat.input.placeholder" autocomplete="off" spellcheck="true"></textarea>
+                        <button id="chat-send" aria-label="Send message" data-i18n-aria-label="chat.send.aria">&#x27A4;</button>
                     </div>
                 </div>
 
                 <div id="caption-overlay" aria-live="polite"></div>
                 <div id="error-message" class="hidden" role="alert">
                     <span id="error-text"></span>
-                    <button id="error-dismiss" aria-label="Dismiss error">&#x2715;</button>
+                    <button id="error-dismiss" aria-label="Dismiss error" data-i18n-aria-label="error.dismiss.aria">&#x2715;</button>
                 </div>
 
                 <!-- Enter immersive mode — shown only on WebXR-capable browsers.
                      Adapts label + mode based on device support: prefers AR
                      (Quest 2/3/Pro), falls back to VR (PCVR). See vrButton.ts. -->
-                <button id="vr-enter-btn" class="hidden" type="button" title="Enter immersive VR mode" aria-label="Enter immersive VR mode" aria-hidden="true">
+                <button id="vr-enter-btn" class="hidden" type="button" title="Enter immersive VR mode" aria-label="Enter immersive VR mode" data-i18n-title="vr.enter.title" data-i18n-aria-label="vr.enter.aria" aria-hidden="true">
                     <span class="vr-btn-icon" aria-hidden="true">&#x1F97D;&#xFE0E;</span>
-                    <span class="vr-btn-label">Enter VR</span>
+                    <span class="vr-btn-label" data-i18n="vr.enter.label">Enter VR</span>
                 </button>
 
                 <!-- Help button and panel -->
-                <button id="help-trigger" type="button" title="Help and feedback" aria-label="Open help and feedback" aria-expanded="false">
+                <button id="help-trigger" type="button" title="Help and feedback" aria-label="Open help and feedback" data-i18n-title="help.trigger.title" data-i18n-aria-label="help.trigger.aria" aria-expanded="false">
                     <span class="help-trigger-icon" aria-hidden="true">?</span>
-                    <span class="help-trigger-label">Help</span>
+                    <span class="help-trigger-label" data-i18n="help.button.label">Help</span>
                 </button>
                 <div id="help-backdrop" class="hidden" aria-hidden="true"></div>
                 <div id="help-panel" class="hidden" role="dialog" aria-labelledby="help-title" aria-modal="true" aria-hidden="true">
                     <div id="help-header">
-                        <span id="help-title">Help</span>
-                        <button id="help-close" type="button" aria-label="Close help">&#x2715;</button>
+                        <span id="help-title" data-i18n="help.panel.title">Help</span>
+                        <button id="help-close" type="button" aria-label="Close help" data-i18n-aria-label="help.close.aria">&#x2715;</button>
                     </div>
-                    <div class="help-tablist" role="tablist" aria-label="Help sections">
-                        <button class="help-tab active" type="button" role="tab" data-tab="guide" id="help-tab-guide" aria-selected="true" aria-controls="help-tabpanel-guide">Guide</button>
-                        <button class="help-tab" type="button" role="tab" data-tab="feedback" id="help-tab-feedback" aria-selected="false" tabindex="-1" aria-controls="help-tabpanel-feedback">Feedback</button>
+                    <div class="help-tablist" role="tablist" aria-label="Help sections" data-i18n-aria-label="help.tablist.aria">
+                        <button class="help-tab active" type="button" role="tab" data-tab="guide" id="help-tab-guide" aria-selected="true" aria-controls="help-tabpanel-guide" data-i18n="help.tab.guide">Guide</button>
+                        <button class="help-tab" type="button" role="tab" data-tab="feedback" id="help-tab-feedback" aria-selected="false" tabindex="-1" aria-controls="help-tabpanel-feedback" data-i18n="help.tab.feedback">Feedback</button>
                     </div>
                     <div id="help-tabpanel-guide" class="help-tabpanel" role="tabpanel" aria-labelledby="help-tab-guide"></div>
                     <div id="help-tabpanel-feedback" class="help-tabpanel hidden" role="tabpanel" aria-labelledby="help-tab-feedback"></div>

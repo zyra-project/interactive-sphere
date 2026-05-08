@@ -7,6 +7,7 @@
 
 import type { Dataset, ChatMessage, MapViewContext, ReadingLevel } from '../types'
 import type { LLMMessage, LLMTool } from './llmProvider'
+import { getLocale, SOURCE_LOCALE, t } from '../i18n'
 
 // --- Constants ---
 const MAX_HISTORY_MESSAGES = 50
@@ -145,8 +146,10 @@ export function buildSystemPrompt(
   mapViewContext?: Parameters<typeof buildViewContextSection>[0],
 ): string {
   const currentContext = buildCurrentDatasetContext(currentDataset, legendDescription, currentTime)
+  const languagePreface = buildLanguagePreface()
+  const languageDirective = buildLanguageDirective()
 
-  return `You are Orbit, a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
+  return `${languagePreface}You are Orbit, a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
 
 Your role is to be a warm, knowledgeable guide. You help visitors explore and understand environmental data by explaining what they're seeing and recommending relevant datasets to load onto the globe.
 
@@ -259,7 +262,84 @@ CRITICAL: The attached image is a SCIENTIFIC DATA VISUALIZATION rendered on a 3D
 - The user's message starts with metadata in brackets: dataset name, description, coordinates, and time. READ this carefully before answering.
 - Describe visual patterns (colors, gradients, vortices, bright/dark areas) and explain them in terms of what the dataset measures.
 - Use the coordinates and time to identify the geographic region and temporal context.
-- If no dataset is loaded, describe the default Earth view.` : ''}`
+- If no dataset is loaded, describe the default Earth view.` : ''}${languageDirective}`
+}
+
+/**
+ * Resolve the active locale's display name in its own language
+ * ("español" for es, "Français" for fr, …). Used by both the
+ * preface and the tail directive. Falls back to the BCP-47 tag if
+ * `Intl.DisplayNames` fails (no ICU data on a stripped runtime).
+ */
+function activeLanguageName(): string | null {
+  const active = getLocale()
+  if (active === SOURCE_LOCALE) return null
+  try {
+    return new Intl.DisplayNames(active, { type: 'language' }).of(active) ?? active
+  } catch {
+    return active
+  }
+}
+
+/**
+ * Top-of-prompt language directive. Smaller models weight the first
+ * lines of a system prompt more heavily than the last, so the
+ * "respond in <language>" rule lives both *before* the role
+ * description (here) and as a tail reminder ({@link buildLanguageDirective}).
+ * Wave 5/6 testing showed Llama-3.1-70B and similar mid-tier models
+ * frequently slipped back into English when the directive was only
+ * appended at the end.
+ *
+ * The directive is rendered in the target language so the LLM sees
+ * the instruction in the same language it should reply in — better
+ * adherence than instructing in English. <<LOAD:...>> markers and
+ * tool-call syntax stay intact per the directive's wording.
+ *
+ * No-op for English users (returns `''`, which template-interpolates
+ * cleanly at the top of the prompt).
+ */
+function buildLanguagePreface(): string {
+  const languageName = activeLanguageName()
+  if (!languageName) return ''
+  return t('docent.system.respondInLanguage', { language: languageName }) + '\n\n'
+}
+
+/**
+ * Tail "respond in {language}" reminder, repeated at the end of the
+ * prompt for belt-and-suspenders adherence. See
+ * {@link buildLanguagePreface} for the higher-weight placement at
+ * the top of the prompt. No-op for English users.
+ */
+function buildLanguageDirective(): string {
+  const languageName = activeLanguageName()
+  if (!languageName) return ''
+  return '\n\n' + t('docent.system.respondInLanguage', { language: languageName })
+}
+
+/**
+ * Build a freshness-anchored reminder LLM message that goes right
+ * before the user's current turn. Mid-tier models tend to mirror
+ * the user's input language ("user wrote English → reply English")
+ * even with a respond-in-{language} directive at the top of the
+ * system prompt — by the time the model generates its final
+ * response (post-tool-call), the system prompt is many messages
+ * back and gets crowded out by the model's own English tool-call
+ * thinking + the tool results.
+ *
+ * Placing a terse system-role reminder immediately before the
+ * user's message keeps the directive in the model's most-recent
+ * attention window. Empirically this is the single most effective
+ * lever for language adherence on smaller models. Returns `null`
+ * for English users (no-op) so callers can safely splat the
+ * result with `?? []`.
+ */
+export function buildLanguageReminderMessage(): LLMMessage | null {
+  const languageName = activeLanguageName()
+  if (!languageName) return null
+  return {
+    role: 'system' as const,
+    content: t('docent.system.respondInLanguageReminder', { language: languageName }),
+  }
 }
 
 /**

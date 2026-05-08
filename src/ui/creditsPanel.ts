@@ -40,6 +40,7 @@
 import type { Dataset } from '../types'
 import type { ViewportManager } from '../services/viewportManager'
 import { escapeHtml, escapeAttr } from './domUtils'
+import { t } from '../i18n'
 
 /** Source id used for the phantom dataset-credits source on each
  *  MapRenderer. Single source per map — register replaces, clear
@@ -260,8 +261,8 @@ function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCoun
   panel.tabIndex = -1
 
   const basemapHtml = snapshot.basemap.length
-    ? snapshot.basemap.map(t => `<li>${linkifyAttribution(t)}</li>`).join('')
-    : '<li class="credits-empty">No basemap sources declared.</li>'
+    ? snapshot.basemap.map(text => `<li>${linkifyAttribution(text)}</li>`).join('')
+    : `<li class="credits-empty">${escapeHtml(t('credits.empty.basemap'))}</li>`
 
   // Hide empty per-panel sections in the single-panel case so the
   // "Loaded — Panel 1" header doesn't read as overkill. With
@@ -272,14 +273,16 @@ function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCoun
       if (!p.datasetAttribution) {
         return panelCount > 1
           ? `<section class="credits-section">
-               <h3 class="credits-section-title">Loaded — Panel ${p.panelLabel}</h3>
-               <p class="credits-empty">No dataset loaded.</p>
+               <h3 class="credits-section-title">${escapeHtml(t('credits.section.loadedPanel', { n: p.panelLabel }))}</h3>
+               <p class="credits-empty">${escapeHtml(t('credits.empty.dataset'))}</p>
              </section>`
           : ''
       }
-      const heading = panelCount > 1 ? `Loaded — Panel ${p.panelLabel}` : 'Loaded dataset'
+      const heading = panelCount > 1
+        ? t('credits.section.loadedPanel', { n: p.panelLabel })
+        : t('credits.section.loaded')
       return `<section class="credits-section">
-                <h3 class="credits-section-title">${heading}</h3>
+                <h3 class="credits-section-title">${escapeHtml(heading)}</h3>
                 <p class="credits-dataset">${linkifyAttribution(p.datasetAttribution)}</p>
               </section>`
     })
@@ -287,19 +290,17 @@ function buildPanel(snapshot: ReturnType<typeof snapshotPanelCredits>, panelCoun
 
   panel.innerHTML = `
     <div class="privacy-ui-header">
-      <h2 id="credits-panel-title">Credits</h2>
-      <button type="button" id="credits-panel-close" class="privacy-ui-close" aria-label="Close credits">×</button>
+      <h2 id="credits-panel-title">${escapeHtml(t('credits.title'))}</h2>
+      <button type="button" id="credits-panel-close" class="privacy-ui-close" aria-label="${escapeAttr(t('credits.close.aria'))}">×</button>
     </div>
-    <p class="privacy-ui-desc">
-      Where the imagery and data on screen come from.
-    </p>
+    <p class="privacy-ui-desc">${escapeHtml(t('credits.desc'))}</p>
     <section class="credits-section">
-      <h3 class="credits-section-title">Basemap</h3>
+      <h3 class="credits-section-title">${escapeHtml(t('credits.section.basemap'))}</h3>
       <ul class="credits-list">${basemapHtml}</ul>
     </section>
     ${loadedHtml}
     <div class="privacy-ui-meta">
-      <a class="privacy-ui-policy-link" href="https://github.com/zyra-project/terraviz/blob/main/MISSION.md" target="_blank" rel="noopener">About TerraViz →</a>
+      <a class="privacy-ui-policy-link" href="https://github.com/zyra-project/terraviz/blob/main/MISSION.md" target="_blank" rel="noopener">${escapeHtml(t('credits.aboutLink'))}</a>
     </div>
   `
 

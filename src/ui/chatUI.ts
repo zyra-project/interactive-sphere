@@ -22,6 +22,7 @@ import { fetchModels } from '../services/llmProvider'
 import { isAvailable as isAppleIntelligenceAvailable } from '../services/appleIntelligenceProvider'
 import { setLogLevel, logger } from '../utils/logger'
 import { emit, startDwell, type DwellHandle } from '../analytics'
+import { enMessages, t, type MessageKey } from '../i18n'
 
 // --- Constants ---
 const SESSION_STORAGE_KEY = 'sos-docent-chat'
@@ -33,6 +34,15 @@ export interface ChatCallbacks {
   onLoadDataset: (id: string) => void
   onFlyTo: (lat: number, lon: number, altitude?: number) => void
   onSetTime: (isoDate: string) => { success: boolean; message: string }
+  /**
+   * Side-effect-free predicate: would `onSetTime(isoDate)` succeed
+   * right now? Used to surface set-time failures inline the moment
+   * the action streams in, rather than waiting for the deferred
+   * execution after a load-dataset click. Returning `null` means
+   * the host doesn't support eager checks — the SPA just renders
+   * the optimistic "Seeking to X" status as before.
+   */
+  canSetTime?: (isoDate: string) => { ok: true } | { ok: false; message: string }
   onFitBounds: (bounds: [number, number, number, number], label?: string) => void
   onAddMarker: (lat: number, lng: number, label?: string) => void
   onToggleLabels: (visible: boolean) => void
@@ -133,7 +143,7 @@ function degradedBadgeText(reason: DegradedReason): string {
       // (quota *exhausted*, not "approaching"). The earlier
       // "approaching limit" copy implied a softer state than the
       // server signals.
-      return 'Reduced functionality — Workers AI quota reached. Suggestions are using offline matching until it recovers.'
+      return t('chat.degraded.quotaExhausted')
   }
 }
 
@@ -169,7 +179,7 @@ export function openChat(): void {
   scrollToBottom()
   const input = document.getElementById('chat-input') as HTMLTextAreaElement | null
   input?.focus()
-  callbacks?.announce('Chat opened')
+  callbacks?.announce(t('chat.announce.opened'))
 }
 
 /**
@@ -209,7 +219,7 @@ export function closeChat(): void {
   trigger?.setAttribute('aria-expanded', 'false')
   browseChatBtn?.classList.remove('chat-trigger-active')
   if (settingsOpen) toggleSettings()
-  callbacks?.announce('Chat closed')
+  callbacks?.announce(t('chat.announce.closed'))
 }
 
 /**
@@ -258,14 +268,46 @@ function executeGlobeAction(action: ChatAction): void {
     callbacks.onFlyTo(action.lat, action.lon, action.altitude)
   } else if (action.type === 'set-time') {
     const result = callbacks.onSetTime(action.isoDate)
+    // Find the rendered status span for THIS action. The eager
+    // dry-check at stream time may have stamped an `error` on
+    // the action and rendered it with failure styling; if the
+    // deferred execution now succeeds (user loaded a different
+    // time-enabled dataset), the stale error styling has to clear,
+    // and the underlying action's `error` field has to come off
+    // so a re-render (panel close + reopen) doesn't flash the
+    // failure state again.
+    //
+    // Match by ISO date substring across status spans — the
+    // optimistic "Seeking to {date}" badge embeds it, and the
+    // dry-check failure messages do too for date-out-of-range
+    // cases. For "no dataset loaded" failures the date isn't in
+    // the badge text, so substring match miss is acceptable: the
+    // execution path can only succeed once a dataset IS loaded,
+    // at which point the badge text will have been re-rendered
+    // through the action's updated `error`-cleared state.
+    const statusEls = document.querySelectorAll('.chat-action-status')
     if (!result.success) {
       callbacks.announce(result.message)
-      // Update the status indicator in the DOM to show the error
-      const statusEls = document.querySelectorAll('.chat-action-status')
+      action.error = result.message
       for (const el of statusEls) {
-        if (el.textContent?.includes(action.isoDate)) {
+        if (el.textContent?.includes(action.isoDate) || el.textContent === action.error) {
           el.textContent = result.message
           el.classList.add('chat-action-status-err')
+        }
+      }
+    } else {
+      // Successful execution clears any prior eager-dry-check
+      // error stamp so the action persists clean in message
+      // history (and re-renders without the failure styling).
+      delete action.error
+      const seeking = t('chat.action.seekingTo', { date: action.isoDate })
+      for (const el of statusEls) {
+        if (
+          el.classList.contains('chat-action-status-err')
+          && el.textContent?.includes(action.isoDate)
+        ) {
+          el.classList.remove('chat-action-status-err')
+          el.textContent = seeking
         }
       }
     }
@@ -374,7 +416,7 @@ function wireEvents(): void {
 
   document.getElementById('chat-clear')?.addEventListener('click', () => {
     clearChat()
-    callbacks?.announce('Chat cleared')
+    callbacks?.announce(t('chat.announce.cleared'))
   })
 
   // Vision toggle — syncs with DocentConfig.visionEnabled
@@ -388,7 +430,7 @@ function wireEvents(): void {
       config.visionEnabled = !config.visionEnabled
       saveConfig(config)
       setVisionUI(config.visionEnabled)
-      callbacks?.announce(config.visionEnabled ? 'Vision mode enabled' : 'Vision mode disabled')
+      callbacks?.announce(t(config.visionEnabled ? 'chat.announce.visionEnabled' : 'chat.announce.visionDisabled'))
     })
   }
 
@@ -446,11 +488,11 @@ async function populateSettings(): Promise<void> {
   const readingLevelSelect = document.getElementById('chat-settings-reading-level') as HTMLSelectElement | null
   if (urlInput) {
     urlInput.value = config.apiUrl
-    if (IS_TAURI) urlInput.placeholder = 'https://api.openai.com/v1 or http://localhost:11434/v1'
+    if (IS_TAURI) urlInput.placeholder = t('chat.settings.url.tauri.placeholder')
   }
   if (keyInput) {
     keyInput.value = config.apiKey
-    if (IS_TAURI) keyInput.placeholder = 'Stored securely in OS keychain'
+    if (IS_TAURI) keyInput.placeholder = t('chat.settings.key.tauri.placeholder')
   }
   if (readingLevelSelect) readingLevelSelect.value = config.readingLevel
   if (enabledInput) enabledInput.checked = config.enabled
@@ -487,7 +529,7 @@ function addAppleIntelligenceOption(select: HTMLSelectElement, selected: string)
     if (Array.from(select.options).some(o => o.value === 'apple-intelligence')) return
     const opt = document.createElement('option')
     opt.value = 'apple-intelligence'
-    opt.textContent = 'Local (Apple Intelligence)'
+    opt.textContent = t('chat.settings.model.appleIntelligence')
     opt.selected = selected === 'apple-intelligence'
     select.insertBefore(opt, select.firstChild)
   }).catch(() => { /* not available, silently skip */ })
@@ -508,7 +550,7 @@ async function refreshModelSelect(apiUrl: string, preferredModel?: string): Prom
     // Fallback: keep the current value as a manual entry
     const opt = document.createElement('option')
     opt.value = selected
-    opt.textContent = selected || 'No models found'
+    opt.textContent = selected || t('chat.settings.model.noneFound')
     select.appendChild(opt)
     select.disabled = false
     // Still check for Apple Intelligence — it's local and works offline
@@ -566,11 +608,11 @@ function handleSettingsSave(): void {
   setVisionUI(config.visionEnabled)
   const status = document.getElementById('chat-settings-status')
   if (status) {
-    status.textContent = 'Saved'
+    status.textContent = t('chat.settings.status.saved')
     status.className = 'chat-settings-status chat-settings-status-ok'
     setTimeout(() => { status.textContent = '' }, 2000)
   }
-  callbacks?.announce('Settings saved')
+  callbacks?.announce(t('chat.announce.settingsSaved'))
 }
 
 async function handleSettingsTest(): Promise<void> {
@@ -580,7 +622,7 @@ async function handleSettingsTest(): Promise<void> {
   const status = document.getElementById('chat-settings-status')
   const testBtn = document.getElementById('chat-settings-test') as HTMLButtonElement | null
   if (status) {
-    status.textContent = 'Testing…'
+    status.textContent = t('chat.settings.status.testing')
     status.className = 'chat-settings-status'
   }
   if (testBtn) testBtn.disabled = true
@@ -592,20 +634,20 @@ async function handleSettingsTest(): Promise<void> {
       // Warn if connection works but the Enable checkbox is unchecked
       const enabledInput = document.getElementById('chat-settings-enabled') as HTMLInputElement | null
       if (enabledInput && !enabledInput.checked) {
-        status.textContent = 'Connected — but "Enable LLM" is unchecked. Check it and Save to use AI.'
+        status.textContent = t('chat.settings.status.enableHint')
         status.className = 'chat-settings-status chat-settings-status-err'
       } else {
-        status.textContent = 'Connected'
+        status.textContent = t('chat.settings.status.connected')
         status.className = 'chat-settings-status chat-settings-status-ok'
       }
     } else {
-      status.textContent = result.reason ?? 'Failed to connect'
+      status.textContent = result.reason ?? t('chat.settings.status.failedToConnect')
       status.className = 'chat-settings-status chat-settings-status-err'
     }
     setTimeout(() => { status.textContent = '' }, 5000)
   }
   if (testBtn) testBtn.disabled = false
-  callbacks?.announce(result.ok ? 'LLM connection successful' : 'LLM connection failed')
+  callbacks?.announce(t(result.ok ? 'chat.announce.testSuccess' : 'chat.announce.testFailed'))
 }
 
 // --- Send / receive ---
@@ -702,17 +744,38 @@ async function handleSend(): Promise<void> {
           scrollToBottom()
           break
 
-        case 'action':
+        case 'action': {
           if (!docentMsg.actions) docentMsg.actions = []
-          docentMsg.actions.push(chunk.action)
+          let action = chunk.action
+          // Eager dry-check for set-time so the user sees the
+          // failure ("no time-enabled dataset loaded", "date out
+          // of range") the moment the action streams in, rather
+          // than staring at an optimistic "Seeking to X" badge
+          // until they click some unrelated Load button. The
+          // dry-check is side-effect-free — actual seeking still
+          // happens later via executeGlobeAction. If the host
+          // doesn't expose canSetTime, we fall through to the
+          // optimistic render as before.
+          if (action.type === 'set-time' && callbacks.canSetTime) {
+            const probe = callbacks.canSetTime(action.isoDate)
+            if (!probe.ok) {
+              action = { ...action, error: probe.message }
+            }
+          }
+          docentMsg.actions.push(action)
           // Globe-control actions are always deferred during streaming;
-          // flushed at 'done' (immediate) or after dataset loads (deferred)
-          if (chunk.action.type !== 'load-dataset') {
-            pendingGlobeActions.push(chunk.action)
+          // flushed at 'done' (immediate) or after dataset loads
+          // (deferred). A set-time we already know will fail still
+          // gets queued so it can re-evaluate after the user loads
+          // a dataset that might satisfy it (different time-enabled
+          // dataset → different success conditions).
+          if (action.type !== 'load-dataset') {
+            pendingGlobeActions.push(action)
           }
           updateStreamingMessage(docentMsg)
           scrollToBottom()
           break
+        }
 
         case 'auto-load': {
           // Auto-load the top result immediately
@@ -720,8 +783,8 @@ async function handleSend(): Promise<void> {
           if (autoAction.type === 'load-dataset') {
             callbacks.onLoadDataset(autoAction.datasetId)
             if (!docentMsg.text) {
-              const altHint = chunk.alternatives.length > 0 ? ' Here are some alternatives if this isn\'t quite right:' : ''
-              docentMsg.text = `I've loaded **${autoAction.datasetTitle}** — that's your closest match.${altHint}`
+              const altHint = chunk.alternatives.length > 0 ? t('chat.autoLoad.altHint') : ''
+              docentMsg.text = t('chat.autoLoad.message', { title: autoAction.datasetTitle, altHint })
             }
           }
           if (!docentMsg.actions) docentMsg.actions = []
@@ -758,9 +821,7 @@ async function handleSend(): Promise<void> {
             updateStreamingMessage(docentMsg)
           }
           if (chunk.fallback && docentMsg.text) {
-            const hint = isLocalDev
-              ? '⚠ AI service unavailable — running in offline mode. Make sure `npm run dev` is proxying /api, or configure a local provider in settings.'
-              : '⚠ AI service unavailable — showing offline results. Check LLM settings.'
+            const hint = t(isLocalDev ? 'chat.fallback.localDev' : 'chat.fallback.production')
             docentMsg.text += `\n\n*${hint}*`
             updateStreamingMessage(docentMsg)
           }
@@ -780,7 +841,7 @@ async function handleSend(): Promise<void> {
     }
   } catch {
     if (!docentMsg.text) {
-      docentMsg.text = "Sorry, I had trouble responding. Try asking again, or check the LLM settings."
+      docentMsg.text = t('chat.error.generic')
     }
     streamFinishReason = 'error'
   }
@@ -836,7 +897,7 @@ async function handleSend(): Promise<void> {
   renderMessages()
   scrollToBottom()
   saveSession()
-  callbacks.announce('Docent responded')
+  callbacks.announce(t('chat.announce.docentResponded'))
 }
 
 function setSendEnabled(enabled: boolean): void {
@@ -854,15 +915,24 @@ function renderMessages(): void {
   if (!container) return
 
   if (messages.length === 0) {
+    // Inline render — markdown-lite **bold** is parsed below in renderMarkdownLite
+    // for chat messages, but the welcome block hard-codes its <strong> tags so
+    // it can keep its specific p/strong markup. Escape the translation FIRST
+    // so a translator-supplied "</p><script>" or HTML/event attribute can't
+    // smuggle markup; then apply the **bold** → <strong> transform on the
+    // already-escaped text. escapeHtml doesn't touch the asterisks so the
+    // regex still matches the markdown markers.
+    const intro = escapeHtml(t('chat.welcome.intro')).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    const hint = escapeHtml(t('chat.welcome.hint'))
     container.innerHTML = `<div class="chat-welcome">
       <div class="chat-welcome-icon" aria-hidden="true">&#x1F30D;</div>
-      <p><strong>I'm Orbit</strong>, your digital docent — I help you find the right dataset for your question.</p>
-      <p class="chat-welcome-hint">Browse the catalog to compare options side by side. Ask me when you have something specific in mind.</p>
+      <p>${intro}</p>
+      <p class="chat-welcome-hint">${hint}</p>
       <div class="chat-suggestions">
-        <button class="chat-suggestion" data-query="What datasets show sea level rise?">Sea level rise</button>
-        <button class="chat-suggestion" data-query="Explain what NDVI measures">What is NDVI?</button>
-        <button class="chat-suggestion" data-query="Show me something related to hurricanes">Hurricanes</button>
-        <button class="chat-suggestion" data-query="Which datasets cover the Arctic?">Arctic</button>
+        <button class="chat-suggestion" data-query="${escapeAttr(t('chat.welcome.suggestions.seaLevel.query'))}">${escapeHtml(t('chat.welcome.suggestions.seaLevel.label'))}</button>
+        <button class="chat-suggestion" data-query="${escapeAttr(t('chat.welcome.suggestions.ndvi.query'))}">${escapeHtml(t('chat.welcome.suggestions.ndvi.label'))}</button>
+        <button class="chat-suggestion" data-query="${escapeAttr(t('chat.welcome.suggestions.hurricanes.query'))}">${escapeHtml(t('chat.welcome.suggestions.hurricanes.label'))}</button>
+        <button class="chat-suggestion" data-query="${escapeAttr(t('chat.welcome.suggestions.arctic.query'))}">${escapeHtml(t('chat.welcome.suggestions.arctic.label'))}</button>
       </div>
     </div>`
     container.querySelectorAll<HTMLElement>('.chat-suggestion').forEach(btn => {
@@ -888,10 +958,12 @@ function renderMessage(msg: ChatMessage): string {
   const { html: textHtml, inlinedIds } = renderChatText(msg.text ?? '', msg.actions)
   const remaining = msg.actions?.filter(a => a.type !== 'load-dataset' || !inlinedIds.has(a.datasetId))
   const actionsHtml = remaining?.length ? renderActions(remaining) : ''
+  const thumbsUpLabel = t('chat.feedback.thumbsUp')
+  const thumbsDownLabel = t('chat.feedback.thumbsDown')
   const feedbackHtml = msg.role === 'docent' && msg.text
     ? `<div class="chat-feedback">
-         <button class="chat-feedback-btn" data-feedback="thumbs-up" data-msg-id="${escapeAttr(msg.id)}" aria-label="Good response" aria-pressed="false" title="Good response">&#x1F44D;&#xFE0E;</button>
-         <button class="chat-feedback-btn" data-feedback="thumbs-down" data-msg-id="${escapeAttr(msg.id)}" aria-label="Bad response" aria-pressed="false" title="Bad response">&#x1F44E;&#xFE0E;</button>
+         <button class="chat-feedback-btn" data-feedback="thumbs-up" data-msg-id="${escapeAttr(msg.id)}" aria-label="${escapeAttr(thumbsUpLabel)}" aria-pressed="false" title="${escapeAttr(thumbsUpLabel)}">&#x1F44D;&#xFE0E;</button>
+         <button class="chat-feedback-btn" data-feedback="thumbs-down" data-msg-id="${escapeAttr(msg.id)}" aria-label="${escapeAttr(thumbsDownLabel)}" aria-pressed="false" title="${escapeAttr(thumbsDownLabel)}">&#x1F44E;&#xFE0E;</button>
        </div>`
     : ''
   return `<div class="chat-msg ${roleClass}" data-msg-id="${escapeAttr(msg.id)}">
@@ -968,9 +1040,9 @@ function renderChatText(
     inlinedIds.add(id)
     // Show non-interactive "Loaded" badge if this dataset is already on the globe
     if (action.datasetId === currentDatasetId) {
-      return `<span class="chat-action-btn chat-action-inline chat-action-loaded"><span class="chat-action-title">${escapeHtml(action.datasetTitle)}</span> <span class="chat-action-load">Loaded &#x2714;</span></span>`
+      return `<span class="chat-action-btn chat-action-inline chat-action-loaded"><span class="chat-action-title">${escapeHtml(action.datasetTitle)}</span> <span class="chat-action-load">${escapeHtml(t('chat.action.loaded'))}</span></span>`
     }
-    return `<button class="chat-action-btn chat-action-inline" data-dataset-id="${escapeAttr(action.datasetId)}" aria-label="Load ${escapeAttr(action.datasetTitle)}"><span class="chat-action-title">${escapeHtml(action.datasetTitle)}</span> <span class="chat-action-load">Load &#x27A4;</span></button>`
+    return `<button class="chat-action-btn chat-action-inline" data-dataset-id="${escapeAttr(action.datasetId)}" aria-label="${escapeAttr(t('chat.action.load.aria', { title: action.datasetTitle }))}"><span class="chat-action-title">${escapeHtml(action.datasetTitle)}</span> <span class="chat-action-load">${escapeHtml(t('chat.action.load'))}</span></button>`
   })
 
   return { html, inlinedIds }
@@ -983,41 +1055,54 @@ function renderActions(actions: ChatAction[]): string {
     if (a.type === 'load-dataset') {
       // Show non-interactive "Loaded" badge if this dataset is already on the globe
       if (a.datasetId === currentDatasetId) {
-        return `<span class="chat-action-btn chat-action-loaded"><span class="chat-action-title">${escapeHtml(a.datasetTitle)}</span> <span class="chat-action-load">Loaded &#x2714;</span></span>`
+        return `<span class="chat-action-btn chat-action-loaded"><span class="chat-action-title">${escapeHtml(a.datasetTitle)}</span> <span class="chat-action-load">${escapeHtml(t('chat.action.loaded'))}</span></span>`
       }
-      return `<button class="chat-action-btn" data-dataset-id="${escapeAttr(a.datasetId)}" aria-label="Load ${escapeAttr(a.datasetTitle)}">
+      return `<button class="chat-action-btn" data-dataset-id="${escapeAttr(a.datasetId)}" aria-label="${escapeAttr(t('chat.action.load.aria', { title: a.datasetTitle }))}">
         <span class="chat-action-title">${escapeHtml(a.datasetTitle)}</span>
-        <span class="chat-action-load">Load &#x27A4;</span>
+        <span class="chat-action-load">${escapeHtml(t('chat.action.load'))}</span>
       </button>`
     }
     if (a.type === 'fly-to') {
       const latLabel = Math.abs(a.lat).toFixed(1) + '\u00B0' + (a.lat >= 0 ? 'N' : 'S')
       const lonLabel = Math.abs(a.lon).toFixed(1) + '\u00B0' + (a.lon >= 0 ? 'E' : 'W')
-      return `<span class="chat-action-status" aria-label="Flying to ${latLabel}, ${lonLabel}">Flying to ${escapeHtml(latLabel)}, ${escapeHtml(lonLabel)}</span>`
+      const flying = t('chat.action.flyingTo', { coords: `${latLabel}, ${lonLabel}` })
+      return `<span class="chat-action-status" aria-label="${escapeAttr(flying)}">${escapeHtml(flying)}</span>`
     }
     if (a.type === 'set-time') {
-      return `<span class="chat-action-status" aria-label="Seeking to ${escapeAttr(a.isoDate)}">Seeking to ${escapeHtml(a.isoDate)}</span>`
+      // Eager dry-check at stream time may have stamped an `error`
+      // on the action — render that with the failure styling
+      // immediately, matching what executeGlobeAction would write
+      // post-execution. Same pre-translated message in both paths.
+      if (a.error) {
+        return `<span class="chat-action-status chat-action-status-err" aria-label="${escapeAttr(a.error)}">${escapeHtml(a.error)}</span>`
+      }
+      const seeking = t('chat.action.seekingTo', { date: a.isoDate })
+      return `<span class="chat-action-status" aria-label="${escapeAttr(seeking)}">${escapeHtml(seeking)}</span>`
     }
     if (a.type === 'fit-bounds') {
-      const label = a.label ?? 'region'
-      return `<span class="chat-action-status" aria-label="Navigating to ${escapeAttr(label)}">Navigating to ${escapeHtml(label)}</span>`
+      const label = a.label ?? t('chat.action.regionDefault')
+      const navigating = t('chat.action.navigatingTo', { label })
+      return `<span class="chat-action-status" aria-label="${escapeAttr(navigating)}">${escapeHtml(navigating)}</span>`
     }
     if (a.type === 'add-marker') {
       const label = a.label ?? `${a.lat.toFixed(1)}, ${a.lng.toFixed(1)}`
-      return `<span class="chat-action-status" aria-label="Marker: ${escapeAttr(label)}">Marker: ${escapeHtml(label)}</span>`
+      const marker = t('chat.action.marker', { label })
+      return `<span class="chat-action-status" aria-label="${escapeAttr(marker)}">${escapeHtml(marker)}</span>`
     }
     if (a.type === 'toggle-labels') {
-      return `<span class="chat-action-status" aria-label="${a.visible ? 'Labels shown' : 'Labels hidden'}">${a.visible ? 'Labels shown' : 'Labels hidden'}</span>`
+      const labelsMsg = t(a.visible ? 'chat.action.labelsShown' : 'chat.action.labelsHidden')
+      return `<span class="chat-action-status" aria-label="${escapeAttr(labelsMsg)}">${escapeHtml(labelsMsg)}</span>`
     }
     if (a.type === 'highlight-region') {
-      const label = a.label ?? 'region'
-      return `<span class="chat-action-status" aria-label="Highlighted ${escapeAttr(label)}">Highlighted ${escapeHtml(label)}</span>`
+      const label = a.label ?? t('chat.action.regionDefault')
+      const highlighted = t('chat.action.highlighted', { label })
+      return `<span class="chat-action-status" aria-label="${escapeAttr(highlighted)}">${escapeHtml(highlighted)}</span>`
     }
     return ''
   }).join('')
   const loadActions = actions.filter(a => a.type === 'load-dataset')
   const browseFooter = loadActions.length >= 3 && callbacks?.onOpenBrowse
-    ? `<button class="chat-browse-link">Compare these side by side in Browse &#x2192;</button>`
+    ? `<button class="chat-browse-link">${escapeHtml(t('chat.action.compareInBrowse'))}</button>`
     : ''
   return `<div class="chat-actions">${items}${browseFooter}</div>`
 }
@@ -1029,7 +1114,7 @@ function wireActionButtons(container: Element): void {
       const id = btn.dataset.datasetId
       if (id && callbacks) {
         callbacks.onLoadDataset(id)
-        callbacks.announce('Loading dataset')
+        callbacks.announce(t('chat.announce.loading'))
         // Tier B: chat → load correlation. `latency_ms` is the
         // time between the user's most recent message and this
         // click — long latencies suggest the user read the reply
@@ -1151,14 +1236,14 @@ function showDatasetPrompt(dataset: Dataset): void {
   dismissDatasetPrompt()
   const el = document.getElementById('chat-dataset-prompt')
   if (!el) return
-  el.textContent = `Ask the Docent about ${dataset.title} \u2192`
+  el.textContent = t('chat.datasetPrompt.cta', { title: dataset.title })
   el.classList.remove('hidden')
   el.onclick = () => {
     dismissDatasetPrompt()
     openChat()
     const input = document.getElementById('chat-input') as HTMLTextAreaElement | null
     if (input) {
-      input.value = `Tell me about ${dataset.title}`
+      input.value = t('chat.datasetPrompt.tellMe', { title: dataset.title })
       input.style.height = 'auto'
       input.style.height = Math.min(input.scrollHeight, 96) + 'px'
     }
@@ -1200,20 +1285,26 @@ function scrollToBottom(): void {
 
 // --- Feedback ---
 
-const FEEDBACK_TAGS_NEGATIVE = [
-  'Wrong dataset',
-  'Inaccurate info',
-  'Too long',
-  'Off topic',
-  'Didn\'t understand my question',
+/** Feedback-tag MessageKey lists. The visible label resolves through
+ * t() at render time so a locale switch + reload picks up new copy
+ * without redeploying. The English source label is also passed
+ * through to the backend (as the keyword translators see) so the
+ * server-side feedback table stores a stable English-key per tag
+ * regardless of the user's locale. */
+const FEEDBACK_TAGS_NEGATIVE: MessageKey[] = [
+  'chat.feedback.tag.wrongDataset',
+  'chat.feedback.tag.inaccurateInfo',
+  'chat.feedback.tag.tooLong',
+  'chat.feedback.tag.offTopic',
+  'chat.feedback.tag.misunderstood',
 ]
 
-const FEEDBACK_TAGS_POSITIVE = [
-  'Great recommendation',
-  'Clear explanation',
-  'Learned something new',
-  'Good level of detail',
-  'Helped me explore',
+const FEEDBACK_TAGS_POSITIVE: MessageKey[] = [
+  'chat.feedback.tag.greatRecommendation',
+  'chat.feedback.tag.clearExplanation',
+  'chat.feedback.tag.learnedSomething',
+  'chat.feedback.tag.goodLevelOfDetail',
+  'chat.feedback.tag.helpedMeExplore',
 ]
 
 /** Check if viewport is narrow (mobile). */
@@ -1317,7 +1408,7 @@ async function submitInlineRating(messageId: string, rating: FeedbackRating, btn
         })
       }
     }
-    callbacks?.announce('Feedback submitted')
+    callbacks?.announce(t('chat.announce.feedbackSubmitted'))
     // Show optional expansion for richer feedback
     showFeedbackExpansion(messageId, rating, btn)
   } catch {
@@ -1336,7 +1427,7 @@ async function submitInlineRating(messageId: string, rating: FeedbackRating, btn
       status: 'error',
       rating: rating === 'thumbs-up' ? 1 : -1,
     })
-    callbacks?.announce('Feedback failed — please try again')
+    callbacks?.announce(t('chat.announce.feedbackFailed'))
   }
 }
 
@@ -1346,19 +1437,22 @@ function showFeedbackExpansion(messageId: string, rating: FeedbackRating, btn: H
   dismissFeedbackExpansion()
 
   const isPositive = rating === 'thumbs-up'
-  const placeholder = isPositive ? 'What was helpful? (optional)' : 'What could be improved? (optional)'
+  const placeholder = t(isPositive ? 'chat.feedback.placeholder.positive' : 'chat.feedback.placeholder.negative')
   const tags = isPositive ? FEEDBACK_TAGS_POSITIVE : FEEDBACK_TAGS_NEGATIVE
 
-  const tagsHtml = tags.map(tag =>
-    `<button class="chat-feedback-tag" aria-pressed="false" data-tag="${escapeAttr(tag)}">${escapeHtml(tag)}</button>`,
-  ).join('')
+  // data-tag stores the canonical English label (server-side stable),
+  // while the visible button text uses t() so it reflects the user's locale.
+  const tagsHtml = tags.map(key => {
+    const englishLabel = enMessages[key as keyof typeof enMessages] ?? key
+    return `<button class="chat-feedback-tag" aria-pressed="false" data-tag="${escapeAttr(englishLabel)}">${escapeHtml(t(key))}</button>`
+  }).join('')
 
   const expansionHtml = `
     <div class="chat-feedback-tags">${tagsHtml}</div>
     <textarea class="chat-feedback-comment" placeholder="${escapeAttr(placeholder)}" rows="2"></textarea>
     <div class="chat-feedback-expand-actions">
-      <button class="chat-feedback-send">Send</button>
-      <button class="chat-feedback-dismiss" aria-label="Dismiss">Dismiss</button>
+      <button class="chat-feedback-send">${escapeHtml(t('chat.feedback.send'))}</button>
+      <button class="chat-feedback-dismiss" aria-label="${escapeAttr(t('chat.feedback.dismiss'))}">${escapeHtml(t('chat.feedback.dismiss'))}</button>
     </div>
   `
 
@@ -1372,7 +1466,7 @@ function showFeedbackExpansion(messageId: string, rating: FeedbackRating, btn: H
     sheet.className = 'chat-feedback-sheet'
     sheet.id = 'chat-feedback-expansion'
     sheet.setAttribute('role', 'region')
-    sheet.setAttribute('aria-label', 'Additional feedback')
+    sheet.setAttribute('aria-label', t('chat.feedback.sheetAria'))
     sheet.dataset.messageId = messageId
     sheet.dataset.rating = rating
     sheet.innerHTML = `<div class="chat-feedback-sheet-handle" aria-hidden="true"></div>${expansionHtml}`
@@ -1387,7 +1481,7 @@ function showFeedbackExpansion(messageId: string, rating: FeedbackRating, btn: H
     expand.className = 'chat-feedback-expand'
     expand.id = 'chat-feedback-expansion'
     expand.setAttribute('role', 'region')
-    expand.setAttribute('aria-label', 'Additional feedback')
+    expand.setAttribute('aria-label', t('chat.feedback.sheetAria'))
     expand.dataset.messageId = messageId
     expand.dataset.rating = rating
     expand.innerHTML = expansionHtml
@@ -1462,7 +1556,7 @@ async function submitFeedbackUpdate(expansion: HTMLElement, messageId: string, r
       const err = await res.json().catch(() => ({ error: 'Unknown error' }))
       throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`)
     }
-    callbacks?.announce('Additional feedback submitted')
+    callbacks?.announce(t('chat.announce.feedbackExtra'))
     dismissFeedbackExpansion()
   } catch {
     if (sendBtn) sendBtn.disabled = false

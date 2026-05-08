@@ -8,13 +8,14 @@
 import type { Dataset, ChatMessage, ChatAction, DocentConfig, LegendCache, MapViewContext, LLMContextSnapshot, ReadingLevel } from '../types'
 import { streamChat, checkAvailability, type AvailabilityResult, type LLMMessage, type LLMContentPart, type LLMToolCall } from './llmProvider'
 import { isAvailable as isAppleIntelligenceAvailable, streamChatLocal } from './appleIntelligenceProvider'
-import { buildSystemPrompt, buildCompressedHistory, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
+import { buildSystemPrompt, buildCompressedHistory, buildLanguageReminderMessage, getSearchCatalogTool, getSearchDatasetsTool, getListFeaturedDatasetsTool, getLoadDatasetTool, getFlyToTool, getSetTimeTool, getFitBoundsTool, getAddMarkerTool, getToggleLabelsTool, getHighlightRegionTool } from './docentContext'
 import { parseIntent, generateResponse, searchDatasets, evaluateAutoLoad } from './docentEngine'
 import { clearDegraded as clearDegradedState, markDegraded as markDegradedState } from './docentDegradedState'
 import { apiFetch } from './catalogSource'
 import { ensureLoaded as ensureQALoaded, getRelevantQA } from './qaService'
 import { resolveRegion, boundsToGeoJSON } from '../data/regions'
 import { logger } from '../utils/logger'
+import { t } from '../i18n'
 
 // --- Constants ---
 const CONFIG_STORAGE_KEY = 'sos-docent-config'
@@ -793,6 +794,102 @@ function tokeniseTitle(s: string): Set<string> {
   return out
 }
 
+/** Loose normalization for title-vs-claim comparisons: lowercase,
+ * collapse non-alphanumerics to single spaces, trim. Matches
+ * "Sea-Ice Extent" against "sea ice extent" and copes with
+ * smart-quotes / extra punctuation in LLM output. */
+function normalizeTitleForCompare(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Whether an LLM-claimed title is plausibly the same dataset as the
+ * catalog's actual title. Exact normalized match counts; substring
+ * either direction also counts when both sides are non-trivial
+ * (handles "Air Traffic" ⟷ "Air Traffic Flow Visualisation"). */
+function titlesMatch(claim: string, actual: string): boolean {
+  const c = normalizeTitleForCompare(claim)
+  const a = normalizeTitleForCompare(actual)
+  if (!c || !a) return false
+  if (c === a) return true
+  if (c.length >= 4 && a.length >= 4 && (c.includes(a) || a.includes(c))) return true
+  return false
+}
+
+/** Strip mismatched title-claim phrases from the prose window
+ * preceding a <<LOAD:ID>> marker. See reconcileMarkerProse for the
+ * surrounding rationale. Returns the (possibly shortened) window. */
+function stripMismatchedClaims(window: string, actualTitle: string): string {
+  // Quote-bracketed claim: `the "X" dataset`, `loading 'X' dataset`, etc.
+  // Smart-quote variants (‘’“”) included for
+  // common LLM output. Whole match is dropped, not just the captured
+  // group — leaving "the dataset" with extra spaces is uglier than
+  // losing the whole "the 'X' dataset" phrase.
+  const QUOTED_CLAIM = /\b(?:the|loading|recommend(?:ing|ed)?)\s+["'‘’“”]([^"'‘’“”\n]{2,80})["'‘’“”]\s+dataset\b/gi
+  let out = window.replace(QUOTED_CLAIM, (match, claim: string) => {
+    return titlesMatch(claim, actualTitle) ? match : ''
+  })
+
+  // Bold title on its own line right before the marker:
+  //   "**Hurricane Tracks**\n<<LOAD:...>>"
+  // Constrained to the trailing portion of the window so we don't
+  // strip legitimate emphasis from earlier sentences.
+  const BOLD_TAIL = /(?:^|\n)\s*\*\*([^*\n]{2,80})\*\*\s*$/
+  const m = out.match(BOLD_TAIL)
+  if (m && m.index !== undefined && !titlesMatch(m[1], actualTitle)) {
+    out = out.slice(0, m.index)
+  }
+
+  return out
+}
+
+/** Walk every `<<LOAD:ID>>` marker in `text`, reconcile the
+ * preceding prose against the marker's catalog-resolved title,
+ * and inject a `→ Loads: <title>` confirmation line when the
+ * preceding window doesn't already mention the actual title.
+ * Markers whose ID isn't in the catalog are left untouched —
+ * they're stripped earlier by the invalid-marker pass. */
+function reconcileMarkerProse(text: string, datasets: Dataset[]): string {
+  const PRECEDING_WINDOW = 250
+  const out: string[] = []
+  let lastEnd = 0
+
+  for (const match of text.matchAll(/<<LOAD:([^>]+)>>/g)) {
+    const id = match[1].trim()
+    const matchStart = match.index ?? 0
+    const matchEnd = matchStart + match[0].length
+    const dataset = datasets.find(d => d.id === id)
+
+    let preceding = text.slice(lastEnd, matchStart)
+    if (dataset) {
+      // Slice the strip window to ~PRECEDING_WINDOW chars so we
+      // don't reach into earlier paragraphs. Keep anything before
+      // that window verbatim.
+      const windowStart = Math.max(0, preceding.length - PRECEDING_WINDOW)
+      const before = preceding.slice(0, windowStart)
+      const window = preceding.slice(windowStart)
+      const stripped = stripMismatchedClaims(window, dataset.title)
+      preceding = before + stripped
+
+      // If the preceding window (post-strip) doesn't mention the
+      // catalog title, inject an explicit "Loads: <title>" line
+      // so the user has authoritative confirmation of what the
+      // chip will load. Skip if the title already appears anywhere
+      // in the window — no need for redundancy when the LLM got
+      // it right.
+      const haystack = preceding.slice(Math.max(0, preceding.length - PRECEDING_WINDOW)).toLowerCase()
+      if (!haystack.includes(dataset.title.toLowerCase())) {
+        const loadsLine = t('chat.action.loadsLabel', { title: dataset.title })
+        preceding = preceding.replace(/\s*$/, '\n' + loadsLine + '\n')
+      }
+    }
+
+    out.push(preceding, match[0])
+    lastEnd = matchEnd
+  }
+  out.push(text.slice(lastEnd))
+  return out.join('')
+}
+
 /**
  * Validate dataset IDs found in LLM text against the catalog.
  * Also extracts <<FLY:...>> and <<TIME:...>> inline markers
@@ -980,6 +1077,30 @@ export function validateAndCleanText(
     if (canonicalId) return `<<LOAD:${canonicalId}>>${trailing}`
     return match
   })
+
+  // Reconcile prose claims against marker IDs. Mid-tier LLMs
+  // routinely write a topical title in prose ("Hurricane Season")
+  // immediately before a <<LOAD:ID>> marker that resolves to an
+  // unrelated dataset ("Air Traffic"). The chip — sourced from
+  // the catalog by id — shows the real title; the prose claim
+  // contradicts it. Two passes per marker:
+  //
+  //   (1) Strip mismatched title-claim phrases from the
+  //       preceding window. Patterns covered:
+  //         - the "X" / 'X' dataset (quote-bracketed)
+  //         - **X** on its own line right before the marker
+  //
+  //   (2) If the marker's actual title still isn't mentioned
+  //       in the preceding window after pass (1), inject an
+  //       explicit "→ Loads: **<title>**" line so the user has
+  //       authoritative confirmation of what the chip will
+  //       load — independent of the LLM's narrative.
+  //
+  // The injected `loadsLabel` is locale-aware (en: "→ Loads:",
+  // es: "→ Carga:"). Dataset titles themselves stay in their
+  // catalog form (English in L1) — translating titles is L3
+  // metadata-pipeline work.
+  cleanedText = reconcileMarkerProse(cleanedText, datasets)
 
   // Strip bare invalid INTERNAL_... IDs from prose. Case-insensitive
   // to match the detection regex above (1d/Z added the `i` flag for
@@ -1314,9 +1435,15 @@ export async function* processMessage(
         ] as LLMContentPart[] }
       : { role: 'user', content: statePrefix + preSearchContext + input }
 
+    // Anchor a fresh language-reminder system message right before
+    // the user's turn — the system prompt's respond-in-{language}
+    // directive gets crowded out by tool-call back-and-forth on
+    // mid-tier models. See buildLanguageReminderMessage for context.
+    const languageReminder = buildLanguageReminderMessage()
     const llmMessages: LLMMessage[] = [
       { role: 'system' as const, content: systemPrompt },
       ...buildCompressedHistory(history),
+      ...(languageReminder ? [languageReminder] : []),
       userMessage,
     ]
     // Tool ordering — Phase 1d cutover (catalog(1d/E)).

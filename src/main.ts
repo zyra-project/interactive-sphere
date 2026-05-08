@@ -44,6 +44,7 @@ import {
   togglePlayPause, rewind, fastForward, stepFrame, onScrub,
   updatePlayButton, toggleCaptions, resetPlaybackState, initPlaybackPositioning,
   seekToDate,
+  checkSeekToDate,
   type PlaybackState,
 } from './ui/playbackController'
 import {
@@ -61,6 +62,7 @@ import {
 import { initVrButton } from './ui/vrButton'
 import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
+import { bootstrapI18n } from './i18n/bootstrap'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
 // (larger touch targets, bottom sheets, etc.) without JS per-component.
@@ -1604,6 +1606,7 @@ class InteractiveSphere {
         if (isVrActive()) void flyToOnGlobe(lat, lon)
       },
       onSetTime: (isoDate) => seekToDate(isoDate, this.hlsService, this.appState, this.playback),
+      canSetTime: (isoDate) => checkSeekToDate(isoDate, this.hlsService, this.appState),
       onFitBounds: (bounds, _label) => { this.renderer?.fitBounds(bounds) },
       onAddMarker: (lat, lng, label) => { this.renderer?.addMarker(lat, lng, label) },
       onToggleLabels: (visible) => {
@@ -2446,6 +2449,11 @@ async function checkForUpdates(): Promise<void> {
 
 // Initialize app on DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
+  // Resolve user locale and apply data-i18n attributes before any
+  // UI module renders. English is bundled inline; non-English
+  // locales lazy-load here. See docs/I18N_PLAN.md.
+  await bootstrapI18n()
+
   const app = new InteractiveSphere()
   app.setupEventListeners()
   await app.initialize()

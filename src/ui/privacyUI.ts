@@ -27,25 +27,36 @@ import {
   setTier,
 } from '../analytics'
 import type { TelemetryTier } from '../types'
+import { t, tAttr, tHtml, type MessageKey } from '../i18n'
+import { escapeHtml } from './domUtils'
 
 let mounted = false
 let isOpen = false
 let lastTrigger: HTMLElement | null = null
 let listenerController: AbortController | null = null
 
-const TIER_LABELS: Record<TelemetryTier, string> = {
-  essential: 'Essential',
-  research: 'Research',
-  off: 'Off',
+/** Tier → MessageKey lookup. Lives at module scope so the type-
+ *  check verifies all three tiers map to valid keys, with no
+ *  template-string casting. Compile-time enforcement that we
+ *  haven't dropped a tier on either axis. */
+const TIER_LABEL_KEY: Record<TelemetryTier, MessageKey> = {
+  essential: 'privacy.tier.essential.label',
+  research: 'privacy.tier.research.label',
+  off: 'privacy.tier.off.label',
+}
+const TIER_DESC_KEY: Record<TelemetryTier, MessageKey> = {
+  essential: 'privacy.tier.essential.desc',
+  research: 'privacy.tier.research.desc',
+  off: 'privacy.tier.off.desc',
 }
 
-const TIER_DESCRIPTIONS: Record<TelemetryTier, string> = {
-  essential:
-    'Anonymous health and usage events so we can keep the app working. On by default.',
-  research:
-    'Adds panel dwell times, Orbit interactions, and sanitized stack frames so we can improve the docent. Opt-in.',
-  off:
-    'No telemetry events are sent. The app works exactly the same.',
+/** Resolve tier label (`Essential` / `Research` / `Off`) at call time
+ * so a locale switch + reload picks up new copy without a rebuild. */
+function tierLabel(tier: TelemetryTier): string {
+  return t(TIER_LABEL_KEY[tier])
+}
+function tierDesc(tier: TelemetryTier): string {
+  return t(TIER_DESC_KEY[tier])
 }
 
 /** Build the panel HTML. Called once on first open. */
@@ -63,32 +74,28 @@ function buildPanel(): HTMLElement {
       aria-describedby="privacy-ui-desc"
     >
       <header class="privacy-ui-header">
-        <h2 id="privacy-ui-title">Privacy</h2>
+        <h2 id="privacy-ui-title">${tHtml('privacy.title')}</h2>
         <button
           type="button"
           id="privacy-ui-close"
           class="privacy-ui-close"
-          aria-label="Close privacy settings"
+          aria-label="${tAttr('privacy.close.aria')}"
         >&#x2715;</button>
       </header>
-      <p id="privacy-ui-desc" class="privacy-ui-desc">
-        Choose how much the app reports back. You can change this at any time; the change takes effect immediately.
-      </p>
-      <fieldset class="privacy-ui-tiers" role="radiogroup" aria-label="Telemetry tier">
-        <legend class="sr-only">Telemetry tier</legend>
+      <p id="privacy-ui-desc" class="privacy-ui-desc">${tHtml('privacy.desc')}</p>
+      <fieldset class="privacy-ui-tiers" role="radiogroup" aria-label="${tAttr('privacy.radiogroup.aria')}">
+        <legend class="sr-only">${tHtml('privacy.radiogroup.aria')}</legend>
         ${renderTierOption('essential')}
         ${renderTierOption('research')}
         ${renderTierOption('off')}
       </fieldset>
       <div class="privacy-ui-meta">
         <div class="privacy-ui-session">
-          <span class="privacy-ui-session-label">Session ID</span>
+          <span class="privacy-ui-session-label">${tHtml('privacy.session.label')}</span>
           <code id="privacy-ui-session-id" class="privacy-ui-session-id"></code>
-          <span class="privacy-ui-session-hint">In-memory only · resets on relaunch</span>
+          <span class="privacy-ui-session-hint">${tHtml('privacy.session.hint')}</span>
         </div>
-        <a class="privacy-ui-policy-link" href="/privacy" target="_blank" rel="noopener">
-          Read the full privacy policy &rarr;
-        </a>
+        <a class="privacy-ui-policy-link" href="/privacy" target="_blank" rel="noopener">${tHtml('privacy.policyLink')}</a>
       </div>
       <div id="privacy-ui-status" class="privacy-ui-status" role="status" aria-live="polite"></div>
     </section>
@@ -107,8 +114,8 @@ function renderTierOption(tier: TelemetryTier): string {
         data-tier="${tier}"
       />
       <span class="privacy-ui-tier-body">
-        <span class="privacy-ui-tier-label">${TIER_LABELS[tier]}</span>
-        <span class="privacy-ui-tier-desc">${TIER_DESCRIPTIONS[tier]}</span>
+        <span class="privacy-ui-tier-label">${escapeHtml(tierLabel(tier))}</span>
+        <span class="privacy-ui-tier-desc">${escapeHtml(tierDesc(tier))}</span>
       </span>
     </label>
   `
@@ -225,8 +232,8 @@ function handleTierChange(tier: TelemetryTier): void {
   })
   announce(
     tier === 'off'
-      ? 'Telemetry off. Pending events discarded.'
-      : `Telemetry set to ${TIER_LABELS[tier]}.`,
+      ? t('privacy.announce.off')
+      : t('privacy.announce.set', { tier: tierLabel(tier) }),
   )
 }
 

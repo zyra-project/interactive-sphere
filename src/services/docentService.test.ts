@@ -691,7 +691,11 @@ describe('processMessage — LLM dataset ID validation', () => {
 
 describe('validateAndCleanText', () => {
   it('keeps valid <<LOAD:ID>> markers intact', () => {
-    const text = 'Try this: <<LOAD:TEST_001>>'
+    // Prose must mention the catalog title so reconcileMarkerProse
+    // doesn't inject its "Loads: …" confirmation line. The marker
+    // itself is what this test pins as untouched; the surrounding
+    // mention keeps the rest of the text identical.
+    const text = 'Try Sea Surface Temperature: <<LOAD:TEST_001>>'
     const { cleanedText, validIds, invalidIds } = validateAndCleanText(text, datasets)
     expect(cleanedText).toBe(text)
     expect(validIds.has('TEST_001')).toBe(true)
@@ -841,6 +845,99 @@ describe('validateAndCleanText', () => {
     // the chat UI's [[LOAD:...]] round-trip stays consistent.
     expect(cleanedText).toContain('<<LOAD:01KQFFCEE4Q7NQGJNFB0Z042MC>>')
     expect(cleanedText).not.toContain('INTERNAL_SOS_768')
+  })
+
+  // -------------------------------------------------------------
+  // Title-mismatch reconciliation (item (c) follow-up)
+  //
+  // Mid-tier LLMs frequently emit prose claiming a topical title
+  // ("Hurricane Season") right before a marker that resolves to
+  // an unrelated dataset ("Air Traffic"). reconcileMarkerProse
+  // strips quote-bracketed and bold-line title claims that don't
+  // match the actual catalog title, and injects a "→ Loads: …"
+  // confirmation line when the preceding prose doesn't mention
+  // the actual title at all.
+  // -------------------------------------------------------------
+
+  it('strips a quote-bracketed title-claim that does not match the marker\'s catalog title', () => {
+    const ds = [makeDataset({ id: 'AIR_001', title: 'Air Traffic' })]
+    const text = "I recommend loading the 'Hurricane Season' dataset.\n<<LOAD:AIR_001>>"
+    const { cleanedText } = validateAndCleanText(text, ds)
+    expect(cleanedText).not.toContain('Hurricane Season')
+    expect(cleanedText).toContain('<<LOAD:AIR_001>>')
+    // Loads: line is injected because the actual title also wasn't
+    // mentioned anywhere in the preceding window.
+    expect(cleanedText).toContain('Air Traffic')
+  })
+
+  it('strips a bold-line title-claim immediately before the marker when it does not match', () => {
+    const ds = [makeDataset({ id: 'AIR_001', title: 'Air Traffic' })]
+    const text = 'Here you go.\n**Hurricane Tracks**\n<<LOAD:AIR_001>>'
+    const { cleanedText } = validateAndCleanText(text, ds)
+    expect(cleanedText).not.toContain('Hurricane Tracks')
+    expect(cleanedText).toContain('<<LOAD:AIR_001>>')
+  })
+
+  it('keeps the prose intact when the LLM mentions the actual catalog title', () => {
+    const ds = [makeDataset({ id: 'SST_001', title: 'Sea Surface Temperature' })]
+    const text = "Here's the Sea Surface Temperature dataset.\n<<LOAD:SST_001>>"
+    const { cleanedText } = validateAndCleanText(text, ds)
+    // No mismatch → no strip, no inject. Output is identical.
+    expect(cleanedText).toBe(text)
+  })
+
+  it('injects a Loads: line when prose mentions no title at all', () => {
+    const ds = [makeDataset({ id: 'SST_001', title: 'Sea Surface Temperature' })]
+    const text = 'Take a look:\n<<LOAD:SST_001>>'
+    const { cleanedText } = validateAndCleanText(text, ds)
+    expect(cleanedText).toContain('Loads:')
+    expect(cleanedText).toContain('Sea Surface Temperature')
+    expect(cleanedText).toContain('<<LOAD:SST_001>>')
+  })
+
+  it('treats substring overlap as a match (catalog title contains the LLM claim)', () => {
+    // "Air Traffic" claim against "Air Traffic Flow Visualisation"
+    // — same dataset, just a shorter form. Don't strip, don't inject.
+    const ds = [makeDataset({ id: 'AIR_001', title: 'Air Traffic Flow Visualisation' })]
+    const text = "Loading the 'Air Traffic' dataset.\n<<LOAD:AIR_001>>"
+    const { cleanedText } = validateAndCleanText(text, ds)
+    expect(cleanedText).toContain("'Air Traffic'")
+  })
+
+  it('does not strip a matching bold title (well-behaved LLM)', () => {
+    const ds = [makeDataset({ id: 'SST_001', title: 'Sea Surface Temperature' })]
+    const text = '**Sea Surface Temperature**\n<<LOAD:SST_001>>'
+    const { cleanedText } = validateAndCleanText(text, ds)
+    expect(cleanedText).toContain('**Sea Surface Temperature**')
+  })
+
+  it('reconciles per marker — earlier markers are not re-reconciled by later ones', () => {
+    // Window slicing per match: claims about one marker should not
+    // bleed into the strip pass for a sibling marker downstream.
+    const ds = [
+      makeDataset({ id: 'A_001', title: 'Air Traffic' }),
+      makeDataset({ id: 'S_001', title: 'Shipping Routes' }),
+    ]
+    const text = "the 'Hurricane' dataset.\n<<LOAD:A_001>>\n\nthe 'Hurricane' dataset.\n<<LOAD:S_001>>"
+    const { cleanedText } = validateAndCleanText(text, ds)
+    // Both Hurricane claims stripped — they mismatch their respective markers.
+    expect(cleanedText).not.toContain("'Hurricane'")
+    // Loads: lines injected for both since the actual titles never
+    // appeared in their preceding windows.
+    expect(cleanedText).toContain('Air Traffic')
+    expect(cleanedText).toContain('Shipping Routes')
+  })
+
+  it('leaves invalid markers untouched in reconciliation (handled by earlier strip pass)', () => {
+    const ds = [makeDataset({ id: 'TEST_001' })]
+    const text = "the 'Hurricane' dataset.\n<<LOAD:HALLUCINATED_999>>"
+    const { cleanedText, invalidIds } = validateAndCleanText(text, ds)
+    // The marker itself gets stripped by the invalid-id pass; the
+    // claim phrase stays because there's no marker-resolved title
+    // to compare it against.
+    expect(invalidIds.has('HALLUCINATED_999')).toBe(true)
+    expect(cleanedText).not.toContain('HALLUCINATED_999')
+    expect(cleanedText).toContain("'Hurricane'")
   })
 
   it('resolves bare INTERNAL_* mentions in prose via legacyId fallback (1d/U)', () => {
@@ -1022,8 +1119,12 @@ describe('processMessage — rewrite chunk for hallucinated IDs', () => {
     const { streamChat } = await import('./llmProvider')
     const mockedStream = vi.mocked(streamChat)
 
+    // Prose mentions the dataset's actual title — that suppresses
+    // both the strip-mismatched-claim path and the
+    // inject-Loads-line path inside reconcileMarkerProse, so a
+    // well-behaved LLM round-trip yields no rewrite chunk.
     mockedStream.mockImplementation(async function* () {
-      yield { type: 'delta' as const, text: 'Here is a great dataset: <<LOAD:TEST_001>>' }
+      yield { type: 'delta' as const, text: 'Here is Sea Surface Temperature: <<LOAD:TEST_001>>' }
       yield { type: 'done' as const }
     })
 

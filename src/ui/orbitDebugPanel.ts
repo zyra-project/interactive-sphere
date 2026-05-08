@@ -14,6 +14,7 @@ import {
   PALETTE_KEYS, PALETTES,
   PRESET_KEYS, SCALE_PRESETS,
 } from '../services/orbitCharacter'
+import { t } from '../i18n'
 
 export interface OrbitDebugPanelHandle {
   /**
@@ -56,7 +57,7 @@ export function initOrbitDebugPanel(controller: OrbitController): OrbitDebugPane
     const collapsed = panel.classList.toggle('is-collapsed')
     toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
     toggleBtn.innerHTML = collapsed ? '&#x25B8;' : '&#x25BE;'
-    announce(collapsed ? 'Debug panel collapsed' : 'Debug panel expanded')
+    announce(t(collapsed ? 'orbit.debug.announce.collapsed' : 'orbit.debug.announce.expanded'))
   })
 
   // Poll gesture-playing state at a cheap rate so buttons disable
@@ -77,9 +78,9 @@ export function initOrbitDebugPanel(controller: OrbitController): OrbitDebugPane
 
 function populateStateOptions(select: HTMLSelectElement): void {
   select.innerHTML = ''
-  appendGroup(select, 'Behavior', BEHAVIOR_STATES)
-  appendGroup(select, 'Emotion', EMOTION_STATES)
-  appendGroup(select, 'Head', GESTURE_STATES)
+  appendGroup(select, t('orbit.debug.stateGroup.behavior'), BEHAVIOR_STATES)
+  appendGroup(select, t('orbit.debug.stateGroup.emotion'), EMOTION_STATES)
+  appendGroup(select, t('orbit.debug.stateGroup.head'), GESTURE_STATES)
 }
 
 function appendGroup(select: HTMLSelectElement, label: string, keys: StateKey[]): void {
@@ -108,14 +109,14 @@ function buildPaletteSwatches(host: HTMLElement, controller: OrbitController): v
     btn.className = 'orbit-debug-palette'
     btn.dataset.palette = key
     btn.setAttribute('role', 'radio')
-    btn.setAttribute('aria-label', `${key} palette`)
+    btn.setAttribute('aria-label', t('orbit.debug.palette.aria', { name: key }))
     btn.title = key
     btn.style.setProperty('--swatch', PALETTES[key].accent)
     btn.appendChild(document.createElement('span'))
     btn.addEventListener('click', () => {
       controller.setPalette(key as PaletteKey)
       updateChecked()
-      announce(`Palette: ${key}`)
+      announce(t('orbit.debug.palette.announce', { name: key }))
     })
     host.appendChild(btn)
   }
@@ -141,7 +142,7 @@ function buildScaleControl(host: HTMLElement, controller: OrbitController): void
     btn.addEventListener('click', () => {
       controller.setScalePreset(key as ScaleKey)
       sync()
-      announce(`Scale: ${SCALE_PRESETS[key].label}`)
+      announce(t('orbit.debug.scale.announce', { label: SCALE_PRESETS[key].label }))
     })
     host.appendChild(btn)
   }
@@ -154,10 +155,10 @@ function wireFlightButtons(
   controller: OrbitController,
 ): number {
   flyBtn.addEventListener('click', () => {
-    if (controller.flyToEarth()) announce('Orbit flying to Earth')
+    if (controller.flyToEarth()) announce(t('orbit.debug.flight.toEarth'))
   })
   homeBtn.addEventListener('click', () => {
-    if (controller.flyHome()) announce('Orbit returning to chat position')
+    if (controller.flyHome()) announce(t('orbit.debug.flight.toHome'))
   })
   // Poll flight mode — disable buttons inappropriately for current state.
   //   rest:   Fly enabled, Home disabled
@@ -182,10 +183,10 @@ function buildGestureButtons(host: HTMLElement, controller: OrbitController): HT
     btn.type = 'button'
     btn.className = 'orbit-debug-gesture'
     btn.textContent = GESTURES[kind].label
-    btn.setAttribute('aria-label', `Play ${GESTURES[kind].label} gesture`)
+    btn.setAttribute('aria-label', t('orbit.debug.gesture.aria', { label: GESTURES[kind].label }))
     btn.addEventListener('click', () => {
       controller.playGesture(kind as GestureKind)
-      announce(`Playing ${GESTURES[kind].label}`)
+      announce(t('orbit.debug.gesture.announce', { label: GESTURES[kind].label }))
     })
     host.appendChild(btn)
     buttons.push(btn)
