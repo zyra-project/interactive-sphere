@@ -86,6 +86,22 @@ jobs:
       - name: Export NDK_HOME
         run: echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> $GITHUB_ENV
 
+      # Bootstrap: src-tauri/gen/android/ is gitignored as generated
+      # scaffolding (per Tauri convention — gen/ is regenerated from
+      # src-tauri/Cargo.toml + tauri.conf.json on every fresh checkout),
+      # so CI has to run `tauri android init` before the build can
+      # find the Gradle project. Mirrors the iOS bootstrap below;
+      # the conditional keeps it idempotent if a future commit ever
+      # checks the scaffold back in.
+      - name: Bootstrap Android scaffold if missing
+        run: |
+          if [ ! -d "src-tauri/gen/android" ]; then
+            echo "::notice::No Android scaffold found — running 'tauri android init'"
+            npx tauri android init
+          else
+            echo "Android scaffold already exists — skipping init"
+          fi
+
       - name: Build Android app (debug)
         run: npx tauri android build --debug --apk
 
