@@ -269,6 +269,7 @@
   "chat.action.loaded": "Cargado ✔",
   "chat.action.load": "Cargar ➤",
   "chat.action.load.aria": "Cargar {title}",
+  "chat.action.loadsLabel": "→ Carga: **{title}**",
   "chat.action.compareInBrowse": "Compara estos lado a lado en el explorador →",
   "chat.action.flyingTo": "Volando a {coords}",
   "chat.action.seekingTo": "Buscando {date}",
