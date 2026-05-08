@@ -11,7 +11,7 @@
 # `@zyra-project/terraviz-i18n-<locale>`. Add yourself by opening
 # a PR against this file with the team you want to join (or start);
 # without a review team, locales stay in `experimental` status —
-# reachable via `?locale=<code>` query flag for testing but hidden
+# reachable via `?lang=<code>` query flag for testing but hidden
 # from the public Tools → Language picker.
 #
 # See CONTRIBUTING-TRANSLATIONS.md for the full reviewer workflow.

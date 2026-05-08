@@ -75,10 +75,57 @@ describe('sanitizeGuideHtml', () => {
   })
 
   it('returns empty string when document is undefined (SSR / non-DOM)', () => {
-    // Only the runtime guard; we exercise the happy path elsewhere.
-    // This documents the SSR behavior so a future move to SSR
-    // doesn't silently emit unsanitized HTML on the server.
-    expect(typeof sanitizeGuideHtml('<p>x</p>')).toBe('string')
+    // The SSR guard fires when `typeof document === 'undefined'`.
+    // happy-dom always provides `document`, so we have to actually
+    // unset the global to exercise the branch — otherwise this
+    // test would pass even if the guard were removed, leaving a
+    // future SSR migration silently emitting unsanitized HTML on
+    // the server.
+    type GlobalDoc = { document?: Document }
+    const original = (globalThis as GlobalDoc).document
+    ;(globalThis as GlobalDoc).document = undefined
+    try {
+      expect(sanitizeGuideHtml('<p>x</p>')).toBe('')
+    } finally {
+      ;(globalThis as GlobalDoc).document = original
+    }
+  })
+
+  it('forces rel="noopener noreferrer" on <a target="_blank"> (reverse-tabnabbing defense)', () => {
+    // A translator could write `<a target="_blank">link</a>` with
+    // no rel at all. Without rel="noopener", window.opener leaks
+    // to the destination tab — classic reverse-tabnabbing. The
+    // sanitizer enforces both noopener and noreferrer for
+    // _blank links regardless of what the translator typed.
+    const out = sanitizeGuideHtml('<a href="https://example.com" target="_blank">link</a>')
+    expect(out).toContain('rel="noopener noreferrer"')
+  })
+
+  it('merges rel tokens — preserves translator-set tokens AND adds noopener/noreferrer', () => {
+    // Tokens like `nofollow` or `ugc` may be legitimate translator
+    // intent (e.g. linking to a third-party glossary) — we must
+    // not clobber them when adding the security tokens.
+    const out = sanitizeGuideHtml('<a href="https://example.com" target="_blank" rel="nofollow">link</a>')
+    expect(out).toContain('nofollow')
+    expect(out).toContain('noopener')
+    expect(out).toContain('noreferrer')
+  })
+
+  it('does not duplicate rel tokens already set by the translator', () => {
+    const out = sanitizeGuideHtml('<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>')
+    // Each token should appear exactly once.
+    expect(out.match(/noopener/g)?.length).toBe(1)
+    expect(out.match(/noreferrer/g)?.length).toBe(1)
+  })
+
+  it('leaves rel alone when target is not _blank', () => {
+    // Same-tab links (no target, or target="_self") don't have
+    // the reverse-tabnabbing risk and the sanitizer doesn't
+    // pollute their rel attribute.
+    const noTarget = sanitizeGuideHtml('<a href="https://example.com">link</a>')
+    expect(noTarget).not.toContain('rel=')
+    const selfTarget = sanitizeGuideHtml('<a href="https://example.com" target="_self">link</a>')
+    expect(selfTarget).not.toContain('noopener')
   })
 
   it('is idempotent — sanitizing already-sanitized output yields the same result', () => {

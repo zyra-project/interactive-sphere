@@ -82,6 +82,19 @@ function walkAndSanitize(node: ParentNode): void {
       }
     }
 
+    // Reverse-tabnabbing defense: any <a target="_blank"> must
+    // carry rel="noopener noreferrer". A translator might write a
+    // link without rel at all, or omit one of the two tokens —
+    // forcibly merge them in. Leaves any other rel tokens the
+    // translator legitimately set (e.g. nofollow, ugc) intact.
+    if (tag === 'A' && el.getAttribute('target')?.toLowerCase() === '_blank') {
+      const existing = (el.getAttribute('rel') ?? '').split(/\s+/).filter(Boolean)
+      const lower = new Set(existing.map(token => token.toLowerCase()))
+      if (!lower.has('noopener')) existing.push('noopener')
+      if (!lower.has('noreferrer')) existing.push('noreferrer')
+      el.setAttribute('rel', existing.join(' '))
+    }
+
     walkAndSanitize(el)
   }
 }

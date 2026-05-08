@@ -347,8 +347,16 @@ function run(): void {
         // missing file — definitely stale
       }
       if (current !== file.contents) {
+        // Generated files are gitignored — there's nothing to
+        // commit. The fix is just to regenerate locally; CI
+        // rebuilds them via the postinstall hook on every fresh
+        // install. The drift this gate catches is "you edited a
+        // locale .json without re-running the codegen", which
+        // matters because tsc reads the regenerated MessageKey
+        // union for type-safety on `t(...)` call sites.
         console.error(
-          `✗ ${file.path} is stale.\n  Run \`npm run locales\` and commit the regenerated file.`,
+          `✗ ${file.path} is stale.\n  Run \`npm run locales\` to regenerate. ` +
+          `(Output is gitignored — no commit needed.)`,
         )
         stale = true
       }
