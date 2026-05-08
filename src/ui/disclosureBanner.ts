@@ -28,6 +28,7 @@
 
 import { emit } from '../analytics'
 import { openPrivacyUI } from './privacyUI'
+import { t } from '../i18n'
 
 const STORAGE_KEY = 'sos-disclosure-seen'
 
@@ -112,32 +113,29 @@ function buildBanner(): HTMLElement {
   banner.id = 'disclosure-banner'
   banner.className = 'disclosure-banner'
   banner.setAttribute('role', 'region')
-  banner.setAttribute('aria-label', 'Privacy notice')
+  banner.setAttribute('aria-label', t('disclosureBanner.aria'))
   banner.setAttribute('aria-live', 'polite')
   banner.innerHTML = `
-    <p class="disclosure-banner-text">
-      This app reports anonymous usage events to help us keep it healthy.
-      No account, no tracking cookies, no third-party analytics. You can change this any time.
-    </p>
+    <p class="disclosure-banner-text">${t('disclosureBanner.text')}</p>
     <div class="disclosure-banner-actions">
       <button
         type="button"
         id="disclosure-banner-settings"
         class="disclosure-banner-btn disclosure-banner-btn-secondary"
-      >Privacy settings</button>
+      >${t('disclosureBanner.settings')}</button>
       <a
         id="disclosure-banner-policy"
         class="disclosure-banner-link"
         href="/privacy"
         target="_blank"
         rel="noopener"
-      >Read policy</a>
+      >${t('disclosureBanner.policy')}</a>
       <button
         type="button"
         id="disclosure-banner-dismiss"
         class="disclosure-banner-btn disclosure-banner-btn-primary"
-        aria-label="Dismiss privacy notice"
-      >Got it</button>
+        aria-label="${t('disclosureBanner.dismiss.aria')}"
+      >${t('disclosureBanner.dismiss')}</button>
     </div>
   `
   document.body.appendChild(banner)
@@ -151,7 +149,7 @@ function buildBadge(): HTMLElement {
   badge.id = 'disclosure-badge'
   badge.type = 'button'
   badge.className = 'disclosure-badge disclosure-badge--pulse'
-  badge.setAttribute('aria-label', 'Privacy notice — tap for details')
+  badge.setAttribute('aria-label', t('disclosureBanner.badge.aria'))
   badge.innerHTML = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M12 2 L4 5 V12 C4 17 7.5 21 12 22 C16.5 21 20 17 20 12 V5 L12 2 Z" fill="currentColor" />
@@ -234,7 +232,7 @@ export function showDisclosureBannerIfNeeded(): boolean {
     // a button, so it defers to the app-wide #a11y-announcer.
     // Without this, AT users would only learn about the privacy
     // notice if they happened to tab onto the badge.
-    announcePolite('Privacy notice available. A shield button in the top-left opens the details.')
+    announcePolite(t('disclosureBanner.announce'))
     // Settle the pulse after a few seconds even if the user
     // doesn't tap — pulse is for attention on first appearance,
     // not for steady nagging. Capture the badge in the closure so

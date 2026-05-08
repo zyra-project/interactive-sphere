@@ -11,6 +11,7 @@ import {
 } from '../services/downloadService'
 import { escapeHtml, escapeAttr } from './domUtils'
 import { logger } from '../utils/logger'
+import { t } from '../i18n'
 
 // Lazy-load convertFileSrc to avoid pulling Tauri-only code into web builds.
 let convertFileSrc: ((path: string) => string) | null = null
@@ -36,8 +37,8 @@ export async function initDownloadUI(): Promise<void> {
     const btn = document.createElement('button')
     btn.id = 'download-mgr-btn'
     btn.className = 'map-ctrl-btn'
-    btn.title = 'Download Manager'
-    btn.setAttribute('aria-label', 'Download manager')
+    btn.title = t('downloadUI.button.title')
+    btn.setAttribute('aria-label', t('downloadUI.button.aria'))
     btn.innerHTML = '&#8615;'
     btn.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -93,17 +94,17 @@ async function renderPanel(): Promise<void> {
   if (downloads.length === 0) {
     panel.innerHTML = `
       <div class="dl-mgr-title">
-        <span>Downloads</span>
+        <span>${escapeHtml(t('downloadUI.title'))}</span>
       </div>
-      <div class="dl-mgr-empty">No datasets downloaded yet.<br>Use the &#8615; button on a dataset card to download it for offline use.</div>
+      <div class="dl-mgr-empty">${t('downloadUI.empty')}</div>
     `
     return
   }
 
   let html = `
     <div class="dl-mgr-title">
-      <span>Downloads</span>
-      <span class="dl-mgr-size">${formatBytes(totalSize)} total</span>
+      <span>${escapeHtml(t('downloadUI.title'))}</span>
+      <span class="dl-mgr-size">${escapeHtml(t('downloadUI.totalSize', { size: formatBytes(totalSize) }))}</span>
     </div>
   `
 
@@ -119,7 +120,7 @@ async function renderPanel(): Promise<void> {
           <div class="dl-mgr-name" title="${escapeAttr(dl.title)}">${escapeHtml(dl.title)}</div>
           <div class="dl-mgr-meta">${dl.kind} · ${formatBytes(dl.total_bytes)}</div>
         </div>
-        <button class="dl-mgr-delete" data-id="${escapeAttr(dl.dataset_id)}" title="Delete download" aria-label="Delete ${escapeAttr(dl.title)}">&times;</button>
+        <button class="dl-mgr-delete" data-id="${escapeAttr(dl.dataset_id)}" title="${escapeAttr(t('downloadUI.delete.title'))}" aria-label="${escapeAttr(t('downloadUI.delete.aria', { title: dl.title }))}">&times;</button>
       </div>
     `
   }
@@ -149,7 +150,7 @@ async function renderPanel(): Promise<void> {
       if (browseBtn) {
         browseBtn.classList.remove('downloaded', 'downloading')
         browseBtn.innerHTML = '&#8615;'
-        browseBtn.title = 'Download for offline use'
+        browseBtn.title = t('browse.download.title')
       }
       renderPanel()
     })
@@ -169,7 +170,7 @@ function handleComplete(datasetId: string): void {
     btn.classList.remove('downloading')
     btn.classList.add('downloaded')
     btn.innerHTML = '&#10003;'
-    btn.title = 'Downloaded'
+    btn.title = t('downloadUI.downloaded.title')
   }
   // Refresh panel if open
   if (panelOpen) renderPanel()
@@ -182,7 +183,7 @@ function handleError(datasetId: string, error: string): void {
   if (btn) {
     btn.classList.remove('downloading')
     btn.innerHTML = '&#8615;'
-    btn.title = `Download failed: ${error}`
+    btn.title = t('downloadUI.failed.title', { error })
   }
 }
 
