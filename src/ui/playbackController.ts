@@ -315,6 +315,54 @@ function parseSRTTime(t: string): number {
 // --- Time seeking ---
 
 /**
+ * Validate a setTime request without performing the seek. Used by
+ * the chat panel to surface failures inline the moment a set-time
+ * action streams in (instead of waiting for the deferred execution
+ * after a load click). Same set of failure conditions as
+ * {@link seekToDate}, side-effect-free — the success path doesn't
+ * touch `video.currentTime` or pause playback. Reuses the same
+ * translated error keys so the inline-on-stream copy and the
+ * post-execution announce stay consistent.
+ */
+export function checkSeekToDate(
+  isoDate: string,
+  hlsService: HLSService | null,
+  appState: AppState,
+): { ok: true } | { ok: false; message: string } {
+  if (!hlsService) {
+    return { ok: false, message: t('playback.error.noVideoDataset') }
+  }
+  const video = hlsService.getVideo()
+  if (!video || !video.duration) {
+    return { ok: false, message: t('playback.error.videoNotReady') }
+  }
+  const dataset = appState.currentDataset
+  if (!dataset?.startTime || !dataset?.endTime) {
+    return { ok: false, message: t('playback.error.noTimeRange') }
+  }
+  const targetDate = new Date(isoDate)
+  if (isNaN(targetDate.getTime())) {
+    return { ok: false, message: t('playback.error.invalidDate') }
+  }
+  const start = new Date(dataset.startTime).getTime()
+  const end = new Date(dataset.endTime).getTime()
+  const totalMs = end - start
+  if (totalMs <= 0) {
+    return { ok: false, message: t('playback.error.invalidTimeRange') }
+  }
+  const targetMs = targetDate.getTime()
+  if (targetMs < start || targetMs > end) {
+    const startStr = dataset.startTime!.split('T')[0]
+    const endStr = dataset.endTime!.split('T')[0]
+    return {
+      ok: false,
+      message: t('playback.error.dateOutsideRange', { date: isoDate, start: startStr, end: endStr }),
+    }
+  }
+  return { ok: true }
+}
+
+/**
  * Seek a video dataset to a specific date within its time range.
  * Returns a result indicating success/failure with a human-readable message.
  */

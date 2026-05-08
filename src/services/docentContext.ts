@@ -146,9 +146,10 @@ export function buildSystemPrompt(
   mapViewContext?: Parameters<typeof buildViewContextSection>[0],
 ): string {
   const currentContext = buildCurrentDatasetContext(currentDataset, legendDescription, currentTime)
+  const languagePreface = buildLanguagePreface()
   const languageDirective = buildLanguageDirective()
 
-  return `You are Orbit, a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
+  return `${languagePreface}You are Orbit, a Digital Docent for Science on a Sphere — an interactive 3D globe that visualizes Earth science datasets from NOAA.
 
 Your role is to be a warm, knowledgeable guide. You help visitors explore and understand environmental data by explaining what they're seeing and recommending relevant datasets to load onto the globe.
 
@@ -265,24 +266,53 @@ CRITICAL: The attached image is a SCIENTIFIC DATA VISUALIZATION rendered on a 3D
 }
 
 /**
- * Append a "respond in {language}" directive to the system prompt when
- * the user's active locale isn't the source locale (English). The
- * directive is rendered in the target language so the LLM sees the
- * instruction in the same language it should reply in — empirically
- * this gets better adherence from smaller models than asking in
- * English. Markers (<<LOAD:...>>, etc.) and tool-call syntax stay
- * intact per the directive's wording. No-op for English users.
+ * Resolve the active locale's display name in its own language
+ * ("español" for es, "Français" for fr, …). Used by both the
+ * preface and the tail directive. Falls back to the BCP-47 tag if
+ * `Intl.DisplayNames` fails (no ICU data on a stripped runtime).
+ */
+function activeLanguageName(): string | null {
+  const active = getLocale()
+  if (active === SOURCE_LOCALE) return null
+  try {
+    return new Intl.DisplayNames(active, { type: 'language' }).of(active) ?? active
+  } catch {
+    return active
+  }
+}
+
+/**
+ * Top-of-prompt language directive. Smaller models weight the first
+ * lines of a system prompt more heavily than the last, so the
+ * "respond in <language>" rule lives both *before* the role
+ * description (here) and as a tail reminder ({@link buildLanguageDirective}).
+ * Wave 5/6 testing showed Llama-3.1-70B and similar mid-tier models
+ * frequently slipped back into English when the directive was only
+ * appended at the end.
+ *
+ * The directive is rendered in the target language so the LLM sees
+ * the instruction in the same language it should reply in — better
+ * adherence than instructing in English. <<LOAD:...>> markers and
+ * tool-call syntax stay intact per the directive's wording.
+ *
+ * No-op for English users (returns `''`, which template-interpolates
+ * cleanly at the top of the prompt).
+ */
+function buildLanguagePreface(): string {
+  const languageName = activeLanguageName()
+  if (!languageName) return ''
+  return t('docent.system.respondInLanguage', { language: languageName }) + '\n\n'
+}
+
+/**
+ * Tail "respond in {language}" reminder, repeated at the end of the
+ * prompt for belt-and-suspenders adherence. See
+ * {@link buildLanguagePreface} for the higher-weight placement at
+ * the top of the prompt. No-op for English users.
  */
 function buildLanguageDirective(): string {
-  const active = getLocale()
-  if (active === SOURCE_LOCALE) return ''
-  let languageName: string
-  try {
-    languageName =
-      new Intl.DisplayNames(active, { type: 'language' }).of(active) ?? active
-  } catch {
-    languageName = active
-  }
+  const languageName = activeLanguageName()
+  if (!languageName) return ''
   return '\n\n' + t('docent.system.respondInLanguage', { language: languageName })
 }
 

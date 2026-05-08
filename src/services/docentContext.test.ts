@@ -177,6 +177,35 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Orbit')
   })
 
+  it('places the language directive BEFORE the role description for non-English locales', async () => {
+    // Wave 5/6 testing showed mid-tier models (Llama-3.1-70B, etc.)
+    // ignored a respond-in-language directive appended at the end of
+    // the prompt. Top-of-prompt placement gets noticeably better
+    // adherence — this test pins the order so a future refactor that
+    // accidentally moves the directive back to the tail is caught.
+    const { setLocale, SOURCE_LOCALE } = await import('../i18n')
+    await setLocale('es')
+    try {
+      const prompt = buildSystemPrompt(datasets, null)
+      const directiveIdx = prompt.indexOf('Responde en')
+      const roleIdx = prompt.indexOf('You are Orbit')
+      expect(directiveIdx).toBeGreaterThanOrEqual(0)
+      expect(roleIdx).toBeGreaterThan(directiveIdx)
+    } finally {
+      await setLocale(SOURCE_LOCALE)
+    }
+  })
+
+  it('omits the language directive entirely for English (source locale)', () => {
+    // No-op for English — the prompt template assumes English by
+    // default, so the directive would just be noise.
+    const prompt = buildSystemPrompt(datasets, null)
+    expect(prompt).not.toContain('Respond in English')
+    expect(prompt).not.toContain('Responde en')
+    // Sanity: still starts with the role description.
+    expect(prompt.trimStart().startsWith('You are Orbit')).toBe(true)
+  })
+
   it('includes current dataset context', () => {
     const prompt = buildSystemPrompt(datasets, makeDataset())
     expect(prompt).toContain('Sea Surface Temperature')

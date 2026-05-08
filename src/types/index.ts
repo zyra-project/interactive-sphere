@@ -209,7 +209,21 @@ export type ChatRole = 'user' | 'docent'
 export type ChatAction =
   | { type: 'load-dataset'; datasetId: string; datasetTitle: string }
   | { type: 'fly-to'; lat: number; lon: number; altitude?: number }
-  | { type: 'set-time'; isoDate: string }
+  | {
+      /** Seek the loaded time-enabled dataset to {@link isoDate}. */
+      type: 'set-time'
+      isoDate: string
+      /**
+       * Translated error message populated by an eager dry-check at
+       * stream time — surfaces "no time-enabled dataset loaded",
+       * "date out of range", etc. inline as soon as the action
+       * arrives, instead of waiting for the deferred execution
+       * after a load click. Renderer flips to the error styling
+       * when set; otherwise shows the optimistic "Seeking to X"
+       * status.
+       */
+      error?: string
+    }
   | { type: 'fit-bounds'; bounds: [number, number, number, number]; label?: string }
   | { type: 'add-marker'; lat: number; lng: number; label?: string }
   | { type: 'toggle-labels'; visible: boolean }

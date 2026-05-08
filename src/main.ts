@@ -44,6 +44,7 @@ import {
   togglePlayPause, rewind, fastForward, stepFrame, onScrub,
   updatePlayButton, toggleCaptions, resetPlaybackState, initPlaybackPositioning,
   seekToDate,
+  checkSeekToDate,
   type PlaybackState,
 } from './ui/playbackController'
 import {
@@ -1605,6 +1606,7 @@ class InteractiveSphere {
         if (isVrActive()) void flyToOnGlobe(lat, lon)
       },
       onSetTime: (isoDate) => seekToDate(isoDate, this.hlsService, this.appState, this.playback),
+      canSetTime: (isoDate) => checkSeekToDate(isoDate, this.hlsService, this.appState),
       onFitBounds: (bounds, _label) => { this.renderer?.fitBounds(bounds) },
       onAddMarker: (lat, lng, label) => { this.renderer?.addMarker(lat, lng, label) },
       onToggleLabels: (visible) => {

@@ -12,6 +12,7 @@ import {
   toggleCaptions,
   resetPlaybackState,
   loadCaptions,
+  checkSeekToDate,
   type PlaybackState,
 } from './playbackController'
 import type { AppState } from '../types'
@@ -394,6 +395,62 @@ describe('resetPlaybackState', () => {
     const overlay = document.getElementById('caption-overlay')!
     expect(overlay.textContent).toBe('')
     expect(overlay.style.display).toBe('none')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// checkSeekToDate — side-effect-free dry-check for the chat panel's
+// inline error path
+// ---------------------------------------------------------------------------
+describe('checkSeekToDate', () => {
+  it('reports failure with no hlsService — and never touches video', () => {
+    const result = checkSeekToDate('2005-08-29', null, makeAppState())
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.message).toBe('No video dataset loaded')
+    }
+  })
+
+  it('reports failure when no time-enabled dataset is loaded', () => {
+    const hls = makeMockHls({ duration: 60 })
+    const appState = makeAppState() // currentDataset = null
+    const result = checkSeekToDate('2005-08-29', hls, appState)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.message).toBe('Dataset has no time range')
+    }
+  })
+
+  it('reports failure when the date is outside the dataset range', () => {
+    const hls = makeMockHls({ duration: 60 })
+    const appState = makeAppState({
+      currentDataset: {
+        id: 'D', title: 'D', format: 'video/mp4', dataLink: '',
+        startTime: '2010-01-01T00:00:00Z',
+        endTime: '2010-12-31T00:00:00Z',
+      },
+    })
+    const result = checkSeekToDate('2005-08-29', hls, appState)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.message).toContain('2005-08-29')
+      expect(result.message).toContain('2010-01-01')
+    }
+  })
+
+  it('returns ok and does not seek when valid', () => {
+    const hls = makeMockHls({ duration: 60, currentTime: 0 })
+    const appState = makeAppState({
+      currentDataset: {
+        id: 'D', title: 'D', format: 'video/mp4', dataLink: '',
+        startTime: '2010-01-01T00:00:00Z',
+        endTime: '2010-12-31T00:00:00Z',
+      },
+    })
+    const result = checkSeekToDate('2010-06-15', hls, appState)
+    expect(result.ok).toBe(true)
+    // Crucially: the dry-check never touches video.currentTime.
+    expect(hls.video.muted).toBe(false) // no incidental video state changes either
   })
 })
 

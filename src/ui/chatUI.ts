@@ -34,6 +34,15 @@ export interface ChatCallbacks {
   onLoadDataset: (id: string) => void
   onFlyTo: (lat: number, lon: number, altitude?: number) => void
   onSetTime: (isoDate: string) => { success: boolean; message: string }
+  /**
+   * Side-effect-free predicate: would `onSetTime(isoDate)` succeed
+   * right now? Used to surface set-time failures inline the moment
+   * the action streams in, rather than waiting for the deferred
+   * execution after a load-dataset click. Returning `null` means
+   * the host doesn't support eager checks — the SPA just renders
+   * the optimistic "Seeking to X" status as before.
+   */
+  canSetTime?: (isoDate: string) => { ok: true } | { ok: false; message: string }
   onFitBounds: (bounds: [number, number, number, number], label?: string) => void
   onAddMarker: (lat: number, lng: number, label?: string) => void
   onToggleLabels: (visible: boolean) => void
@@ -703,17 +712,38 @@ async function handleSend(): Promise<void> {
           scrollToBottom()
           break
 
-        case 'action':
+        case 'action': {
           if (!docentMsg.actions) docentMsg.actions = []
-          docentMsg.actions.push(chunk.action)
+          let action = chunk.action
+          // Eager dry-check for set-time so the user sees the
+          // failure ("no time-enabled dataset loaded", "date out
+          // of range") the moment the action streams in, rather
+          // than staring at an optimistic "Seeking to X" badge
+          // until they click some unrelated Load button. The
+          // dry-check is side-effect-free — actual seeking still
+          // happens later via executeGlobeAction. If the host
+          // doesn't expose canSetTime, we fall through to the
+          // optimistic render as before.
+          if (action.type === 'set-time' && callbacks.canSetTime) {
+            const probe = callbacks.canSetTime(action.isoDate)
+            if (!probe.ok) {
+              action = { ...action, error: probe.message }
+            }
+          }
+          docentMsg.actions.push(action)
           // Globe-control actions are always deferred during streaming;
-          // flushed at 'done' (immediate) or after dataset loads (deferred)
-          if (chunk.action.type !== 'load-dataset') {
-            pendingGlobeActions.push(chunk.action)
+          // flushed at 'done' (immediate) or after dataset loads
+          // (deferred). A set-time we already know will fail still
+          // gets queued so it can re-evaluate after the user loads
+          // a dataset that might satisfy it (different time-enabled
+          // dataset → different success conditions).
+          if (action.type !== 'load-dataset') {
+            pendingGlobeActions.push(action)
           }
           updateStreamingMessage(docentMsg)
           scrollToBottom()
           break
+        }
 
         case 'auto-load': {
           // Auto-load the top result immediately
@@ -1004,6 +1034,13 @@ function renderActions(actions: ChatAction[]): string {
       return `<span class="chat-action-status" aria-label="${escapeAttr(flying)}">${escapeHtml(flying)}</span>`
     }
     if (a.type === 'set-time') {
+      // Eager dry-check at stream time may have stamped an `error`
+      // on the action — render that with the failure styling
+      // immediately, matching what executeGlobeAction would write
+      // post-execution. Same pre-translated message in both paths.
+      if (a.error) {
+        return `<span class="chat-action-status chat-action-status-err" aria-label="${escapeAttr(a.error)}">${escapeHtml(a.error)}</span>`
+      }
       const seeking = t('chat.action.seekingTo', { date: a.isoDate })
       return `<span class="chat-action-status" aria-label="${escapeAttr(seeking)}">${escapeHtml(seeking)}</span>`
     }
