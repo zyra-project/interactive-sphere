@@ -180,8 +180,10 @@ src/i18n/
   persistence.ts         localStorage 'sos-locale-prefs' (mirrors viewPreferences)
   rtl.ts                 RTL_LOCALES set + dir helpers
   applyI18nAttributes.ts DOM walker for data-i18n* attributes
-  messages.ts            GENERATED, gitignored
-  messages.types.ts      GENERATED, gitignored — exports MessageKey union
+  messages.ts            GENERATED, gitignored — entry module
+  messages.<locale>.ts   GENERATED per non-source locale, gitignored
+                         (one chunk per locale; lazy-loaded by
+                         localeLoaders in messages.ts)
   __tests__/index.test.ts
   __tests__/detect.test.ts
 ```
@@ -207,11 +209,17 @@ joins `src/styles/tokens.css` in `.gitignore`.
 3. Diff every non-source locale's keys against `en.json`. Missing
    in target = warn; extra in target = fail; missing in source =
    fail.
-4. Emit `src/i18n/messages.ts` (object literal of all locales)
-   and `src/i18n/messages.types.ts` (`MessageKey` union from
-   `keyof typeof messages.en`).
+4. Emit `src/i18n/messages.ts` (entry: English bundle inline,
+   `Locale` / `MessageKey` types, `localeLoaders` map for lazy
+   chunks) plus one `src/i18n/messages.<locale>.ts` per
+   non-source locale (the lazy chunks).
 5. `--check` flag: regenerate to memory, byte-compare, exit 1 on
    drift.
+6. Forbidden-pattern gate: reject any locale value containing
+   `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`,
+   `<style>`, on*-handlers, `javascript:` / `vbscript:` / `data:`
+   URLs. Pairs with the runtime allowlist sanitizer in
+   `src/ui/sanitizeHtml.ts` for the help-guide HTML blobs.
 
 ### Loading model
 
@@ -389,7 +397,7 @@ always available as the developer escape hatch.**
   (`locales/es.json @es-reviewers-team`). PRs require one native-
   speaker reviewer; if no reviewer team exists for a language,
   the locale stays in `experimental` status, hidden from the
-  public picker behind `?locale=<code>`.
+  public picker behind `?lang=<code>`.
 - **Coverage gate**: locale ships in the picker only when ≥80% of
   keys are translated. Below 80% = experimental, query-flag-only.
 - **Stale flagging**: locale JSON entries store `{ value,
@@ -432,7 +440,7 @@ the project license, no separate CLA.
 **Modify:**
 
 - [`.gitignore`](../.gitignore) — add `src/i18n/messages.ts` and
-  `src/i18n/messages.types.ts`
+  `src/i18n/messages.*.ts` (the per-locale lazy chunks)
 - [`package.json`](../package.json) — add `locales` and
   `check:locales` scripts; chain into `postinstall`, `predev`,
   `prebuild`, `build`, `type-check`

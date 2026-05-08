@@ -17,7 +17,7 @@ import { submitGeneralFeedback } from '../services/generalFeedbackService'
 import { closeChat } from './chatUI'
 import { logger } from '../utils/logger'
 import { emit } from '../analytics'
-import { t, type MessageKey } from '../i18n'
+import { t, tAttr, tHtml, type MessageKey } from '../i18n'
 import { sanitizeGuideHtml } from './sanitizeHtml'
 
 const IS_TAURI = !!(window as any).__TAURI__
@@ -71,25 +71,28 @@ function renderGuideHtml(): string {
     .join('\n')
 }
 
-/** Build the feedback tab HTML (form). */
+/** Build the feedback tab HTML (form). Translator content arrives
+ *  via Weblate (untrusted); every t() lands in innerHTML so each
+ *  one flows through tHtml (text content) or tAttr (quoted attr
+ *  value) for defense in depth. */
 function renderFeedbackHtml(): string {
   return `
     <form id="help-feedback-form" novalidate>
-      <fieldset class="help-form-kind" role="radiogroup" aria-label="${t('help.feedback.kind.aria')}">
+      <fieldset class="help-form-kind" role="radiogroup" aria-label="${tAttr('help.feedback.kind.aria')}">
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="bug" checked />
-          <span>${t('help.feedback.kind.bug')}</span>
+          <span>${tHtml('help.feedback.kind.bug')}</span>
         </label>
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="feature" />
-          <span>${t('help.feedback.kind.feature')}</span>
+          <span>${tHtml('help.feedback.kind.feature')}</span>
         </label>
         <label class="help-kind-option">
           <input type="radio" name="help-kind" value="other" />
-          <span>${t('help.feedback.kind.other')}</span>
+          <span>${tHtml('help.feedback.kind.other')}</span>
         </label>
       </fieldset>
-      <label class="help-form-label" for="help-feedback-message">${t('help.feedback.message.label')}</label>
+      <label class="help-form-label" for="help-feedback-message">${tHtml('help.feedback.message.label')}</label>
       <textarea
         id="help-feedback-message"
         name="message"
@@ -97,27 +100,27 @@ function renderFeedbackHtml(): string {
         maxlength="${MESSAGE_MAX}"
         required
         aria-describedby="help-feedback-counter"
-        placeholder="${t('help.feedback.message.placeholder')}"
+        placeholder="${tAttr('help.feedback.message.placeholder')}"
       ></textarea>
       <div class="help-form-meta">
-        <span id="help-feedback-counter" aria-live="polite">${t('help.feedback.counter', { count: 0, max: MESSAGE_MAX })}</span>
+        <span id="help-feedback-counter" aria-live="polite">${tHtml('help.feedback.counter', { count: 0, max: MESSAGE_MAX })}</span>
       </div>
-      <label class="help-form-label" for="help-feedback-contact">${t('help.feedback.contact.label')}</label>
+      <label class="help-form-label" for="help-feedback-contact">${tHtml('help.feedback.contact.label')}</label>
       <input
         id="help-feedback-contact"
         name="contact"
         type="text"
         maxlength="200"
-        placeholder="${t('help.feedback.contact.placeholder')}"
+        placeholder="${tAttr('help.feedback.contact.placeholder')}"
         autocomplete="off"
       />
       <label class="help-form-check">
         <input type="checkbox" id="help-feedback-screenshot" name="screenshot" />
-        <span>${t('help.feedback.screenshot.label')}</span>
+        <span>${tHtml('help.feedback.screenshot.label')}</span>
       </label>
       <div id="help-feedback-status" class="help-form-status" role="status" aria-live="polite"></div>
       <div class="help-form-actions">
-        <button type="submit" id="help-feedback-submit" class="help-btn-primary">${t('help.feedback.submit')}</button>
+        <button type="submit" id="help-feedback-submit" class="help-btn-primary">${tHtml('help.feedback.submit')}</button>
       </div>
     </form>
   `

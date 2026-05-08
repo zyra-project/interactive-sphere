@@ -28,7 +28,7 @@
 
 import { emit } from '../analytics'
 import { openPrivacyUI } from './privacyUI'
-import { t } from '../i18n'
+import { t, tAttr, tHtml } from '../i18n'
 
 const STORAGE_KEY = 'sos-disclosure-seen'
 
@@ -113,29 +113,32 @@ function buildBanner(): HTMLElement {
   banner.id = 'disclosure-banner'
   banner.className = 'disclosure-banner'
   banner.setAttribute('role', 'region')
+  // setAttribute is API-level (browser handles attribute escaping
+  // internally), so plain t() is safe here. innerHTML below is
+  // string-level: every translated value flows through tHtml/tAttr.
   banner.setAttribute('aria-label', t('disclosureBanner.aria'))
   banner.setAttribute('aria-live', 'polite')
   banner.innerHTML = `
-    <p class="disclosure-banner-text">${t('disclosureBanner.text')}</p>
+    <p class="disclosure-banner-text">${tHtml('disclosureBanner.text')}</p>
     <div class="disclosure-banner-actions">
       <button
         type="button"
         id="disclosure-banner-settings"
         class="disclosure-banner-btn disclosure-banner-btn-secondary"
-      >${t('disclosureBanner.settings')}</button>
+      >${tHtml('disclosureBanner.settings')}</button>
       <a
         id="disclosure-banner-policy"
         class="disclosure-banner-link"
         href="/privacy"
         target="_blank"
         rel="noopener"
-      >${t('disclosureBanner.policy')}</a>
+      >${tHtml('disclosureBanner.policy')}</a>
       <button
         type="button"
         id="disclosure-banner-dismiss"
         class="disclosure-banner-btn disclosure-banner-btn-primary"
-        aria-label="${t('disclosureBanner.dismiss.aria')}"
-      >${t('disclosureBanner.dismiss')}</button>
+        aria-label="${tAttr('disclosureBanner.dismiss.aria')}"
+      >${tHtml('disclosureBanner.dismiss')}</button>
     </div>
   `
   document.body.appendChild(banner)

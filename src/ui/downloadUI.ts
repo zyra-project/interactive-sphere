@@ -11,7 +11,8 @@ import {
 } from '../services/downloadService'
 import { escapeHtml, escapeAttr } from './domUtils'
 import { logger } from '../utils/logger'
-import { t } from '../i18n'
+import { t, tAttr } from '../i18n'
+import { sanitizeGuideHtml } from './sanitizeHtml'
 
 // Lazy-load convertFileSrc to avoid pulling Tauri-only code into web builds.
 let convertFileSrc: ((path: string) => string) | null = null
@@ -37,6 +38,8 @@ export async function initDownloadUI(): Promise<void> {
     const btn = document.createElement('button')
     btn.id = 'download-mgr-btn'
     btn.className = 'map-ctrl-btn'
+    // setAttribute / .title are API-level — the browser handles
+    // attribute escaping internally, so plain t() is safe.
     btn.title = t('downloadUI.button.title')
     btn.setAttribute('aria-label', t('downloadUI.button.aria'))
     btn.innerHTML = '&#8615;'
@@ -92,11 +95,15 @@ async function renderPanel(): Promise<void> {
   const totalSize = await getDownloadsSize()
 
   if (downloads.length === 0) {
+    // The empty-state intentionally contains a <br> for line wrap.
+    // Run the value through sanitizeGuideHtml so the <br> survives
+    // (it's in the allowlist) but a translator can't slip in
+    // <img src=...> or other tags. Title is plain text → escapeHtml.
     panel.innerHTML = `
       <div class="dl-mgr-title">
         <span>${escapeHtml(t('downloadUI.title'))}</span>
       </div>
-      <div class="dl-mgr-empty">${t('downloadUI.empty')}</div>
+      <div class="dl-mgr-empty">${sanitizeGuideHtml(t('downloadUI.empty'))}</div>
     `
     return
   }
@@ -118,9 +125,9 @@ async function renderPanel(): Promise<void> {
         ${thumbHtml}
         <div class="dl-mgr-info">
           <div class="dl-mgr-name" title="${escapeAttr(dl.title)}">${escapeHtml(dl.title)}</div>
-          <div class="dl-mgr-meta">${dl.kind} · ${formatBytes(dl.total_bytes)}</div>
+          <div class="dl-mgr-meta">${escapeHtml(dl.kind)} · ${escapeHtml(formatBytes(dl.total_bytes))}</div>
         </div>
-        <button class="dl-mgr-delete" data-id="${escapeAttr(dl.dataset_id)}" title="${escapeAttr(t('downloadUI.delete.title'))}" aria-label="${escapeAttr(t('downloadUI.delete.aria', { title: dl.title }))}">&times;</button>
+        <button class="dl-mgr-delete" data-id="${escapeAttr(dl.dataset_id)}" title="${tAttr('downloadUI.delete.title')}" aria-label="${tAttr('downloadUI.delete.aria', { title: dl.title })}">&times;</button>
       </div>
     `
   }

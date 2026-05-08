@@ -14,7 +14,7 @@ before it lands.
   enforces this on its outbound PRs.
 - Locales appear in the Tools → Language picker once they reach
   ≥80% key coverage. Below that, they're available behind the
-  `?locale=<code>` query flag for testing.
+  `?lang=<code>` query flag for testing.
 
 ---
 
@@ -124,7 +124,7 @@ in front of step 2.
    but ugly.
 4. The locale appears in the picker once it reaches **≥80% key
    coverage**. Below that threshold the locale is hidden from the
-   public picker but is reachable via `?locale=<bcp47>` query
+   public picker but is reachable via `?lang=<bcp47>` query
    flag for testing.
 
 ---
@@ -155,7 +155,7 @@ behind the query flag until a native-speaker team forms.
 
 - **≥80% coverage** before a locale appears in the public Tools
   → Language picker. Enforced by the codegen at build time
-  (warnings only — translations still ship for `?locale=<code>`
+  (warnings only — translations still ship for `?lang=<code>`
   testing); the picker reads coverage from a small generated
   manifest.
 - **Stale-source flagging**: each entry stores a hash of its

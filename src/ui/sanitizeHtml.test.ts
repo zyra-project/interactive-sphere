@@ -63,10 +63,15 @@ describe('sanitizeGuideHtml', () => {
     expect(out).toContain('after')
   })
 
-  it('unwraps <iframe> and discards its content', () => {
+  it('unwraps <iframe> tag (its src/attrs go away; text content survives but is inert)', () => {
+    // Same shape as the <script> case above — the disallowed tag
+    // is dropped, attributes (incl. the hostile `src`) drop with
+    // it, and the textContent ("trapped") is unwrapped to a
+    // sibling text node. That's just text, not an embedded frame.
     const out = sanitizeGuideHtml('<p>Hello</p><iframe src="https://evil.example">trapped</iframe>')
     expect(out).not.toContain('<iframe')
     expect(out).not.toContain('evil.example')
+    expect(out).toContain('Hello')
   })
 
   it('returns empty string when document is undefined (SSR / non-DOM)', () => {

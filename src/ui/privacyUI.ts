@@ -27,7 +27,8 @@ import {
   setTier,
 } from '../analytics'
 import type { TelemetryTier } from '../types'
-import { t, type MessageKey } from '../i18n'
+import { t, tAttr, tHtml, type MessageKey } from '../i18n'
+import { escapeHtml } from './domUtils'
 
 let mounted = false
 let isOpen = false
@@ -73,28 +74,28 @@ function buildPanel(): HTMLElement {
       aria-describedby="privacy-ui-desc"
     >
       <header class="privacy-ui-header">
-        <h2 id="privacy-ui-title">${t('privacy.title')}</h2>
+        <h2 id="privacy-ui-title">${tHtml('privacy.title')}</h2>
         <button
           type="button"
           id="privacy-ui-close"
           class="privacy-ui-close"
-          aria-label="${t('privacy.close.aria')}"
+          aria-label="${tAttr('privacy.close.aria')}"
         >&#x2715;</button>
       </header>
-      <p id="privacy-ui-desc" class="privacy-ui-desc">${t('privacy.desc')}</p>
-      <fieldset class="privacy-ui-tiers" role="radiogroup" aria-label="${t('privacy.radiogroup.aria')}">
-        <legend class="sr-only">${t('privacy.radiogroup.aria')}</legend>
+      <p id="privacy-ui-desc" class="privacy-ui-desc">${tHtml('privacy.desc')}</p>
+      <fieldset class="privacy-ui-tiers" role="radiogroup" aria-label="${tAttr('privacy.radiogroup.aria')}">
+        <legend class="sr-only">${tHtml('privacy.radiogroup.aria')}</legend>
         ${renderTierOption('essential')}
         ${renderTierOption('research')}
         ${renderTierOption('off')}
       </fieldset>
       <div class="privacy-ui-meta">
         <div class="privacy-ui-session">
-          <span class="privacy-ui-session-label">${t('privacy.session.label')}</span>
+          <span class="privacy-ui-session-label">${tHtml('privacy.session.label')}</span>
           <code id="privacy-ui-session-id" class="privacy-ui-session-id"></code>
-          <span class="privacy-ui-session-hint">${t('privacy.session.hint')}</span>
+          <span class="privacy-ui-session-hint">${tHtml('privacy.session.hint')}</span>
         </div>
-        <a class="privacy-ui-policy-link" href="/privacy" target="_blank" rel="noopener">${t('privacy.policyLink')}</a>
+        <a class="privacy-ui-policy-link" href="/privacy" target="_blank" rel="noopener">${tHtml('privacy.policyLink')}</a>
       </div>
       <div id="privacy-ui-status" class="privacy-ui-status" role="status" aria-live="polite"></div>
     </section>
@@ -113,8 +114,8 @@ function renderTierOption(tier: TelemetryTier): string {
         data-tier="${tier}"
       />
       <span class="privacy-ui-tier-body">
-        <span class="privacy-ui-tier-label">${tierLabel(tier)}</span>
-        <span class="privacy-ui-tier-desc">${tierDesc(tier)}</span>
+        <span class="privacy-ui-tier-label">${escapeHtml(tierLabel(tier))}</span>
+        <span class="privacy-ui-tier-desc">${escapeHtml(tierDesc(tier))}</span>
       </span>
     </label>
   `

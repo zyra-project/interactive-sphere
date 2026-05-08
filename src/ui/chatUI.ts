@@ -268,14 +268,46 @@ function executeGlobeAction(action: ChatAction): void {
     callbacks.onFlyTo(action.lat, action.lon, action.altitude)
   } else if (action.type === 'set-time') {
     const result = callbacks.onSetTime(action.isoDate)
+    // Find the rendered status span for THIS action. The eager
+    // dry-check at stream time may have stamped an `error` on
+    // the action and rendered it with failure styling; if the
+    // deferred execution now succeeds (user loaded a different
+    // time-enabled dataset), the stale error styling has to clear,
+    // and the underlying action's `error` field has to come off
+    // so a re-render (panel close + reopen) doesn't flash the
+    // failure state again.
+    //
+    // Match by ISO date substring across status spans — the
+    // optimistic "Seeking to {date}" badge embeds it, and the
+    // dry-check failure messages do too for date-out-of-range
+    // cases. For "no dataset loaded" failures the date isn't in
+    // the badge text, so substring match miss is acceptable: the
+    // execution path can only succeed once a dataset IS loaded,
+    // at which point the badge text will have been re-rendered
+    // through the action's updated `error`-cleared state.
+    const statusEls = document.querySelectorAll('.chat-action-status')
     if (!result.success) {
       callbacks.announce(result.message)
-      // Update the status indicator in the DOM to show the error
-      const statusEls = document.querySelectorAll('.chat-action-status')
+      action.error = result.message
       for (const el of statusEls) {
-        if (el.textContent?.includes(action.isoDate)) {
+        if (el.textContent?.includes(action.isoDate) || el.textContent === action.error) {
           el.textContent = result.message
           el.classList.add('chat-action-status-err')
+        }
+      }
+    } else {
+      // Successful execution clears any prior eager-dry-check
+      // error stamp so the action persists clean in message
+      // history (and re-renders without the failure styling).
+      delete action.error
+      const seeking = t('chat.action.seekingTo', { date: action.isoDate })
+      for (const el of statusEls) {
+        if (
+          el.classList.contains('chat-action-status-err')
+          && el.textContent?.includes(action.isoDate)
+        ) {
+          el.classList.remove('chat-action-status-err')
+          el.textContent = seeking
         }
       }
     }

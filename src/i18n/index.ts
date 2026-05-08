@@ -19,6 +19,7 @@ import {
   type MessageKey,
 } from './messages'
 import { directionFor } from './rtl'
+import { escapeAttr, escapeHtml } from '../ui/domUtils'
 
 export {
   enMessages,
@@ -143,6 +144,36 @@ export function interpolate(
     const v = params[name]
     return v === undefined ? match : String(v)
   })
+}
+
+/**
+ * `t()` + HTML-escape the result. For interpolating translations
+ * into element text content inside an innerHTML template literal.
+ * Translator input arrives via Weblate (untrusted); without the
+ * escape, a translation containing `<` or `&` would inject markup
+ * even though our build-time forbidden-pattern check rejects the
+ * obvious script-class hostile substrings. Use this everywhere a
+ * translation lands as element content; reserve raw `t()` only
+ * for blobs that pass through {@link sanitizeGuideHtml}.
+ */
+export function tHtml<K extends MessageKey>(
+  key: K,
+  params?: Readonly<Record<string, string | number>>,
+): string {
+  return escapeHtml(t(key, params))
+}
+
+/**
+ * `t()` + attribute-escape the result. For interpolating
+ * translations into quoted HTML attribute values. Same defense
+ * as {@link tHtml} — translator-supplied `"` characters would
+ * otherwise break out of the attribute and inject siblings.
+ */
+export function tAttr<K extends MessageKey>(
+  key: K,
+  params?: Readonly<Record<string, string | number>>,
+): string {
+  return escapeAttr(t(key, params))
 }
 
 /**

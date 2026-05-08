@@ -46,6 +46,8 @@ import {
   NATIVE_NAMES,
   SUPPORTED_LOCALES,
   t,
+  tAttr,
+  tHtml,
   type Locale,
 } from '../i18n'
 import { saveLocalePref } from '../i18n/persistence'
@@ -132,98 +134,104 @@ export function initToolsMenu(
 
   container.classList.remove('hidden')
   container.classList.add('tools-menu-host')
+  // Every translated string flows through tHtml/tAttr because
+  // these blobs land directly in innerHTML — translator content
+  // arrives via Weblate (untrusted) and the build-time forbidden-
+  // pattern gate catches script-class HTML but not e.g. <img src>
+  // or attribute breakouts. tHtml escapes for element text;
+  // tAttr escapes for quoted attribute values.
   container.innerHTML = `
-    <button type="button" class="tools-menu-btn tools-menu-browse" id="tools-menu-browse" title="${t('tools.browse.aria')}" aria-label="${t('tools.browse.aria')}">
+    <button type="button" class="tools-menu-btn tools-menu-browse" id="tools-menu-browse" title="${tAttr('tools.browse.aria')}" aria-label="${tAttr('tools.browse.aria')}">
       <span class="tools-menu-btn-icon" aria-hidden="true">&#x1F5C2;&#xFE0E;</span>
-      <span class="tools-menu-btn-label">${t('tools.browse.label')}</span>
+      <span class="tools-menu-btn-label">${tHtml('tools.browse.label')}</span>
     </button>
-    <button type="button" class="tools-menu-btn tools-menu-toggle" id="tools-menu-toggle" title="${t('tools.toggle.aria')}" aria-label="${t('tools.toggle.aria')}" aria-expanded="false" aria-haspopup="true">
+    <button type="button" class="tools-menu-btn tools-menu-toggle" id="tools-menu-toggle" title="${tAttr('tools.toggle.aria')}" aria-label="${tAttr('tools.toggle.aria')}" aria-expanded="false" aria-haspopup="true">
       <span class="tools-menu-btn-icon" aria-hidden="true">&#x1F527;&#xFE0E;</span>
     </button>
-    <div id="tools-menu-popover" class="tools-menu-popover hidden" role="dialog" aria-modal="false" aria-label="${t('tools.toggle.aria')}">
+    <div id="tools-menu-popover" class="tools-menu-popover hidden" role="dialog" aria-modal="false" aria-label="${tAttr('tools.toggle.aria')}">
       <div class="tools-menu-popover-header">
-        <span class="tools-menu-popover-title">${t('tools.popover.title')}</span>
-        <button type="button" class="tools-menu-close" id="tools-menu-close" aria-label="${t('tools.close.aria')}">&#x2715;</button>
+        <span class="tools-menu-popover-title">${tHtml('tools.popover.title')}</span>
+        <button type="button" class="tools-menu-close" id="tools-menu-close" aria-label="${tAttr('tools.close.aria')}">&#x2715;</button>
       </div>
-      <section class="tools-menu-section" aria-label="${t('tools.section.view.aria')}">
-        <h4 class="tools-menu-section-title">${t('tools.section.view')}</h4>
+      <section class="tools-menu-section" aria-label="${tAttr('tools.section.view.aria')}">
+        <h4 class="tools-menu-section-title">${tHtml('tools.section.view')}</h4>
         <button type="button" class="tools-menu-item" id="tools-menu-labels" aria-pressed="false">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.toggles.labels')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.toggles.labels')}</span>
         </button>
         <button type="button" class="tools-menu-item" id="tools-menu-borders" aria-pressed="false">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.toggles.borders')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.toggles.borders')}</span>
         </button>
         <button type="button" class="tools-menu-item" id="tools-menu-terrain" aria-pressed="false">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.toggles.terrain')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.toggles.terrain')}</span>
         </button>
         <button type="button" class="tools-menu-item" id="tools-menu-autorotate" aria-pressed="false">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.toggles.autoRotate')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.toggles.autoRotate')}</span>
         </button>
         <div class="tools-menu-subsep" aria-hidden="true"></div>
         <button type="button" class="tools-menu-item active" id="tools-menu-info" aria-pressed="true">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.toggles.datasetInfo')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.toggles.datasetInfo')}</span>
         </button>
         <button type="button" class="tools-menu-item active" id="tools-menu-legend" aria-pressed="true">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.toggles.legend')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.toggles.legend')}</span>
         </button>
       </section>
-      <section class="tools-menu-section" aria-label="${t('tools.section.language.aria')}">
-        <h4 class="tools-menu-section-title">${t('tools.section.language')}</h4>
+      <section class="tools-menu-section" aria-label="${tAttr('tools.section.language.aria')}">
+        <h4 class="tools-menu-section-title">${tHtml('tools.section.language')}</h4>
         <div class="tools-menu-language-row">
-          <label for="tools-menu-language" class="sr-only">${t('tools.language.aria')}</label>
-          <select id="tools-menu-language" class="tools-menu-language-select" aria-label="${t('tools.language.aria')}">
+          <label for="tools-menu-language" class="sr-only">${tHtml('tools.language.aria')}</label>
+          <select id="tools-menu-language" class="tools-menu-language-select" aria-label="${tAttr('tools.language.aria')}">
             ${localeOptions}
           </select>
         </div>
       </section>
-      <section class="tools-menu-section" aria-label="${t('tools.section.layout.aria')}">
-        <h4 class="tools-menu-section-title">${t('tools.section.layout')}</h4>
-        <div class="tools-menu-layout-row" role="radiogroup" aria-label="${t('tools.layout.aria')}">
-          <button type="button" class="tools-menu-layout-btn${currentLayout === '1' ? ' active' : ''}" id="tools-menu-layout-1" aria-pressed="${currentLayout === '1'}" title="${t('tools.layout.single')}">1</button>
-          <button type="button" class="tools-menu-layout-btn${currentLayout === '2h' ? ' active' : ''}" id="tools-menu-layout-2h" aria-pressed="${currentLayout === '2h'}" title="${t('tools.layout.twoHorizontal')}">2&#x2194;</button>
-          <button type="button" class="tools-menu-layout-btn${currentLayout === '2v' ? ' active' : ''}" id="tools-menu-layout-2v" aria-pressed="${currentLayout === '2v'}" title="${t('tools.layout.twoVertical')}">2&#x2195;</button>
-          <button type="button" class="tools-menu-layout-btn${currentLayout === '4' ? ' active' : ''}" id="tools-menu-layout-4" aria-pressed="${currentLayout === '4'}" title="${t('tools.layout.four')}">4</button>
+      <section class="tools-menu-section" aria-label="${tAttr('tools.section.layout.aria')}">
+        <h4 class="tools-menu-section-title">${tHtml('tools.section.layout')}</h4>
+        <div class="tools-menu-layout-row" role="radiogroup" aria-label="${tAttr('tools.layout.aria')}">
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '1' ? ' active' : ''}" id="tools-menu-layout-1" aria-pressed="${currentLayout === '1'}" title="${tAttr('tools.layout.single')}">1</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '2h' ? ' active' : ''}" id="tools-menu-layout-2h" aria-pressed="${currentLayout === '2h'}" title="${tAttr('tools.layout.twoHorizontal')}">2&#x2194;</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '2v' ? ' active' : ''}" id="tools-menu-layout-2v" aria-pressed="${currentLayout === '2v'}" title="${tAttr('tools.layout.twoVertical')}">2&#x2195;</button>
+          <button type="button" class="tools-menu-layout-btn${currentLayout === '4' ? ' active' : ''}" id="tools-menu-layout-4" aria-pressed="${currentLayout === '4'}" title="${tAttr('tools.layout.four')}">4</button>
         </div>
       </section>
-      <section class="tools-menu-section" aria-label="${t('tools.section.actions.aria')}">
-        <h4 class="tools-menu-section-title">${t('tools.section.actions')}</h4>
+      <section class="tools-menu-section" aria-label="${tAttr('tools.section.actions.aria')}">
+        <h4 class="tools-menu-section-title">${tHtml('tools.section.actions')}</h4>
         <button type="button" class="tools-menu-item" id="tools-menu-clear">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.actions.clear')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.actions.clear')}</span>
         </button>
         <button type="button" class="tools-menu-item" id="tools-menu-share">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.actions.share')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.actions.share')}</span>
         </button>
       </section>
-      <section class="tools-menu-section" aria-label="${t('tools.section.orbit.aria')}">
-        <h4 class="tools-menu-section-title">${t('tools.section.orbit')}</h4>
+      <section class="tools-menu-section" aria-label="${tAttr('tools.section.orbit.aria')}">
+        <h4 class="tools-menu-section-title">${tHtml('tools.section.orbit')}</h4>
         <button type="button" class="tools-menu-item" id="tools-menu-orbit-settings">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.actions.orbitSettings')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.actions.orbitSettings')}</span>
         </button>
         ${gateMeetOrbit ? '' : `
         <a class="tools-menu-item tools-menu-item-link" id="tools-menu-meet-orbit" href="/orbit" target="_blank" rel="noopener">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.actions.meetOrbit')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.actions.meetOrbit')}</span>
         </a>`}
       </section>
-      <section class="tools-menu-section" aria-label="${t('tools.section.about.aria')}">
-        <h4 class="tools-menu-section-title">${t('tools.section.about')}</h4>
+      <section class="tools-menu-section" aria-label="${tAttr('tools.section.about.aria')}">
+        <h4 class="tools-menu-section-title">${tHtml('tools.section.about')}</h4>
         ${onOpenCredits ? `
         <button type="button" class="tools-menu-item" id="tools-menu-credits">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.actions.credits')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.actions.credits')}</span>
         </button>` : ''}
         <button type="button" class="tools-menu-item" id="tools-menu-privacy">
           <span class="tools-menu-item-check" aria-hidden="true"></span>
-          <span class="tools-menu-item-label">${t('tools.actions.privacy')}</span>
+          <span class="tools-menu-item-label">${tHtml('tools.actions.privacy')}</span>
         </button>
       </section>
     </div>
