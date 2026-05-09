@@ -213,13 +213,22 @@ joins `src/styles/tokens.css` in `.gitignore`.
 3. Diff every non-source locale's keys against `en.json`. Missing
    in target = warn; extra in target = fail; missing in source =
    fail.
-4. Emit `src/i18n/messages.ts` (entry: English bundle inline,
+4. **Canonicalize** each `locales/*.json` in place — 2-space
+   indent, LF, trailing newline, no interior blank lines, keys
+   sorted alphabetically, literal Unicode for BMP characters.
+   Matches Weblate's GitHub-bridge output exactly so translator
+   round-trips never produce whitespace-only diffs against `main`,
+   and `--check` in CI catches anyone who edits a locale without
+   running the codegen. The codegen is the canonical formatter —
+   developers can type whatever style they like; predev/prebuild
+   normalize before commit.
+5. Emit `src/i18n/messages.ts` (entry: English bundle inline,
    `Locale` / `MessageKey` types, `localeLoaders` map for lazy
    chunks) plus one `src/i18n/messages.<locale>.ts` per
    non-source locale (the lazy chunks).
-5. `--check` flag: regenerate to memory, byte-compare, exit 1 on
+6. `--check` flag: regenerate to memory, byte-compare, exit 1 on
    drift.
-6. Forbidden-pattern gate: reject any locale value containing
+7. Forbidden-pattern gate: reject any locale value containing
    `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`,
    `<style>`, on*-handlers, `javascript:` / `vbscript:` / `data:`
    URLs. Pairs with the runtime allowlist sanitizer in
