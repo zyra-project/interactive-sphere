@@ -169,7 +169,11 @@ useful, and stay JSON-Schema-validatable.
 locales/
   en.json                source of truth
   es.json                first non-English locale
-  schema.json            JSON Schema (flat string→string, key regex enforced)
+src/types/
+  locale.schema.json     JSON Schema (flat string→string, key regex
+                         enforced). Outside locales/ so Weblate's
+                         non-recursive locales/*.json filemask
+                         doesn't ingest it as a translation.
 scripts/
   generate-locales.ts    validate + emit (mirrors build-privacy-page.ts)
   generate-locales.test.ts
@@ -204,8 +208,8 @@ joins `src/styles/tokens.css` in `.gitignore`.
 [`scripts/build-privacy-page.ts`](../scripts/build-privacy-page.ts):
 
 1. Read `locales/*.json`.
-2. Validate `en.json` against `locales/schema.json` (flat
-   key→string, key regex `^[a-z][a-zA-Z0-9.]*$`).
+2. Validate `en.json` against `src/types/locale.schema.json`
+   (flat key→string, key regex `^[a-z][a-zA-Z0-9.]*$`).
 3. Diff every non-source locale's keys against `en.json`. Missing
    in target = warn; extra in target = fail; missing in source =
    fail.
@@ -419,7 +423,7 @@ the project license, no separate CLA.
   during waves)
 - `locales/es.json` (Spanish seed; can begin empty and fill via
   Weblate)
-- `locales/schema.json`
+- `src/types/locale.schema.json`
 - `scripts/generate-locales.ts` (mirrors
   [`scripts/build-privacy-page.ts`](../scripts/build-privacy-page.ts))
 - `scripts/generate-locales.test.ts`

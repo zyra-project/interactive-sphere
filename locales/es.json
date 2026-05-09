@@ -1,4 +1,6 @@
 {
+  "$schema": "../src/types/locale.schema.json",
+
   "app.title": "Terraviz",
   "app.skipLink": "Saltar a la visualización del globo",
   "app.globe.aria": "Visualización del globo",
