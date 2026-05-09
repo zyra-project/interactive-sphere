@@ -1,14 +1,11 @@
 {
   "$schema": "../src/types/locale.schema.json",
-
   "app.title": "Terraviz",
   "app.skipLink": "Saltar a la visualización del globo",
   "app.globe.aria": "Visualización del globo",
-
   "loading.subtitle": "Science On a Sphere",
   "loading.progress.aria": "Progreso de carga",
   "loading.status.initializing": "Iniciando…",
-
   "browse.overlay.aria": "Explorador de conjuntos de datos",
   "browse.subtitle": "Explora los conjuntos de datos ambientales de NOAA Science On a Sphere",
   "browse.close.aria": "Cerrar el explorador",
@@ -44,13 +41,10 @@
   "browse.card.thumb.alt": "Miniatura de {title}",
   "browse.card.load": "Cargar",
   "browse.card.load.aria": "Cargar {title}",
-
   "home.aria": "Explorar conjuntos de datos",
-
   "info.panel.aria": "Información del conjunto de datos",
   "info.picker.aria": "Selecciona un conjunto de datos para ver",
   "info.picker.label": "Mostrando información de",
-
   "playback.toolbar.aria": "Controles de reproducción",
   "playback.rewind.aria": "Rebobinar al inicio",
   "playback.stepBack.aria": "Retroceder un fotograma",
@@ -72,14 +66,12 @@
   "playback.error.invalidTimeRange": "El conjunto tiene un rango temporal no válido",
   "playback.error.dateOutsideRange": "La fecha {date} está fuera del rango del conjunto ({start} a {end})",
   "playback.seekingTo": "Buscando {date}",
-
   "tools.menu.aria": "Herramientas y configuración",
   "tools.browse.label": "Explorar",
   "tools.browse.aria": "Explorar conjuntos de datos",
   "tools.toggle.aria": "Herramientas y configuración",
   "tools.popover.title": "Herramientas",
   "tools.close.aria": "Cerrar herramientas",
-
   "tools.section.view": "Vista",
   "tools.section.view.aria": "Alternar vistas",
   "tools.section.language": "Idioma",
@@ -92,29 +84,24 @@
   "tools.section.orbit.aria": "Orbit",
   "tools.section.about": "Acerca de",
   "tools.section.about.aria": "Acerca de",
-
   "tools.toggles.labels": "Etiquetas",
   "tools.toggles.borders": "Fronteras",
   "tools.toggles.terrain": "Terreno 3D",
   "tools.toggles.autoRotate": "Rotación automática",
   "tools.toggles.datasetInfo": "Información del conjunto",
   "tools.toggles.legend": "Leyenda",
-
   "tools.language.aria": "Elegir idioma",
-
   "tools.layout.aria": "Disposición del globo",
   "tools.layout.single": "Un globo",
   "tools.layout.twoHorizontal": "Dos globos lado a lado",
   "tools.layout.twoVertical": "Dos globos apilados",
   "tools.layout.four": "Cuatro globos en cuadrícula",
-
   "tools.actions.clear": "Borrar marcadores y resaltados",
   "tools.actions.share": "Compartir conjunto de datos…",
   "tools.actions.orbitSettings": "Ajustes de Orbit…",
   "tools.actions.meetOrbit": "Conoce a Orbit →",
   "tools.actions.credits": "Créditos…",
   "tools.actions.privacy": "Ajustes de privacidad…",
-
   "tools.announce.meetOrbit": "Abriendo la página de Orbit en una nueva pestaña",
   "tools.announce.labels.on": "Etiquetas activadas",
   "tools.announce.labels.off": "Etiquetas desactivadas",
@@ -134,11 +121,8 @@
   "tools.announce.creditsOpened": "Créditos abiertos",
   "tools.announce.privacyOpened": "Ajustes de privacidad abiertos",
   "tools.announce.layout": "Disposición: {label}",
-
   "tools.share.text": "Mira \"{title}\" en Terraviz",
-
   "download.manager.aria": "Gestor de descargas",
-
   "tour.toolbar.aria": "Controles del tour",
   "tour.previous.aria": "Sección anterior",
   "tour.play.aria": "Reproducir tour",
@@ -153,7 +137,6 @@
   "tour.question.continue": "Continuar",
   "tour.controls.pause.aria": "Pausar tour",
   "tour.controls.continue.aria": "Continuar tour",
-
   "chat.trigger.title": "Pregúntale al docente",
   "chat.trigger.aria": "Abrir chat con el docente digital",
   "chat.trigger.label": "Pregunta a Orbit",
@@ -192,16 +175,13 @@
   "chat.vision.title": "Visión: analizar captura del globo",
   "chat.vision.aria": "Alternar análisis visual",
   "chat.send.aria": "Enviar mensaje",
-
   "error.dismiss.aria": "Descartar error",
-
   "vr.enter.title": "Entrar al modo VR inmersivo",
   "vr.enter.aria": "Entrar al modo VR inmersivo",
   "vr.enter.label": "Entrar a VR",
   "vr.enter.ar.label": "Entrar a AR",
   "vr.enter.ar.title": "Entrar al modo AR con paso a través (el globo aparece en tu habitación)",
   "vr.error.failed": "Error al entrar a {mode}",
-
   "orbit.debug.announce.collapsed": "Panel de depuración contraído",
   "orbit.debug.announce.expanded": "Panel de depuración expandido",
   "orbit.debug.stateGroup.behavior": "Comportamiento",
@@ -214,7 +194,6 @@
   "orbit.debug.flight.toHome": "Orbit volviendo a la posición de chat",
   "orbit.debug.gesture.aria": "Reproducir gesto {label}",
   "orbit.debug.gesture.announce": "Reproduciendo {label}",
-
   "help.trigger.title": "Ayuda y comentarios",
   "help.trigger.aria": "Abrir ayuda y comentarios",
   "help.button.label": "Ayuda",
@@ -223,7 +202,6 @@
   "help.tablist.aria": "Secciones de ayuda",
   "help.tab.guide": "Guía",
   "help.tab.feedback": "Comentarios",
-
   "docent.greeting.1": "¡Bienvenido a Science on a Sphere! Soy Orbit, tu docente digital — pregúntame sobre cualquier tema y te buscaré un conjunto de datos. Prueba con océanos, clima, huracanes o cualquier otra cosa que te interese.",
   "docent.greeting.2": "¡Hola! Estoy aquí para guiarte por más de 500 visualizaciones de nuestro planeta y más allá. ¿Qué te gustaría explorar? Puedes preguntar por un tema, o te cuento sobre lo que esté en el globo en este momento.",
   "docent.greeting.3": "¡Hola! Piensa en mí como tu guía personal a los datos de las ciencias de la Tierra. Pregúntame sobre el clima, el fondo del océano, el espacio, los volcanes — o simplemente di \"muéstrame algo interesante\" y elegiré algo.",
@@ -244,13 +222,11 @@
   "docent.describe.categories": "Este es un conjunto de datos de {categories}.",
   "docent.system.respondInLanguage": "Responde en {language}. Aunque el usuario escriba en inglés, tu respuesta, los resúmenes de conjuntos de datos y los pies de imagen deben estar en {language}. Mantén los marcadores <<LOAD:DATASET_ID>> y la sintaxis de las llamadas a herramientas exactamente como se especifica.",
   "docent.system.respondInLanguageReminder": "RECORDATORIO: Responde únicamente en {language}, aunque el usuario haya escrito en otro idioma. Conserva los marcadores <<LOAD:...>> y la sintaxis de las llamadas a herramientas literales.",
-
   "docent.patterns.greeting": "hola, buenos días, buenas tardes, buenas noches, buenas, saludos, qué tal, que tal, hi, hello, hey",
   "docent.patterns.help": "ayuda, qué puedes hacer, que puedes hacer, cómo funciona, como funciona, cómo se usa, como se usa, comandos, opciones, help",
   "docent.patterns.whatIs": "qué es esto, que es esto, qué es eso, que es eso, dónde estoy, donde estoy, qué estoy viendo, que estoy viendo, qué estoy mirando, que estoy mirando",
   "docent.patterns.explain": "explica, explica esto, explica eso, cuéntame sobre esto, cuentame sobre esto, cuéntame sobre eso, cuentame sobre eso, cuéntame más sobre esto, cuentame mas sobre esto, describe esto, describe eso, qué muestra esto, que muestra esto, qué significa esto, que significa esto",
   "docent.patterns.related": "muéstrame similar, muestrame similar, muéstrame algo similar, muestrame algo similar, muéstrame relacionado, muestrame relacionado, relacionado, más como esto, mas como esto, similar",
-
   "chat.announce.opened": "Chat abierto",
   "chat.announce.closed": "Chat cerrado",
   "chat.announce.cleared": "Chat borrado",
@@ -321,7 +297,6 @@
   "chat.autoLoad.altHint": " Aquí tienes algunas alternativas si no es exactamente lo que buscas:",
   "chat.fallback.localDev": "⚠ Servicio de IA no disponible — funcionando en modo sin conexión. Asegúrate de que `npm run dev` esté redirigiendo /api, o configura un proveedor local en los ajustes.",
   "chat.fallback.production": "⚠ Servicio de IA no disponible — mostrando resultados sin conexión. Revisa los ajustes del LLM.",
-
   "disclosureBanner.aria": "Aviso de privacidad",
   "disclosureBanner.text": "Esta aplicación envía eventos de uso anónimos para ayudarnos a mantenerla en buen estado. Sin cuentas, sin cookies de seguimiento, sin analítica de terceros. Puedes cambiarlo en cualquier momento.",
   "disclosureBanner.settings": "Ajustes de privacidad",
@@ -330,7 +305,6 @@
   "disclosureBanner.dismiss.aria": "Descartar aviso de privacidad",
   "disclosureBanner.badge.aria": "Aviso de privacidad — toca para más detalles",
   "disclosureBanner.announce": "Aviso de privacidad disponible. Un botón de escudo en la esquina superior izquierda abre los detalles.",
-
   "downloadUI.button.title": "Gestor de descargas",
   "downloadUI.button.aria": "Gestor de descargas",
   "downloadUI.title": "Descargas",
@@ -340,7 +314,6 @@
   "downloadUI.delete.aria": "Eliminar {title}",
   "downloadUI.downloaded.title": "Descargado",
   "downloadUI.failed.title": "Error al descargar: {error}",
-
   "privacy.title": "Privacidad",
   "privacy.close.aria": "Cerrar ajustes de privacidad",
   "privacy.desc": "Elige cuánta información envía la aplicación. Puedes cambiarlo en cualquier momento; el cambio tiene efecto inmediato.",
@@ -356,7 +329,6 @@
   "privacy.policyLink": "Leer la política de privacidad completa →",
   "privacy.announce.off": "Telemetría desactivada. Eventos pendientes descartados.",
   "privacy.announce.set": "Telemetría establecida en {tier}.",
-
   "credits.title": "Créditos",
   "credits.close.aria": "Cerrar créditos",
   "credits.desc": "De dónde provienen las imágenes y los datos en pantalla.",
@@ -366,7 +338,6 @@
   "credits.section.loaded": "Conjunto de datos cargado",
   "credits.empty.dataset": "Ningún conjunto de datos cargado.",
   "credits.aboutLink": "Acerca de TerraViz →",
-
   "help.guide.section.navigating": "<h3>Navegar por el globo</h3><ul><li>Arrastra para rotar la Tierra.</li><li>Desplaza o pellizca para hacer zoom.</li><li>Haz doble clic en una ubicación para enfocarla.</li></ul>",
   "help.guide.section.exploring": "<h3>Explorar conjuntos de datos</h3><ul><li>Toca el botón <strong>Explorar</strong> en la esquina inferior derecha para abrir la lista de conjuntos.</li><li>Filtra por categoría o busca por palabra clave para acotar la lista.</li><li>Haz clic en cualquier tarjeta para cargar ese conjunto en el globo.</li><li>El botón de inicio (arriba a la izquierda) vuelve a la vista por defecto y reabre el explorador.</li></ul>",
   "help.guide.section.tools": "<h3>Herramientas y ajustes</h3><ul><li>El icono de llave inglesa junto a Explorar abre el menú <strong>Herramientas</strong>.</li><li><strong>Vista</strong> — alterna etiquetas, fronteras, terreno 3D, rotación automática, el panel de información del conjunto y las leyendas.</li><li><strong>Información del conjunto</strong> — muestra u oculta el panel de metadatos del conjunto en la esquina inferior izquierda. Se recuerda tu preferencia.</li><li><strong>Leyenda</strong> — muestra u oculta la leyenda de cada conjunto cargado. En vistas multipanel cada panel tiene su propia leyenda; toca una leyenda para ampliarla.</li><li><strong>Disposición</strong> — alterna entre un solo globo o 2–4 globos sincronizados que se mueven juntos pero pueden mostrar conjuntos distintos lado a lado.</li><li><strong>Borrar</strong> — quita cualquier marcador o región resaltada.</li><li><strong>Ajustes de Orbit</strong> — configura el endpoint, modelo y preferencias del docente de IA.</li><li>Toca fuera del menú o pulsa <kbd>Esc</kbd> para cerrarlo.</li></ul>",
@@ -376,7 +347,6 @@
   "help.guide.section.downloads": "<h3>Descargas sin conexión</h3><ul><li>Haz clic en el icono de descarga en cualquier tarjeta de conjunto para guardarlo localmente.</li><li>Los conjuntos descargados se abren al instante, incluso sin conexión a internet.</li><li>Gestiona los conjuntos en caché desde el panel de descargas para ver tamaños o eliminar los antiguos.</li></ul>",
   "help.guide.section.shortcuts": "<h3>Atajos de teclado</h3><ul><li><kbd>Esc</kbd> — cierra el panel activo</li><li><kbd>Enter</kbd> — envía un mensaje del chat</li><li><kbd>Espacio</kbd> — alterna la reproducción cuando hay un conjunto de vídeo cargado</li></ul>",
   "help.guide.section.privacy": "<h3>Privacidad</h3><p>La aplicación envía eventos de uso anónimos &mdash; qué capas se cargan, cuánto tiempo se ven, si algo dio error. No hay cuentas, ni cookies de seguimiento, ni servicios de analítica de terceros. Los comentarios que envías se almacenan junto con el user-agent del navegador y la URL de la página; adjuntar una captura de pantalla es opcional.</p><p>Puedes cambiar entre Esencial, Investigación y Desactivado en <strong>Herramientas &rarr; Privacidad</strong>; el cambio tiene efecto inmediato. <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">Lee la política de privacidad completa &rarr;</a></p>",
-
   "help.feedback.kind.aria": "Tipo de comentarios",
   "help.feedback.kind.bug": "Reportar un fallo",
   "help.feedback.kind.feature": "Sugerir una función",
