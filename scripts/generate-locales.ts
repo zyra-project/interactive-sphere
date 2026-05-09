@@ -49,6 +49,7 @@ const META_KEYS: ReadonlySet<string> = new Set(['$schema', '$comment'])
 const NATIVE_NAMES: Readonly<Record<string, string>> = {
   en: 'English',
   es: 'Español',
+  kab: 'Taqbaylit',
 }
 
 interface LocaleFile {
