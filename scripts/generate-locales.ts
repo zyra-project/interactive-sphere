@@ -29,6 +29,12 @@ const OUTPUT_DIR = resolve(REPO_ROOT, 'src/i18n')
 const SOURCE_LOCALE = 'en'
 const KEY_RE = /^[a-z][a-zA-Z0-9.]*$/
 
+/** Editor JSON-schema meta keys that locale files may carry but
+ *  must not ship as messages. An explicit allowlist (rather than
+ *  blanket `startsWith('$')`) so a typo like `$app.title` still
+ *  fails `validateLocale` loudly instead of being silently dropped. */
+const META_KEYS: ReadonlySet<string> = new Set(['$schema', '$comment'])
+
 /** Native names for the language picker. Edit when adding a locale. */
 const NATIVE_NAMES: Readonly<Record<string, string>> = {
   en: 'English',
@@ -268,15 +274,14 @@ export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
         `[locales] ${name}: invalid JSON — ${(err as Error).message}`,
       )
     }
-    // Strip `$`-prefixed meta keys (`$schema`, `$comment`, …) before
-    // validating. They're for editor JSON-schema integration and
-    // never ship as messages; keeping `validateLocale` strict on
-    // `KEY_RE` means a stray `$foo` outside this filter would still
-    // fail loudly.
+    // Strip allowlisted meta keys (see META_KEYS) before validating.
+    // They're for editor JSON-schema integration and never ship as
+    // messages. Anything else — including a typo like `$app.title` —
+    // falls through to `validateLocale` and fails on `KEY_RE`.
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const filtered: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (k.startsWith('$')) continue
+        if (META_KEYS.has(k)) continue
         filtered[k] = v
       }
       parsed = filtered

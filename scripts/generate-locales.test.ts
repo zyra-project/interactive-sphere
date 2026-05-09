@@ -206,4 +206,38 @@ describe('build', () => {
     const b = build(dir).files.map((f) => f.contents).join('\n---\n')
     expect(a).toEqual(b)
   })
+
+  it('strips allowlisted $-meta keys ($schema, $comment) before rendering', () => {
+    // Editors expect a `$schema` reference at the top of each locale
+    // for autocomplete; the codegen must accept it, exclude it from
+    // diffing/validation, and never leak it into generated TS.
+    const dir = tmpLocalesDir({
+      'en.json': {
+        $schema: '../src/types/locale.schema.json',
+        $comment: 'wave 0 seed',
+        'app.title': 'Terraviz',
+      },
+      'es.json': {
+        $schema: '../src/types/locale.schema.json',
+        'app.title': 'Terraviz',
+      },
+    })
+    const out = build(dir)
+    expect(out.warnings).toEqual([])
+    expect(out.files.length).toBe(2)
+    for (const f of out.files) {
+      expect(f.contents).not.toContain('$schema')
+      expect(f.contents).not.toContain('$comment')
+    }
+  })
+
+  it('still fails on a typo like $app.title (not in the meta allowlist)', () => {
+    // Guards against the obvious regression: someone broadens the
+    // strip back to `startsWith('$')` and a fat-fingered key gets
+    // silently dropped instead of failing CI.
+    const dir = tmpLocalesDir({
+      'en.json': { '$app.title': 'Terraviz' },
+    })
+    expect(() => build(dir)).toThrow(/violates/)
+  })
 })
