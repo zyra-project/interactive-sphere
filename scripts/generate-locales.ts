@@ -3,8 +3,10 @@
  * non-source locale) from `locales/*.json`.
  *
  * Mirrors `scripts/build-privacy-page.ts`:
- *   - Validates input against `locales/schema.json`-equivalent rules
- *     (flat key→string, key regex `^[a-z][a-zA-Z0-9.]*$`).
+ *   - Validates input against `src/types/locale.schema.json`-equivalent
+ *     rules (flat key→string, key regex `^[a-z][a-zA-Z0-9.]*$`). The
+ *     schema sits outside `locales/` so Weblate's (non-recursive)
+ *     `locales/*.json` filemask doesn't pick it up as a translation.
  *   - Diffs every non-source locale against `en.json`. Missing-in-
  *     target = warn. Extra-in-target = fail. Missing-in-source = fail.
  *   - Emits deterministic TypeScript so `--check` mode (CI) can byte-
@@ -26,6 +28,12 @@ const LOCALES_DIR = resolve(REPO_ROOT, 'locales')
 const OUTPUT_DIR = resolve(REPO_ROOT, 'src/i18n')
 const SOURCE_LOCALE = 'en'
 const KEY_RE = /^[a-z][a-zA-Z0-9.]*$/
+
+/** Editor JSON-schema meta keys that locale files may carry but
+ *  must not ship as messages. An explicit allowlist (rather than
+ *  blanket `startsWith('$')`) so a typo like `$app.title` still
+ *  fails `validateLocale` loudly instead of being silently dropped. */
+const META_KEYS: ReadonlySet<string> = new Set(['$schema', '$comment'])
 
 /** Native names for the language picker. Edit when adding a locale. */
 const NATIVE_NAMES: Readonly<Record<string, string>> = {
@@ -247,10 +255,12 @@ export function renderEntryModule(
   return lines.join('\n')
 }
 
-/** Read every `locales/*.json` (excluding the schema). */
+/** Read every `locales/*.json`. The JSON-schema lives in
+ *  `src/types/locale.schema.json` so Weblate's non-recursive
+ *  `locales/*.json` filemask doesn't ingest it as a translation. */
 export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
   const files = readdirSync(localesDir)
-    .filter((name) => name.endsWith('.json') && name !== 'schema.json')
+    .filter((name) => name.endsWith('.json'))
     .sort()
   return files.map((name) => {
     const path = resolve(localesDir, name)
@@ -263,6 +273,18 @@ export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
       throw new LocaleBuildError(
         `[locales] ${name}: invalid JSON — ${(err as Error).message}`,
       )
+    }
+    // Strip allowlisted meta keys (see META_KEYS) before validating.
+    // They're for editor JSON-schema integration and never ship as
+    // messages. Anything else — including a typo like `$app.title` —
+    // falls through to `validateLocale` and fails on `KEY_RE`.
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const filtered: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (META_KEYS.has(k)) continue
+        filtered[k] = v
+      }
+      parsed = filtered
     }
     validateLocale(locale, parsed)
     return { locale, path, messages: parsed }

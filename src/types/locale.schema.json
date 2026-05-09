@@ -3,6 +3,9 @@
   "title": "Terraviz locale messages",
   "description": "Flat key-to-string map. Keys must match ^[a-z][a-zA-Z0-9.]*$ (dotted namespace, lower-camel parts). Values are user-facing text. See docs/I18N_PLAN.md.",
   "type": "object",
+  "properties": {
+    "$schema": { "type": "string" }
+  },
   "patternProperties": {
     "^[a-z][a-zA-Z0-9.]*$": { "type": "string" }
   },
