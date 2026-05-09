@@ -226,9 +226,9 @@ joins `src/styles/tokens.css` in `.gitignore`.
    `Locale` / `MessageKey` types, `localeLoaders` map for lazy
    chunks) plus one `src/i18n/messages.<locale>.ts` per
    non-source locale (the lazy chunks).
-7. `--check` flag: regenerate to memory, byte-compare, exit 1 on
+6. `--check` flag: regenerate to memory, byte-compare, exit 1 on
    drift.
-8. Forbidden-pattern gate: reject any locale value containing
+7. Forbidden-pattern gate: reject any locale value containing
    `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`,
    `<style>`, on*-handlers, `javascript:` / `vbscript:` / `data:`
    URLs. Pairs with the runtime allowlist sanitizer in

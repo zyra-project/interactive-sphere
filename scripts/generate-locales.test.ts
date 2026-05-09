@@ -150,11 +150,17 @@ describe('renderLocaleJson', () => {
     expect(out.indexOf('"a.first"')).toBeLessThan(out.indexOf('"z.last"'))
   })
 
-  it('places $schema first because $ (0x24) sorts before letters', () => {
+  it('sorts $-prefixed meta keys ahead of every letter-prefixed key', () => {
+    // `$` (0x24) precedes letters in ASCII, so `$schema` / `$comment`
+    // both sort ahead of `app.title`. Locks both halves of the
+    // ordering contract: meta-before-letters AND deterministic
+    // ordering between meta keys themselves.
     const out = renderLocaleJson({
       'app.title': 'Terraviz',
       $schema: '../src/types/locale.schema.json',
+      $comment: 'seed',
     })
+    expect(out.indexOf('"$comment"')).toBeLessThan(out.indexOf('"$schema"'))
     expect(out.indexOf('"$schema"')).toBeLessThan(out.indexOf('"app.title"'))
   })
 

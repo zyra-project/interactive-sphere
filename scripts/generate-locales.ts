@@ -12,7 +12,7 @@
  *     target = warn. Extra-in-target = fail. Missing-in-source = fail.
  *   - Canonicalizes each `locales/*.json` to the exact format
  *     Weblate's GitHub bridge writes (2-space indent, LF, trailing
- *     newline, no interior blank lines, preserves insertion order,
+ *     newline, no interior blank lines, keys sorted alphabetically,
  *     literal Unicode). This makes the codegen the canonical
  *     formatter: predev/prebuild normalize whatever a developer
  *     typed, so Weblate's PR against main never has whitespace-only
@@ -181,9 +181,10 @@ export function diffAgainstSource(
  *     seen against main)
  *   - Keys sorted alphabetically (lexicographic on the raw key
  *     string) to match Weblate's "Sort JSON keys" component
- *     setting. `$schema` sorts ahead of any letter-prefixed key
- *     because `$` (0x24) precedes letters in ASCII, so the editor
- *     reference stays at the top of the file.
+ *     setting. `$`-prefixed meta keys (`$schema`, `$comment`) sort
+ *     ahead of every letter-prefixed message key because `$`
+ *     (0x24) precedes letters in ASCII; they also sort
+ *     deterministically among themselves (`$comment` < `$schema`).
  *   - Literal Unicode for BMP characters (`JSON.stringify` only
  *     escapes control chars and unpaired surrogates, which matches
  *     Weblate)
