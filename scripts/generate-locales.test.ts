@@ -7,6 +7,7 @@ import {
   diffAgainstSource,
   LocaleBuildError,
   renderEntryModule,
+  renderLocaleJson,
   renderLocaleModule,
   validateLocale,
 } from './generate-locales'
@@ -136,6 +137,103 @@ describe('renderEntryModule', () => {
   })
 })
 
+describe('renderLocaleJson', () => {
+  it('emits 2-space indent, trailing newline, no interior blank lines', () => {
+    const out = renderLocaleJson({ 'app.title': 'Terraviz', 'browse.search': 'Search' })
+    expect(out).toBe(
+      '{\n  "app.title": "Terraviz",\n  "browse.search": "Search"\n}\n',
+    )
+  })
+
+  it('sorts keys alphabetically (matches Weblate "Sort JSON keys")', () => {
+    const out = renderLocaleJson({ 'z.last': 'Z', 'a.first': 'A' })
+    expect(out.indexOf('"a.first"')).toBeLessThan(out.indexOf('"z.last"'))
+  })
+
+  it('places $schema first because $ (0x24) sorts before letters', () => {
+    const out = renderLocaleJson({
+      'app.title': 'Terraviz',
+      $schema: '../src/types/locale.schema.json',
+    })
+    expect(out.indexOf('"$schema"')).toBeLessThan(out.indexOf('"app.title"'))
+  })
+
+  it('uses literal Unicode for BMP characters (no \\uXXXX escapes)', () => {
+    const out = renderLocaleJson({ greeting: '¡Hola, Mundo! — “quotes”' })
+    expect(out).toContain('¡Hola, Mundo! — “quotes”')
+    expect(out).not.toMatch(/\\u[0-9a-f]{4}/)
+  })
+
+  it('is idempotent — re-running on canonical output yields identical bytes', () => {
+    const obj = {
+      $schema: '../src/types/locale.schema.json',
+      'app.title': 'Terraviz',
+      'browse.search': 'Search',
+    }
+    const a = renderLocaleJson(obj)
+    const b = renderLocaleJson(JSON.parse(a))
+    expect(a).toBe(b)
+  })
+})
+
+describe('build → JSON canonicalization', () => {
+  it('emits canonicalized JSON for every input locale, written back to its source path', () => {
+    const dir = tmpLocalesDir({
+      'en.json': {
+        $schema: '../src/types/locale.schema.json',
+        'app.title': 'Terraviz',
+      },
+      'es.json': { 'app.title': 'Terraviz' },
+    })
+    const out = build(dir)
+    const enFile = out.files.find((f) => f.path.endsWith('en.json'))
+    const esFile = out.files.find((f) => f.path.endsWith('es.json'))
+    expect(enFile).toBeTruthy()
+    expect(esFile).toBeTruthy()
+    expect(enFile!.path).toBe(resolve(dir, 'en.json'))
+    expect(enFile!.contents.startsWith('{\n  "$schema":')).toBe(true)
+    expect(enFile!.contents.endsWith('\n}\n')).toBe(true)
+  })
+
+  it('strips blank-line drift from a developer-typed locale (closes the Weblate churn loop)', () => {
+    // Simulate the en.json shape that landed before this PR: section
+    // breaks between thematic groups. The canonicalizer must strip
+    // them so Weblate (which strips them too) never produces a
+    // whitespace-only diff against main.
+    const dir = mkdtempSync(resolve(tmpdir(), 'terraviz-locales-'))
+    writeFileSync(
+      resolve(dir, 'en.json'),
+      '{\n  "app.title": "Terraviz",\n\n  "browse.search": "Search"\n}\n',
+      'utf-8',
+    )
+    const out = build(dir)
+    const enFile = out.files.find((f) => f.path.endsWith('en.json'))!
+    expect(enFile.contents).not.toMatch(/\n\n/)
+    expect(enFile.contents).toBe(
+      '{\n  "app.title": "Terraviz",\n  "browse.search": "Search"\n}\n',
+    )
+  })
+
+  it('canonicalizes a target locale even when keys arrive in non-source order', () => {
+    // Weblate's per-translator queue presents keys in priority order
+    // (see PR #81's kab.json — keys appear roughly random). The
+    // canonicalizer sorts so on every round-trip the file matches
+    // the same order regardless of who saved last.
+    const dir = tmpLocalesDir({
+      'en.json': { 'a.one': 'A', 'b.two': 'B', 'c.three': 'C' },
+      'es.json': { 'c.three': 'C-es', 'a.one': 'A-es', 'b.two': 'B-es' },
+    })
+    const out = build(dir)
+    const esFile = out.files.find((f) => f.path.endsWith('es.json'))!
+    expect(esFile.contents.indexOf('"a.one"')).toBeLessThan(
+      esFile.contents.indexOf('"b.two"'),
+    )
+    expect(esFile.contents.indexOf('"b.two"')).toBeLessThan(
+      esFile.contents.indexOf('"c.three"'),
+    )
+  })
+})
+
 describe('renderLocaleModule', () => {
   it('emits a default-export const object frozen via `as const`', () => {
     const out = renderLocaleModule('es', { 'app.title': 'Terraviz' })
@@ -152,13 +250,15 @@ describe('renderLocaleModule', () => {
 })
 
 describe('build', () => {
-  it('renders entry + non-source locale files', () => {
+  it('renders canonicalized JSON + entry + non-source locale files', () => {
     const dir = tmpLocalesDir({
       'en.json': { 'app.title': 'Terraviz' },
       'es.json': { 'app.title': 'Terraviz' },
     })
     const out = build(dir)
     expect(out.files.map((f) => f.path.split('/').pop())).toEqual([
+      'en.json',
+      'es.json',
       'messages.ts',
       'messages.es.ts',
     ])
@@ -172,7 +272,8 @@ describe('build', () => {
     })
     const out = build(dir)
     expect(out.warnings.length).toBeGreaterThan(0)
-    expect(out.files.length).toBe(2)
+    // 2 canonicalized JSON inputs + 1 entry module + 1 non-source locale
+    expect(out.files.length).toBe(4)
   })
 
   it('throws on orphan key in non-source locale', () => {
@@ -207,10 +308,11 @@ describe('build', () => {
     expect(a).toEqual(b)
   })
 
-  it('strips allowlisted $-meta keys ($schema, $comment) before rendering', () => {
+  it('strips allowlisted $-meta keys from generated TS but preserves them in canonicalized JSON', () => {
     // Editors expect a `$schema` reference at the top of each locale
     // for autocomplete; the codegen must accept it, exclude it from
-    // diffing/validation, and never leak it into generated TS.
+    // diffing/validation and TS emission, and round-trip it through
+    // the canonical JSON output untouched.
     const dir = tmpLocalesDir({
       'en.json': {
         $schema: '../src/types/locale.schema.json',
@@ -224,11 +326,15 @@ describe('build', () => {
     })
     const out = build(dir)
     expect(out.warnings).toEqual([])
-    expect(out.files.length).toBe(2)
-    for (const f of out.files) {
+    expect(out.files.length).toBe(4)
+    const tsFiles = out.files.filter((f) => f.path.endsWith('.ts'))
+    for (const f of tsFiles) {
       expect(f.contents).not.toContain('$schema')
       expect(f.contents).not.toContain('$comment')
     }
+    const enJson = out.files.find((f) => f.path.endsWith('en.json'))!
+    expect(enJson.contents).toContain('"$schema"')
+    expect(enJson.contents).toContain('"$comment"')
   })
 
   it('still fails on a typo like $app.title (not in the meta allowlist)', () => {

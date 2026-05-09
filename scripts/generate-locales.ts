@@ -1,6 +1,7 @@
 /**
  * Generate `src/i18n/messages.ts` (+ one `messages.<locale>.ts` per
- * non-source locale) from `locales/*.json`.
+ * non-source locale) from `locales/*.json`, AND rewrite each
+ * `locales/*.json` in canonical form on every run.
  *
  * Mirrors `scripts/build-privacy-page.ts`:
  *   - Validates input against `src/types/locale.schema.json`-equivalent
@@ -9,17 +10,26 @@
  *     `locales/*.json` filemask doesn't pick it up as a translation.
  *   - Diffs every non-source locale against `en.json`. Missing-in-
  *     target = warn. Extra-in-target = fail. Missing-in-source = fail.
+ *   - Canonicalizes each `locales/*.json` to the exact format
+ *     Weblate's GitHub bridge writes (2-space indent, LF, trailing
+ *     newline, no interior blank lines, preserves insertion order,
+ *     literal Unicode). This makes the codegen the canonical
+ *     formatter: predev/prebuild normalize whatever a developer
+ *     typed, so Weblate's PR against main never has whitespace-only
+ *     drift, and `--check` mode in CI catches anyone who edits a
+ *     locale without running the codegen.
  *   - Emits deterministic TypeScript so `--check` mode (CI) can byte-
  *     compare on-disk generated files against a fresh render.
  *
  * Runs in `postinstall`, `predev`, `prebuild`, and `type-check`. The
- * generated files are gitignored next to `src/styles/tokens.css`.
+ * generated TS files are gitignored next to `src/styles/tokens.css`;
+ * the canonicalized JSON files ARE checked in.
  *
  * See `docs/I18N_PLAN.md`.
  */
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs'
-import { resolve, basename } from 'node:path'
+import { resolve, basename, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = resolve(fileURLToPath(import.meta.url), '..')
@@ -44,6 +54,11 @@ const NATIVE_NAMES: Readonly<Record<string, string>> = {
 interface LocaleFile {
   readonly locale: string
   readonly path: string
+  /** Original parsed object including allowlisted meta keys
+   *  (`$schema`, `$comment`). Used to emit the canonicalized JSON
+   *  back to disk; `messages` is the validated, meta-stripped view
+   *  used for diffing and TS emission. */
+  readonly raw: Readonly<Record<string, unknown>>
   readonly messages: Readonly<Record<string, string>>
 }
 
@@ -153,6 +168,34 @@ export function diffAgainstSource(
     }
   }
   return { warnings, errors }
+}
+
+/**
+ * Canonicalize a locale JSON file. Exported so tests can lock the
+ * exact format. Matches Weblate's GitHub-bridge output verbatim:
+ *
+ *   - 2-space indent
+ *   - LF line endings, trailing newline
+ *   - No interior blank lines (Weblate strips them on round-trip,
+ *     which is the source of every whitespace-churn diff we've
+ *     seen against main)
+ *   - Keys sorted alphabetically (lexicographic on the raw key
+ *     string) to match Weblate's "Sort JSON keys" component
+ *     setting. `$schema` sorts ahead of any letter-prefixed key
+ *     because `$` (0x24) precedes letters in ASCII, so the editor
+ *     reference stays at the top of the file.
+ *   - Literal Unicode for BMP characters (`JSON.stringify` only
+ *     escapes control chars and unpaired surrogates, which matches
+ *     Weblate)
+ */
+export function renderLocaleJson(
+  raw: Readonly<Record<string, unknown>>,
+): string {
+  const sorted: Record<string, unknown> = {}
+  for (const k of Object.keys(raw).sort()) {
+    sorted[k] = raw[k]
+  }
+  return JSON.stringify(sorted, null, 2) + '\n'
 }
 
 /** Render the per-locale `messages.<locale>.ts` file. */
@@ -265,29 +308,36 @@ export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
   return files.map((name) => {
     const path = resolve(localesDir, name)
     const locale = basename(name, '.json')
-    const raw = readFileSync(path, 'utf-8')
+    const fileText = readFileSync(path, 'utf-8')
     let parsed: unknown
     try {
-      parsed = JSON.parse(raw)
+      parsed = JSON.parse(fileText)
     } catch (err) {
       throw new LocaleBuildError(
         `[locales] ${name}: invalid JSON — ${(err as Error).message}`,
       )
     }
-    // Strip allowlisted meta keys (see META_KEYS) before validating.
-    // They're for editor JSON-schema integration and never ship as
-    // messages. Anything else — including a typo like `$app.title` —
-    // falls through to `validateLocale` and fails on `KEY_RE`.
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const filtered: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (META_KEYS.has(k)) continue
-        filtered[k] = v
-      }
-      parsed = filtered
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new LocaleBuildError(
+        `[locales] ${locale}.json must be a JSON object, got ${
+          Array.isArray(parsed) ? 'array' : parsed === null ? 'null' : typeof parsed
+        }`,
+      )
     }
-    validateLocale(locale, parsed)
-    return { locale, path, messages: parsed }
+    const raw = parsed as Record<string, unknown>
+    // Strip allowlisted meta keys (see META_KEYS) for the validated
+    // view. They're for editor JSON-schema integration and never
+    // ship as messages. Anything else — including a typo like
+    // `$app.title` — falls through to `validateLocale` and fails on
+    // `KEY_RE`. The `raw` object keeps meta keys so canonicalized
+    // JSON output preserves the editor reference.
+    const messages: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(raw)) {
+      if (META_KEYS.has(k)) continue
+      messages[k] = v
+    }
+    validateLocale(locale, messages)
+    return { locale, path, raw, messages }
   })
 }
 
@@ -322,6 +372,17 @@ export function build(localesDir: string = LOCALES_DIR): BuildOutput {
   }
 
   const files: RenderResult[] = []
+  // Canonicalized JSON for every input locale comes first. The
+  // codegen is the canonical formatter: predev/prebuild rewrite
+  // whatever a developer typed, and `--check` mode in CI fails any
+  // PR that drifts. Combined with Weblate's matching format
+  // settings, this closes the whitespace-churn loop.
+  for (const loc of locales) {
+    files.push({
+      path: loc.path,
+      contents: renderLocaleJson(loc.raw),
+    })
+  }
   files.push({
     path: resolve(OUTPUT_DIR, 'messages.ts'),
     contents: renderEntryModule(
@@ -369,31 +430,45 @@ function run(): void {
         // missing file — definitely stale
       }
       if (current !== file.contents) {
-        // Generated files are gitignored — there's nothing to
-        // commit. The fix is just to regenerate locally; CI
-        // rebuilds them via the postinstall hook on every fresh
-        // install. The drift this gate catches is "you edited a
-        // locale .json without re-running the codegen", which
-        // matters because tsc reads the regenerated MessageKey
-        // union for type-safety on `t(...)` call sites.
-        console.error(
-          `✗ ${file.path} is stale.\n  Run \`npm run locales\` to regenerate. ` +
-          `(Output is gitignored — no commit needed.)`,
-        )
+        // Two drift classes share this gate:
+        //   - JSON locale files (checked in): a developer edited
+        //     `locales/<bcp47>.json` without running the codegen,
+        //     leaving a non-canonical file. Fix: `npm run locales`,
+        //     then commit the normalized file.
+        //   - Generated TS modules (gitignored): a developer added
+        //     a key to en.json but didn't regenerate, so the
+        //     `MessageKey` union is stale. Fix: `npm run locales`;
+        //     no commit needed because the output is gitignored.
+        const isLocaleSource = file.path.endsWith('.json')
+        const fixHint = isLocaleSource
+          ? `Run \`npm run locales\` to canonicalize, then commit the change.`
+          : `Run \`npm run locales\` to regenerate. (Output is gitignored — no commit needed.)`
+        console.error(`✗ ${file.path} is stale.\n  ${fixHint}`)
         stale = true
       }
     }
     if (stale) process.exit(1)
     // eslint-disable-next-line no-console
-    console.log(`✓ ${output.files.length} locale module(s) up to date`)
+    console.log(`✓ ${output.files.length} locale artifact(s) up to date`)
     return
   }
 
-  mkdirSync(OUTPUT_DIR, { recursive: true })
   for (const file of output.files) {
+    let current = ''
+    try {
+      current = readFileSync(file.path, 'utf-8')
+    } catch {
+      // missing — write it
+    }
+    if (current === file.contents) continue
+    // Some outputs (TS modules) live under OUTPUT_DIR; others
+    // (canonicalized JSON) live in `locales/`. mkdir per file's
+    // own parent so adding new output paths later doesn't need
+    // a special case here.
+    mkdirSync(dirname(file.path), { recursive: true })
     writeFileSync(file.path, file.contents, 'utf-8')
     // eslint-disable-next-line no-console
-    console.log(`✓ Generated ${file.path} (${file.contents.length} bytes)`)
+    console.log(`✓ Wrote ${file.path} (${file.contents.length} bytes)`)
   }
 }
 

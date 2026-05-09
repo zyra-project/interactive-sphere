@@ -47,6 +47,24 @@ gate flags drift in CI. Missing-in-target keys emit a warning;
 extra-in-target keys (orphans the source no longer has) fail the
 build until cleaned up.
 
+### Canonical formatting (no whitespace churn)
+
+`scripts/generate-locales.ts` is the canonical formatter for
+`locales/*.json`. Every `npm run locales` (which runs from
+`postinstall`, `predev`, `prebuild`, and `type-check`) rewrites
+each locale file in the exact format Weblate's GitHub bridge
+produces — 2-space indent, LF line endings, trailing newline, no
+interior blank lines, alphabetically-sorted keys (matching
+Weblate's "Sort JSON keys" component setting), literal Unicode for
+BMP characters. CI runs `npm run check:locales`, which fails any
+PR whose locale JSON drifts from canonical.
+
+The practical effect: no matter what style a developer types their
+edits in, predev/prebuild normalize the file before commit, so
+Weblate's incoming PRs against `main` never produce
+whitespace-only diffs. If you want to preview the canonical form
+of your changes, run `npm run locales` and re-stage.
+
 ---
 
 ## Translating via Weblate (recommended for non-developers)
