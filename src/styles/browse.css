@@ -39,7 +39,7 @@
 #browse-overlay {
     position: fixed;
     top: 0;
-    right: 0;
+    inset-inline-end: 0;
     bottom: 0;
     width: var(--component-browse-panel-width);
     z-index: 500;
@@ -49,12 +49,21 @@
     display: flex;
     flex-direction: column;
     overflow: visible;
-    border-left: 1px solid var(--white-o08);
+    border-inline-start: 1px solid var(--white-o08);
     transition: transform 0.3s ease;
 }
 
 #browse-overlay.collapsed {
     transform: translateX(100%);
+}
+
+/* RTL flips the slide direction so the panel still slides off
+   toward its anchored edge — `inset-inline-end: 0` puts the
+   panel on the left in RTL, and translateX is screen-coord
+   (not direction-aware), so we need an explicit override.
+   See `docs/I18N_PLAN.md` §L1.5 for the broader RTL audit. */
+:root[dir="rtl"] #browse-overlay.collapsed {
+    transform: translateX(-100%);
 }
 
 #browse-inner {
@@ -71,7 +80,7 @@
     position: relative;
     flex-shrink: 0;
     margin-bottom: 1.25rem;
-    padding-right: 2.25rem;
+    padding-inline-end: 2.25rem;
 }
 
 .browse-title {
@@ -94,7 +103,7 @@
     position: relative;
     flex-shrink: 0;
     margin-bottom: 0.875rem;
-    margin-right: 3rem;
+    margin-inline-end: 3rem;
 }
 #browse-search {
     display: block;
@@ -113,7 +122,7 @@
 #browse-search::-webkit-search-cancel-button { -webkit-appearance: none; }
 .browse-search-clear {
     position: absolute;
-    right: 0.4rem;
+    inset-inline-end: 0.4rem;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -133,7 +142,7 @@
 /* Docent button integrated into browse search bar */
 .browse-chat-btn {
     position: absolute;
-    right: -3rem;
+    inset-inline-end: -3rem;
     top: 50%;
     transform: translateY(-50%);
     width: var(--component-browse-chat-btn-size);
@@ -495,13 +504,13 @@
 @media (max-width: 600px) and (orientation: portrait) {
     #browse-overlay {
         top: auto !important;
-        left: 0;
-        right: 0;
+        inset-inline-start: 0;
+        inset-inline-end: 0;
         bottom: 0;
         width: var(--component-browse-panel-width);
         height: auto;
         max-height: var(--component-browse-panel-max-height);
-        border-left: none;
+        border-inline-start: none;
         border-top: 1px solid var(--white-o08);
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         padding-bottom: env(safe-area-inset-bottom, 0px);

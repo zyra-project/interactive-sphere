@@ -62,8 +62,8 @@ canvas {
 #map-grid {
     position: absolute;
     top: 0;
-    left: 0;
-    right: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
     bottom: 0;
     display: grid;
     grid-template: "a" / 1fr;
@@ -131,7 +131,7 @@ canvas {
    appends panels in top-left-to-bottom-right order. */
 .panel-legend {
     position: absolute;
-    right: 0.5rem;
+    inset-inline-end: 0.5rem;
     bottom: 0.5rem;
     z-index: 6;
     padding: 0.4rem;
@@ -219,7 +219,7 @@ canvas {
 .viewport-indicator {
     position: absolute;
     top: 0.5rem;
-    left: 3.75rem;
+    inset-inline-start: 3.75rem;
     z-index: 5;
     min-width: 26px;
     height: 26px;
@@ -256,8 +256,8 @@ canvas {
 #ui {
     position: absolute;
     top: 0;
-    left: 0;
-    right: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
     bottom: 0;
     pointer-events: none;
 }

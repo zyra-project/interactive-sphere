@@ -66,8 +66,14 @@ Phases 3 + 4).
   Tour JSON files keep their English captions until then; new
   tours stay English-only in L1/L2.
 - **Right-to-left layout** — RTL infrastructure (`dir`, locale
-  set) ships in L1, but no RTL locale (Arabic, Hebrew) ships
-  until a CSS audit completes. Tracked as L1.5.
+  set) ships in L1; the L1.5 CSS audit converts physical inline-
+  axis properties (`padding-left`, `margin-right`, `text-align:
+  left`, etc.) to logical equivalents and adds an explicit
+  `:dir(rtl)` override for the Browse panel slide. Arabic (`ar`)
+  is wired into `NATIVE_NAMES` with an empty `locales/ar.json`
+  so the layout can be verified via `?lang=ar`. Strings still
+  need a translator before Arabic appears in the public picker
+  (≥80% coverage gate).
 - **Auto-translation via LLM** — a "Translate from English"
   button in the publisher portal is a future-tense option, not
   delivered here.
@@ -354,7 +360,7 @@ the first paint after reload is correct).
 | Phase | Scope | Depends on | Status |
 |---|---|---|---|
 | **L1** | i18n foundation, UI chrome + Orbit, English + Spanish, Weblate inbound | Nothing | This plan |
-| **L1.5** | RTL CSS audit + Arabic onboarding | L1 | Follow-up |
+| **L1.5** | RTL CSS audit (logical properties throughout `src/styles/`); Arabic locale wired in for layout verification (translators still needed) | L1 | CSS shipped; Arabic translation in progress on Weblate |
 | **L2** | Partner UI overrides via `/api/v1/locale/<lang>` overlay endpoint, publisher portal locale-override editor, Tauri offline snapshot | Catalog backend Phase 3 (publisher portal) | Q3+ 2026 |
 | **L3** | Dataset metadata translations: `dataset_translations` sidecar table, CLI `--lang` sidecar files, federation propagation of signed translation rows | Catalog backend Phases 3 + 4 | 2027+ |
 | **L4** | Tour narration translations | L3 + tour authoring tooling | TBD |

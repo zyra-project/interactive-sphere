@@ -234,6 +234,53 @@ query or class override in `tokens.css`, not editing 12 JS files.
 PR A is the highest-leverage deliverable — it establishes the design
 token system AND resolves issue #23. PRs B and C follow incrementally.
 
+## RTL safety (logical properties)
+
+The stylesheets use **logical CSS properties** rather than physical
+ones for the inline (writing-direction) axis. The application sets
+`<html dir="rtl">` automatically when an RTL locale is active (see
+[`src/i18n/rtl.ts`](../src/i18n/rtl.ts) and
+[`src/i18n/index.ts`](../src/i18n/index.ts)), so all of these flip
+automatically:
+
+| Use this | Not this |
+|---|---|
+| `padding-inline-start` / `padding-inline-end` | `padding-left` / `padding-right` |
+| `margin-inline-start` / `margin-inline-end` | `margin-left` / `margin-right` |
+| `border-inline-start` / `border-inline-end` | `border-left` / `border-right` |
+| `inset-inline-start` / `inset-inline-end` | `left` / `right` |
+| `text-align: start` / `text-align: end` | `text-align: left` / `text-align: right` |
+
+### When to keep physical properties
+
+A few patterns are intentionally physical and should stay that way:
+
+- **Centering with translate**: `top: 50%; left: 50%; transform: translate(-50%, -50%)`.
+  `inset-inline-start: 50%` doesn't center in RTL because the start
+  edge changes side; `left:` stays as a screen coordinate.
+- **`left: 0; right: 0` full-width stretches**: Either form works
+  identically in any direction; existing sites have been converted
+  to logical for consistency, but new code can use either.
+- **`transform: translateX(±100%)` for off-screen slides**: pair with
+  a `:root[dir="rtl"]` override that flips the sign — see
+  [`browse.css`](../src/styles/browse.css) `#browse-overlay.collapsed`
+  for the canonical example.
+- **Tour author-specified `captionPos: 'left' | 'right'`** (in
+  [`tourUI.ts`](../src/ui/tourUI.ts)): the author chose a screen
+  position based on what's visually on the globe at that moment;
+  flipping for RTL would hide the caption behind the wrong content.
+
+### Verifying RTL layout
+
+Toggle with `?lang=ar` in the URL — Arabic is wired into
+`NATIVE_NAMES` with an empty `locales/ar.json`, so the picker
+treats it as below the 80% coverage threshold and hides it from the
+public list, but `?lang=ar` activates it for testing. The empty
+strings fall back to English at runtime; the layout still flips
+based on the `dir` attribute, which is what the audit verifies.
+
+---
+
 ## What This Enables
 
 Once this architecture is in place:

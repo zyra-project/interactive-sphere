@@ -39,7 +39,7 @@
 #download-manager {
     position: absolute;
     bottom: 5.5rem;
-    right: 0.75rem;
+    inset-inline-end: 0.75rem;
     width: 320px;
     max-height: 400px;
     overflow-y: auto;

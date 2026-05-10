@@ -7,7 +7,7 @@
 #help-trigger {
     position: fixed;
     top: 0.75rem;
-    right: 0.75rem;
+    inset-inline-end: 0.75rem;
     z-index: 600;
     display: inline-flex;
     align-items: center;
@@ -43,7 +43,7 @@ body.browse-open #help-trigger {
 #help-trigger-browse {
     position: absolute;
     top: 0.25rem;
-    right: 0;
+    inset-inline-end: 0;
     width: 28px;
     height: 28px;
     display: inline-flex;
@@ -70,7 +70,7 @@ body.browse-open #help-trigger {
 #browse-close {
     position: absolute;
     top: 0.25rem;
-    right: 2.25rem;
+    inset-inline-end: 2.25rem;
     width: 28px;
     height: 28px;
     display: inline-flex;
@@ -222,7 +222,7 @@ body.browse-open #help-trigger {
 }
 .help-guide-section ul {
     margin: 0;
-    padding-left: 1.1rem;
+    padding-inline-start: 1.1rem;
     color: #c8ccd4;
 }
 .help-guide-section li {
@@ -308,7 +308,7 @@ body.browse-open #help-trigger {
     border-color: var(--accent-o50);
 }
 .help-form-meta {
-    text-align: right;
+    text-align: end;
     font-size: 0.7rem;
     color: var(--color-text-faint);
     margin-top: -0.35rem;
@@ -374,7 +374,7 @@ body.browse-open #help-trigger {
         font-size: 1rem;
     }
     #browse-close {
-        right: 3rem;
+        inset-inline-end: 3rem;
         width: 40px;
         height: 40px;
         font-size: 1rem;
@@ -383,8 +383,8 @@ body.browse-open #help-trigger {
        the panel to the top-right corner. */
     #help-panel {
         top: 3.5rem;
-        left: auto;
-        right: 0.75rem;
+        inset-inline-start: auto;
+        inset-inline-end: 0.75rem;
         transform: none;
         width: calc(100vw - 1.5rem);
         max-height: 70vh;
@@ -400,7 +400,7 @@ body.browse-open #help-trigger {
     }
     /* Clear the 48px circular help trigger */
     #time-label {
-        right: 4.5rem;
+        inset-inline-end: 4.5rem;
     }
 }
 
@@ -408,19 +408,19 @@ body.browse-open #help-trigger {
 @media (max-width: 600px) and (orientation: portrait) {
     #help-trigger {
         top: 0.5rem;
-        right: 0.5rem;
+        inset-inline-end: 0.5rem;
         width: 40px;
         height: 40px;
     }
     /* Clear the 40px help trigger at 0.5rem inset */
     #time-label {
-        right: 3.5rem;
+        inset-inline-end: 3.5rem;
         top: 0.5rem;
     }
     #help-panel {
         top: 0;
-        left: 0;
-        right: 0;
+        inset-inline-start: 0;
+        inset-inline-end: 0;
         bottom: 0;
         transform: none;
         width: 100vw;

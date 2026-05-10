@@ -1248,9 +1248,9 @@ class InteractiveSphere {
             This application requires WebGL to render the interactive globe.
             Your browser's GPU acceleration appears to be disabled.
           </p>
-          <details style="text-align:left;font-size:0.75rem;color:#999;line-height:1.6;">
+          <details style="text-align:start;font-size:0.75rem;color:#999;line-height:1.6;">
             <summary style="cursor:pointer;color:#4da6ff;margin-bottom:0.5rem;">How to fix this</summary>
-            <ol style="padding-left:1.25rem;margin:0;">
+            <ol style="padding-inline-start:1.25rem;margin:0;">
               <li>Open <strong style="color:#fff;">chrome://flags</strong> in your address bar</li>
               <li>Search for <strong style="color:#fff;">Override software rendering list</strong></li>
               <li>Set it to <strong style="color:#fff;">Enabled</strong> and relaunch Chrome</li>
