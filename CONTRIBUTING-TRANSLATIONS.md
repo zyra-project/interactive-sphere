@@ -79,17 +79,26 @@ keys not present in `en.json` all fail loudly. Editing the
 sidecar is reviewable in PRs the same way any other source change
 is.
 
-To push the sidecar's contents to Weblate, run:
+**Sync to Weblate is automatic.** The
+[`Sync Weblate metadata`](.github/workflows/sync-weblate.yml)
+GitHub Actions workflow runs whenever `locales/_explanations.json`
+(or the sync script itself) changes on `main`, and pushes the
+contents to Weblate's REST API. Idempotent — units whose
+explanation already matches are skipped. The workflow can also be
+triggered manually from the Actions tab (handy if you want to
+retry after a Weblate "Repository → Update").
 
-```
-WEBLATE_TOKEN=<your-token> npm run sync:weblate
-```
-
-The script POSTs to Weblate's REST API. Idempotent — units whose
-explanation already matches are skipped. Get a token from
+The workflow needs a repo secret named `WEBLATE_TOKEN` to authenticate.
+Maintainers create one at
 <https://hosted.weblate.org/accounts/profile/#api> with the
-"Manage component" permission. The sync is one-way (repo → Weblate);
-Weblate is downstream of the source of truth.
+**Manage component** permission, then store it under
+**Settings → Secrets and variables → Actions** in the GitHub repo.
+The sync is one-way (repo → Weblate); Weblate is downstream of the
+source of truth.
+
+If you ever want to run the sync locally instead, the same script
+is wired up as `npm run sync:weblate` and reads the token from a
+`WEBLATE_TOKEN` env var.
 
 Most keys in `en.json` are self-describing
 (`chat.settings.readingLevel.aria` clearly indicates an ARIA
