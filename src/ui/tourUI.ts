@@ -430,6 +430,13 @@ export function showTourTextBox(params: ShowRectTaskParams): void {
       display: flex;
       flex-direction: column;
       ${params.captionPos === 'center' ? 'align-items:center;text-align:center;' : ''}
+      ${/* Tour `captionPos: left | right` is intentionally physical:
+            the tour author chose a screen position based on what's
+            visually on the globe at that moment. Don't convert to
+            logical (`start`/`end`) — that would flip the caption
+            for RTL viewers, hiding it behind whatever the tour
+            author was pointing at. Translators handle directional
+            content via the caption text itself. */ ''}
       ${params.captionPos === 'left' ? 'align-items:flex-start;text-align:left;' : ''}
       ${params.captionPos === 'right' ? 'align-items:flex-end;text-align:right;' : ''}
       ${params.captionPos === 'top' ? 'align-items:center;text-align:center;' : ''}

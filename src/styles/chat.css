@@ -20,7 +20,7 @@
     color: var(--white-o80, rgba(255, 255, 255, 0.8));
     background: var(--white-o06, rgba(255, 255, 255, 0.06));
     border: 1px solid var(--white-o12, rgba(255, 255, 255, 0.12));
-    border-left: 3px solid #f0a25b;
+    border-inline-start: 3px solid #f0a25b;
     border-radius: 6px;
 }
 
@@ -28,7 +28,7 @@
 #chat-trigger {
     position: absolute;
     bottom: 4rem;
-    left: 0.75rem;
+    inset-inline-start: 0.75rem;
     pointer-events: auto;
     z-index: 400;
     height: var(--component-chat-trigger-height);
@@ -81,7 +81,7 @@
 #chat-dataset-prompt {
     position: absolute;
     bottom: 8.25rem;
-    left: 0.75rem;
+    inset-inline-start: 0.75rem;
     pointer-events: auto;
     z-index: 400;
     background: var(--glass-bg);
@@ -114,7 +114,7 @@
 #chat-panel {
     position: fixed;
     bottom: 7.25rem;
-    left: 0.75rem;
+    inset-inline-start: 0.75rem;
     width: var(--component-chat-panel-width);
     max-height: var(--component-chat-panel-max-height);
     pointer-events: auto;
@@ -180,10 +180,10 @@
     max-width: var(--component-chat-msg-max-width);
 }
 .chat-msg-user {
-    margin-left: auto;
+    margin-inline-start: auto;
 }
 .chat-msg-docent {
-    margin-right: auto;
+    margin-inline-end: auto;
 }
 .chat-msg-text {
     display: inline-block;
@@ -218,7 +218,7 @@
     align-items: center;
     gap: 0.5rem;
     width: 100%;
-    text-align: left;
+    text-align: start;
     background: var(--color-surface-alt) !important;
     border: 1px solid var(--white-o08) !important;
     border-radius: var(--component-chat-action-btn-radius);
@@ -403,8 +403,8 @@
 .chat-feedback-sheet {
     position: absolute;
     bottom: 0;
-    left: 0;
-    right: 0;
+    inset-inline-start: 0;
+    inset-inline-end: 0;
     z-index: 10;
     background: rgba(13, 13, 18, 0.95);
     backdrop-filter: var(--glass-blur);
@@ -582,7 +582,7 @@
     background: none !important;
     border: none !important;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
 }
 .chat-browse-link:hover { text-decoration: underline; }
 
@@ -627,7 +627,7 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
-    padding-right: 1.5rem;
+    padding-inline-end: 1.5rem;
 }
 .chat-settings-row select option {
     background: #1a1a24;
@@ -661,7 +661,7 @@
 }
 .chat-settings-status {
     font-size: 0.62rem;
-    margin-left: 0.4rem;
+    margin-inline-start: 0.4rem;
     color: var(--color-text-muted);
 }
 .chat-settings-status-ok { color: #4caf50; }
@@ -687,10 +687,10 @@
         width: 40px;
         height: 40px;
         font-size: 1.1rem;
-        right: -3.25rem;
+        inset-inline-end: -3.25rem;
     }
     .browse-search-wrap {
-        margin-right: 3.25rem;
+        margin-inline-end: 3.25rem;
     }
     .chat-action-btn {
         padding: 0.5rem 0.65rem !important;
@@ -704,8 +704,8 @@
 /* Phone portrait: chat becomes a bottom sheet */
 @media (max-width: 600px) and (orientation: portrait) {
     #chat-panel {
-        left: 0;
-        right: 0;
+        inset-inline-start: 0;
+        inset-inline-end: 0;
         bottom: 0;
         width: var(--component-chat-panel-width);
         max-height: var(--component-chat-panel-max-height);

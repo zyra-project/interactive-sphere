@@ -8,7 +8,7 @@
 #map-controls {
     position: absolute;
     bottom: 3.2rem;
-    right: 0.75rem;
+    inset-inline-end: 0.75rem;
     display: flex;
     gap: 0.4rem;
     padding: 0;
@@ -98,7 +98,7 @@
 .tools-menu-popover {
     position: absolute;
     bottom: calc(100% + 0.5rem);
-    right: 0;
+    inset-inline-end: 0;
     min-width: var(--component-tools-menu-popover-min-width);
     max-width: calc(100vw - 1.5rem);
     padding: 0.75rem;
@@ -166,7 +166,7 @@
     font: inherit;
     font-size: var(--component-tools-menu-item-font-size);
     color: #ddd;
-    text-align: left;
+    text-align: start;
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--component-tools-menu-item-radius);

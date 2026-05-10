@@ -45,6 +45,7 @@ const NATIVE_NAMES: Readonly<Record<string, string>> = {
   en: 'English',
   es: 'Español',
   kab: 'Taqbaylit',
+  ar: 'العربية',
 }
 
 interface LocaleFile {

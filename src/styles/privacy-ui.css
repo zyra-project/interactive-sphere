@@ -329,8 +329,8 @@
 
 @media (max-width: 600px) {
     .disclosure-banner {
-        left: 0.5rem;
-        right: 0.5rem;
+        inset-inline-start: 0.5rem;
+        inset-inline-end: 0.5rem;
         transform: none;
         max-width: none;
     }
@@ -349,7 +349,7 @@
 .disclosure-badge {
     position: fixed;
     top: calc(0.5rem + var(--safe-top));
-    left: calc(0.5rem + var(--safe-left));
+    inset-inline-start: calc(0.5rem + var(--safe-left));
     width: 44px;
     height: 44px;
     padding: 0;

@@ -44,7 +44,7 @@
 }
 
 #tour-stop-btn {
-    margin-left: 0.25rem;
+    margin-inline-start: 0.25rem;
     color: var(--color-error-soft) !important;
     border-color: rgba(255, 107, 107, 0.25) !important;
 }
@@ -62,7 +62,7 @@
 .tour-textbox-close {
     position: absolute;
     top: 0.4rem;
-    right: 0.4rem;
+    inset-inline-end: 0.4rem;
     background: var(--white-o08) !important;
     border: 1px solid var(--white-o15) !important;
     color: #aaa !important;
@@ -150,8 +150,8 @@
 @media (max-width: 600px) and (orientation: portrait) {
     body.tour-active #playback-controls:not(.hidden) {
         bottom: 3rem !important;
-        left: 0.5rem !important;
-        right: 0.5rem !important;
+        inset-inline-start: 0.5rem !important;
+        inset-inline-end: 0.5rem !important;
         max-width: none !important;
         padding: 0.3rem 0.5rem !important;
     }
@@ -197,7 +197,7 @@
 .tour-legend {
     position: absolute;
     top: 3rem;
-    left: 0.5rem;
+    inset-inline-start: 0.5rem;
     z-index: 5;
     pointer-events: auto;
     padding: 0.3rem;

@@ -45,8 +45,8 @@ body.orbit-body {
 .orbit-topbar {
     position: absolute;
     top: 0.75rem;
-    left: 0.75rem;
-    right: 0.75rem;
+    inset-inline-start: 0.75rem;
+    inset-inline-end: 0.75rem;
     z-index: 10;
     display: flex;
     align-items: center;
@@ -97,7 +97,7 @@ body.orbit-body {
 .orbit-perf-hud {
     position: absolute;
     top: 3.5rem;
-    right: 0.75rem;
+    inset-inline-end: 0.75rem;
     z-index: 10;
     padding: 0.25rem 0.55rem;
     background: var(--glass-bg-light);
@@ -116,7 +116,7 @@ body.orbit-body {
 @media (max-width: 768px) {
     .orbit-perf-hud {
         top: 3rem;
-        right: 0.5rem;
+        inset-inline-end: 0.5rem;
         font-size: 10px;
     }
 }
@@ -125,7 +125,7 @@ body.orbit-body {
 
 .orbit-debug-panel {
     position: absolute;
-    left: 0.75rem;
+    inset-inline-start: 0.75rem;
     bottom: 0.75rem;
     z-index: 10;
     min-width: 240px;
@@ -325,12 +325,12 @@ body.orbit-body {
     color: var(--color-text-secondary);
     background: transparent;
     border: none;
-    border-left: 1px solid var(--white-o08);
+    border-inline-start: 1px solid var(--white-o08);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
-.orbit-debug-scale:first-child { border-left: none; }
+.orbit-debug-scale:first-child { border-inline-start: none; }
 
 .orbit-debug-scale:hover {
     background: var(--color-surface-hover);
@@ -364,12 +364,12 @@ body.orbit-body {
     color: var(--color-text-secondary);
     background: transparent;
     border: none;
-    border-left: 1px solid var(--white-o08);
+    border-inline-start: 1px solid var(--white-o08);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
-.orbit-debug-eye:first-child { border-left: none; }
+.orbit-debug-eye:first-child { border-inline-start: none; }
 
 .orbit-debug-eye:hover {
     background: var(--color-surface-hover);
@@ -440,8 +440,8 @@ body.orbit-body {
 
 @media (max-width: 768px) {
     .orbit-debug-panel {
-        left: 0.5rem;
-        right: 0.5rem;
+        inset-inline-start: 0.5rem;
+        inset-inline-end: 0.5rem;
         max-width: none;
     }
     .orbit-back {

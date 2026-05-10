@@ -12,9 +12,11 @@
 #vr-enter-btn {
     position: fixed;
     top: 0.75rem;
-    /* Tuck to the left of the help button (which sits at right: 0.75rem
-       with a minimum width around 72 px). */
-    right: 5rem;
+    /* Tuck inline-start of the help button (which sits at
+       inset-inline-end: 0.75rem with a minimum width around
+       72 px). The 5rem offset lands the VR button just before it
+       in both LTR and RTL. */
+    inset-inline-end: 5rem;
     z-index: 600;
     display: inline-flex;
     align-items: center;
@@ -61,7 +63,7 @@ body.browse-open #vr-enter-btn {
    crowd out the help button on mobile. */
 @media (max-width: 600px) {
     #vr-enter-btn {
-        right: 4.25rem;
+        inset-inline-end: 4.25rem;
         padding: 0.4rem 0.55rem;
     }
     #vr-enter-btn .vr-btn-label {

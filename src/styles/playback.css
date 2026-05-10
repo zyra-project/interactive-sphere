@@ -29,7 +29,7 @@
     position: absolute;
     top: 0.75rem;
     /* Clear the help trigger pill (~80px) + gap */
-    right: 6rem;
+    inset-inline-end: 6rem;
     background: var(--glass-bg-light);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
@@ -39,7 +39,7 @@
 /* When the browse overlay is open, the help trigger is hidden,
    so let the time label return to the corner. */
 body.browse-open #time-label {
-    right: 0.75rem;
+    inset-inline-end: 0.75rem;
 }
 
 #home-btn:hover {
