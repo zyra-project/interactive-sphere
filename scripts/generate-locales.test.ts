@@ -301,8 +301,11 @@ describe('build', () => {
     // is the canonical translator UI; editor autocomplete on en.json
     // matters less than a clean translator surface), every `$`-prefixed
     // key now fails KEY_RE — including typos like `$app.title`.
+    // Value is irrelevant here — KEY_RE rejects on the key shape, not
+    // the value. Empty string keeps the test self-contained instead of
+    // hinting at a schema file path that no longer exists.
     const dir = tmpLocalesDir({
-      'en.json': { '$schema': '../src/types/locale.schema.json' },
+      'en.json': { '$schema': '' },
     })
     expect(() => build(dir)).toThrow(/violates/)
   })

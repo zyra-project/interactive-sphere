@@ -103,10 +103,15 @@ export function validateLocale(
   parsed: unknown,
 ): asserts parsed is Record<string, string> {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    // Spell out `null` separately because `typeof null === 'object'`,
+    // which would otherwise produce a misleading `got object` message.
+    const got = parsed === null
+      ? 'null'
+      : Array.isArray(parsed)
+        ? 'array'
+        : typeof parsed
     throw new LocaleBuildError(
-      `[locales] ${locale}.json must be a JSON object, got ${
-        Array.isArray(parsed) ? 'array' : typeof parsed
-      }`,
+      `[locales] ${locale}.json must be a JSON object, got ${got}`,
     )
   }
   for (const [key, value] of Object.entries(parsed)) {
