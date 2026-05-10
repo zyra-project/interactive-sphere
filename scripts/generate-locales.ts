@@ -291,10 +291,14 @@ export function renderEntryModule(
   return lines.join('\n')
 }
 
-/** Read every `locales/*.json`. */
+/** Read every `locales/<bcp47>.json`. Files prefixed with `_`
+ *  (e.g. `_explanations.json`) are sidecar metadata, not locales —
+ *  they're skipped here and consumed separately. Weblate's Language
+ *  filter regex (`^[a-zA-Z]{2,3}…`) rejects underscore-prefixed
+ *  filenames for the same reason: they are not language codes. */
 export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
   const files = readdirSync(localesDir)
-    .filter((name) => name.endsWith('.json'))
+    .filter((name) => name.endsWith('.json') && !name.startsWith('_'))
     .sort()
   return files.map((name) => {
     const path = resolve(localesDir, name)
@@ -311,6 +315,75 @@ export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
     validateLocale(locale, parsed)
     return { locale, path, messages: parsed }
   })
+}
+
+/**
+ * Read and validate `locales/_explanations.json` (optional sidecar).
+ * Returns the parsed map, or `null` if the file doesn't exist. Throws
+ * `LocaleBuildError` on shape violations or stale keys.
+ *
+ * Explanations are per-string developer notes pushed to Weblate via
+ * `scripts/sync-weblate-metadata.ts` to populate the per-string
+ * "Explanation" field translators see in the editor. Maintained in
+ * the repo (so context is reviewable in PRs) and synced one-way out.
+ *
+ * Validation rules:
+ *   - Object of `string → string`.
+ *   - Every key must exist in `en.json` (catches stale explanations
+ *     when an English key is renamed or removed).
+ *   - Empty values fail loudly — an empty explanation is worse than
+ *     no explanation because Weblate will overwrite a translator's
+ *     prior context with empty text.
+ */
+export function readExplanations(
+  localesDir: string = LOCALES_DIR,
+  sourceKeys: ReadonlySet<string>,
+): Readonly<Record<string, string>> | null {
+  const path = resolve(localesDir, '_explanations.json')
+  let fileText: string
+  try {
+    fileText = readFileSync(path, 'utf-8')
+  } catch {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(fileText)
+  } catch (err) {
+    throw new LocaleBuildError(
+      `[locales] _explanations.json: invalid JSON — ${(err as Error).message}`,
+    )
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    const got = parsed === null
+      ? 'null'
+      : Array.isArray(parsed)
+        ? 'array'
+        : typeof parsed
+    throw new LocaleBuildError(
+      `[locales] _explanations.json must be a JSON object, got ${got}`,
+    )
+  }
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== 'string') {
+      throw new LocaleBuildError(
+        `[locales] _explanations.json: value for "${key}" must be a string, got ${typeof value}`,
+      )
+    }
+    if (value.trim() === '') {
+      throw new LocaleBuildError(
+        `[locales] _explanations.json: explanation for "${key}" is empty — remove the entry instead of leaving a blank string (an empty value would overwrite any prior context in Weblate).`,
+      )
+    }
+    if (!sourceKeys.has(key)) {
+      throw new LocaleBuildError(
+        `[locales] _explanations.json: key "${key}" is not in en.json — remove the stale explanation or add the key to en.json first.`,
+      )
+    }
+    out[key] = value
+  }
+  return out
 }
 
 /**
@@ -342,6 +415,13 @@ export function build(localesDir: string = LOCALES_DIR): BuildOutput {
   if (errors.length > 0) {
     throw new LocaleBuildError(errors.join('\n'))
   }
+
+  // Validate the optional explanations sidecar against the source key
+  // set. Doesn't affect generated output (explanations are pushed to
+  // Weblate by `scripts/sync-weblate-metadata.ts`, not bundled into
+  // the runtime), but the build is the right place to catch a stale
+  // entry referencing a key that no longer exists in en.json.
+  readExplanations(localesDir, new Set(Object.keys(source.messages)))
 
   const files: RenderResult[] = []
   // Canonicalized JSON for every input locale comes first. The

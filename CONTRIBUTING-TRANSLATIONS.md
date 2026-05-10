@@ -24,9 +24,15 @@ The repo root has one piece:
 
 ```
 locales/
-  en.json        Source of truth — every key originates here
-  es.json        Spanish — the L1 seed locale
-  …              one file per supported locale
+  en.json             Source of truth — every key originates here
+  es.json             Spanish — the L1 seed locale
+  …                   one file per supported locale
+  _explanations.json  Optional per-string developer notes for
+                      translators. Pushed to Weblate's per-string
+                      "Explanation" field by `npm run sync:weblate`.
+                      The `_` prefix tells both Weblate's Language
+                      filter and the codegen to treat it as sidecar
+                      metadata, not a locale.
 ```
 
 Each locale file is a flat JSON object mapping a dotted key like
@@ -58,6 +64,40 @@ edits in, predev/prebuild normalize the file before commit, so
 Weblate's incoming PRs against `main` never produce
 whitespace-only diffs. If you want to preview the canonical form
 of your changes, run `npm run locales` and re-stage.
+
+### Per-string explanations (developer notes for translators)
+
+`locales/_explanations.json` is an optional sidecar mapping
+message keys to short developer notes. Notes show up in the per-
+string **Explanation** field in the Weblate editor, so a translator
+working on `playback.error.dateOutsideRange` sees, inline, that
+they need to preserve the `{date}`, `{start}`, `{end}` placeholders.
+
+The build (`npm run locales`) validates the sidecar's shape and
+key set on every run — empty values, non-string values, and
+keys not present in `en.json` all fail loudly. Editing the
+sidecar is reviewable in PRs the same way any other source change
+is.
+
+To push the sidecar's contents to Weblate, run:
+
+```
+WEBLATE_TOKEN=<your-token> npm run sync:weblate
+```
+
+The script POSTs to Weblate's REST API. Idempotent — units whose
+explanation already matches are skipped. Get a token from
+<https://hosted.weblate.org/accounts/profile/#api> with the
+"Manage component" permission. The sync is one-way (repo → Weblate);
+Weblate is downstream of the source of truth.
+
+Most keys in `en.json` are self-describing
+(`chat.settings.readingLevel.aria` clearly indicates an ARIA
+label) and don't need explanations. Add an entry only when the
+key alone leaves a translator guessing — typical cases are
+strings with placeholders that must be preserved verbatim, ARIA
+labels for non-visible elements, LLM-prompt fragments with special
+syntax, and first-person voice strings where tone matters.
 
 ---
 
