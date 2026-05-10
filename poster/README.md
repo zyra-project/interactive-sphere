@@ -123,7 +123,7 @@ mission / TOC scaffolding.
 |---|---|
 | `sec-01-hero.html` | Hero — title, author, NOAA + Zyra logos, QR codes |
 | `sec-02-mission.html` | The mission — *Same data, no museum required* |
-| `sec-03-features.html` | Ten-card feature gallery (TOC) |
+| `sec-03-features.html` | Eleven-card feature gallery (TOC) |
 | `sec-04-globe.html` | §1 · The globe under the hood — MapLibre + WebGL2 |
 | `sec-05-multiglobe.html` | §2 · Multi-globe comparison + camera-lockstep diagram |
 | `sec-06-tours.html` | §3 · Tours — data-driven storytelling |
