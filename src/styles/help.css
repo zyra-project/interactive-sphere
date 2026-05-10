@@ -380,7 +380,8 @@ body.browse-open #help-trigger {
         font-size: 1rem;
     }
     /* Tablet: revert the desktop centered-modal and anchor
-       the panel to the top-right corner. */
+       the panel to the top inline-end corner (top-right in LTR,
+       top-left in RTL). */
     #help-panel {
         top: 3.5rem;
         inset-inline-start: auto;

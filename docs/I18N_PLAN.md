@@ -69,7 +69,7 @@ Phases 3 + 4).
   set) ships in L1; the L1.5 CSS audit converts physical inline-
   axis properties (`padding-left`, `margin-right`, `text-align:
   left`, etc.) to logical equivalents and adds an explicit
-  `:dir(rtl)` override for the Browse panel slide. Arabic (`ar`)
+  `:root[dir="rtl"]` override for the Browse panel slide. Arabic (`ar`)
   is wired into `NATIVE_NAMES` with an empty `locales/ar.json`
   so the layout can be verified via `?lang=ar`. Strings still
   need a translator before Arabic appears in the public picker
