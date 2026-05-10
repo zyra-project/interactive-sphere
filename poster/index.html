@@ -4164,6 +4164,18 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   }
 }
 
+/* Closing refs line — same idiom as analytics__refs */
+.loc__refs {
+  font-size: 0.95rem;
+  color: var(--neutral-700);
+  margin: 1.5rem 0 0;
+}
+
+.loc__refs a {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
 /* =========================================================
    §11 Analytics — tier diptych, invariants list, flow
    diagram, doc cross-links
@@ -7319,12 +7331,12 @@ section figure:not(.hero__qr-figure):not(.cta__qr) img {
 
         <ul class="loc__callouts">
           <li>
-            <strong>The codegen is the canonical formatter.</strong>
+            <strong><a href="https://github.com/zyra-project/terraviz/blob/main/scripts/generate-locales.ts">The codegen is the canonical formatter.</a></strong>
             Predev/prebuild rewrite every locale JSON to match Weblate's exact output (2-space indent, sorted keys, no blank lines). Translator round-trips never produce whitespace-only diffs against <code>main</code>.
           </li>
           <li>
             <strong>Explanations live in the repo.</strong>
-            <code>locales/_explanations.json</code> carries per-string developer notes for the ~30 strings where the key alone leaves a translator guessing (preserve <code>{placeholders}</code>, <code>&lt;&lt;LOAD:DATASET_ID&gt;&gt;</code> markers, ARIA descriptions). A GitHub Actions workflow auto-syncs those into Weblate's per-string Explanation field on every change.
+            <a href="https://github.com/zyra-project/terraviz/blob/main/locales/_explanations.json"><code>locales/_explanations.json</code></a> carries per-string developer notes for the ~30 strings where the key alone leaves a translator guessing (preserve <code>{placeholders}</code>, <code>&lt;&lt;LOAD:DATASET_ID&gt;&gt;</code> markers, ARIA descriptions). A GitHub Actions workflow auto-syncs those into Weblate's per-string Explanation field on every change.
           </li>
           <li>
             <strong>LLM responses inherit the locale.</strong>
@@ -7395,6 +7407,10 @@ section figure:not(.hero__qr-figure):not(.cta__qr) img {
             <span class="loc__cta-qr-url">hosted.weblate.org/engage/terraviz/</span>
           </figure>
         </aside>
+
+        <p class="loc__refs">
+          Full plan, phase table, and runtime API live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/I18N_PLAN.md" target="_blank" rel="noopener"><code>docs/I18N_PLAN.md</code></a>; the translator workflow, glossary conventions, and DCO setup are documented in <a href="https://github.com/zyra-project/terraviz/blob/main/CONTRIBUTING-TRANSLATIONS.md" target="_blank" rel="noopener"><code>CONTRIBUTING-TRANSLATIONS.md</code></a>.
+        </p>
       </div>
     </section>
 
