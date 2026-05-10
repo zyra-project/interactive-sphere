@@ -169,6 +169,12 @@ useful, and stay JSON-Schema-validatable.
 locales/
   en.json                source of truth
   es.json                first non-English locale
+  _explanations.json     optional sidecar — per-string developer
+                         notes pushed to Weblate via
+                         `scripts/sync-weblate-metadata.ts`. The
+                         underscore prefix tells both Weblate and
+                         the codegen that this is sidecar metadata,
+                         not a locale file.
 scripts/
   generate-locales.ts    validate + emit (mirrors build-privacy-page.ts).
                          Acts as the canonical validator (key regex,

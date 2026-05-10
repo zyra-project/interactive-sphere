@@ -1,0 +1,51 @@
+name: Sync Weblate metadata
+
+# Pushes `locales/_explanations.json` to Weblate's per-string
+# Explanation field via the REST API. Idempotent — units whose
+# explanation already matches the sidecar are skipped.
+#
+# Triggers:
+#   - push to main, only when the sidecar file changes (cheap)
+#   - manual dispatch from the Actions tab (for one-off retries
+#     after a Weblate Repository → Update, in case the API
+#     reported missing units the first time around)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'locales/_explanations.json'
+      - 'scripts/sync-weblate-metadata.ts'
+      - 'scripts/generate-locales.ts'
+  workflow_dispatch:
+
+# Serialize runs rather than cancelling. The sync is idempotent so
+# overlap is safe, but cancellation mid-PATCH could leave a tail of
+# unsynced explanations until the next trigger.
+concurrency:
+  group: sync-weblate
+  cancel-in-progress: false
+
+# Minimum permissions: this workflow only checks out the repo and
+# calls Weblate's REST API with WEBLATE_TOKEN. No git push, no
+# package writes, no deployments. Explicit `contents: read` per
+# CodeQL's GITHUB_TOKEN-permissions guidance so the default broad
+# token can't be used to escalate if the workflow is ever
+# compromised.
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Push explanations to Weblate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run sync:weblate
+        env:
+          WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}

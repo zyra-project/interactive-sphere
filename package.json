@@ -13,6 +13,7 @@
     "tokens": "style-dictionary build --config tokens/style-dictionary.config.mjs",
     "locales": "npx tsx scripts/generate-locales.ts",
     "check:locales": "npx tsx scripts/generate-locales.ts --check",
+    "sync:weblate": "npx tsx scripts/sync-weblate-metadata.ts",
     "postinstall": "npm run tokens && npm run locales",
     "predev": "npm run build:privacy-page && npm run locales",
     "dev": "vite",

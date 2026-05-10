@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import {
   build,
   diffAgainstSource,
   LocaleBuildError,
+  readExplanations,
   renderEntryModule,
   renderLocaleJson,
   renderLocaleModule,
@@ -243,7 +244,7 @@ describe('build', () => {
       'es.json': { 'app.title': 'Terraviz' },
     })
     const out = build(dir)
-    expect(out.files.map((f) => f.path.split('/').pop())).toEqual([
+    expect(out.files.map((f) => basename(f.path))).toEqual([
       'en.json',
       'es.json',
       'messages.ts',
@@ -308,5 +309,97 @@ describe('build', () => {
       'en.json': { '$schema': '' },
     })
     expect(() => build(dir)).toThrow(/violates/)
+  })
+
+  it('skips files prefixed with `_` so sidecar metadata never gets treated as a locale', () => {
+    // `_explanations.json` carries per-string developer notes pushed
+    // to Weblate's "Explanation" field. It must not be ingested as a
+    // translation. Mirrors Weblate's own Language filter regex which
+    // rejects underscore-prefixed filenames.
+    const dir = tmpLocalesDir({
+      'en.json': { 'app.title': 'Terraviz' },
+      'es.json': { 'app.title': 'Terraviz' },
+      '_explanations.json': { 'app.title': 'Brand name; do not translate.' },
+    })
+    const out = build(dir)
+    // 2 locale JSONs (en, es) + entry module + es module — no entry
+    // for _explanations.
+    expect(out.files.map((f) => basename(f.path))).toEqual([
+      'en.json',
+      'es.json',
+      'messages.ts',
+      'messages.es.ts',
+    ])
+    expect(out.warnings).toEqual([])
+  })
+})
+
+describe('readExplanations', () => {
+  it('returns null when the sidecar file does not exist', () => {
+    const dir = tmpLocalesDir({ 'en.json': { 'app.title': 'Terraviz' } })
+    const result = readExplanations(dir, new Set(['app.title']))
+    expect(result).toBeNull()
+  })
+
+  it('returns the parsed map when valid and every key exists in source', () => {
+    const dir = tmpLocalesDir({
+      'en.json': { 'app.title': 'Terraviz', 'browse.search': 'Search' },
+      '_explanations.json': {
+        'app.title': 'Brand name; do not translate.',
+        'browse.search': 'Search bar placeholder.',
+      },
+    })
+    const result = readExplanations(
+      dir,
+      new Set(['app.title', 'browse.search']),
+    )
+    expect(result).toEqual({
+      'app.title': 'Brand name; do not translate.',
+      'browse.search': 'Search bar placeholder.',
+    })
+  })
+
+  it('throws on a stale key that no longer exists in en.json', () => {
+    const dir = tmpLocalesDir({
+      'en.json': { 'app.title': 'Terraviz' },
+      '_explanations.json': {
+        'app.title': 'Brand name.',
+        'browse.removed': 'This key was renamed and never cleaned up here.',
+      },
+    })
+    expect(() =>
+      readExplanations(dir, new Set(['app.title'])),
+    ).toThrow(/not in en\.json/)
+  })
+
+  it('throws on an empty explanation (would overwrite Weblate context)', () => {
+    const dir = tmpLocalesDir({
+      'en.json': { 'app.title': 'Terraviz' },
+      '_explanations.json': { 'app.title': '' },
+    })
+    expect(() =>
+      readExplanations(dir, new Set(['app.title'])),
+    ).toThrow(/empty/)
+  })
+
+  it('throws when the value is not a string', () => {
+    const dir = tmpLocalesDir({
+      'en.json': { 'app.title': 'Terraviz' },
+      '_explanations.json': { 'app.title': 42 },
+    })
+    expect(() =>
+      readExplanations(dir, new Set(['app.title'])),
+    ).toThrow(/must be a string/)
+  })
+
+  it('throws on a stale explanation when invoked through build()', () => {
+    // Smoke-check the wiring — build() should fail loudly if the
+    // sidecar references a key the source no longer has.
+    const dir = tmpLocalesDir({
+      'en.json': { 'app.title': 'Terraviz' },
+      'es.json': { 'app.title': 'Terraviz' },
+      '_explanations.json': { 'gone.key': 'Explanation for a key that does not exist.' },
+    })
+    expect(() => build(dir)).toThrow(/not in en\.json/)
   })
 })
