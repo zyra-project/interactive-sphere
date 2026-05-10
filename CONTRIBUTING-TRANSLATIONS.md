@@ -20,19 +20,13 @@ before it lands.
 
 ## What lives where
 
-The repo root has two pieces:
+The repo root has one piece:
 
 ```
 locales/
   en.json        Source of truth — every key originates here
   es.json        Spanish — the L1 seed locale
   …              one file per supported locale
-
-src/types/
-  locale.schema.json   JSON-Schema validator for the key/value shape.
-                       Lives outside locales/ so Weblate's
-                       (non-recursive) locales/*.json filemask
-                       doesn't pick it up as a translation file.
 ```
 
 Each locale file is a flat JSON object mapping a dotted key like
