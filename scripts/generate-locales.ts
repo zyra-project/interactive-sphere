@@ -4,10 +4,11 @@
  * `locales/*.json` in canonical form on every run.
  *
  * Mirrors `scripts/build-privacy-page.ts`:
- *   - Validates input against `src/types/locale.schema.json`-equivalent
- *     rules (flat key→string, key regex `^[a-z][a-zA-Z0-9.]*$`). The
- *     schema sits outside `locales/` so Weblate's (non-recursive)
- *     `locales/*.json` filemask doesn't pick it up as a translation.
+ *   - Validates each locale against the project's flat-string schema
+ *     (key regex `^[a-z][a-zA-Z0-9.]*$`, value must be a string,
+ *     forbidden-pattern gate for script-class HTML). This codegen
+ *     is the canonical validator — there is no separate
+ *     JSON-Schema file to keep in sync.
  *   - Diffs every non-source locale against `en.json`. Missing-in-
  *     target = warn. Extra-in-target = fail. Missing-in-source = fail.
  *   - Canonicalizes each `locales/*.json` to the exact format
@@ -39,12 +40,6 @@ const OUTPUT_DIR = resolve(REPO_ROOT, 'src/i18n')
 const SOURCE_LOCALE = 'en'
 const KEY_RE = /^[a-z][a-zA-Z0-9.]*$/
 
-/** Editor JSON-schema meta keys that locale files may carry but
- *  must not ship as messages. An explicit allowlist (rather than
- *  blanket `startsWith('$')`) so a typo like `$app.title` still
- *  fails `validateLocale` loudly instead of being silently dropped. */
-const META_KEYS: ReadonlySet<string> = new Set(['$schema', '$comment'])
-
 /** Native names for the language picker. Edit when adding a locale. */
 const NATIVE_NAMES: Readonly<Record<string, string>> = {
   en: 'English',
@@ -55,11 +50,6 @@ const NATIVE_NAMES: Readonly<Record<string, string>> = {
 interface LocaleFile {
   readonly locale: string
   readonly path: string
-  /** Original parsed object including allowlisted meta keys
-   *  (`$schema`, `$comment`). Used to emit the canonicalized JSON
-   *  back to disk; `messages` is the validated, meta-stripped view
-   *  used for diffing and TS emission. */
-  readonly raw: Readonly<Record<string, unknown>>
   readonly messages: Readonly<Record<string, string>>
 }
 
@@ -113,10 +103,15 @@ export function validateLocale(
   parsed: unknown,
 ): asserts parsed is Record<string, string> {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    // Spell out `null` separately because `typeof null === 'object'`,
+    // which would otherwise produce a misleading `got object` message.
+    const got = parsed === null
+      ? 'null'
+      : Array.isArray(parsed)
+        ? 'array'
+        : typeof parsed
     throw new LocaleBuildError(
-      `[locales] ${locale}.json must be a JSON object, got ${
-        Array.isArray(parsed) ? 'array' : typeof parsed
-      }`,
+      `[locales] ${locale}.json must be a JSON object, got ${got}`,
     )
   }
   for (const [key, value] of Object.entries(parsed)) {
@@ -180,22 +175,18 @@ export function diffAgainstSource(
  *   - No interior blank lines (Weblate strips them on round-trip,
  *     which is the source of every whitespace-churn diff we've
  *     seen against main)
- *   - Keys sorted alphabetically (lexicographic on the raw key
- *     string) to match Weblate's "Sort JSON keys" component
- *     setting. `$`-prefixed meta keys (`$schema`, `$comment`) sort
- *     ahead of every letter-prefixed message key because `$`
- *     (0x24) precedes letters in ASCII; they also sort
- *     deterministically among themselves (`$comment` < `$schema`).
+ *   - Keys sorted alphabetically to match Weblate's "Sort JSON
+ *     keys" component setting
  *   - Literal Unicode for BMP characters (`JSON.stringify` only
  *     escapes control chars and unpaired surrogates, which matches
  *     Weblate)
  */
 export function renderLocaleJson(
-  raw: Readonly<Record<string, unknown>>,
+  messages: Readonly<Record<string, unknown>>,
 ): string {
   const sorted: Record<string, unknown> = {}
-  for (const k of Object.keys(raw).sort()) {
-    sorted[k] = raw[k]
+  for (const k of Object.keys(messages).sort()) {
+    sorted[k] = messages[k]
   }
   return JSON.stringify(sorted, null, 2) + '\n'
 }
@@ -300,9 +291,7 @@ export function renderEntryModule(
   return lines.join('\n')
 }
 
-/** Read every `locales/*.json`. The JSON-schema lives in
- *  `src/types/locale.schema.json` so Weblate's non-recursive
- *  `locales/*.json` filemask doesn't ingest it as a translation. */
+/** Read every `locales/*.json`. */
 export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
   const files = readdirSync(localesDir)
     .filter((name) => name.endsWith('.json'))
@@ -319,27 +308,8 @@ export function readLocales(localesDir: string = LOCALES_DIR): LocaleFile[] {
         `[locales] ${name}: invalid JSON — ${(err as Error).message}`,
       )
     }
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new LocaleBuildError(
-        `[locales] ${locale}.json must be a JSON object, got ${
-          Array.isArray(parsed) ? 'array' : parsed === null ? 'null' : typeof parsed
-        }`,
-      )
-    }
-    const raw = parsed as Record<string, unknown>
-    // Strip allowlisted meta keys (see META_KEYS) for the validated
-    // view. They're for editor JSON-schema integration and never
-    // ship as messages. Anything else — including a typo like
-    // `$app.title` — falls through to `validateLocale` and fails on
-    // `KEY_RE`. The `raw` object keeps meta keys so canonicalized
-    // JSON output preserves the editor reference.
-    const messages: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(raw)) {
-      if (META_KEYS.has(k)) continue
-      messages[k] = v
-    }
-    validateLocale(locale, messages)
-    return { locale, path, raw, messages }
+    validateLocale(locale, parsed)
+    return { locale, path, messages: parsed }
   })
 }
 
@@ -382,7 +352,7 @@ export function build(localesDir: string = LOCALES_DIR): BuildOutput {
   for (const loc of locales) {
     files.push({
       path: loc.path,
-      contents: renderLocaleJson(loc.raw),
+      contents: renderLocaleJson(loc.messages),
     })
   }
   files.push({

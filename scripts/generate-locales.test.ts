@@ -150,20 +150,6 @@ describe('renderLocaleJson', () => {
     expect(out.indexOf('"a.first"')).toBeLessThan(out.indexOf('"z.last"'))
   })
 
-  it('sorts $-prefixed meta keys ahead of every letter-prefixed key', () => {
-    // `$` (0x24) precedes letters in ASCII, so `$schema` / `$comment`
-    // both sort ahead of `app.title`. Locks both halves of the
-    // ordering contract: meta-before-letters AND deterministic
-    // ordering between meta keys themselves.
-    const out = renderLocaleJson({
-      'app.title': 'Terraviz',
-      $schema: '../src/types/locale.schema.json',
-      $comment: 'seed',
-    })
-    expect(out.indexOf('"$comment"')).toBeLessThan(out.indexOf('"$schema"'))
-    expect(out.indexOf('"$schema"')).toBeLessThan(out.indexOf('"app.title"'))
-  })
-
   it('uses literal Unicode for BMP characters (no \\uXXXX escapes)', () => {
     const out = renderLocaleJson({ greeting: '¡Hola, Mundo! — “quotes”' })
     expect(out).toContain('¡Hola, Mundo! — “quotes”')
@@ -172,7 +158,6 @@ describe('renderLocaleJson', () => {
 
   it('is idempotent — re-running on canonical output yields identical bytes', () => {
     const obj = {
-      $schema: '../src/types/locale.schema.json',
       'app.title': 'Terraviz',
       'browse.search': 'Search',
     }
@@ -185,10 +170,7 @@ describe('renderLocaleJson', () => {
 describe('build → JSON canonicalization', () => {
   it('emits canonicalized JSON for every input locale, written back to its source path', () => {
     const dir = tmpLocalesDir({
-      'en.json': {
-        $schema: '../src/types/locale.schema.json',
-        'app.title': 'Terraviz',
-      },
+      'en.json': { 'app.title': 'Terraviz' },
       'es.json': { 'app.title': 'Terraviz' },
     })
     const out = build(dir)
@@ -197,8 +179,7 @@ describe('build → JSON canonicalization', () => {
     expect(enFile).toBeTruthy()
     expect(esFile).toBeTruthy()
     expect(enFile!.path).toBe(resolve(dir, 'en.json'))
-    expect(enFile!.contents.startsWith('{\n  "$schema":')).toBe(true)
-    expect(enFile!.contents.endsWith('\n}\n')).toBe(true)
+    expect(enFile!.contents).toBe('{\n  "app.title": "Terraviz"\n}\n')
   })
 
   it('strips blank-line drift from a developer-typed locale (closes the Weblate churn loop)', () => {
@@ -314,41 +295,17 @@ describe('build', () => {
     expect(a).toEqual(b)
   })
 
-  it('strips allowlisted $-meta keys from generated TS but preserves them in canonicalized JSON', () => {
-    // Editors expect a `$schema` reference at the top of each locale
-    // for autocomplete; the codegen must accept it, exclude it from
-    // diffing/validation and TS emission, and round-trip it through
-    // the canonical JSON output untouched.
+  it('rejects any $-prefixed key (including would-be meta keys) via KEY_RE', () => {
+    // The codegen used to allowlist `$schema` / `$comment` for editor
+    // JSON-Schema integration. After dropping that affordance (Weblate
+    // is the canonical translator UI; editor autocomplete on en.json
+    // matters less than a clean translator surface), every `$`-prefixed
+    // key now fails KEY_RE — including typos like `$app.title`.
+    // Value is irrelevant here — KEY_RE rejects on the key shape, not
+    // the value. Empty string keeps the test self-contained instead of
+    // hinting at a schema file path that no longer exists.
     const dir = tmpLocalesDir({
-      'en.json': {
-        $schema: '../src/types/locale.schema.json',
-        $comment: 'wave 0 seed',
-        'app.title': 'Terraviz',
-      },
-      'es.json': {
-        $schema: '../src/types/locale.schema.json',
-        'app.title': 'Terraviz',
-      },
-    })
-    const out = build(dir)
-    expect(out.warnings).toEqual([])
-    expect(out.files.length).toBe(4)
-    const tsFiles = out.files.filter((f) => f.path.endsWith('.ts'))
-    for (const f of tsFiles) {
-      expect(f.contents).not.toContain('$schema')
-      expect(f.contents).not.toContain('$comment')
-    }
-    const enJson = out.files.find((f) => f.path.endsWith('en.json'))!
-    expect(enJson.contents).toContain('"$schema"')
-    expect(enJson.contents).toContain('"$comment"')
-  })
-
-  it('still fails on a typo like $app.title (not in the meta allowlist)', () => {
-    // Guards against the obvious regression: someone broadens the
-    // strip back to `startsWith('$')` and a fat-fingered key gets
-    // silently dropped instead of failing CI.
-    const dir = tmpLocalesDir({
-      'en.json': { '$app.title': 'Terraviz' },
+      'en.json': { '$schema': '' },
     })
     expect(() => build(dir)).toThrow(/violates/)
   })
