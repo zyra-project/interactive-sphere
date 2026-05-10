@@ -191,7 +191,12 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   run().catch((err) => {
-    if (err instanceof SyncError) {
+    // Treat any thrown Error as a clean exit so the operator sees
+    // the message, not a stack trace. Covers SyncError (HTTP /
+    // auth failures from this script) and LocaleBuildError /
+    // anything else `readExplanations` rethrows (stale key,
+    // invalid JSON, IO failure on the sidecar).
+    if (err instanceof Error) {
       console.error(err.message)
       process.exit(1)
     }

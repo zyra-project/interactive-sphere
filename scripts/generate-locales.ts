@@ -343,8 +343,15 @@ export function readExplanations(
   let fileText: string
   try {
     fileText = readFileSync(path, 'utf-8')
-  } catch {
-    return null
+  } catch (err) {
+    // Missing file is the documented "no sidecar" path. Anything
+    // else (permission denied, IO error, EISDIR, etc.) is a real
+    // failure that would otherwise be silently treated as
+    // "no explanations" and skip the entire sync — surface it.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw new LocaleBuildError(
+      `[locales] _explanations.json: failed to read — ${(err as Error).message}`,
+    )
   }
   let parsed: unknown
   try {

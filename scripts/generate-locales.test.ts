@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import {
   build,
   diffAgainstSource,
@@ -244,7 +244,7 @@ describe('build', () => {
       'es.json': { 'app.title': 'Terraviz' },
     })
     const out = build(dir)
-    expect(out.files.map((f) => f.path.split('/').pop())).toEqual([
+    expect(out.files.map((f) => basename(f.path))).toEqual([
       'en.json',
       'es.json',
       'messages.ts',
@@ -324,7 +324,7 @@ describe('build', () => {
     const out = build(dir)
     // 2 locale JSONs (en, es) + entry module + es module — no entry
     // for _explanations.
-    expect(out.files.map((f) => f.path.split('/').pop())).toEqual([
+    expect(out.files.map((f) => basename(f.path))).toEqual([
       'en.json',
       'es.json',
       'messages.ts',

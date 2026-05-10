@@ -26,6 +26,15 @@ concurrency:
   group: sync-weblate
   cancel-in-progress: false
 
+# Minimum permissions: this workflow only checks out the repo and
+# calls Weblate's REST API with WEBLATE_TOKEN. No git push, no
+# package writes, no deployments. Explicit `contents: read` per
+# CodeQL's GITHUB_TOKEN-permissions guidance so the default broad
+# token can't be used to escalate if the workflow is ever
+# compromised.
+permissions:
+  contents: read
+
 jobs:
   sync:
     name: Push explanations to Weblate
