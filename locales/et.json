@@ -1,1 +1,6 @@
-{}
+{
+  "browse.card.meta.added": "Lisatud:",
+  "browse.card.meta.datasetDeveloper": "Andmekogu arendaja:",
+  "browse.card.meta.source": "Allikas:",
+  "browse.card.meta.timeRange": "Ajavahemik:"
+}
