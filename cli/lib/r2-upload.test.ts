@@ -296,6 +296,27 @@ describe('parseListKeys', () => {
     const xml = `<Contents><Key>videos/a&amp;b/master.m3u8</Key></Contents>`
     expect(parseListKeys(xml)).toEqual(['videos/a&b/master.m3u8'])
   })
+  it('does not double-unescape literal entity-looking sequences (CodeQL fix)', () => {
+    // A key with the literal text `&quot;` in it. S3 encodes the
+    // bare `&` in the XML response as `&amp;`, so the wire payload
+    // is `&amp;quot;`. Decoder must yield the original literal
+    // `&quot;`, NOT collapse through `&quot;` → `"`.
+    expect(parseListKeys(`<Contents><Key>k&amp;quot;v</Key></Contents>`)).toEqual([
+      'k&quot;v',
+    ])
+    // Same for the other entities that follow `&` in the
+    // alphabet — `&amp;apos;` must round-trip to literal `&apos;`,
+    // not to `'`.
+    expect(parseListKeys(`<Contents><Key>k&amp;apos;v</Key></Contents>`)).toEqual([
+      "k&apos;v",
+    ])
+    expect(parseListKeys(`<Contents><Key>k&amp;lt;v</Key></Contents>`)).toEqual([
+      'k&lt;v',
+    ])
+    expect(parseListKeys(`<Contents><Key>k&amp;gt;v</Key></Contents>`)).toEqual([
+      'k&gt;v',
+    ])
+  })
   it('returns [] for an empty bucket', () => {
     expect(parseListKeys('<ListBucketResult></ListBucketResult>')).toEqual([])
   })

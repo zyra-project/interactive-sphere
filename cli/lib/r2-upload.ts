@@ -383,10 +383,16 @@ export function parseListKeys(xml: string): string[] {
 }
 
 function decodeXmlEntities(s: string): string {
+  // Order matters: `&amp;` must come LAST so all other entities
+  // resolve first. Otherwise a literal source-text `&quot;` (which
+  // S3 encodes as `&amp;quot;` in the XML response) double-
+  // unescapes through `&amp;` → `&quot;` → `"`, corrupting keys
+  // that contain literal `&quot;` / `&apos;` / `&lt;` / `&gt;`
+  // sequences. Caught by CodeQL on the Phase 3 PR review.
   return s
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
 }
