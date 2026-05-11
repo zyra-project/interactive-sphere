@@ -94,4 +94,65 @@ describe('detectLocale (resolution chain)', () => {
       }),
     ).toBe('es')
   })
+
+  it('navigator.languages only matches picker-eligible locales when pickerSupported is narrower', () => {
+    // Browser is set to Arabic; Arabic is loadable (in `supported`)
+    // but below the picker-visibility threshold (NOT in
+    // `pickerSupported`). Auto-detect should fall through to the
+    // default rather than land the visitor on an empty Arabic UI.
+    expect(
+      detectLocale({
+        supported: ['en', 'es', 'ar'],
+        pickerSupported: ['en', 'es'],
+        fallback,
+        queryLang: null,
+        navigatorLanguages: ['ar-EG'],
+      }),
+    ).toBe('en')
+  })
+
+  it('?lang= still accepts below-threshold locales when pickerSupported is narrower', () => {
+    // The explicit `?lang=ar` override is how a tester or translator
+    // previews a below-threshold locale. The narrower
+    // `pickerSupported` must not block this path.
+    expect(
+      detectLocale({
+        supported: ['en', 'es', 'ar'],
+        pickerSupported: ['en', 'es'],
+        fallback,
+        queryLang: 'ar',
+        navigatorLanguages: [],
+      }),
+    ).toBe('ar')
+  })
+
+  it('stored pref still accepts below-threshold locales when pickerSupported is narrower', () => {
+    // If a user previously picked `ar` (or landed there via `?lang=ar`
+    // and the harness persisted the choice), `pickerSupported`
+    // narrowing shouldn't silently bounce them to English on next
+    // visit.
+    saveLocalePref('ar')
+    expect(
+      detectLocale({
+        supported: ['en', 'es', 'ar'],
+        pickerSupported: ['en', 'es'],
+        fallback,
+        queryLang: null,
+        navigatorLanguages: ['en'],
+      }),
+    ).toBe('ar')
+  })
+
+  it('falls back to `supported` for navigator when pickerSupported is omitted (legacy callers)', () => {
+    // Older callers that don't pass `pickerSupported` get the
+    // unchanged "navigator matches anything in supported" behavior.
+    expect(
+      detectLocale({
+        supported: ['en', 'es', 'ar'],
+        fallback,
+        queryLang: null,
+        navigatorLanguages: ['ar-EG'],
+      }),
+    ).toBe('ar')
+  })
 })

@@ -10,6 +10,7 @@ import { applyI18nAttributes } from './applyI18nAttributes'
 import { detectLocale } from './detect'
 import {
   initI18n,
+  PICKER_LOCALES,
   setLocale,
   SOURCE_LOCALE,
   SUPPORTED_LOCALES,
@@ -20,6 +21,7 @@ export async function bootstrapI18n(): Promise<Locale> {
   initI18n()
   const detected = detectLocale({
     supported: SUPPORTED_LOCALES,
+    pickerSupported: PICKER_LOCALES,
     fallback: SOURCE_LOCALE,
   }) as Locale
   if (detected !== SOURCE_LOCALE) {

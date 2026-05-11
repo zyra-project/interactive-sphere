@@ -23,9 +23,11 @@ import { escapeAttr, escapeHtml } from '../ui/domUtils'
 
 export {
   enMessages,
+  LOCALE_COVERAGE,
+  NATIVE_NAMES,
+  PICKER_LOCALES,
   SOURCE_LOCALE,
   SUPPORTED_LOCALES,
-  NATIVE_NAMES,
 } from './messages'
 export type { Locale, MessageKey } from './messages'
 

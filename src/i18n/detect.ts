@@ -12,7 +12,18 @@
 import { loadLocalePref } from './persistence'
 
 export interface DetectOptions {
+  /** Every locale the runtime can load. Used for the explicit-
+   *  intent signals — `?lang=…` overrides and stored prefs —
+   *  where the user (or a test rig) deliberately picked a locale
+   *  and we should honor it even if coverage is low. */
   supported: readonly string[]
+  /** Subset of `supported` that should also be eligible via
+   *  browser auto-detect (`navigator.languages`). Defaults to
+   *  `supported`. Production wires this to the ≥80%-coverage
+   *  PICKER_LOCALES so a visitor with browser-set Arabic doesn't
+   *  silently land on an empty Arabic UI — they fall through to
+   *  English unless they explicitly opt in via `?lang=ar`. */
+  pickerSupported?: readonly string[]
   fallback: string
   /** Override `navigator.languages` for tests. */
   navigatorLanguages?: readonly string[]
@@ -44,6 +55,11 @@ export function pickFallback(
 /** Resolve the initial locale given the user's environment. */
 export function detectLocale(opts: DetectOptions): string {
   const { supported, fallback } = opts
+  // Browser auto-detect uses the narrower picker-eligible set so
+  // a low-coverage locale doesn't get auto-selected. Explicit
+  // user signals (stored pref, `?lang=` override) still honor
+  // the full `supported` list.
+  const pickerSupported = opts.pickerSupported ?? supported
 
   // 1. Stored preference wins.
   const stored = safeLoadStored(supported)
@@ -56,10 +72,11 @@ export function detectLocale(opts: DetectOptions): string {
     if (matched) return matched
   }
 
-  // 3. Walk navigator.languages.
+  // 3. Walk navigator.languages — only match against
+  //    picker-eligible locales (≥80% coverage in production).
   const navLangs = opts.navigatorLanguages ?? readNavigatorLanguages()
   for (const tag of navLangs) {
-    const matched = pickFallback(tag, supported)
+    const matched = pickFallback(tag, pickerSupported)
     if (matched) return matched
   }
 
