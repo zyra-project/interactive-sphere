@@ -129,6 +129,18 @@ function buildUploadMetadata(meta: { name?: string; filename?: string } | undefi
  * UID + the confirmed byte count on success; throws
  * `StreamUploadError` with a stage discriminator on failure.
  *
+ * Body shape:
+ *   - `Uint8Array` — the typical CLI path post-2/O. The migration
+ *     drains the source stream into a buffer first and passes it
+ *     here. Undici knows the exact length and can replay on the
+ *     307/308 redirects Cloudflare Stream issues to route uploads
+ *     to regional origins.
+ *   - `ReadableStream<Uint8Array>` — kept for any future caller
+ *     that wants the streaming path (e.g., a Cloudflare Worker
+ *     server-side ingestion endpoint, whose fetch impl handles
+ *     streaming + redirects without the body-replay limitation
+ *     Node's undici has).
+ *
  * The body is consumed exactly once. Callers must not reuse the
  * `ReadableStream`; if the upload fails partway through, re-running
  * the migration row will resolve the source from `vimeo:` again
@@ -139,7 +151,7 @@ function buildUploadMetadata(meta: { name?: string; filename?: string } | undefi
  */
 export async function uploadToStream(
   config: StreamUploadConfig,
-  body: ReadableStream<Uint8Array>,
+  body: Uint8Array | ReadableStream<Uint8Array>,
   contentLength: number,
   options: StreamUploadOptions = {},
 ): Promise<StreamUploadResult> {
@@ -200,18 +212,35 @@ export async function uploadToStream(
   }
 
   // --- Stage 2: TUS PATCH (single shot) ---------------------------
+  // Body shape:
+  //   - Uint8Array → undici treats it as a Buffer, knows the exact
+  //     length, can replay on redirect.
+  //   - ReadableStream → undici streams it with `duplex: 'half'`.
+  //     This is the simpler-on-paper path but a 2024-05-11 live run
+  //     hit "Response body object should not be disturbed or locked"
+  //     — undici can't replay a stream on the 307/308 redirects
+  //     Cloudflare Stream sometimes issues to route uploads to
+  //     regional origins. The CLI path now buffers (matching the
+  //     Phase 1b runUpload precedent), but the streaming branch
+  //     stays here for any future caller (e.g., a server-side
+  //     Cloudflare Worker, whose fetch impl handles redirects with
+  //     streamed bodies more gracefully than Node's undici).
   const patchHeaders: Record<string, string> = {
     'Tus-Resumable': TUS_VERSION,
     'Upload-Offset': '0',
     'Content-Type': 'application/offset+octet-stream',
     'Content-Length': String(contentLength),
   }
+  const isBuffered = body instanceof Uint8Array
   const patchInit: RequestInitWithDuplex = {
     method: 'PATCH',
     headers: patchHeaders,
-    body: body as unknown as BodyInit,
-    duplex: 'half',
+    body: isBuffered ? (body as BodyInit) : (body as unknown as BodyInit),
   }
+  // duplex: 'half' is only required (and only valid) when body is a
+  // streaming source. Setting it for a buffered Uint8Array would
+  // confuse some Node fetch builds; omit it on the buffered branch.
+  if (!isBuffered) patchInit.duplex = 'half'
 
   let patchRes: Response
   try {

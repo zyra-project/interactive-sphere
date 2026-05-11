@@ -857,6 +857,21 @@ The session id printed at the start of the run lets you correlate
 the per-row events on the Grafana migration row (Tools → Product
 Health → "Migration video progress").
 
+#### Memory ceiling per row
+
+The CLI buffers the source MP4 bytes into a `Uint8Array` before
+the TUS PATCH (matches Phase 1b `runUpload`'s precedent — Node's
+undici can't replay a streaming body on Cloudflare's regional-
+routing redirects). The cap is 256 MB per row. The migration is
+sequential, so only one row's bytes are resident at a time; the
+operator's laptop sees ≤ 256 MB peak regardless of catalog size.
+
+Legacy SOS rows average ~50 MB so the cap rarely matters. If you
+hit `source advertises N bytes which exceeds the per-row buffer
+cap` (rare — a row pointing at the wrong Vimeo id, or a Vimeo
+"film" upload mistakenly imported), investigate that specific
+row separately rather than raising the cap.
+
 #### What the commit point is
 
 The data_ref PATCH (step 3 of each row) is the migration's commit

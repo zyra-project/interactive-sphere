@@ -100,6 +100,59 @@ const DEFAULT_PACE_MS = 5_000
  */
 const DEFAULT_MAX_MINUTES = 300
 
+/**
+ * Per-row memory ceiling for the buffered upload path.
+ *
+ * Matches Phase 1b's `runUpload` cap (cli/commands.ts:124). Legacy
+ * SOS rows average ~50 MB; 256 MB catches surprise oversize
+ * sources before they trip Node's heap limits. The migration is
+ * sequential, so only one row's bytes are resident at a time.
+ */
+const BUFFER_LIMIT_BYTES = 256 * 1024 * 1024
+
+/**
+ * Drain a `ReadableStream<Uint8Array>` into a single `Uint8Array`,
+ * enforcing the per-row memory ceiling. The pre-fetched
+ * `expectedLength` is used both as a sanity-check (catches
+ * advertised-vs-actual drift) and as the cap-check trigger so a
+ * misreported Content-Length doesn't OOM the host.
+ *
+ * Exported for tests. The migration call site invokes it inline.
+ */
+export async function drainStream(
+  stream: ReadableStream<Uint8Array>,
+  expectedLength: number,
+): Promise<Uint8Array> {
+  if (expectedLength > BUFFER_LIMIT_BYTES) {
+    throw new Error(
+      `source advertises ${expectedLength} bytes which exceeds the per-row buffer cap of ${BUFFER_LIMIT_BYTES} bytes (256 MB)`,
+    )
+  }
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    total += value.byteLength
+    if (total > BUFFER_LIMIT_BYTES) {
+      reader.cancel().catch(() => {})
+      throw new Error(
+        `source exceeded the per-row buffer cap of ${BUFFER_LIMIT_BYTES} bytes (256 MB) mid-stream`,
+      )
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const c of chunks) {
+    out.set(c, offset)
+    offset += c.byteLength
+  }
+  return out
+}
+
 /** Outcome enum. Mirrors the `migration_video` telemetry event's
  * `outcome` field (commit E) — keep these in sync. */
 export type MigrationOutcome =
@@ -362,10 +415,34 @@ async function migrateOne(
     return out
   }
 
+  // Stage 1.5 — drain the source into a Uint8Array.
+  //
+  // 2/O fix. A live single-row run hit "Response body object
+  // should not be disturbed or locked" — Node's undici can't
+  // replay a ReadableStream body on the 307/308 regional-routing
+  // redirects Cloudflare Stream issues during TUS PATCH. Buffering
+  // the bytes sidesteps the issue and matches Phase 1b's
+  // runUpload precedent (also buffers, also 256 MB cap).
+  //
+  // Memory ceiling: legacy SOS rows average ~50 MB; the 256 MB cap
+  // catches surprise oversize sources fast with a useful error.
+  // The full migration is sequential, so only one row's bytes are
+  // resident at a time — the operator's laptop sees ≤ 256 MB peak
+  // regardless of catalog size.
+  let buffered: Uint8Array
+  try {
+    buffered = await drainStream(body.stream, body.contentLength)
+  } catch (e) {
+    out.outcome = 'vimeo_fetch_failed'
+    out.errorMessage = e instanceof Error ? e.message : String(e)
+    out.durationMs = deps.now() - start
+    return out
+  }
+
   // Stage 2 — pump bytes into Stream.
   let upload
   try {
-    upload = await deps.uploadToStream(deps.streamConfig, body.stream, body.contentLength, {
+    upload = await deps.uploadToStream(deps.streamConfig, buffered, buffered.byteLength, {
       meta: { name: candidate.title || candidate.datasetId, filename: `${candidate.legacyId || candidate.datasetId}.mp4` },
     })
   } catch (e) {

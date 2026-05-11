@@ -122,6 +122,29 @@ describe('uploadToStream — happy path', () => {
     expect(result.uploadUrl).toBe('https://upload.cloudflarestream.com/abc123')
   })
 
+  it('accepts a Uint8Array body without setting duplex (2/O)', async () => {
+    // The buffered path is the CLI's default post-2/O — undici can
+    // replay it on Cloudflare's regional redirects, which a
+    // streaming body can't survive. Pin the headers + the *absence*
+    // of `duplex: 'half'` so a future refactor can't silently
+    // regress to streaming.
+    const { fetchImpl, calls } = makeFetchStub()
+    const bytes = new TextEncoder().encode('hello-buffered')
+    const result = await uploadToStream(
+      { accountId: ACCOUNT, apiToken: TOKEN },
+      bytes,
+      bytes.byteLength,
+      { fetchImpl },
+    )
+    expect(calls).toHaveLength(2)
+    expect(calls[1].init.method).toBe('PATCH')
+    // No duplex on the buffered path.
+    expect(calls[1].init.duplex).toBeUndefined()
+    expect(calls[1].init.body).toBe(bytes)
+    expect(result.streamUid).toBe('abc123')
+    expect(result.bytesUploaded).toBe(bytes.byteLength)
+  })
+
   it('honours apiBase override and trims trailing slashes', async () => {
     const { fetchImpl, calls } = makeFetchStub()
     await uploadToStream(
