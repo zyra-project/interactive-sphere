@@ -1021,9 +1021,16 @@ export type MigrationVideoOutcome =
  * One-shot — migration runs are operator-driven, not user
  * sessions, so throttling is not needed.
  *
- * Used by the Grafana product-health migration row (commit G):
- * `100 - 100 * count(outcome=ok) / total_rows` gives the
- * "% still on vimeo:" headline number.
+ * Consumed by the Grafana product-health migration row (commit
+ * G). Three panels: per-day runs by outcome, cumulative count of
+ * `outcome='ok'` rows, and a failure breakdown table. The
+ * operator already knows the original vimeo: row count (~138 at
+ * Phase 2 cut-over) so the cumulative-ok stat is the headline —
+ * it should land at the original total once the migration is
+ * complete. A separate "% still on vimeo:" percentage panel was
+ * considered but skipped: it would need the denominator baked
+ * in, and the cumulative-count framing is honest about what AE
+ * actually knows.
  *
  * No free-text fields — every field is a stable identifier or
  * enum value. `dataset_id` / `legacy_id` / `vimeo_id` /

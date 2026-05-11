@@ -132,8 +132,6 @@ export interface MigrateVideoDeps {
   emitTelemetry?: (event: MigrationResult) => void | Promise<void>
   /** DI for the wall clock — tests pass a deterministic now(). */
   now?: () => number
-  /** DI for fetch — currently used only by helper defaults. */
-  fetchImpl?: typeof fetch
   /** Stream credentials. Defaults to reading `STREAM_ACCOUNT_ID` /
    * `STREAM_API_TOKEN` from `process.env`. */
   streamConfig?: StreamUploadConfig
