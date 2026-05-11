@@ -22,9 +22,11 @@ import {
   DEFAULT_VIMEO_OEMBED_BASE,
   lookupVimeoDurations,
   probeVimeoDuration,
+  probeVimeoDurationViaProxy,
   readDurationCache,
   writeDurationCache,
 } from './vimeo-duration'
+import { DEFAULT_VIDEO_PROXY_BASE } from './vimeo-fetch'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -88,6 +90,60 @@ describe('probeVimeoDuration', () => {
     expect(
       await probeVimeoDuration('123', { fetchImpl: fetchImpl as unknown as typeof fetch }),
     ).toBeNull()
+  })
+})
+
+describe('probeVimeoDurationViaProxy', () => {
+  it('hits the default proxy endpoint and returns the duration', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      expect(url).toBe(`${DEFAULT_VIDEO_PROXY_BASE}/123`)
+      return jsonResponse({ id: '123', duration: 270, hls: 'https://x/y.m3u8' })
+    })
+    const seconds = await probeVimeoDurationViaProxy('123', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    expect(seconds).toBe(270)
+  })
+
+  it('honours a proxyBase override and trims trailing slashes', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      expect(url).toBe('https://video-proxy.test/video/456')
+      return jsonResponse({ duration: 30 })
+    })
+    await probeVimeoDurationViaProxy('456', {
+      proxyBase: 'https://video-proxy.test/video/',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+  })
+
+  it('returns null on non-numeric id without making a request', async () => {
+    const fetchImpl = vi.fn()
+    expect(
+      await probeVimeoDurationViaProxy('abc', { fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).toBeNull()
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('returns null on HTTP non-2xx, missing duration, or fetch throw', async () => {
+    const cases: Array<[string, typeof fetch]> = [
+      ['non-2xx', (async () => new Response('', { status: 502 })) as unknown as typeof fetch],
+      [
+        'missing duration',
+        (async () => jsonResponse({ id: '123' })) as unknown as typeof fetch,
+      ],
+      [
+        'fetch throws',
+        (async () => {
+          throw new TypeError('connection refused')
+        }) as unknown as typeof fetch,
+      ],
+    ]
+    for (const [label, fetchImpl] of cases) {
+      expect(
+        await probeVimeoDurationViaProxy('123', { fetchImpl }),
+        `case: ${label}`,
+      ).toBeNull()
+    }
   })
 })
 
@@ -244,6 +300,79 @@ describe('lookupVimeoDurations', () => {
       const raw = readFileSync(path, 'utf-8')
       // Original byte-for-byte preserved when no probe ran.
       expect(raw).toBe('{"1":60,"_marker":42}')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the proxy when oembed misses (2/L)', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'vc-'))
+    const path = join(tmp, 'durations.json')
+    const oembedCalls: string[] = []
+    const proxyCalls: string[] = []
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.startsWith(DEFAULT_VIMEO_OEMBED_BASE)) {
+        oembedCalls.push(url)
+        // Mirror what SOS rows actually return from oembed: 404.
+        return new Response('', { status: 404 })
+      }
+      if (url.startsWith(DEFAULT_VIDEO_PROXY_BASE)) {
+        proxyCalls.push(url)
+        return jsonResponse({ id: url.split('/').pop(), duration: 90 })
+      }
+      throw new Error(`unexpected url: ${url}`)
+    })
+    try {
+      const out = await lookupVimeoDurations(['111', '222'], {
+        cachePath: path,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      })
+      expect(Object.fromEntries(out)).toEqual({ '111': 90, '222': 90 })
+      // Both probes were attempted in order — oembed first, proxy second.
+      expect(oembedCalls).toHaveLength(2)
+      expect(proxyCalls).toHaveLength(2)
+      // Cache persisted with proxy-derived values.
+      const persisted = JSON.parse(readFileSync(path, 'utf-8'))
+      expect(persisted).toEqual({ '111': 90, '222': 90 })
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('uses oembed result without invoking the proxy when oembed resolves', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'vc-'))
+    const path = join(tmp, 'durations.json')
+    const proxyCalls: string[] = []
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.startsWith(DEFAULT_VIMEO_OEMBED_BASE)) {
+        return jsonResponse({ duration: 42 })
+      }
+      proxyCalls.push(url)
+      return jsonResponse({ duration: 999 })
+    })
+    try {
+      const out = await lookupVimeoDurations(['111'], {
+        cachePath: path,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      })
+      // oembed answered → proxy was never consulted.
+      expect(out.get('111')).toBe(42)
+      expect(proxyCalls).toHaveLength(0)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('returns no entry when both oembed and the proxy miss', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'vc-'))
+    const path = join(tmp, 'durations.json')
+    const fetchImpl = vi.fn(async () => new Response('', { status: 404 }))
+    try {
+      const out = await lookupVimeoDurations(['999'], {
+        cachePath: path,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      })
+      expect(out.has('999')).toBe(false)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

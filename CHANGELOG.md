@@ -38,6 +38,10 @@ Phase 2 closes that gap with one-time operator tooling.
 | 2/F | Operator runbook in `CATALOG_BACKEND_DEVELOPMENT.md` "Migrating legacy Vimeo data refs to Stream". Pre-flight, batched migration, recovery from partial failures, rollback recipe, observation window. |
 | 2/G | Grafana migration row on `Terraviz — Product Health`. Three panels at y=34: per-day runs by outcome, cumulative ok rows, failure breakdown. After a clean run the row becomes a quiet "still 0% on `vimeo:`" reassurance. |
 | 2/H | This file. |
+| 2/I | Round-1 Copilot fixes: drop unused `MigrateVideoDeps.fetchImpl` field; correct the `MigrationVideoEvent` docstring's aspirational "% still on vimeo:" formula to describe the panels actually shipped. |
+| 2/J | Operator screenshot revealed `STREAM_*` env vars not configured on the Pages project; add `STREAM_CUSTOMER_SUBDOMAIN` / `STREAM_ACCOUNT_ID` / `STREAM_API_TOKEN` to the `check-pages-bindings` audit so the gap surfaces as `MISSING` instead of as a post-migration 503. New "Pages-side prerequisites" subsection in the runbook covers the mint + set + redeploy flow. |
+| 2/K | Drive-by: fix stale `terraviz.app` placeholder in `cli/lib/config.ts`'s `DEFAULT_SERVER` to the actual production deploy at `terraviz.zyra-project.org`. |
+| 2/L | Live `--dry-run` against the deploy revealed oembed returned no usable duration for 136/136 SOS rows. Add a video-proxy fallback to `lookupVimeoDurations` so the cost guard rail produces a real estimate. Chain is oembed → proxy; cache backs both. Updated the runbook's pre-flight description accordingly. |
 
 ### Operator-visible changes
 

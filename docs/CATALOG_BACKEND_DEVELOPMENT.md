@@ -810,17 +810,25 @@ npm run terraviz -- migrate-videos --dry-run
 The dry-run output prints:
 
 - The migration plan (number of `vimeo:` rows + the first 5 by id).
-- A cost estimate from Vimeo's `oembed` endpoint, summed in
-  minutes. ~138 rows × ~1 min average ≈ ~140 min ≈ ~$0.14/month
-  storage on Cloudflare Stream's $1/1000-min rate.
+- A cost estimate from a two-source chain — Vimeo's `oembed`
+  endpoint first (cheap, decoupled from the upload-time hot path),
+  falling back to our own video-proxy when oembed declines. The
+  SOS Vimeo channel is one such surface where oembed returns
+  nothing useful, so the proxy fallback covers the gap; for other
+  catalogs oembed alone is usually enough. Summed in minutes.
+  ~138 rows × ~1 min average ≈ ~140 min ≈ ~$0.14/month storage
+  on Cloudflare Stream's $1/1000-min rate.
 - The `--max-minutes` budget (default 300). Hard-fails if the
   estimate exceeds it.
-- The "missing durations" count — rows oembed couldn't resolve
-  (deleted videos, geofencing). Migration still tries those, but
-  the cost summary doesn't include them.
+- The "missing durations" count — rows neither oembed *nor* the
+  proxy could resolve (deleted videos, removed-from-channel,
+  geofencing). Migration still tries those, but the cost summary
+  doesn't include them.
 
-The first oembed pass populates `.cache/vimeo-durations.json` (this
-file is gitignored). Subsequent dry-runs are instantaneous.
+The first pass populates `.cache/vimeo-durations.json` (this file
+is gitignored). Subsequent dry-runs are instantaneous and never
+hit either source again — delete the cache file to force a fresh
+probe.
 
 If the cost estimate looks wrong (a 2-hour entry that should be 5
 min, say), inspect the cache file before re-running — it's plain

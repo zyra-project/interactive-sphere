@@ -1,19 +1,30 @@
 /**
  * Probe Vimeo for the duration of a video, cached on disk.
  *
- * Phase 2 commit D. Used by the cost guard rail in
- * `cli/migrate-videos.ts` to sum the migration plan's total minutes
- * before any byte transfer starts. Decoupled from the proxy on
- * purpose:
+ * Phase 2 commit D, extended by 2/L. Used by the cost guard rail
+ * in `cli/migrate-videos.ts` to sum the migration plan's total
+ * minutes before any byte transfer starts.
  *
- *   - The proxy is on the upload-time hot path. Burning extra
- *     proxy round-trips during a `--dry-run` puts load on a
- *     production component for an operator-side cost estimate.
- *   - Vimeo's `oembed.json` endpoint is unauthenticated, returns
- *     a tiny payload, and is the canonical "metadata about a Vimeo
- *     video" surface. Using it directly is simpler than threading
- *     a duration value out of `resolveVimeo`'s manifest fetch and
- *     paying for a manifest we won't otherwise use during dry-run.
+ * Two-source chain (added in 2/L after a live --dry-run revealed
+ * oembed returns no usable duration for the SOS Vimeo channel —
+ * 136 / 136 rows came back unknown):
+ *
+ *   1. Vimeo `oembed.json` — unauthenticated, tiny payload, the
+ *      canonical metadata surface. Cheap to call. Works for public
+ *      Vimeo videos; fails closed (404 / nothing) when the source
+ *      is on a private channel, has referer restrictions, or is
+ *      otherwise gated.
+ *   2. Our own video-proxy (the upstream resolver Phase 1a's
+ *      manifest endpoint uses). Returns `duration` in its JSON
+ *      response alongside the file list. We control it and know
+ *      it works for every id in the migration plan — it's
+ *      literally serving these videos right now.
+ *
+ * The chain runs in order: try oembed first (cheap, decoupled
+ * from the upload-time hot path), fall back to the proxy only on
+ * miss. The single cache file backs both — whichever source
+ * resolved a row is the value stashed, and subsequent dry-runs
+ * skip both probes.
  *
  * Cache: `<repo-root>/.cache/vimeo-durations.json`. Plain JSON
  * keyed by Vimeo numeric id. The directory is already gitignored
@@ -24,6 +35,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { DEFAULT_VIDEO_PROXY_BASE } from './vimeo-fetch'
 
 export const DEFAULT_VIMEO_OEMBED_BASE = 'https://vimeo.com/api/oembed.json'
 export const DEFAULT_DURATION_CACHE_PATH = '.cache/vimeo-durations.json'
@@ -31,6 +43,8 @@ export const DEFAULT_DURATION_CACHE_PATH = '.cache/vimeo-durations.json'
 export interface VimeoDurationOptions {
   /** Test injection — defaults to the production oembed endpoint. */
   oembedBase?: string
+  /** Test injection — defaults to the production video-proxy base. */
+  proxyBase?: string
   /** Test injection — defaults to global fetch. */
   fetchImpl?: typeof fetch
 }
@@ -65,6 +79,51 @@ export async function probeVimeoDuration(
   let body: OembedResponse
   try {
     body = (await res.json()) as OembedResponse
+  } catch {
+    return null
+  }
+  if (typeof body.duration !== 'number' || !Number.isFinite(body.duration) || body.duration < 0) {
+    return null
+  }
+  return body.duration
+}
+
+/** Subset of the video-proxy manifest we care about for cost
+ * estimation. The proxy returns more fields (id, title, hls,
+ * files); we only read `duration`. */
+interface ProxyManifestForDuration {
+  duration?: number
+}
+
+/**
+ * Probe our own video-proxy for a single video's duration, in
+ * seconds. Used as the fallback when Vimeo's oembed endpoint
+ * declines to resolve (SOS's Vimeo channel is one such surface —
+ * a live --dry-run revealed 100% of rows return null from oembed,
+ * and the proxy is the only source we control that we know works
+ * for every id in the migration plan).
+ *
+ * Same `null` semantics as `probeVimeoDuration` — failure modes
+ * are best-effort, not throws.
+ */
+export async function probeVimeoDurationViaProxy(
+  vimeoId: string,
+  options: VimeoDurationOptions = {},
+): Promise<number | null> {
+  if (!/^\d+$/.test(vimeoId)) return null
+  const fetchImpl = options.fetchImpl ?? fetch
+  const base = (options.proxyBase ?? DEFAULT_VIDEO_PROXY_BASE).replace(/\/$/, '')
+  const url = `${base}/${vimeoId}`
+  let res: Response
+  try {
+    res = await fetchImpl(url, { headers: { Accept: 'application/json' } })
+  } catch {
+    return null
+  }
+  if (!res.ok) return null
+  let body: ProxyManifestForDuration
+  try {
+    body = (await res.json()) as ProxyManifestForDuration
   } catch {
     return null
   }
@@ -123,10 +182,21 @@ export interface DurationLookupOptions extends VimeoDurationOptions {
 }
 
 /**
- * Resolve a list of Vimeo ids to their durations, consulting the
- * on-disk cache first and probing oembed for misses. Returns a map
- * keyed by Vimeo id; misses are absent from the map (NOT mapped to
- * `null`) so callers can count missing durations explicitly.
+ * Resolve a list of Vimeo ids to their durations. Two-source chain
+ * (added in 2/L after oembed proved unreliable for the SOS Vimeo
+ * channel):
+ *
+ *   1. On-disk cache (`.cache/vimeo-durations.json`).
+ *   2. Vimeo oembed.
+ *   3. Our own video-proxy.
+ *
+ * The chain short-circuits on the first hit. Either probe source
+ * counts as a successful resolution and the result is stashed in
+ * the cache, so subsequent dry-runs skip both probes.
+ *
+ * Returns a Map keyed by Vimeo id; misses (both sources null) are
+ * absent from the map (NOT mapped to `null`) so callers can count
+ * missing durations explicitly.
  *
  * The cache file is rewritten exactly once at the end of the walk —
  * not per probe — so a cancelled mid-walk run still preserves the
@@ -146,7 +216,10 @@ export async function lookupVimeoDurations(
       result.set(id, cache[id])
       continue
     }
-    const probed = await probeVimeoDuration(id, options)
+    let probed = await probeVimeoDuration(id, options)
+    if (probed === null) {
+      probed = await probeVimeoDurationViaProxy(id, options)
+    }
     if (probed === null) continue
     result.set(id, probed)
     cache[id] = probed
