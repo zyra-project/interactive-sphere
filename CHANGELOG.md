@@ -56,6 +56,26 @@ they don't pollute the NDJSON pipeline; operator recovers
 those IDs from Grafana's `migration_r2_hls` events (`blob9`)
 or the Vimeo dashboard.
 
+**3a/C — `--from-stdin` bulk mode for `rollback-r2-hls`.**
+Closes the loop: pipes NDJSON from `list-realtime-r2` (or any
+NDJSON producer) into the rollback CLI, which runs the same
+per-row pipeline (GET → PATCH-back-to-vimeo → DELETE-R2-prefix)
+sequentially over each line. The single-row CLI shape is
+preserved bit-for-bit — `--from-stdin` is mutually exclusive
+with the positional dataset id and `--to-vimeo`. Hard failures
+(`parse_failed`, `get_failed`, `wrong_scheme`, `patch_failed`,
+`malformed_ref`) flip the exit code to 1 but don't abort the
+loop; soft failure (`delete_failed` — PATCH succeeded but R2
+DELETE threw) is reported separately as "ok (orphan R2 prefix)"
+so the operator sees how much storage they need to clean up
+later. Idiomatic invocation: `terraviz list-realtime-r2 |
+terraviz rollback-r2-hls --from-stdin`.
+
+**Tests.** 29 new across the three commits — 10 for 3a/A,
+10 for 3a/B, 9 for 3a/C bulk-stdin (plus the 12 pre-existing
+single-row rollback tests still pass against the refactor).
+Full suite 2055/2055.
+
 **Non-goals (deferred).** A recurring re-encode mechanism
 (scheduled trigger → re-fetch → re-encode → idempotent overwrite)
 that would let real-time rows live on R2 without staleness is a

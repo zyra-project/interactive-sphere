@@ -297,3 +297,243 @@ describe('runRollbackR2Hls — live rollback', () => {
     }
   })
 })
+
+describe('runRollbackR2Hls — --from-stdin bulk mode (3a/C)', () => {
+  // Per-row snapshot: a fakeClient configured with a row table
+  // for multi-id GET resolution. Each row's data_ref starts on
+  // r2:videos/, the bulk path GETs each id, PATCHes back to
+  // vimeo:, and DELETEs the R2 prefix.
+  function bulkClient(rows: RowState[], opts: { patchFailFor?: Set<string> } = {}) {
+    const byId = new Map(rows.map(r => [r.id, r]))
+    const get = vi.fn(async (id: string) => {
+      const row = byId.get(id)
+      if (!row) return { ok: false as const, status: 404, error: 'not_found' }
+      return { ok: true as const, status: 200, body: { dataset: row } }
+    })
+    const updateDataset = vi.fn(async (id: string, body: Record<string, unknown>) => {
+      if (opts.patchFailFor?.has(id)) {
+        return {
+          ok: false as const,
+          status: 503,
+          error: 'upstream_unavailable',
+          message: 'D1 timeout',
+        }
+      }
+      return {
+        ok: true as const,
+        status: 200,
+        body: { dataset: { id, slug: `slug-${id}`, ...body } },
+      }
+    })
+    const stub = { serverUrl: 'http://localhost:8788', get, updateDataset }
+    return { client: stub as unknown as TerravizClient, handles: { get, updateDataset } }
+  }
+
+  const ROW_A: RowState = {
+    id: 'DS00010AAAAAAAAAAAAAAAAAAAAA',
+    data_ref: 'r2:videos/DS00010AAAAAAAAAAAAAAAAAAAAA/master.m3u8',
+    title: 'Sea Surface Temperature - Real-time',
+  }
+  const ROW_B: RowState = {
+    id: 'DS00011AAAAAAAAAAAAAAAAAAAAA',
+    data_ref: 'r2:videos/DS00011AAAAAAAAAAAAAAAAAAAAA/master.m3u8',
+    title: 'Precipitation - Real-time',
+  }
+
+  it('rolls back every NDJSON row in order; aggregate report is `ok: N`', async () => {
+    const { client, handles } = bulkClient([ROW_A, ROW_B])
+    const deleteR2Prefix = vi.fn(async (_c, _k) => ({ deleted: 5, durationMs: 100 }))
+    const stdin =
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111111111' }) +
+      '\n' +
+      JSON.stringify({ dataset_id: ROW_B.id, vimeo_id: '222222222' }) +
+      '\n'
+    const { ctx, out, err } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(0)
+    // Both rows fetched + PATCHed + DELETEd in order.
+    expect(handles.get).toHaveBeenCalledTimes(2)
+    expect(handles.updateDataset).toHaveBeenCalledTimes(2)
+    expect(handles.updateDataset.mock.calls[0]).toEqual([
+      ROW_A.id,
+      { data_ref: 'vimeo:111111111' },
+    ])
+    expect(handles.updateDataset.mock.calls[1]).toEqual([
+      ROW_B.id,
+      { data_ref: 'vimeo:222222222' },
+    ])
+    expect(deleteR2Prefix).toHaveBeenCalledTimes(2)
+    // Headline + per-row progress + summary present.
+    expect(out.text()).toContain('Bulk rollback: 2 row(s) from stdin.')
+    expect(out.text()).toContain(`[1/2] ${ROW_A.id} → vimeo:111111111`)
+    expect(out.text()).toContain(`[2/2] ${ROW_B.id} → vimeo:222222222`)
+    expect(out.text()).toContain('ok:                       2')
+    expect(err.text()).toBe('')
+  })
+
+  it('continues past a failed row and returns 1 in the summary', async () => {
+    // ROW_A succeeds; ROW_B's PATCH fails. Bulk path should
+    // continue past the failure (not abort), tally counts, and
+    // return 1 because at least one row failed.
+    const { client, handles } = bulkClient([ROW_A, ROW_B], { patchFailFor: new Set([ROW_B.id]) })
+    const deleteR2Prefix = vi.fn(async () => ({ deleted: 1, durationMs: 100 }))
+    const stdin =
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111111111' }) +
+      '\n' +
+      JSON.stringify({ dataset_id: ROW_B.id, vimeo_id: '222222222' }) +
+      '\n'
+    const { ctx, out, err } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(1)
+    // Both rows attempted (didn't abort on first failure).
+    expect(handles.updateDataset).toHaveBeenCalledTimes(2)
+    // ROW_A's DELETE ran (PATCH succeeded); ROW_B's didn't (PATCH failed).
+    expect(deleteR2Prefix).toHaveBeenCalledTimes(1)
+    expect(out.text()).toContain('ok:                       1')
+    expect(out.text()).toContain('patch_failed:             1')
+    expect(err.text()).toContain('data_ref PATCH failed')
+  })
+
+  it('counts parse errors separately and continues', async () => {
+    const { client, handles } = bulkClient([ROW_A])
+    const deleteR2Prefix = vi.fn(async () => ({ deleted: 0, durationMs: 100 }))
+    const stdin =
+      'not-json-at-all\n' +
+      JSON.stringify({ vimeo_id: '111' }) + // missing dataset_id
+      '\n' +
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: 'not-numeric' }) +
+      '\n' +
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '' }) +
+      '\n' +
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111111111' }) +
+      '\n'
+    const { ctx, out, err } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(1) // parse_failed > 0 → exit 1
+    // Only the last (well-formed) row was actually rolled back.
+    expect(handles.updateDataset).toHaveBeenCalledTimes(1)
+    expect(out.text()).toContain('ok:                       1')
+    expect(out.text()).toContain('parse_failed:             4')
+    expect(err.text()).toContain('[line 1] parse error')
+    expect(err.text()).toContain('[line 2] parse error — missing or empty dataset_id')
+    expect(err.text()).toContain('[line 3] parse error')
+    expect(err.text()).toContain('[line 4] parse error — missing or empty vimeo_id')
+  })
+
+  it('--from-stdin + positional dataset_id is rejected as a usage error', async () => {
+    const { client } = bulkClient([])
+    const { ctx, err } = makeCtx(client, ['DS_ANYTHING'], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      readStdin: async () => '',
+    })
+    expect(code).toBe(2)
+    expect(err.text()).toContain('--from-stdin does not accept a positional dataset id')
+  })
+
+  it('--from-stdin + --to-vimeo is rejected as a usage error', async () => {
+    const { client } = bulkClient([])
+    const { ctx, err } = makeCtx(client, [], {
+      'from-stdin': true,
+      'to-vimeo': '999',
+    })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      readStdin: async () => '',
+    })
+    expect(code).toBe(2)
+    expect(err.text()).toContain('--from-stdin does not accept --to-vimeo')
+  })
+
+  it('empty stdin returns 0 with a "nothing to do" stderr note', async () => {
+    const { client, handles } = bulkClient([])
+    const { ctx, err } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      readStdin: async () => '',
+    })
+    expect(code).toBe(0)
+    expect(handles.get).not.toHaveBeenCalled()
+    expect(err.text()).toContain('Nothing to roll back')
+  })
+
+  it('--dry-run in bulk mode runs each row through the plan without mutating', async () => {
+    const { client, handles } = bulkClient([ROW_A, ROW_B])
+    const deleteR2Prefix = vi.fn()
+    const stdin =
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111' }) +
+      '\n' +
+      JSON.stringify({ dataset_id: ROW_B.id, vimeo_id: '222' }) +
+      '\n'
+    const { ctx, out } = makeCtx(client, [], { 'from-stdin': true, 'dry-run': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(0)
+    // GET ran (to display each plan), but PATCH + DELETE did not.
+    expect(handles.get).toHaveBeenCalledTimes(2)
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(deleteR2Prefix).not.toHaveBeenCalled()
+    expect(out.text()).toContain('--dry-run set; no mutations will be issued')
+    // Each row counted as ok in the dry-run summary (the rollback
+    // helper short-circuits before the failure paths could trigger).
+    expect(out.text()).toContain('ok:                       2')
+  })
+
+  it('skips blank lines and trims whitespace in stdin input', async () => {
+    const { client, handles } = bulkClient([ROW_A])
+    const deleteR2Prefix = vi.fn(async () => ({ deleted: 1, durationMs: 100 }))
+    const stdin =
+      '\n\n  ' +
+      JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111' }) +
+      '  \n\n'
+    const { ctx, out } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(0)
+    expect(handles.updateDataset).toHaveBeenCalledTimes(1)
+    expect(out.text()).toContain('Bulk rollback: 1 row(s) from stdin.')
+  })
+
+  it('delete_failed in bulk mode is non-fatal — counted under "ok (orphan R2 prefix)"', async () => {
+    // PATCH succeeds; the R2 prefix DELETE throws. The single-row
+    // path treats this as exit 0 (catalog correct, orphan storage
+    // remains); bulk mode should mirror that — the row's primary
+    // goal succeeded, so no hard failure, but the summary
+    // distinguishes "ok (orphan R2 prefix)" from a clean ok so
+    // the operator can see how many orphans they need to clean
+    // up later.
+    const { client } = bulkClient([ROW_A])
+    const deleteR2Prefix = vi.fn(async () => {
+      throw new Error('R2 LIST timed out')
+    })
+    const stdin = JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111' }) + '\n'
+    const { ctx, out, err } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: R2_CONFIG,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(0)
+    expect(out.text()).toContain('ok:                       0')
+    expect(out.text()).toContain('ok (orphan R2 prefix):    1')
+    expect(err.text()).toContain('Could not delete R2 prefix')
+  })
+})

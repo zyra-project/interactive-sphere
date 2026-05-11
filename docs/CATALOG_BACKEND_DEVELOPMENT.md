@@ -1003,12 +1003,49 @@ If the DELETE fails, the row is still correctly back on
 cleanup.
 
 The operator provides the original `vimeo:<id>` explicitly. To
-find it: grep the migration's stdout log, or look at the
-dataset's `legacy_id` and cross-reference
-`public/assets/sos-dataset-list.json`.
+find it: grep the migration's stdout log, look up the
+dataset's `legacy_id` in `public/assets/sos-dataset-list.json`,
+or query Grafana's `migration_r2_hls` events (the `vimeo_id`
+is on `blob9`).
 
-For bulk rollback, script a shell loop around the per-id
-invocation. Bulk rollback is deferred to "if it proves common."
+For bulk rollback (e.g. cleaning up the real-time rows
+identified by `terraviz list-realtime-r2`), pipe NDJSON in via
+`--from-stdin`:
+
+```sh
+# Bulk rollback every real-time row currently on r2:
+npm run terraviz -- list-realtime-r2 \
+  | npm run terraviz -- rollback-r2-hls --from-stdin
+
+# Confirm first with a dry-run:
+npm run terraviz -- list-realtime-r2 \
+  | npm run terraviz -- rollback-r2-hls --from-stdin --dry-run
+
+# Roll back an arbitrary set the operator curated by hand:
+cat my-rollback-list.ndjson \
+  | npm run terraviz -- rollback-r2-hls --from-stdin
+```
+
+Each NDJSON line must be a JSON object with `dataset_id` and
+`vimeo_id` fields (extra fields like `title` and `legacy_id`
+are tolerated, so the `list-realtime-r2` output pipes
+through directly). The bulk path runs the same per-row
+pipeline as the single-row mode (GET → PATCH → DELETE),
+continues past per-row failures rather than aborting on
+the first one, and prints an aggregate summary at the end:
+
+```
+Bulk rollback complete:
+  ok:                       18
+  ok (orphan R2 prefix):    1     ← PATCH succeeded but R2 DELETE failed
+  patch_failed:             1
+```
+
+Exit code: 0 when every row's PATCH succeeded (orphan R2
+prefixes are non-fatal — the catalog is correct, just storage
+to clean up later), 1 if any row had a hard failure
+(`parse_failed`, `get_failed`, `wrong_scheme`, `patch_failed`,
+or `malformed_ref`).
 
 #### Observation window
 
