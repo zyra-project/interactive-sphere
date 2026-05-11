@@ -67,21 +67,23 @@ describe('buildFfmpegArgs', () => {
     }
   })
 
-  it('encodes one shared audio track for all variants', () => {
+  it('encodes one audio output per video rendition (3/L)', () => {
     const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192, true)
     expect(args).toContain('-c:a')
     expect(args[args.indexOf('-c:a') + 1]).toBe('aac')
     expect(args).toContain('-b:a')
     expect(args[args.indexOf('-b:a') + 1]).toBe('192k')
-    // The 3/K refactor switched from `-map 'a:0?'` (optional) to
-    // `-map 'a:0'` (strict) because the audio-present path now
-    // gates on probeHasAudio's result. var_stream_map's `a:0`
-    // reference has no optional syntax, so the strict map keeps
-    // the two halves consistent.
-    const audioMapIdx = args.findIndex(
-      (a, i) => a === '-map' && args[i + 1] === 'a:0',
-    )
-    expect(audioMapIdx).toBeGreaterThanOrEqual(0)
+    // 3/L switched from a single shared `-map a:0` to one
+    // `-map a:0` per rendition so each var_stream_map entry
+    // references its own distinct audio elementary stream.
+    // FFmpeg's HLS muxer rejects "Same elementary stream found
+    // more than once in two different variant definitions" when
+    // multiple variants share a:0. Count occurrences here.
+    let audioMaps = 0
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-map' && args[i + 1] === 'a:0') audioMaps++
+    }
+    expect(audioMaps).toBe(RENDITIONS.length)
   })
 
   it('sets HLS muxer options (segment time, playlist type, master name)', () => {
@@ -96,10 +98,10 @@ describe('buildFfmpegArgs', () => {
     expect(args[args.indexOf('-master_pl_name') + 1]).toBe(MASTER_PLAYLIST_NAME)
   })
 
-  it('builds a stream-map binding each video output to the shared audio', () => {
+  it('builds a stream-map pairing each video variant with its own audio output (3/L)', () => {
     const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192)
     expect(args).toContain('-var_stream_map')
-    expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:0 v:2,a:0')
+    expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:1 v:2,a:2')
   })
 
   it('honours custom segment duration', () => {
@@ -145,7 +147,7 @@ describe('buildFfmpegArgs', () => {
   it('includes audio mapping by default (hasAudio implicit true)', () => {
     const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192)
     expect(args).toContain('-c:a')
-    expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:0 v:2,a:0')
+    expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:1 v:2,a:2')
   })
 })
 
@@ -492,7 +494,7 @@ describe('encodeHls', () => {
       })
       const args = ffmpegArgs as unknown as string[]
       expect(args).toContain('-c:a')
-      expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:0 v:2,a:0')
+      expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:1 v:2,a:2')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

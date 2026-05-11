@@ -212,14 +212,32 @@ export function buildFfmpegArgs(
     args.push(`-sc_threshold:v:${i}`, '0')
   }
 
-  // One audio output, shared across all variants — but only if
-  // the source actually has an audio stream. SOS spherical
-  // videos are typically silent; mapping `a:0` against a video
-  // with no audio fails the HLS muxer with "Unable to map stream
-  // at a:0" because var_stream_map's audio reference can't be
-  // optional the way `-map a:0?` can.
+  // Audio mapping (only when the source has an audio stream).
+  //
+  // FFmpeg's HLS muxer rejects var_stream_map definitions where
+  // the same elementary audio stream is referenced from multiple
+  // variants (error: "Same elementary stream found more than
+  // once in two different variant definitions"). Two ways to
+  // share audio across variants:
+  //   (a) Audio groups via `agroup:` in var_stream_map — one
+  //       audio rendition declared separately, referenced by
+  //       each video variant. Smaller output but more complex
+  //       argv.
+  //   (b) Emit one audio output per video rendition. Each
+  //       `-map a:0` creates a new audio output stream; the
+  //       global `-c:a aac -b:a Xk` applies to all of them.
+  //       Each variant references its own a:N. Trivially
+  //       simpler argv, ~192 kbps × N video tiers of extra
+  //       output bytes per row.
+  //
+  // We use (b). For ~136 rows × probably <40 with audio × ~3
+  // minutes × 192 kbps × 2 extra tiers ≈ ~70 MB of audio
+  // duplication across the whole catalog. Lost in the noise
+  // next to the multi-GB total. Worth the argv simplicity.
   if (hasAudio) {
-    args.push('-map', 'a:0')
+    for (let i = 0; i < renditions.length; i++) {
+      args.push('-map', 'a:0')
+    }
     args.push('-c:a', 'aac')
     args.push('-b:a', `${audioBitrateKbps}k`)
     args.push('-ac', '2')
@@ -234,9 +252,11 @@ export function buildFfmpegArgs(
 
   // `-var_stream_map` tells the HLS muxer which input streams go
   // in which variant. Each variant gets one video output (v:i),
-  // plus the shared audio (a:0) when present.
+  // plus its own audio output (a:i) when audio is present —
+  // see the audio-mapping comment above for why we don't share
+  // a single audio stream across variants.
   const streamMap = renditions
-    .map((_, i) => (hasAudio ? `v:${i},a:0` : `v:${i}`))
+    .map((_, i) => (hasAudio ? `v:${i},a:${i}` : `v:${i}`))
     .join(' ')
   args.push('-var_stream_map', streamMap)
 
