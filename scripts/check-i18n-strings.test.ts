@@ -123,4 +123,95 @@ describe('check-i18n-strings · scanFile', () => {
     const violations = scanFile(path)
     expect(violations).toEqual([])
   })
+
+  // --- Canvas `fillText` heuristic (VR / AR modules) ---
+  //
+  // The VR HUD, controller tooltips, tour overlay, and loading
+  // scene all paint user-visible text onto a CanvasRenderingContext2D.
+  // The DOM-property heuristics can't see those — the fillText
+  // regex covers them.
+
+  it('flags a hard-coded ctx.fillText(literal, ...) call', () => {
+    const path = tmpFile(
+      'j.ts',
+      `ctx.fillText('Loading question', x, y)\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations.length).toBe(1)
+    expect(violations[0]?.literal).toBe('Loading question')
+  })
+
+  it('flags fillText on alternate context-variable names', () => {
+    // Real VR call sites sometimes use `c` or `context` rather than
+    // the conventional `ctx`. The heuristic intentionally accepts
+    // any identifier before `.fillText(`.
+    const path = tmpFile(
+      'j2.ts',
+      [
+        `c.fillText('Drag to rotate', 0, 0)`,
+        `context.fillText('Pinch to zoom', 0, 0)`,
+      ].join('\n') + '\n',
+    )
+    const violations = scanFile(path)
+    expect(violations.length).toBe(2)
+  })
+
+  it('skips fillText literals routed through t()', () => {
+    const path = tmpFile(
+      'k.ts',
+      `ctx.fillText(t('vr.hud.exit'), x, y)\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations).toEqual([])
+  })
+
+  it('skips fillText with a runtime variable (not a string literal)', () => {
+    // Dataset titles, dynamic FPS counters, etc. — caller is
+    // responsible for routing the runtime value through t() at
+    // the point where the value originates, not at the canvas.
+    const path = tmpFile(
+      'l.ts',
+      `ctx.fillText(title, x, y)\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations).toEqual([])
+  })
+
+  it('skips fillText literals that are symbol-only (no English prose)', () => {
+    // Glyphs / emoji used as iconography, not language. Pass the
+    // same English-prose gate as the DOM checks above.
+    const path = tmpFile(
+      'm.ts',
+      [
+        `ctx.fillText('✕', x, y)`,
+        `ctx.fillText('\u{1F30D}', x, y)`,
+        `ctx.fillText('…', x, y)`,
+      ].join('\n') + '\n',
+    )
+    const violations = scanFile(path)
+    expect(violations).toEqual([])
+  })
+
+  it('skips a single-word fillText literal (consistent with DOM heuristic)', () => {
+    // The existing DOM heuristic requires `[A-Za-z]{3,}.* ` — at
+    // least one space after the prose run. Single-word canvas
+    // labels ("Continue", "Exit") fall through the same gap. If
+    // this changes in a future scope widening, both heuristics
+    // should move together.
+    const path = tmpFile(
+      'n.ts',
+      `ctx.fillText('Continue', x, y)\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations).toEqual([])
+  })
+
+  it('respects `i18n-exempt:` on a fillText call', () => {
+    const path = tmpFile(
+      'o.ts',
+      `ctx.fillText('FPS metric', x, y) // i18n-exempt: debug HUD\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations).toEqual([])
+  })
 })

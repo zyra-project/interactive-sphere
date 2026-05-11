@@ -262,6 +262,14 @@ Position | Started | Ended
 `double2` | `entry_load_ms` | `duration_ms`
 `double3` | — | `mean_fps` (`0` when the session was too short for a meaningful sample; arithmetic mean over the whole session)
 
+`device_class` is a closed enum stamped client-side by
+`classifyXrDevice()` in `src/utils/vrCapability.ts`. Current
+buckets: `quest`, `quest-pro`, `pico`, `vision-pro`, `hololens`,
+`magic-leap`, `android-ar`, `pcvr`, `unknown`. `android-ar` is
+mode-gated — only emitted when the session is `immersive-ar`
+(an Android UA in `immersive-vr` is almost always a tethered
+PCVR session and buckets as `pcvr`).
+
 ### `vr_placement` (Tier A)
 
 | Position | Field |
