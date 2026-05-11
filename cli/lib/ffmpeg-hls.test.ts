@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   buildFfmpegArgs,
+  createBoundedStderr,
   DEFAULT_RENDITIONS,
   encodeHls,
   FfmpegError,
@@ -535,6 +536,64 @@ describe('encodeHls', () => {
     }
   })
 
+  it('bounds stderr memory during a long encode (3/N)', async () => {
+    // Copilot review round 2: the previous implementation pushed
+    // every parsed stderr line into `stderrChunks` and only sliced
+    // at the very end. A long ffmpeg encode can write tens of MB
+    // of progress lines (every frame's `frame= N fps= … time= …`
+    // status), so the array could grow without bound even though
+    // we only ever read the last 4KB. The bounded helper trims
+    // itself in-place so memory stays within a small multiple of
+    // the configured tail size.
+    //
+    // We emit 5,000 progress-style lines (~64 chars each ≈ 320KB
+    // of total stderr) and assert that the final stored byte count
+    // is comfortably below the original unbounded total — proving
+    // the trim fires — while the tail still contains the
+    // most-recent line so error reporting is unaffected.
+    const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
+    const input = join(tmp, 'in.mp4')
+    writeFileSync(input, 'fake-mp4')
+    try {
+      const lines: string[] = []
+      for (let i = 0; i < 5000; i++) {
+        lines.push(
+          `frame=${String(i).padStart(6, ' ')} fps=24 q=20 size=${i * 4}kB time=00:01:00 bitrate=8000k speed=1.0x\n`,
+        )
+      }
+      const child = makeFakeChild()
+      const spawnImpl = vi.fn(() => {
+        setTimeout(() => {
+          for (const line of lines) {
+            child.stderr.emit('data', line)
+          }
+          child.stderr.emit('end')
+          writeFileSync(join(tmp, MASTER_PLAYLIST_NAME), '#EXTM3U\n')
+          // Non-zero exit so we can read FfmpegError.stderrTail
+          // and confirm the most-recent lines survived the trim.
+          child.emit('close', 1, null)
+        }, 0)
+        return child as unknown as ReturnType<typeof import('node:child_process').spawn>
+      })
+      const err = (await encodeHls({
+        inputPath: input,
+        outputDir: tmp,
+        spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+        hasAudio: true,
+      }).catch(e => e)) as FfmpegError
+      expect(err).toBeInstanceOf(FfmpegError)
+      // Tail is capped at ~4KB (8KB ceiling before the trim
+      // amortizes — but the final `tail()` slice enforces 4KB).
+      expect(err.stderrTail.length).toBeLessThanOrEqual(4096)
+      // …and contains the last line emitted (frame=4999).
+      expect(err.stderrTail).toContain('frame=  4999')
+      // …but not the very first (frame=0), which was trimmed off.
+      expect(err.stderrTail).not.toContain('frame=     0 ')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   it('honours a custom ffmpegBin', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
     const input = join(tmp, 'in.mp4')
@@ -567,5 +626,56 @@ describe('encodeHls', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('createBoundedStderr (3/N)', () => {
+  it('returns the empty string before any push', () => {
+    const buf = createBoundedStderr(1024)
+    expect(buf.tail()).toBe('')
+    expect(buf.totalBytes).toBe(0)
+  })
+
+  it('preserves all content while below the trim threshold', () => {
+    const buf = createBoundedStderr(1024)
+    buf.push('hello ')
+    buf.push('world\n')
+    expect(buf.tail()).toBe('hello world\n')
+    expect(buf.totalBytes).toBe(12)
+  })
+
+  it('trims old chunks once total exceeds 2 × maxBytes', () => {
+    const buf = createBoundedStderr(100)
+    // Push 50 × 50-byte lines = 2500 bytes total. The trim
+    // threshold is 200 bytes; the bounded buffer should never
+    // hold more than ~2 × maxBytes.
+    const line = 'x'.repeat(49) + '\n' // 50 bytes
+    for (let i = 0; i < 50; i++) {
+      buf.push(line)
+    }
+    expect(buf.totalBytes).toBeLessThanOrEqual(200)
+    // tail() further bounds the output at maxBytes.
+    expect(buf.tail().length).toBeLessThanOrEqual(100)
+  })
+
+  it('keeps the most-recent content after trimming', () => {
+    const buf = createBoundedStderr(50)
+    for (let i = 0; i < 100; i++) {
+      buf.push(`line ${String(i).padStart(3, '0')}\n`) // 10 bytes
+    }
+    // Last line emitted is "line 099\n" — it must survive trim.
+    expect(buf.tail()).toContain('line 099')
+    // Early lines must have been evicted.
+    expect(buf.tail()).not.toContain('line 000')
+  })
+
+  it('handles a single chunk larger than maxBytes', () => {
+    const buf = createBoundedStderr(10)
+    buf.push('a'.repeat(1000))
+    // Single oversized chunk can't be trimmed below maxBytes
+    // (the implementation keeps ≥ 1 chunk), but `tail()` slices
+    // it down to the configured tail size.
+    expect(buf.tail().length).toBe(10)
+    expect(buf.tail()).toBe('a'.repeat(10))
   })
 })

@@ -381,8 +381,16 @@ async function migrateOne(
     // No workdir created yet — nothing to keep or clean up.
     return result
   }
-  // Resolve succeeded — now we'll be writing segment files;
-  // make sure the workdir exists.
+  // Resolve succeeded — now we'll be writing segment files. If
+  // a previous attempt left behind any state in this dataset's
+  // workdir (the migrator preserves dirs on `encode_failed` /
+  // `r2_upload_failed` for operator inspection), wipe it before
+  // starting the new encode. Without this wipe, a retry whose
+  // encode trims to fewer segments than the previous attempt
+  // would leave stale `.ts` files in place and `uploadHlsBundle`
+  // — which walks the whole directory tree — would PUT them to
+  // R2 alongside the new bundle.
+  rmSync(workdir, { recursive: true, force: true })
   mkdirSync(workdir, { recursive: true })
   result.sourceBytes = source.sizeBytes ?? 0
 

@@ -94,6 +94,11 @@ export const DEFAULT_SEGMENT_SECONDS = 6
 export const DEFAULT_AUDIO_BITRATE_KBPS = 192
 export const MASTER_PLAYLIST_NAME = 'master.m3u8'
 
+/** Bytes of FFmpeg stderr to retain for error reporting. The
+ * accumulator below trims itself once total bytes exceeds 2 ×
+ * this value so memory is bounded regardless of encode duration. */
+const STDERR_TAIL_BYTES = 4096
+
 export interface EncodeHlsOptions {
   /** Source MP4 — either a local file path (must exist) or an
    * http(s) URL that ffmpeg fetches itself. The Phase 3 migration
@@ -326,8 +331,14 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
   )
 
   const start = Date.now()
-  const stderrChunks: string[] = []
-  const STDERR_TAIL_BYTES = 4096
+  // Bounded stderr accumulator. FFmpeg can write tens of MB of
+  // progress lines over a multi-minute encode; we only need the
+  // last ~4KB for error reporting. The buffer trims itself when
+  // the total exceeds 2 × the tail size — that gives a single
+  // amortized shift per ~4KB of stderr instead of one per line,
+  // while ensuring memory stays within ~8KB regardless of run
+  // length.
+  const stderr = createBoundedStderr(STDERR_TAIL_BYTES)
 
   return await new Promise<EncodedHls>((resolve, reject) => {
     const child = spawnImpl(ffmpegBin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -350,13 +361,13 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
         partial = lines.pop() ?? ''
         for (const line of lines) {
           if (line.length === 0) continue
-          stderrChunks.push(line + '\n')
+          stderr.push(line + '\n')
           options.onProgress?.(line)
         }
       })
       child.stderr.on('end', () => {
         if (partial.length > 0) {
-          stderrChunks.push(partial)
+          stderr.push(partial)
           options.onProgress?.(partial)
         }
       })
@@ -367,14 +378,14 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
         new FfmpegError(
           null,
           null,
-          stderrTail(stderrChunks, STDERR_TAIL_BYTES),
+          stderr.tail(),
           `ffmpeg spawn failed: ${err.message}. Is '${ffmpegBin}' on PATH?`,
         ),
       )
     })
 
     child.on('close', (code, signal) => {
-      const tail = stderrTail(stderrChunks, STDERR_TAIL_BYTES)
+      const tail = stderr.tail()
       if (code !== 0) {
         reject(
           new FfmpegError(
@@ -485,12 +496,56 @@ async function probeHasAudio(
   })
 }
 
-/** Concatenate the captured stderr lines and return the last N
- * bytes — bounded so a chatty FFmpeg run doesn't bloat the error
- * message past usefulness. */
-function stderrTail(chunks: string[], maxBytes: number): string {
-  const all = chunks.join('')
-  return all.length <= maxBytes ? all : all.slice(-maxBytes)
+/**
+ * Bounded stderr accumulator — appends lines while keeping the
+ * total retained bytes within a small constant multiple of
+ * `maxBytes`. FFmpeg encodes can emit tens of MB of progress
+ * lines over a multi-minute run; without bounding, the array
+ * would grow without limit even though we only ever read the
+ * tail at the end.
+ *
+ * Strategy: maintain a running `totalBytes` and shift chunks off
+ * the front once it exceeds `2 × maxBytes`, until it drops back
+ * below `maxBytes`. That keeps memory at ≤ ~2 × maxBytes while
+ * amortizing the shift cost to one per ~maxBytes of stderr.
+ *
+ * `tail()` is destructive-free — callers can read it multiple
+ * times (e.g. from both the 'error' and 'close' event handlers
+ * if a spawn failure races with a close).
+ */
+export interface BoundedStderr {
+  push(chunk: string): void
+  tail(): string
+  /** Test-only: current retained byte count. */
+  readonly totalBytes: number
+}
+
+export function createBoundedStderr(maxBytes: number): BoundedStderr {
+  const trimThreshold = maxBytes * 2
+  const chunks: string[] = []
+  let totalBytes = 0
+  return {
+    push(chunk: string): void {
+      chunks.push(chunk)
+      totalBytes += chunk.length
+      if (totalBytes <= trimThreshold) return
+      // Shift off old chunks until we're back below maxBytes —
+      // this keeps the most-recent maxBytes worth of stderr
+      // intact (potentially with a small overshoot from the
+      // chunk that crossed the boundary).
+      while (chunks.length > 1 && totalBytes - chunks[0].length >= maxBytes) {
+        totalBytes -= chunks.shift()!.length
+      }
+    },
+    tail(): string {
+      if (chunks.length === 0) return ''
+      const all = chunks.length === 1 ? chunks[0] : chunks.join('')
+      return all.length <= maxBytes ? all : all.slice(-maxBytes)
+    },
+    get totalBytes(): number {
+      return totalBytes
+    },
+  }
 }
 
 /** Recursive directory walk producing relative paths. Stays

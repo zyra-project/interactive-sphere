@@ -756,6 +756,110 @@ describe('runMigrateR2Hls — live migration', () => {
       rmSync(tmp, { recursive: true, force: true })
     }
   })
+
+  it('wipes the per-row workdir before encode so stale segments do not survive a retry (3/N)', async () => {
+    // Copilot review round 2: when a previous attempt left files
+    // behind (which happens on encode_failed / r2_upload_failed
+    // — those keep the workdir for operator inspection), a retry
+    // would call mkdirSync(workdir, { recursive: true }) — a
+    // no-op — leaving the stale files in place. uploadHlsBundle
+    // walks the entire workdir tree so it would PUT the old
+    // files to R2 alongside the new bundle. Fix: rm -rf the
+    // workdir after vimeo resolve succeeds but before encode.
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      // Pre-populate the workdir with a "stale" segment from a
+      // hypothetical previous failed attempt.
+      const datasetWorkdir = join(tmp, ROW_VIDEO_VIMEO_1.id)
+      mkdirSync(join(datasetWorkdir, 'stream_0'), { recursive: true })
+      writeFileSync(join(datasetWorkdir, 'stream_0', 'segment_999.ts'), Buffer.alloc(1024))
+      writeFileSync(join(datasetWorkdir, 'stale-from-previous-attempt.txt'), 'leftover')
+
+      // The fake encoder writes a small set of NEW files into the
+      // workdir; the upload stub captures every file the bundle
+      // walks so we can assert the stale segment isn't there.
+      const capturedUploadedFiles: string[] = []
+      const upload = vi.fn(async (
+        _config: R2UploadConfig,
+        localDir: string,
+        keyPrefix: string,
+      ) => {
+        // Walk the workdir as the real uploadHlsBundle would.
+        const { readdirSync } = await import('node:fs')
+        const walk = (dir: string, rel: string): void => {
+          for (const ent of readdirSync(dir, { withFileTypes: true })) {
+            const full = join(dir, ent.name)
+            const r = rel ? `${rel}/${ent.name}` : ent.name
+            if (ent.isDirectory()) walk(full, r)
+            else if (ent.isFile()) capturedUploadedFiles.push(r)
+          }
+        }
+        walk(localDir, '')
+        return {
+          masterKey: `${keyPrefix}/master.m3u8`,
+          keys: capturedUploadedFiles.map(f => `${keyPrefix}/${f}`),
+          totalBytes: 2_000,
+          durationMs: 1_000,
+        }
+      })
+
+      const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
+      const { ctx } = makeCtx(client)
+      const code = await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource(),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: upload,
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      expect(code).toBe(0)
+      // The stale files from the simulated previous attempt must
+      // not have been uploaded.
+      expect(capturedUploadedFiles).not.toContain('stale-from-previous-attempt.txt')
+      expect(capturedUploadedFiles).not.toContain('stream_0/segment_999.ts')
+      // The new encode's outputs must still be uploaded.
+      expect(capturedUploadedFiles).toContain('master.m3u8')
+      expect(capturedUploadedFiles).toContain('stream_0/segment_000.ts')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('does not wipe the workdir when vimeo_fetch_failed fires (preserves the empty-dir guarantee)', async () => {
+    // Belt-and-braces: the wipe lives after resolve. If resolve
+    // throws, we should NOT have created OR wiped the workdir
+    // — confirming the 3/M empty-workdir guarantee still holds
+    // and that nothing outside the dataset's own subdir was
+    // touched.
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      // Pre-populate a SIBLING workdir to make sure the wipe is
+      // scoped strictly to the failing row's own subdir.
+      const siblingDir = join(tmp, 'unrelated-other-dataset')
+      mkdirSync(siblingDir, { recursive: true })
+      writeFileSync(join(siblingDir, 'do-not-touch.txt'), 'sibling content')
+
+      const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
+      const { ctx } = makeCtx(client)
+      await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource({ failFor: '1107911993' }),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: fakeUploadHlsBundle(),
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      // Failing row's workdir was never created (3/M).
+      expect(existsSync(join(tmp, ROW_VIDEO_VIMEO_1.id))).toBe(false)
+      // Sibling workdir untouched.
+      expect(existsSync(join(siblingDir, 'do-not-touch.txt'))).toBe(true)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
 })
 
 // MigrationResult is imported for type-only re-use by downstream
