@@ -52,7 +52,7 @@ import { getNodeIdentity, getPublicDataset } from '../../_lib/catalog-store'
 import { isConfigurationError } from '../../_lib/errors'
 import { streamPlaybackUrl } from '../../_lib/stream-store'
 import { computeEtag } from '../../_lib/snapshot'
-import { encodeR2Key, resolveR2PublicUrl } from '../../_lib/r2-public-url'
+import { encodeR2Key, resolveR2HlsPublicUrl, resolveR2PublicUrl } from '../../_lib/r2-public-url'
 
 const CACHE_CONTROL = 'public, max-age=300, stale-while-revalidate=600'
 const CONTENT_TYPE = 'application/json; charset=utf-8'
@@ -314,14 +314,43 @@ export async function resolveManifest(
       // empty (no direct-file alternative needed because the
       // master playlist references its own variant streams + ts
       // segments via relative paths under the same R2 prefix).
+      //
+      // Resolution here is stricter than the image / single-file
+      // MP4 branches above: we require an *explicit* public
+      // origin (`R2_PUBLIC_BASE` in prod or `MOCK_R2` for tests)
+      // rather than letting the `R2_S3_ENDPOINT` fallback fire.
+      // In a typical production setup `R2_S3_ENDPOINT` is present
+      // so the Phase 3 CLI can sign PUTs, but the bucket itself
+      // is *not* publicly readable through that endpoint — a
+      // custom domain bound via "Connect Domain" is. Falling
+      // through to the S3 endpoint would return an `hls:` URL
+      // that 403s at play time and contradicts the runbook
+      // (`expected-bindings.ts` already documents the missing-
+      // R2_PUBLIC_BASE → 503 r2_unconfigured contract).
       if (parsed.value.toLowerCase().endsWith('.m3u8')) {
+        const hls = resolveR2HlsPublicUrl(env, parsed.value)
+        if (!hls) {
+          return {
+            error: {
+              status: 503,
+              code: 'r2_unconfigured',
+              message:
+                'R2 public origin is not configured for HLS playback — set ' +
+                'R2_PUBLIC_BASE to the bucket\'s custom-domain URL (Cloudflare ' +
+                'dashboard → R2 → bucket → Settings → Connect Domain), or set ' +
+                'MOCK_R2=true for local development. The R2_S3_ENDPOINT fallback ' +
+                'is intentionally skipped here because that endpoint is for ' +
+                'signed S3 API access, not public reads.',
+            },
+          }
+        }
         return {
           manifest: {
             kind: 'video',
             id: row.id,
             title: '',
             duration: 0,
-            hls: url,
+            hls,
             files: [],
           },
         }

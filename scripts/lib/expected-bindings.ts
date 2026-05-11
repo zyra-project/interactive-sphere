@@ -151,7 +151,10 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
   // URLs for r2:videos/<id>/master.m3u8 data_refs. Phase 3
   // migrates ~136 video rows here; the SPA's HLS player fetches
   // master.m3u8 from this base URL. Missing on either env →
-  // /api/v1/datasets/<id>/manifest returns 503 r2_unconfigured.
+  // /api/v1/datasets/<id>/manifest returns 503 r2_unconfigured
+  // for the HLS branch specifically (the R2_S3_ENDPOINT fallback
+  // is intentionally skipped there — see
+  // `functions/api/v1/_lib/r2-public-url.ts:resolveR2HlsPublicUrl`).
   {
     name: 'R2_PUBLIC_BASE',
     type: 'plaintext',
@@ -161,7 +164,11 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       '(e.g. https://video.zyra-project.org). Bind the domain in ' +
       'Cloudflare dashboard → R2 → bucket → Settings → Connect Domain ' +
       'first. The manifest endpoint uses this base to construct HLS ' +
-      'master playlist URLs for Phase 3 r2:videos/ data_refs.',
+      'master playlist URLs for Phase 3 r2:videos/ data_refs. Note: ' +
+      'R2_S3_ENDPOINT is NOT a fallback for the HLS branch — that ' +
+      'endpoint is for signed S3-API access, not public reads, and ' +
+      'falling through to it would yield an hls URL that 403s at ' +
+      'play time on a typical (non-public-bucket) production setup.',
   },
 
   // ── R2 S3-API credentials (Phase 3 operator-side migration) ───

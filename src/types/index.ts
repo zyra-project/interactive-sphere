@@ -1021,8 +1021,8 @@ export interface ErrorEvent extends TelemetryEventBase {
 }
 
 /** Outcome of a single row in the `terraviz migrate-r2-hls`
- * pump. Mirrors the `MigrationOutcome` enum in
- * `cli/migrate-r2-hls.ts`; keep these in sync. */
+ * pump. Mirrors the `MigrationOutcome` string-union type alias
+ * exported from `cli/migrate-r2-hls.ts`; keep these in sync. */
 export type MigrationR2HlsOutcome =
   | 'ok'
   | 'vimeo_fetch_failed'

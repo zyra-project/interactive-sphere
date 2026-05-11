@@ -471,6 +471,44 @@ describe('GET /api/v1/datasets/{id}/manifest', () => {
     expect((await readJson<{ error: string }>(res)).error).toBe('r2_unconfigured')
   })
 
+  it('returns 503 r2_unconfigured for HLS when only R2_S3_ENDPOINT is set (3/P)', async () => {
+    // The non-HLS R2 branches happily fall through to the S3
+    // endpoint URL — fine when the bucket is publicly readable.
+    // The HLS branch is stricter: a typical production deployment
+    // has R2_S3_ENDPOINT set for signing PUTs from the migration
+    // CLI but the bucket itself is *not* readable through that
+    // endpoint. Falling through would return an `hls` URL that
+    // 403s at play time and contradicts the runbook contract
+    // (`expected-bindings.ts` documents the missing-R2_PUBLIC_BASE
+    // → 503 r2_unconfigured shape). Manifest endpoint must
+    // surface r2_unconfigured up front so the operator binds
+    // the custom domain before traffic hits the migrated rows.
+    const sqlite = seedFixtures({ count: 1 })
+    sqlite
+      .prepare(
+        `UPDATE datasets SET
+            data_ref = 'r2:videos/DS000AAAAAAAAAAAAAAAAAAAAA/master.m3u8',
+            format = 'video/mp4'
+         WHERE slug = 'dataset-0'`,
+      )
+      .run()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      // R2_S3_ENDPOINT alone is NOT enough for HLS playback.
+      R2_S3_ENDPOINT: 'https://acct.r2.cloudflarestorage.com',
+    }
+    const ctx = makeCtx<'id'>({ env, params: { id: 'DS000AAAAAAAAAAAAAAAAAAAAA' } })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(503)
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('r2_unconfigured')
+    // Message explicitly calls out the S3-endpoint-is-not-a-fallback
+    // contract so the operator doesn't waste time setting more
+    // env vars hoping one of them will work.
+    expect(body.message).toContain('R2_PUBLIC_BASE')
+  })
+
   it('returns 415 unsupported_format for r2: tour/json datasets (Phase 3)', async () => {
     const sqlite = seedFixtures({ count: 1 })
     sqlite

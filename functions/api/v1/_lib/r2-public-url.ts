@@ -61,6 +61,42 @@ export function resolveR2PublicUrl(env: CatalogEnv, key: string): string | null 
 }
 
 /**
+ * Like `resolveR2PublicUrl` but without the `R2_S3_ENDPOINT`
+ * fallback — only `R2_PUBLIC_BASE` (production) or `MOCK_R2`
+ * (local dev) produce a URL.
+ *
+ * Use this for HLS master playlists: in a typical production
+ * deployment `R2_S3_ENDPOINT` is set so the CLI can sign PUTs
+ * against the bucket, but the bucket itself is NOT publicly
+ * readable through that endpoint — a custom domain bound via
+ * R2 → bucket → Settings → Connect Domain (surfaced as
+ * `R2_PUBLIC_BASE`) is the public-read origin.
+ *
+ * If we fell through to `R2_S3_ENDPOINT` here, the manifest
+ * endpoint would happily return an `hls:` URL that resolves
+ * to a 403 at play time on every typical production setup.
+ * Better to surface the misconfiguration up front as
+ * `r2_unconfigured` (matching the runbook + `expected-bindings`
+ * hint) so the operator binds the custom domain before traffic
+ * hits the migrated rows.
+ */
+export function resolveR2HlsPublicUrl(env: CatalogEnv, key: string): string | null {
+  const bucket = env.CATALOG_R2_BUCKET?.trim() || 'terraviz-assets'
+  const path = encodeR2Key(key)
+
+  const publicBase = env.R2_PUBLIC_BASE?.trim()
+  if (publicBase) {
+    return `${publicBase.replace(/\/$/, '')}/${path}`
+  }
+
+  if (env.MOCK_R2 === 'true') {
+    return `https://mock-r2.localhost/${bucket}/${path}`
+  }
+
+  return null
+}
+
+/**
  * Resolve an arbitrary `*_ref` value to a publicly-readable URL.
  * Strips the scheme and dispatches:
  *   - `r2:<key>`  → `resolveR2PublicUrl`
