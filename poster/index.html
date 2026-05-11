@@ -7293,12 +7293,12 @@ section figure:not(.hero__qr-figure):not(.cta__qr) img {
 
         <ul class="loc__callouts">
           <li>
-            <strong><a href="https://github.com/zyra-project/terraviz/blob/main/scripts/generate-locales.ts">The codegen is the canonical formatter.</a></strong>
+            <strong><a href="https://github.com/zyra-project/terraviz/blob/main/scripts/generate-locales.ts" target="_blank" rel="noopener">The codegen is the canonical formatter.</a></strong>
             Predev/prebuild rewrite every locale JSON to match Weblate's exact output (2-space indent, sorted keys, no blank lines). Translator round-trips never produce whitespace-only diffs against <code>main</code>.
           </li>
           <li>
             <strong>Explanations live in the repo.</strong>
-            <a href="https://github.com/zyra-project/terraviz/blob/main/locales/_explanations.json"><code>locales/_explanations.json</code></a> carries per-string developer notes for the ~30 strings where the key alone leaves a translator guessing (preserve <code>{placeholders}</code>, <code>&lt;&lt;LOAD:DATASET_ID&gt;&gt;</code> markers, ARIA descriptions). A GitHub Actions workflow auto-syncs those into Weblate's per-string Explanation field on every change.
+            <a href="https://github.com/zyra-project/terraviz/blob/main/locales/_explanations.json" target="_blank" rel="noopener"><code>locales/_explanations.json</code></a> carries per-string developer notes for the ~30 strings where the key alone leaves a translator guessing (preserve <code>{placeholders}</code>, <code>&lt;&lt;LOAD:DATASET_ID&gt;&gt;</code> markers, ARIA descriptions). A GitHub Actions workflow auto-syncs those into Weblate's per-string Explanation field on every change.
           </li>
           <li>
             <strong>LLM responses inherit the locale.</strong>
