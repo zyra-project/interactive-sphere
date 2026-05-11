@@ -67,3 +67,105 @@ export async function isImmersiveArSupported(): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * Coarse input archetype for an active WebXR session. The three
+ * buckets correspond to the input shapes the device-support matrix
+ * needs distinct UX paths for:
+ *
+ *   - `controller` — Quest, PCVR, Pico, Lynx. Two
+ *     `tracked-pointer` sources with gamepads (trigger / grip /
+ *     thumbstick). The existing interaction layer assumes this.
+ *   - `screen` — handheld AR on Android (ARCore + Chrome). A
+ *     transient `screen` source per tap; no persistent gamepad.
+ *     Needs an in-DOM zoom affordance and a HUD-tap exit because
+ *     there is no grip button to press.
+ *   - `transient` — Vision Pro, HoloLens 2, Quest with hands
+ *     toggled, Magic Leap. `transient-pointer` (or `gaze`) sources
+ *     fire on pinch / look-and-tap. Same lack of gamepad axes as
+ *     `screen` so the same fallback UX applies.
+ *   - `unknown` — session has zero input sources reported yet, or
+ *     a mode this code doesn't yet recognize. Callers should treat
+ *     this as "wait and reclassify on the next
+ *     `inputsourceschange`" rather than mounting any UI.
+ *
+ * Resolution is mode-of-the-present-sources: if any source reports
+ * `screen` the archetype is `screen`; otherwise if any reports
+ * `tracked-pointer` it's `controller`; otherwise transient/gaze
+ * sources resolve to `transient`. Mixed cases (Quest with one
+ * controller + one hand) resolve to `controller` so the existing
+ * thumbstick/grip path stays active.
+ */
+export type VrInputArchetype = 'controller' | 'screen' | 'transient' | 'unknown'
+
+interface XRSessionLike {
+  readonly inputSources: ArrayLike<XRInputSource> | Iterable<XRInputSource>
+}
+
+export function getInputArchetype(
+  session: XRSessionLike | null | undefined,
+): VrInputArchetype {
+  if (!session) return 'unknown'
+  const sources = session.inputSources
+  if (!sources) return 'unknown'
+  let hasScreen = false
+  let hasTracked = false
+  let hasTransient = false
+  for (const source of sources as Iterable<XRInputSource>) {
+    if (!source) continue
+    switch (source.targetRayMode) {
+      case 'screen':
+        hasScreen = true
+        break
+      case 'tracked-pointer':
+        hasTracked = true
+        break
+      case 'transient-pointer':
+      case 'gaze':
+        hasTransient = true
+        break
+    }
+  }
+  if (hasScreen) return 'screen'
+  if (hasTracked) return 'controller'
+  if (hasTransient) return 'transient'
+  return 'unknown'
+}
+
+/**
+ * Coarse device classifier for `vr_session_started.device_class`.
+ * Substring match on the UA, narrowed by session mode for the
+ * cases that need it (Android phones report a non-Quest UA but
+ * only matter when they're actually in an AR session — desktop
+ * Chrome on Android in a 2D tab shouldn't bucket as `android-ar`).
+ *
+ * Returns the matched bucket; only the bucket leaves this function,
+ * the raw UA is never emitted. Order matters: more-specific
+ * variants come first so `Quest Pro` doesn't fall through to the
+ * generic `Quest` branch, and `Android` only matters in AR mode
+ * (in VR it almost certainly means a tethered/PCVR session).
+ *
+ * Buckets currently emitted: `quest`, `quest-pro`, `pico`,
+ * `vision-pro`, `hololens`, `magic-leap`, `android-ar`, `pcvr`,
+ * `unknown`. Additions need a corresponding ANALYTICS.md row and
+ * positional-layout entry — see `docs/VR_DEVICE_SUPPORT_PLAN.md`
+ * §Telemetry.
+ */
+export function classifyXrDevice(
+  ua: string,
+  mode: 'ar' | 'vr',
+): string {
+  if (/Quest\s*Pro/i.test(ua)) return 'quest-pro'
+  if (/Quest/i.test(ua)) return 'quest'
+  if (/Pico/i.test(ua)) return 'pico'
+  if (/Vision/i.test(ua)) return 'vision-pro'
+  if (/HoloLens/i.test(ua)) return 'hololens'
+  if (/Magic\s*Leap/i.test(ua)) return 'magic-leap'
+  // Android phones running ARCore + Chrome land here only when the
+  // session is actually `immersive-ar` — in `immersive-vr` an
+  // Android UA is almost always Quest Link / Pico Link routed
+  // through a tethered PC, so PCVR is the correct bucket.
+  if (mode === 'ar' && /Android/i.test(ua)) return 'android-ar'
+  if (/Windows|Mac OS X|Macintosh|X11|Linux/i.test(ua)) return 'pcvr'
+  return 'unknown'
+}

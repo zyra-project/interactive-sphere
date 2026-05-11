@@ -35,19 +35,11 @@ import { getBordersVisible, getGazeFollowOverlays } from '../utils/viewPreferenc
 import { logger } from '../utils/logger'
 import { emit, emitCameraSettled } from '../analytics'
 import type { VrExitReason } from '../types'
-
-/** Coarse device classifier for `vr_session_started.device_class`.
- * Substring match on the UA — only the bucket leaves this function;
- * the raw UA is never emitted. Order matters: more-specific
- * variants come first so `Quest Pro` doesn't fall through to the
- * generic `Quest` branch. */
-function classifyXrDevice(ua: string): string {
-  if (/Quest\s*Pro/i.test(ua)) return 'quest-pro'
-  if (/Quest/i.test(ua)) return 'quest'
-  if (/Vision/i.test(ua)) return 'vision-pro'
-  if (/Windows|Mac OS X|Macintosh|X11|Linux/i.test(ua)) return 'pcvr'
-  return 'unknown'
-}
+import {
+  classifyXrDevice,
+  getInputArchetype,
+  type VrInputArchetype,
+} from '../utils/vrCapability'
 
 /**
  * Contract the hosting app must provide. Pull-based: the session
@@ -402,10 +394,18 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     sessionStartedAtWall: number
     frames: number
     exitReason: VrExitReason
+    /** Coarse input archetype the device is using. Resolves lazily —
+     * screen-tap (handheld AR) sessions report zero input sources
+     * until the first tap, so this starts as `'unknown'` and is
+     * updated by the `inputsourceschange` listener wired below.
+     * Consumed by future PRs to gate alternative UX (DOM zoom
+     * slider, HUD exit button) for non-controller devices. */
+    inputClass: VrInputArchetype
   } = {
     sessionStartedAtWall: 0,
     frames: 0,
     exitReason: 'user',
+    inputClass: 'unknown',
   }
 
   const THREE_ = await loadThree()
@@ -496,10 +496,32 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     mode,
     device_class: classifyXrDevice(
       typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      mode,
     ),
     entry_load_ms: Math.max(0, sessionTelemetry.sessionStartedAtWall - entryStartedAtWall),
     layer_id: ctx.getDatasetId() ?? '',
   })
+
+  // Resolve the input archetype lazily. Handheld-AR sessions (Android
+  // + ARCore) report zero input sources at session start — a
+  // transient `screen` source only appears on the user's first tap —
+  // so an at-start snapshot would always read `'unknown'` and the
+  // dependent UX (DOM zoom slider, HUD exit button) would never
+  // mount. Re-resolving on every `inputsourceschange` lets the
+  // archetype settle as inputs come and go (controllers wake on
+  // pickup, hand-tracking toggles in/out on Quest, transient pointers
+  // fire per pinch on Vision Pro).
+  const updateInputClass = (): void => {
+    const next = getInputArchetype(session)
+    if (next !== sessionTelemetry.inputClass) {
+      logger.debug(
+        `[VR] inputClass: ${sessionTelemetry.inputClass} -> ${next}`,
+      )
+      sessionTelemetry.inputClass = next
+    }
+  }
+  updateInputClass()
+  session.addEventListener('inputsourceschange', updateInputClass)
 
   // Lazy-load the controller-model addon alongside Three.js. The
   // factory fetches per-controller glTF models from a CDN at runtime
