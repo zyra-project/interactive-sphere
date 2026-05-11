@@ -656,6 +656,17 @@ Commands:
                                       CATALOG_BACKEND_DEVELOPMENT.md "Migrating
                                       legacy Vimeo data refs to R2/HLS".
 
+  rollback-r2-hls <id> --to-vimeo=<vimeo_id> [--dry-run]
+                                      Roll a single migrated dataset back from
+                                      r2:videos/<id>/master.m3u8 to vimeo:<id>.
+                                      PATCHes data_ref first (commit point),
+                                      then deletes the R2 bundle (cleanup;
+                                      non-fatal). Use to back out a botched
+                                      migration or to re-encode at different
+                                      rendition settings. Requires the same R2
+                                      credentials as migrate-r2-hls for the
+                                      bundle deletion.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)
