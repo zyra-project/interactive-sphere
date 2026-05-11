@@ -19,7 +19,8 @@ referenced in [`README.md`](README.md).
 ## Phase 3a — Real-time row guard for migrate-r2-hls
 
 **Branch:** `claude/realtime-row-filtering`
-**Commits:** 3a/A — single follow-up to Phase 3.
+**Commits:** 3a/A through 3a/C — three logical changes (one
+forward-protection guard + two triage helpers).
 
 Phase 3 was a one-shot encode (Vimeo source → R2-hosted HLS).
 A handful of SOS rows (~40) are titled `… - Real-time` and have
@@ -39,16 +40,21 @@ the heuristic. `--no-skip-realtime` opts back in for the bulk
 path; `--id <row>` is treated as a deliberate override
 (warning to stderr when the targeted row matches, but no skip).
 
-**Recovery for already-migrated real-time rows.** Phase 3
-shipped `rollback-r2-hls <id> --to-vimeo=<vimeo-id>` (commit 3/F),
-which already does PATCH-back-to-vimeo + R2 prefix delete. For
-operators who migrated real-time rows before the 3a/A guard
-landed, the recovery loop is: identify by title, recover the
-original `vimeo_id` (from the `migration_r2_hls` Grafana events
-or from the SOS snapshot via `cli/lib/snapshot-import.ts`),
-then run `rollback-r2-hls` per row. A bulk variant
-(`terraviz list-realtime-r2` + `--from-stdin` rollback) is
-deferred to 3a/B.
+**3a/B — `terraviz list-realtime-r2` triage helper.**
+Read-only. Walks the catalog (`status=published`), filters to
+rows with `data_ref` starting `r2:videos/` AND `format =
+video/mp4` AND `isRealtimeTitle(title)`, joins each match
+against `public/assets/sos-dataset-list.json` via the row's
+`legacy_id` (1:1 with `entry.id` per the Phase 1d import
+contract) to extract the original Vimeo id from `dataLink`.
+Two output modes: NDJSON by default (one JSON object per line,
+designed for piping into `rollback-r2-hls --from-stdin`), and
+`--human` for a readable table with a rollback-pipe hint.
+Rows whose snapshot lookup fails (legacy_id missing or dataLink
+not a vimeo.com URL) emit to stderr with empty `vimeo_id` so
+they don't pollute the NDJSON pipeline; operator recovers
+those IDs from Grafana's `migration_r2_hls` events (`blob9`)
+or the Vimeo dashboard.
 
 **Non-goals (deferred).** A recurring re-encode mechanism
 (scheduled trigger → re-fetch → re-encode → idempotent overwrite)

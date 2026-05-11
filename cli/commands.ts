@@ -667,6 +667,16 @@ Commands:
                                       credentials as migrate-r2-hls for the
                                       bundle deletion.
 
+  list-realtime-r2 [--human] [--snapshot=<path>]
+                                      Find migrated rows whose Vimeo source is
+                                      on a daily re-upload cadence (title
+                                      matches /real[-\s]?time/i) and recover
+                                      the original vimeo_id for each from the
+                                      SOS snapshot. Default output is NDJSON
+                                      designed for piping into rollback-r2-hls
+                                      --from-stdin; --human prints a readable
+                                      table. Read-only — no mutations.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

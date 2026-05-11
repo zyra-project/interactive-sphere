@@ -885,6 +885,42 @@ when the targeted row matches the heuristic, so a slip-of-the-finger
 is still visible). A proper recurring-refresh mechanism is
 deferred to a Phase 3c follow-up.
 
+##### Triaging real-time rows that are already on r2:
+
+For rows that were migrated *before* the `--skip-realtime` guard
+landed (i.e. they're already serving a 24h-stale snapshot from
+R2), use `terraviz list-realtime-r2` to identify them and
+recover the original Vimeo id needed for rollback:
+
+```sh
+# NDJSON output — one row per match, ready to pipe.
+npm run terraviz -- list-realtime-r2
+
+# Human-readable inspection:
+npm run terraviz -- list-realtime-r2 --human
+```
+
+The lookup walks the catalog (`status=published`), filters to
+`r2:videos/` + `video/mp4` + the same title heuristic, and joins
+each match against `public/assets/sos-dataset-list.json` via
+`legacy_id` → `entry.id` to extract the Vimeo id from
+`dataLink`. Rows whose `legacy_id` isn't in the snapshot — or
+whose `dataLink` isn't a `vimeo.com` URL — surface to stderr
+without polluting the NDJSON stream; recover those IDs from
+Grafana's `migration_r2_hls` events (the `vimeo_id` is on
+`blob9`) or the Vimeo dashboard, then call `rollback-r2-hls`
+manually.
+
+To bulk-roll-back the matched rows:
+
+```sh
+npm run terraviz -- list-realtime-r2 \
+  | npm run terraviz -- rollback-r2-hls --from-stdin
+```
+
+See the `rollback-r2-hls` runbook below for the per-row
+rollback semantics (PATCH-then-DELETE, commit-point ordering).
+
 #### Live migration
 
 Once the dry-run looks right:
