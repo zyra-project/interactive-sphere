@@ -682,6 +682,20 @@ export interface TelemetryConfig {
   tier: TelemetryTier
 }
 
+/** User-toggleable opt-in flags for features that aren't ready for
+ * default-on rollout. Stored in localStorage under
+ * `sos-experimental-flags`. Surfaced in Tools → Privacy under
+ * an "Experimental" section. Every key defaults to false; no
+ * existing user sees behaviour change without an explicit opt-in. */
+export interface ExperimentalFlags {
+  /** Phase 1 phone-AR (ARCore Chrome on Android). When true,
+   *  the Enter AR button appears on phones whose UA matches Android
+   *  and which advertise immersive-ar support. Off by default until
+   *  the on-device drag-feel spike returns positive on at least two
+   *  phone models. See docs/VR_DEVICE_SUPPORT_PLAN.md §Rollout. */
+  vrPhoneArEnabled: boolean
+}
+
 /** Event types that require Tier B (research). Every other event type
  * is Tier A. Kept as a const tuple so the runtime Set and the
  * compile-time `TierBEventType` literal stay in sync. */
