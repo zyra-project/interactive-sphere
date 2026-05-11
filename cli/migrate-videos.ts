@@ -124,10 +124,21 @@ const BUFFER_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
 
 /**
  * Drain a `ReadableStream<Uint8Array>` into a single `Uint8Array`,
- * enforcing the per-row memory ceiling. The pre-fetched
- * `expectedLength` is used both as a sanity-check (catches
- * advertised-vs-actual drift) and as the cap-check trigger so a
- * misreported Content-Length doesn't OOM the host.
+ * enforcing the per-row memory ceiling and verifying the bytes
+ * actually delivered match `expectedLength`.
+ *
+ * Three checks, each catching a distinct failure mode:
+ *
+ *   1. Pre-flight: `expectedLength > cap` → throw. A
+ *      Content-Length advertising a row larger than the buffer
+ *      cap fails fast without allocating memory.
+ *   2. Mid-stream: accumulated bytes > cap → cancel + throw.
+ *      Catches a source that lied about its Content-Length and
+ *      tries to push more bytes than advertised.
+ *   3. Post-read: actual total !== expectedLength → throw.
+ *      Catches truncated upstreams (TUS PATCH would reject a
+ *      mismatch anyway; better to fail explicitly with the
+ *      byte counts).
  *
  * Exported for tests. The migration call site invokes it inline.
  * The `cap` parameter exists so tests can exercise the cap-exceeded
@@ -159,6 +170,11 @@ export async function drainStream(
       )
     }
     chunks.push(value)
+  }
+  if (total !== expectedLength) {
+    throw new Error(
+      `source delivered ${total} bytes but advertised ${expectedLength}; refusing to upload an incomplete asset`,
+    )
   }
   const out = new Uint8Array(total)
   let offset = 0
@@ -244,11 +260,23 @@ function asCandidate(row: PublisherDatasetRow): MigrationCandidate | null {
 }
 
 /**
- * Build the migration plan by paging through the publisher API.
- * Filters to:
- *   - status = published (drafts and retracted rows are out of scope)
- *   - format = video/mp4
- *   - data_ref begins `vimeo:`
+ * Build the migration plan.
+ *
+ * Two paths, with intentionally different filtering:
+ *
+ *   - Paginated walk (no `--id`): GETs `/api/v1/publish/datasets`
+ *     with `status=published` so drafts and retracted rows are
+ *     out of scope. Then filters in-memory to
+ *     `format = video/mp4` AND `data_ref` begins `vimeo:`.
+ *     This is the bulk mode used for the full migration run.
+ *
+ *   - Single-row mode (`--id <id>`): GETs the row directly,
+ *     bypasses the status filter. Operators using `--id` are
+ *     making an explicit "I want this specific row" choice;
+ *     migrating a draft pre-publish or surgically rewriting a
+ *     stuck row are both legitimate uses. The format +
+ *     data_ref-scheme filter still applies, so a non-video or
+ *     already-stream-backed row prints "skipping" and exits 0.
  *
  * Walks pages until the cursor is exhausted. Returns the full
  * candidate list; `--limit` is applied by the caller after the

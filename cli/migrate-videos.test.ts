@@ -194,14 +194,18 @@ function fakeResolveVimeoFn(opts: FakeResolveVimeoOptions = {}) {
       },
       async openStream() {
         if (opts.failOpenStream) throw new Error(`MP4 fetch failed for ${vimeoId}`)
+        // Post-read drainStream check (2/Q) verifies actual bytes
+        // match contentLength. Enqueue exactly that many bytes so
+        // the buffered upload path doesn't fail the sanity check.
+        const len = opts.contentLength ?? 1024
         return {
           stream: new ReadableStream<Uint8Array>({
             start(c) {
-              c.enqueue(new TextEncoder().encode('mp4'))
+              c.enqueue(new Uint8Array(len))
               c.close()
             },
           }),
-          contentLength: opts.contentLength ?? 1024,
+          contentLength: len,
           contentType: 'video/mp4',
         }
       },
@@ -676,5 +680,21 @@ describe('drainStream (2/O)', () => {
     const stream = makeStreamFromChunks([])
     const out = await drainStream(stream, 0)
     expect(out.byteLength).toBe(0)
+  })
+
+  it('rejects post-read when actual bytes are shorter than advertised (2/Q)', async () => {
+    // Truncated upstream: Content-Length said 10, body delivered 5.
+    // Earlier checks (pre-flight cap, mid-stream cap) don't catch
+    // this — only the post-read length comparison does.
+    const stream = makeStreamFromChunks([new Uint8Array(5)])
+    await expect(drainStream(stream, 10)).rejects.toThrow(
+      /delivered 5 bytes but advertised 10/,
+    )
+  })
+
+  it('accepts a stream that matches the advertised length exactly', async () => {
+    const stream = makeStreamFromChunks([new Uint8Array(4), new Uint8Array(6)])
+    const out = await drainStream(stream, 10)
+    expect(out.byteLength).toBe(10)
   })
 })
