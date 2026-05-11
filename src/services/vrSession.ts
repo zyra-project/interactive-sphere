@@ -25,6 +25,8 @@ import { createVrTimeLabel, type VrTimeLabelHandle } from './vrTimeLabel'
 import { setVrTourOverlaySink } from '../ui/tourUI'
 import { createVrInteraction, type VrInteractionHandle } from './vrInteraction'
 import { createVrLoading, type VrLoadingHandle } from './vrLoading'
+import { createVrZoomOverlay, type VrZoomOverlayHandle } from '../ui/vrZoomOverlay'
+import { MAX_GLOBE_SCALE, MIN_GLOBE_SCALE } from './vrScene'
 import { createVrPlacement, liftedPlacementPosition, type VrPlacementHandle } from './vrPlacement'
 import {
   clearPersistedAnchorHandle,
@@ -198,6 +200,11 @@ interface ActiveSession {
   camera: THREE.PerspectiveCamera
   scene: VrSceneHandle
   hud: VrHudHandle
+  /** Teardown hook for the DOM zoom slider — removes the
+   *  `inputsourceschange` listener and disposes the overlay if one
+   *  is currently mounted. Idempotent. Always present (a no-op for
+   *  controller-only sessions that never mount the overlay). */
+  disposeZoomOverlay: () => void
   interaction: VrInteractionHandle
   /** In-VR dataset browse panel. */
   browse: VrBrowseHandle
@@ -1015,12 +1022,46 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     },
   })
 
+  // --- Phase 1 phone-AR zoom slider ---
+  // Mount the DOM zoom overlay reactively when `inputClass` resolves
+  // to `screen`. Controller sessions never see it (their thumbstick
+  // already does this job); transient-pointer devices get widened in
+  // Phase 2 PR 4. The listener runs the sync now (in case inputClass
+  // resolved during the slow Three.js + setSession path above) and
+  // on every subsequent inputsourceschange.
+  let zoomOverlay: VrZoomOverlayHandle | null = null
+  const syncZoomOverlay = (): void => {
+    const wantOverlay = sessionTelemetry.inputClass === 'screen'
+    if (wantOverlay && !zoomOverlay) {
+      zoomOverlay = createVrZoomOverlay({
+        onZoom: (raw) => {
+          const clamped = Math.max(MIN_GLOBE_SCALE, Math.min(MAX_GLOBE_SCALE, raw))
+          scene.globe.scale.setScalar(clamped)
+        },
+        initialScale: scene.globe.scale.x,
+        minScale: MIN_GLOBE_SCALE,
+        maxScale: MAX_GLOBE_SCALE,
+      })
+      zoomOverlay.mount(document.body)
+    } else if (!wantOverlay && zoomOverlay) {
+      zoomOverlay.dispose()
+      zoomOverlay = null
+    }
+  }
+  syncZoomOverlay()
+  session.addEventListener('inputsourceschange', syncZoomOverlay)
+
   active = {
     session,
     renderer,
     camera,
     scene,
     hud,
+    disposeZoomOverlay: () => {
+      session.removeEventListener('inputsourceschange', syncZoomOverlay)
+      zoomOverlay?.dispose()
+      zoomOverlay = null
+    },
     browse,
     tourControls,
     tourOverlay,
@@ -1347,6 +1388,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // onFlyTo handler).
     cancelFlyTo()
     a.interaction.dispose()
+    a.disposeZoomOverlay()
     a.hud.dispose()
     a.browse.dispose()
     a.scene.scene.remove(a.tourControls.mesh)

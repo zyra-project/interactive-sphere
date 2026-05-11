@@ -276,13 +276,14 @@ describe('privacyUI — experimental flags', () => {
     openPrivacyUI()
     const cb = getPhoneArCheckbox()
     if (!cb) throw new Error('checkbox missing')
-    // Drain any prior settings_changed events so we can assert on the
-    // single one we're about to fire.
-    while (size() > 0) __peek().shift()
+    // Snapshot the event count first so we can locate the new event
+    // even if open() emitted anything earlier.
+    const before = size()
     cb.checked = true
     cb.dispatchEvent(new Event('change'))
-    const events = __peek()
-    const change = events.find((e) => e.event_type === 'settings_changed')
+    const after = __peek()
+    // The new tail-event should be the settings_changed for our flag.
+    const change = after.slice(before).find((e) => e.event_type === 'settings_changed')
     expect(change).toBeTruthy()
     if (change && change.event_type === 'settings_changed') {
       expect(change.key).toBe('vr_phone_ar_enabled')
