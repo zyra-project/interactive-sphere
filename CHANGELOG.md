@@ -151,6 +151,17 @@ cleanup.
 - **Image r2: migration.** Phase 1d's import lands images as
   `url:` data_refs pointing at external CDNs. Migrating those
   to R2 is a separate phase.
+- **Auxiliary asset migration (thumbnails, legends, SRT captions).**
+  Phase 3 touches only the video `data_ref`. The thumbnail /
+  legend / caption fields on each catalog row still point at
+  NOAA-hosted URLs. Migrating those to
+  `datasets/{id}/{thumbnail,legend,caption}.*` in the same R2
+  bucket is a Phase 3b-shaped follow-up — needed before
+  `/publish` can serve every dataset from a single origin and
+  before federation peers can mirror without reaching back to
+  noaa.gov. Shape sketched in
+  [`docs/CATALOG_ASSETS_PIPELINE.md`](docs/CATALOG_ASSETS_PIPELINE.md)
+  §"Legacy auxiliary-asset migration".
 - **Vimeo proxy retirement.** Stays running until the migration
   is 100% complete AND has been observed for ≥1 month.
 - **4K renditions of already-migrated rows.** The rendition
