@@ -46,7 +46,15 @@ const NATIVE_NAMES: Readonly<Record<string, string>> = {
   es: 'Español',
   kab: 'Taqbaylit',
   ar: 'العربية',
+  et: 'Eesti',
 }
+
+/** Coverage threshold for picker visibility. Locales below this
+ *  fraction translated stay reachable via `?lang=<code>` for
+ *  testing but are hidden from the public language picker so
+ *  visitors don't land on a half-empty UI by browser auto-detect.
+ *  Matches the ≥80% gate documented in `docs/I18N_PLAN.md`. */
+const PICKER_COVERAGE_THRESHOLD = 0.8
 
 interface LocaleFile {
   readonly locale: string
@@ -228,6 +236,7 @@ export function renderLocaleModule(
 export function renderEntryModule(
   locales: readonly string[],
   source: Readonly<Record<string, string>>,
+  coverage: Readonly<Record<string, number>> = {},
 ): string {
   const sortedLocales = [...locales].sort()
   const sortedEntries = Object.keys(source)
@@ -240,6 +249,15 @@ export function renderEntryModule(
     .join('\n')
   const nativeNamesEntries = sortedLocales
     .map((l) => `  ${JSON.stringify(l)}: ${JSON.stringify(NATIVE_NAMES[l] ?? l)},`)
+    .join('\n')
+  const coverageEntries = sortedLocales
+    .map((l) => `  ${JSON.stringify(l)}: ${(coverage[l] ?? (l === SOURCE_LOCALE ? 1 : 0)).toFixed(4)},`)
+    .join('\n')
+  const pickerLocales = sortedLocales.filter(
+    (l) => l === SOURCE_LOCALE || (coverage[l] ?? 0) >= PICKER_COVERAGE_THRESHOLD,
+  )
+  const pickerArrayLiteral = pickerLocales
+    .map((l) => `  ${JSON.stringify(l)},`)
     .join('\n')
   const loaderEntries = sortedLocales
     .map((l) =>
@@ -263,6 +281,26 @@ export function renderEntryModule(
     'export const NATIVE_NAMES: Readonly<Record<Locale, string>> = {',
     nativeNamesEntries,
     '}',
+    '',
+    '/**',
+    ' * Per-locale translation coverage (fraction of source keys',
+    ' * translated, 0..1). Source locale is always 1.0. Computed at',
+    ` * codegen time; gate for the public picker is ${PICKER_COVERAGE_THRESHOLD}.`,
+    ' */',
+    'export const LOCALE_COVERAGE: Readonly<Record<Locale, number>> = {',
+    coverageEntries,
+    '}',
+    '',
+    '/**',
+    ' * Subset of SUPPORTED_LOCALES that meets the picker visibility',
+    ` * threshold (\`coverage >= ${PICKER_COVERAGE_THRESHOLD}\`). Below-threshold locales stay`,
+    ' * reachable via `?lang=<code>` for testing; they only disappear',
+    ' * from the public language picker. Source locale is always',
+    ' * included regardless of coverage.',
+    ' */',
+    'export const PICKER_LOCALES: readonly Locale[] = [',
+    pickerArrayLiteral,
+    '] as const',
     '',
     '/** English source bundle — always available synchronously. */',
     'const enLiteral = {',
@@ -443,11 +481,38 @@ export function build(localesDir: string = LOCALES_DIR): BuildOutput {
       contents: renderLocaleJson(loc.messages),
     })
   }
+  // Coverage: per-locale fraction of source keys translated to a
+  // non-empty value. Source locale is 1.0 by construction. Drives
+  // the picker-visibility gate emitted as PICKER_LOCALES in the
+  // generated entry module — locales below 0.8 hide from the
+  // public picker but stay reachable via `?lang=<code>`.
+  const sourceKeyList = Object.keys(source.messages)
+  const coverage: Record<string, number> = {}
+  for (const loc of locales) {
+    if (loc.locale === SOURCE_LOCALE) {
+      coverage[loc.locale] = 1
+      continue
+    }
+    if (sourceKeyList.length === 0) {
+      // Degenerate empty-source case (Wave 0 state): trivially
+      // covered, picker shows everything.
+      coverage[loc.locale] = 1
+      continue
+    }
+    let translated = 0
+    for (const k of sourceKeyList) {
+      const v = loc.messages[k]
+      if (typeof v === 'string' && v !== '') translated++
+    }
+    coverage[loc.locale] = translated / sourceKeyList.length
+  }
+
   files.push({
     path: resolve(OUTPUT_DIR, 'messages.ts'),
     contents: renderEntryModule(
       locales.map((l) => l.locale),
       source.messages,
+      coverage,
     ),
   })
   for (const loc of locales) {

@@ -44,7 +44,7 @@ import { setBordersVisible } from '../utils/viewPreferences'
 import {
   getLocale,
   NATIVE_NAMES,
-  SUPPORTED_LOCALES,
+  PICKER_LOCALES,
   t,
   tAttr,
   tHtml,
@@ -123,13 +123,22 @@ export function initToolsMenu(
   const currentLayout = viewports.getLayout()
 
   const activeLocale = getLocale()
+  // Only show locales that have crossed the picker-visibility
+  // coverage gate (PICKER_LOCALES, gated at ≥80% by the codegen).
+  // Always include the currently-active locale even if it's below
+  // threshold, so a user who landed via `?lang=ar` (or has a
+  // stored pref for a below-threshold locale) can see their
+  // active selection in the dropdown and switch out of it.
   // Both BCP-47 tags (validated at codegen time against ^[a-z]…$)
   // and the curated NATIVE_NAMES are trusted today, but escape
   // anyway — defense in depth keeps this safe if either source is
   // ever extended to translator input or runtime overrides (see
   // L2 partner-overrides plan in docs/I18N_PLAN.md).
-  const localeOptions = SUPPORTED_LOCALES
-    .map((l) => `<option value="${escapeAttr(l)}"${l === activeLocale ? ' selected' : ''}>${escapeHtml(NATIVE_NAMES[l])}</option>`)
+  const visibleLocales: readonly Locale[] = PICKER_LOCALES.includes(activeLocale)
+    ? PICKER_LOCALES
+    : [...PICKER_LOCALES, activeLocale]
+  const localeOptions = visibleLocales
+    .map((l) => `<option value="${escapeAttr(l)}"${l === activeLocale ? ' selected' : ''}>${escapeHtml(NATIVE_NAMES[l] ?? l)}</option>`)
     .join('')
 
   container.classList.remove('hidden')

@@ -136,6 +136,51 @@ describe('renderEntryModule', () => {
     expect(out).toContain('export const SOURCE_LOCALE: Locale = "en"')
     expect(out).toContain('export const enMessages')
   })
+
+  it('emits LOCALE_COVERAGE with the supplied per-locale fractions', () => {
+    const out = renderEntryModule(
+      ['en', 'es', 'ar'],
+      { 'app.title': 'Terraviz' },
+      { en: 1, es: 1, ar: 0 },
+    )
+    expect(out).toMatch(/"ar":\s*0\.0000/)
+    expect(out).toMatch(/"en":\s*1\.0000/)
+    expect(out).toMatch(/"es":\s*1\.0000/)
+  })
+
+  it('PICKER_LOCALES drops below-threshold locales but always keeps the source', () => {
+    const out = renderEntryModule(
+      ['en', 'es', 'ar', 'kab'],
+      { 'app.title': 'Terraviz' },
+      { en: 1, es: 1, ar: 0, kab: 0.027 },
+    )
+    // Extract the literal between `PICKER_LOCALES: readonly Locale[] = [` and `] as const`
+    const m = out.match(/PICKER_LOCALES:\s*readonly Locale\[\] = \[([\s\S]*?)\] as const/)
+    expect(m).not.toBeNull()
+    const body = m![1]!
+    expect(body).toContain('"en"')
+    expect(body).toContain('"es"')
+    expect(body).not.toContain('"ar"')
+    expect(body).not.toContain('"kab"')
+  })
+
+  it('PICKER_LOCALES includes locales exactly at the 0.8 threshold', () => {
+    const out = renderEntryModule(
+      ['en', 'fr'],
+      { 'app.title': 'Terraviz' },
+      { en: 1, fr: 0.8 },
+    )
+    expect(out).toMatch(/PICKER_LOCALES[\s\S]*"fr"/)
+  })
+
+  it('PICKER_LOCALES keeps the source locale even when its coverage is missing', () => {
+    // Defensive: a degenerate coverage map without the source key
+    // should still include the source in the picker (`en` is the
+    // app's universal fallback, never gated).
+    const out = renderEntryModule(['en', 'es'], { 'app.title': 'Terraviz' }, {})
+    const m = out.match(/PICKER_LOCALES:\s*readonly Locale\[\] = \[([\s\S]*?)\] as const/)
+    expect(m![1]).toContain('"en"')
+  })
 })
 
 describe('renderLocaleJson', () => {
