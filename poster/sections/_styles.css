@@ -3877,36 +3877,6 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   display: block;
 }
 
-/* Placeholder treatment until a real screenshot lands. Replace
-   the `.loc__pair-ph` div with an <img> when capturing. */
-.loc__pair-ph {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  aspect-ratio: 16 / 10;
-  background:
-    linear-gradient(135deg, rgba(0, 137, 123, 0.05), rgba(77, 166, 255, 0.05)),
-    repeating-linear-gradient(45deg, transparent 0 12px, rgba(0, 0, 0, 0.02) 12px 14px);
-  color: var(--neutral-600);
-}
-
-.loc__pair-ph-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cable-blue);
-}
-
-.loc__pair-ph-hint {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--neutral-600);
-}
-
 .loc__pair-row figcaption {
   font-family: var(--font-mono);
   font-size: 0.78rem;

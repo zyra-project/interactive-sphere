@@ -3900,36 +3900,6 @@ h3 a[href*="github.com/zyra-project/terraviz/blob/"]:focus-visible {
   display: block;
 }
 
-/* Placeholder treatment until a real screenshot lands. Replace
-   the `.loc__pair-ph` div with an <img> when capturing. */
-.loc__pair-ph {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  aspect-ratio: 16 / 10;
-  background:
-    linear-gradient(135deg, rgba(0, 137, 123, 0.05), rgba(77, 166, 255, 0.05)),
-    repeating-linear-gradient(45deg, transparent 0 12px, rgba(0, 0, 0, 0.02) 12px 14px);
-  color: var(--neutral-600);
-}
-
-.loc__pair-ph-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cable-blue);
-}
-
-.loc__pair-ph-hint {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--neutral-600);
-}
-
 .loc__pair-row figcaption {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -7237,21 +7207,13 @@ section figure:not(.hero__qr-figure):not(.cta__qr) img {
                 aria-label="TerraViz UI rendered in English and Spanish, side-by-side">
           <div class="loc__pair-row">
             <figure class="loc__pair-figure">
-              <!-- Replace this placeholder with:
-                   <img src="assets/screenshots/terraviz-en.webp" alt="…"> -->
-              <div class="loc__pair-ph">
-                <span class="loc__pair-ph-eyebrow">en · 100%</span>
-                <span class="loc__pair-ph-hint">Screenshot · live capture pending</span>
-              </div>
+              <img src="assets/screenshots/terraviz-en.webp"
+                   alt="TerraViz running in English — the photoreal globe with English-language chrome, tools menu, and dataset panel">
               <figcaption><code>en</code> · 100%</figcaption>
             </figure>
             <figure class="loc__pair-figure">
-              <!-- Replace this placeholder with:
-                   <img src="assets/screenshots/terraviz-es.webp" alt="…"> -->
-              <div class="loc__pair-ph">
-                <span class="loc__pair-ph-eyebrow">es · 100%</span>
-                <span class="loc__pair-ph-hint">Screenshot · live capture pending</span>
-              </div>
+              <img src="assets/screenshots/terraviz-es.webp"
+                   alt="TerraViz running in Spanish — the same layout as the English screenshot, with every interface string translated">
               <figcaption><code>es</code> · 100%</figcaption>
             </figure>
           </div>
