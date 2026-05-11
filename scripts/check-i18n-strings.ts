@@ -64,6 +64,12 @@ interface ScanRoot {
 const SCAN_ROOTS: readonly ScanRoot[] = [
   { dir: 'src/ui' },
   { dir: 'src/services', filter: /^docent.*\.ts$/ },
+  // VR / AR modules. The HUD, controller tooltips, tour overlay,
+  // and loading scene all paint user-visible text onto Canvas 2D
+  // surfaces via `ctx.fillText('...')` — invisible to the DOM-
+  // property heuristics above. The fillText regex below catches
+  // them.
+  { dir: 'src/services', filter: /^vr.*\.ts$/ },
 ]
 
 /** DOM property slots whose values render as user-visible text. */
@@ -73,6 +79,14 @@ const PROP_ASSIGNMENT_RE =
 /** `setAttribute('aria-label'|'title'|'placeholder'|'alt', '...')`. */
 const SET_ATTR_RE =
   /setAttribute\s*\(\s*['"](aria-label|title|placeholder|alt)['"]\s*,\s*(['"`])(.*?)\2\s*\)/g
+
+/** `ctx.fillText('literal', ...)` — canvas-rendered user-visible
+ *  text. Matches `<anything>.fillText('...', ...)` so we catch any
+ *  CanvasRenderingContext2D variable name (typically `ctx`, but VR
+ *  code sometimes uses `c` or `context`). Same literal-extraction
+ *  shape as `PROP_ASSIGNMENT_RE` — group 2 holds the text. */
+const FILL_TEXT_RE =
+  /\.fillText\s*\(\s*(['"`])(.*?)\1/g
 
 /** ≥3 ASCII letters and at least one space — coarse English signature. */
 const ENGLISH_PROSE_RE = /[A-Za-z]{3,}.* /
@@ -145,6 +159,7 @@ function scanLine(
   const checks: Array<{ re: RegExp; literalGroup: number }> = [
     { re: PROP_ASSIGNMENT_RE, literalGroup: 3 },
     { re: SET_ATTR_RE, literalGroup: 3 },
+    { re: FILL_TEXT_RE, literalGroup: 2 },
   ]
   for (const { re, literalGroup } of checks) {
     re.lastIndex = 0
