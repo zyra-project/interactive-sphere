@@ -10,6 +10,10 @@
     </martifHeader>
     <text>
         <body>
-            </body>
+            <termEntry id="Application Name">
+                <langSet xml:lang="en"><tig><term>TerraViz</term></tig></langSet>
+                <langSet xml:lang="et"><tig><term></term></tig></langSet>
+            </termEntry>
+        </body>
     </text>
 </martif>
