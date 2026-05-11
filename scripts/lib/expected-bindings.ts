@@ -91,7 +91,11 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
     environments: BOTH,
     hint:
       'KV namespace for the public catalog snapshot. Without it `/api/v1/catalog` ' +
-      'burns ~5 D1 reads per browse-page load.',
+      'burns ~5 D1 reads per browse-page load. Common foot-gun: in the Pages ' +
+      'binding form the "name" field is the runtime variable (must be exactly ' +
+      'CATALOG_KV) and the "value" dropdown is the underlying namespace; setting ' +
+      'the name to the namespace id (32-hex) instead of CATALOG_KV makes ' +
+      'env.CATALOG_KV undefined and silently falls through to D1.',
   },
   {
     name: 'CATALOG_R2',
@@ -187,5 +191,54 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       'Profile → API Tokens → Create Token → Custom → Stream:Edit. The ' +
       'Phase 2 migration CLI also reads this from the operator\'s shell, ' +
       'not from the Pages binding.',
+  },
+
+  // ── R2 S3-API credentials (Phase 1b sphere thumbnail uploads) ─
+  // Documented at CATALOG_BACKEND_DEVELOPMENT.md "R2 S3 access keys
+  // live under 'Manage API tokens'; mint a Read+Write token scoped
+  // to the bucket and stash the access-key pair". Required by the
+  // sphere-thumbnail-job worker when it writes derived images back
+  // to R2; absence surfaces as 503 on the sphere-thumbnail enqueue
+  // path. Audit included so these stop showing as "extra".
+  {
+    name: 'R2_ACCESS_KEY_ID',
+    type: 'secret',
+    environments: BOTH,
+    hint:
+      'R2 S3-API access key id. Mint via R2 dashboard → Manage R2 API Tokens → ' +
+      'Create token with Read+Write on the catalog bucket.',
+  },
+  {
+    name: 'R2_SECRET_ACCESS_KEY',
+    type: 'secret',
+    environments: BOTH,
+    hint:
+      'R2 S3-API secret access key. Paired with R2_ACCESS_KEY_ID; shown once at ' +
+      'token mint time.',
+  },
+  {
+    name: 'R2_S3_ENDPOINT',
+    type: 'secret',
+    environments: BOTH,
+    hint:
+      'R2 S3-API endpoint URL (e.g. https://<acct>.r2.cloudflarestorage.com). ' +
+      'Shown alongside the access key when the R2 API token is minted.',
+  },
+
+  // ── Feedback admin gate (legacy, pre-Access) ──────────────────
+  // Documented at SELF_HOSTING.md §5b. Cloudflare Access protects
+  // the feedback-admin route in the reference deploy; this token
+  // is the break-glass fallback used by direct-scripting paths
+  // (`api/feedback-export`, etc.) that haven't been migrated to
+  // service-token auth. Required for those paths to function.
+  {
+    name: 'FEEDBACK_ADMIN_TOKEN',
+    type: 'secret',
+    environments: BOTH,
+    hint:
+      'Bearer token gating the legacy feedback-admin direct-scripting routes. ' +
+      'Generate with `openssl rand -hex 32` and stash via `wrangler pages secret ' +
+      'put FEEDBACK_ADMIN_TOKEN`. The newer dashboard route is gated by ' +
+      'Cloudflare Access instead (SELF_HOSTING.md §5b).',
   },
 ]
