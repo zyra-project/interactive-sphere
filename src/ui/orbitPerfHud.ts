@@ -53,7 +53,7 @@ export function initOrbitPerfHud(element: HTMLElement): PerfHudHandle {
 
   // Seed the text before the first 1 s window elapses so the HUD
   // doesn't render blank for the first second after page load.
-  element.textContent = '— FPS  •  —  •  0:00:00'
+  element.textContent = '— FPS  •  —  •  0:00:00' // i18n-exempt: debug HUD, technical metrics (FPS / heap / uptime)
   rafId = requestAnimationFrame(sample)
 
   return {

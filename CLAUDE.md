@@ -284,6 +284,91 @@ Two elements track the info panel height as it animates open:
 
 ---
 
+## Localization
+
+The app ships in multiple languages. **Every new user-facing
+string must go through the i18n layer; never hard-code English
+in source.** A static check (`npm run check:i18n-strings`) runs
+in the type-check chain and fails CI if it finds a hard-coded
+label in `src/ui/` or `src/services/docent*.ts`.
+
+### When you add a new UI string
+
+1. Add the key to `locales/en.json` (sorted; the codegen will
+   canonicalize on the next `npm run locales`).
+2. Reference it via `t('your.key.here')` from
+   [`src/i18n/index.ts`](src/i18n/index.ts).
+3. Run `npm run locales` (or `npm run check:locales`) — the
+   codegen builds a TypeScript `MessageKey` union from
+   `en.json`, so any unresolved key fails type-check.
+4. If the key is ambiguous out of context (placeholders to
+   preserve, ARIA semantics, special markers like
+   `<<LOAD:DATASET_ID>>`), add a one-line entry to
+   [`locales/_explanations.json`](locales/_explanations.json).
+   It auto-syncs to Weblate's per-string Explanation field via
+   the `sync-weblate.yml` workflow.
+
+For a string that genuinely shouldn't be translated (debug
+HUD, technical identifier, machine-only output), add
+`// i18n-exempt: <reason>` to the same line. The reason is
+mandatory — it's how a future reader knows the omission was
+deliberate.
+
+### When you add CSS
+
+Use **logical inline-axis properties** so the layout flips
+correctly when an RTL locale is active (`<html dir>` is set
+automatically by [`src/i18n/index.ts`](src/i18n/index.ts) via
+[`src/i18n/rtl.ts`](src/i18n/rtl.ts)):
+
+| Use this | Not this |
+|---|---|
+| `padding-inline-start` / `padding-inline-end` | `padding-left` / `padding-right` |
+| `margin-inline-start` / `margin-inline-end` | `margin-left` / `margin-right` |
+| `border-inline-start` / `border-inline-end` | `border-left` / `border-right` |
+| `inset-inline-start` / `inset-inline-end` | `left` / `right` |
+| `text-align: start` / `text-align: end` | `text-align: left` / `text-align: right` |
+
+Two patterns are intentionally physical: classic centering
+(`top: 50%; left: 50%; transform: translate(-50%, -50%)` —
+`inset-inline-start: 50%` doesn't center in RTL) and
+direction-sensitive `transform: translateX(±100%)` slides (pair
+with a `:root[dir="rtl"]` override that flips the sign — see
+[`src/styles/browse.css`](src/styles/browse.css)
+`#browse-overlay.collapsed`). Full guide:
+[`docs/CSS_ARCHITECTURE_PLAN.md`](docs/CSS_ARCHITECTURE_PLAN.md)
+§RTL safety.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `npm run locales` | Regenerates the TS message modules + canonicalizes the locale JSON. Idempotent. |
+| `npm run check:locales` | Drift-check (CI). Fails if generated TS or canonicalized JSON differs from a fresh render. |
+| `npm run check:i18n-strings` | Scans `src/ui/` + `src/services/docent*.ts` for hard-coded user-visible strings. Runs in the `type-check` chain. |
+| `npm run sync:weblate` | Pushes `locales/_explanations.json` to Weblate's per-string Explanation field. Token via `WEBLATE_TOKEN` env var. Auto-runs in CI on push to main. |
+
+### Don't hand-edit non-source locales
+
+Translator changes flow in via Weblate PRs. The codegen
+canonicalizes every `locales/*.json` on every run so Weblate's
+PRs against `main` never produce whitespace-only diffs.
+Hand-editing `locales/es.json` (or `kab.json`, `ar.json`, etc.)
+is fine for one-off fixes but the canonical surface is Weblate.
+
+### Doc references
+
+- [`docs/I18N_PLAN.md`](docs/I18N_PLAN.md) — full plan, phase
+  table (L1 / L1.5 shipped; L2-L4 blocked on catalog backend),
+  runtime API.
+- [`CONTRIBUTING-TRANSLATIONS.md`](CONTRIBUTING-TRANSLATIONS.md)
+  — translator workflow, glossary conventions, DCO setup.
+- [`docs/CSS_ARCHITECTURE_PLAN.md`](docs/CSS_ARCHITECTURE_PLAN.md)
+  — §RTL safety section with the use-this-not-that table and
+  centering exceptions.
+
+---
+
 ## Tours
 
 The tour engine (`src/services/tourEngine.ts`) plays back SOS-format tour JSON files. Each tour is a sequence of tasks executed in order. The following tour tasks are relevant to the multi-globe feature:
