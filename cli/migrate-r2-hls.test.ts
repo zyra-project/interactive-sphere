@@ -684,6 +684,78 @@ describe('runMigrateR2Hls — live migration', () => {
       rmSync(tmp, { recursive: true, force: true })
     }
   })
+
+  it('does not leave an empty workdir behind on vimeo_fetch_failed (3/M)', async () => {
+    // Copilot review caught: the original migrateOne created the
+    // workdir up-front, then refused to clean it up when
+    // vimeo_fetch_failed fired. That left behind useless empty
+    // dirs for failed rows. Workdir creation now defers until
+    // after the resolve succeeds.
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
+      const { ctx } = makeCtx(client)
+      await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource({ failFor: '1107911993' }),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: fakeUploadHlsBundle(),
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      // workdir for the failed row should NOT exist — we never
+      // created it because resolve failed before encode.
+      expect(existsSync(join(tmp, ROW_VIDEO_VIMEO_1.id))).toBe(false)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('threads --proxy-base through cost estimate (3/M)', async () => {
+    // Copilot review caught: the original printCostEstimate
+    // didn't forward the operator's --proxy-base override, so
+    // dry-run hit the default/prod proxy even when the live
+    // run would target a different one.
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const { client } = fakeClient({ rows: [ROW_VIDEO_VIMEO_1] })
+      const seenProxyBases: Array<string | undefined> = []
+      const resolveSource = vi.fn(async (
+        vimeoId: string,
+        opts?: { proxyBase?: string },
+      ) => {
+        seenProxyBases.push(opts?.proxyBase)
+        return {
+          vimeoId,
+          title: `Vimeo ${vimeoId}`,
+          durationSeconds: 60,
+          mp4Url: `https://cdn.example.org/v/${vimeoId}/source.mp4`,
+          sizeBytes: 41_000_000,
+          width: 4096,
+          height: 2048,
+        }
+      })
+      const { ctx } = makeCtx(client, {
+        'dry-run': true,
+        'proxy-base': 'https://video-proxy.staging.example.org/video',
+      })
+      await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: resolveSource as unknown as typeof import('./lib/vimeo-source').resolveVimeoSource,
+        skipPace: true,
+      })
+      // The cost estimate calls resolveVimeoSource for each row.
+      // Every call should have received the override.
+      expect(seenProxyBases.length).toBeGreaterThan(0)
+      for (const base of seenProxyBases) {
+        expect(base).toBe('https://video-proxy.staging.example.org/video')
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
 })
 
 // MigrationResult is imported for type-only re-use by downstream

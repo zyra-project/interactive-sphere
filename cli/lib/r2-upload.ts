@@ -321,7 +321,19 @@ export async function deleteR2Prefix(
     `${config.endpoint}/${encodeURIComponent(config.bucket)}` +
     `?list-type=2&prefix=${encodeURIComponent(prefix)}`
   const listSigned = await client.sign(listUrl, { method: 'GET' })
-  const listRes = await fetchImpl(listSigned)
+  let listRes: Response
+  try {
+    listRes = await fetchImpl(listSigned)
+  } catch (e) {
+    // Network error on the LIST — translate to R2UploadError so
+    // callers get a consistent failure shape (rather than a raw
+    // TypeError from undici escaping the helper's contract).
+    throw new R2UploadError(
+      null,
+      prefix,
+      `LIST ${prefix} unreachable: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
   if (!listRes.ok) {
     const text = await listRes.text().catch(() => '')
     throw new R2UploadError(
@@ -343,7 +355,18 @@ export async function deleteR2Prefix(
       const key = keys[idx]
       const url = buildObjectUrl(config, key)
       const signed = await client.sign(url, { method: 'DELETE' })
-      const res = await fetchImpl(signed)
+      let res: Response
+      try {
+        res = await fetchImpl(signed)
+      } catch (e) {
+        // Network error on a per-object DELETE — translate to
+        // R2UploadError with the failing key for attribution.
+        throw new R2UploadError(
+          null,
+          key,
+          `DELETE ${key} unreachable: ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
       // S3 DELETE returns 204; 404 is treated as success (idempotent).
       if (res.status === 204 || res.status === 200 || res.status === 404) {
         deleted += 1

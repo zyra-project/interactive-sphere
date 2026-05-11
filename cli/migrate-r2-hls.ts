@@ -285,16 +285,19 @@ async function printCostEstimate(
   plan: MigrationCandidate[],
   limit: number,
   resolveSource: typeof resolveVimeoSourceLib,
+  proxyBase: string | undefined,
 ): Promise<void> {
   const work = plan.slice(0, limit)
   let knownMinutes = 0
   let unknown = 0
   // Concurrent metadata-only fetches so the cost estimate doesn't
-  // serialize 130 round-trips on long catalogs.
+  // serialize 130 round-trips on long catalogs. The proxyBase
+  // override flows through so a --proxy-base flag affects the
+  // cost estimate the same way it'll affect the live encode.
   const durations = await Promise.all(
     work.map(async c => {
       try {
-        const meta = await resolveSource(c.vimeoId)
+        const meta = await resolveSource(c.vimeoId, { proxyBase })
         return meta.durationSeconds
       } catch {
         return null
@@ -360,10 +363,14 @@ async function migrateOne(
   }
 
   const workdir = join(deps.workdirRoot, candidate.datasetId)
-  mkdirSync(workdir, { recursive: true })
   let cleanupOnSuccess = !deps.keepWorkdir
 
   // Stage 1 — resolve the source URL.
+  //
+  // Workdir creation is deferred until *after* resolve succeeds —
+  // a vimeo_fetch_failed row never encodes, so creating an empty
+  // workdir for it would leave behind a useless empty dir the
+  // operator has to clean up later.
   let source
   try {
     source = await deps.resolveVimeoSource(candidate.vimeoId, { proxyBase: deps.proxyBase })
@@ -371,9 +378,12 @@ async function migrateOne(
     result.outcome = 'vimeo_fetch_failed'
     result.errorMessage = e instanceof Error ? e.message : String(e)
     result.durationMs = deps.now() - start
-    cleanupOnSuccess = false
+    // No workdir created yet — nothing to keep or clean up.
     return result
   }
+  // Resolve succeeded — now we'll be writing segment files;
+  // make sure the workdir exists.
+  mkdirSync(workdir, { recursive: true })
   result.sourceBytes = source.sizeBytes ?? 0
 
   // Stage 2 — encode HLS bundle. ffmpeg pulls the URL directly via -i.
@@ -491,7 +501,7 @@ export async function runMigrateR2Hls(
 
   if (plan.length > 0) {
     try {
-      await printCostEstimate(ctx, plan, limit, resolveVimeoSource)
+      await printCostEstimate(ctx, plan, limit, resolveVimeoSource, proxyBase)
     } catch (e) {
       ctx.stderr.write(
         `Cost estimate skipped: ${e instanceof Error ? e.message : String(e)}\n`,

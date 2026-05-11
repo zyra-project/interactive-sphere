@@ -385,4 +385,39 @@ describe('deleteR2Prefix', () => {
       deleteR2Prefix(CONFIG, 'videos/x', { fetchImpl: fetchImpl as unknown as typeof fetch }),
     ).rejects.toMatchObject({ name: 'R2UploadError', status: 403 })
   })
+
+  it('translates LIST network errors into R2UploadError (3/M)', async () => {
+    // A raw TypeError from undici would escape the helper's
+    // contract and confuse callers. Wrap it as R2UploadError
+    // with status=null + key=prefix for consistent attribution.
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('fetch failed: ECONNREFUSED')
+    })
+    const err = await deleteR2Prefix(CONFIG, 'videos/x', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch(e => e)
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBeNull()
+    expect(err.key).toBe('videos/x/')
+    expect(err.message).toMatch(/LIST .* unreachable/)
+  })
+
+  it('translates per-object DELETE network errors into R2UploadError (3/M)', async () => {
+    const fetchImpl = vi.fn(async (req: Request) => {
+      if (req.method === 'GET') {
+        return new Response(
+          `<ListBucketResult><Contents><Key>videos/x/master.m3u8</Key></Contents></ListBucketResult>`,
+          { status: 200 },
+        )
+      }
+      throw new TypeError('fetch failed: ECONNRESET')
+    })
+    const err = await deleteR2Prefix(CONFIG, 'videos/x', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch(e => e)
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBeNull()
+    expect(err.key).toBe('videos/x/master.m3u8')
+    expect(err.message).toMatch(/DELETE .* unreachable/)
+  })
 })
