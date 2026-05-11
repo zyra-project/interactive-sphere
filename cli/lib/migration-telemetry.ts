@@ -66,18 +66,35 @@ export function makeMigrationTelemetryEmitter(
   const fetchImpl = options.fetchImpl ?? fetch
   const sessionId = options.sessionId ?? randomUUID()
   const onWarn = options.onWarn ?? ((msg: string) => process.stderr.write(`${msg}\n`))
-  const url = `${options.serverUrl.replace(/\/$/, '')}/api/ingest`
+  const baseUrl = options.serverUrl.replace(/\/$/, '')
+  const url = `${baseUrl}/api/ingest`
+  // /api/ingest's `isAllowedOrigin` rejects requests with no Origin
+  // header (and Node fetch doesn't set one by default). The endpoint
+  // already accepts same-origin requests — derive the server's origin
+  // from the configured serverUrl so the CLI emit lands as
+  // `Origin: <serverUrl>` and matches the request URL's origin. A
+  // live --dry-run revealed the 403-on-emit failure mode this fixes.
+  let originHeader = ''
+  try {
+    originHeader = new URL(baseUrl).origin
+  } catch {
+    // Malformed serverUrl — skip the Origin header and let the
+    // endpoint reject with the same 403, which surfaces via onWarn
+    // exactly as before this fix.
+  }
 
   return {
     sessionId,
     async emit(result: MigrationResult): Promise<void> {
       const event = toEvent(result)
       const body = JSON.stringify({ session_id: sessionId, events: [event] })
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (originHeader) headers['Origin'] = originHeader
       let res: Response
       try {
         res = await fetchImpl(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body,
         })
       } catch (e) {

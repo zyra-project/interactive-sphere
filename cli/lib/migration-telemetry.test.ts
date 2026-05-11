@@ -92,6 +92,57 @@ describe('makeMigrationTelemetryEmitter', () => {
     expect((fetchImpl.mock.calls[0] as unknown as [string])[0]).toBe('https://x.test/api/ingest')
   })
 
+  it('stamps an Origin header matching the serverUrl (2/M)', async () => {
+    // The ingest endpoint's isAllowedOrigin check rejects empty
+    // origins outright. Without this header the CLI's POST 403s.
+    // Live --dry-run on 2024-05-11 surfaced this; the regression
+    // test pins the header so a future refactor can't silently
+    // drop it.
+    let captured: RequestInit | null = null
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      captured = init
+      return new Response('{}', { status: 200 })
+    })
+    const emitter = makeMigrationTelemetryEmitter({
+      serverUrl: 'https://terraviz.zyra-project.org',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    await emitter.emit(SAMPLE)
+    const headers = (captured!.headers as Record<string, string>) ?? {}
+    expect(headers.Origin).toBe('https://terraviz.zyra-project.org')
+  })
+
+  it('derives the Origin from a serverUrl that has a port + trailing slash', async () => {
+    let captured: RequestInit | null = null
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      captured = init
+      return new Response('{}', { status: 200 })
+    })
+    const emitter = makeMigrationTelemetryEmitter({
+      serverUrl: 'http://localhost:8788/',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    await emitter.emit(SAMPLE)
+    const headers = (captured!.headers as Record<string, string>) ?? {}
+    // URL.origin strips trailing slash and preserves port.
+    expect(headers.Origin).toBe('http://localhost:8788')
+  })
+
+  it('omits the Origin header when the serverUrl is malformed', async () => {
+    let captured: RequestInit | null = null
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      captured = init
+      return new Response('{}', { status: 200 })
+    })
+    const emitter = makeMigrationTelemetryEmitter({
+      serverUrl: 'not-a-url',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    await emitter.emit(SAMPLE)
+    const headers = (captured!.headers as Record<string, string>) ?? {}
+    expect(headers.Origin).toBeUndefined()
+  })
+
   it('warns but does not throw when the transport rejects', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('connect ECONNREFUSED')
