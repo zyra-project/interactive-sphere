@@ -27,7 +27,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runMigrateR2Hls, type MigrationResult } from './migrate-r2-hls'
+import { isRealtimeTitle, runMigrateR2Hls, type MigrationResult } from './migrate-r2-hls'
 import type { CommandContext } from './commands'
 import type { TerravizClient } from './lib/client'
 import { parseArgs } from './lib/args'
@@ -92,6 +92,22 @@ const ROW_IMAGE: PublisherRow = {
   data_ref: 'url:https://example.org/x.png',
   published_at: '2026-04-30T00:00:00.000Z',
 }
+const ROW_VIDEO_REALTIME_SST: PublisherRow = {
+  id: 'DS00005AAAAAAAAAAAAAAAAAAAAA',
+  legacy_id: 'INTERNAL_SOS_805',
+  title: 'Sea Surface Temperature - Real-time',
+  format: 'video/mp4',
+  data_ref: 'vimeo:111111111',
+  published_at: '2026-04-30T00:00:00.000Z',
+}
+const ROW_VIDEO_REALTIME_PRECIP: PublisherRow = {
+  id: 'DS00006AAAAAAAAAAAAAAAAAAAAA',
+  legacy_id: 'INTERNAL_SOS_806',
+  title: 'Precipitation - Real-time',
+  format: 'video/mp4',
+  data_ref: 'vimeo:222222222',
+  published_at: '2026-04-30T00:00:00.000Z',
+}
 
 interface FakeClientOptions {
   rows?: PublisherRow[]
@@ -137,6 +153,7 @@ function makeCtx(
   const argv: string[] = []
   for (const [k, v] of Object.entries(flags)) {
     if (v === true) argv.push(`--${k}`)
+    else if (v === false) argv.push(`--no-${k}`)
     else argv.push(`--${k}=${String(v)}`)
   }
   const args = parseArgs(argv)
@@ -241,7 +258,7 @@ describe('runMigrateR2Hls — plan + dry-run', () => {
       })
       expect(code).toBe(0)
       expect(handles.updateDataset).not.toHaveBeenCalled()
-      expect(out.text()).toContain('vimeo: rows on video/mp4: 2')
+      expect(out.text()).toContain('vimeo: rows on video/mp4:   2')
       expect(out.text()).toContain('Storage estimate')
       expect(out.text()).toContain('total source minutes:     2.0')
       expect(out.text()).toContain('Dry run')
@@ -263,7 +280,7 @@ describe('runMigrateR2Hls — plan + dry-run', () => {
         skipPace: true,
       })
       expect(code).toBe(0)
-      expect(out.text()).toContain('vimeo: rows on video/mp4: 1')
+      expect(out.text()).toContain('vimeo: rows on video/mp4:   1')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -281,7 +298,7 @@ describe('runMigrateR2Hls — plan + dry-run', () => {
         skipPace: true,
       })
       expect(code).toBe(0)
-      expect(out.text()).toContain('vimeo: rows on video/mp4: 0')
+      expect(out.text()).toContain('vimeo: rows on video/mp4:   0')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -298,7 +315,7 @@ describe('runMigrateR2Hls — plan + dry-run', () => {
         resolveVimeoSource: fakeResolveVimeoSource(),
         skipPace: true,
       })
-      expect(out.text()).toContain('will migrate this run:    1 (capped by --limit)')
+      expect(out.text()).toContain('will migrate this run:      1 (capped by --limit)')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -318,7 +335,7 @@ describe('runMigrateR2Hls — plan + dry-run', () => {
       expect(code).toBe(0)
       expect(handles.list).not.toHaveBeenCalled()
       expect(handles.get).toHaveBeenCalledWith(ROW_VIDEO_VIMEO_1.id)
-      expect(out.text()).toContain('vimeo: rows on video/mp4: 1')
+      expect(out.text()).toContain('vimeo: rows on video/mp4:   1')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -856,6 +873,189 @@ describe('runMigrateR2Hls — live migration', () => {
       expect(existsSync(join(tmp, ROW_VIDEO_VIMEO_1.id))).toBe(false)
       // Sibling workdir untouched.
       expect(existsSync(join(siblingDir, 'do-not-touch.txt'))).toBe(true)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('isRealtimeTitle (3a/A)', () => {
+  // The catalog has no explicit `update_cadence` field, so the
+  // filter is a heuristic substring match against the row title.
+  // Pin the matrix so a subtle pattern change can't silently
+  // start migrating real-time rows again.
+  it('matches the SOS canonical "Real-time" suffix', () => {
+    expect(isRealtimeTitle('Sea Surface Temperature - Real-time')).toBe(true)
+    expect(isRealtimeTitle('Precipitation - Real-time')).toBe(true)
+    expect(isRealtimeTitle('Earthquakes - Real-time')).toBe(true)
+  })
+
+  it('is case-insensitive', () => {
+    expect(isRealtimeTitle('REAL-TIME GLOBAL CLOUDS')).toBe(true)
+    expect(isRealtimeTitle('real-time something')).toBe(true)
+    expect(isRealtimeTitle('Real-Time Index')).toBe(true)
+  })
+
+  it('matches space and joined variants', () => {
+    expect(isRealtimeTitle('Sea Ice Concentration - Real time')).toBe(true)
+    expect(isRealtimeTitle('Realtime Ocean Temperature')).toBe(true)
+  })
+
+  it('does not match titles without the substring', () => {
+    expect(isRealtimeTitle('Hurricane Season - 2024')).toBe(false)
+    expect(isRealtimeTitle('Drought Risk')).toBe(false)
+    expect(isRealtimeTitle('Sea Level Rise')).toBe(false)
+    expect(isRealtimeTitle('Global Currents')).toBe(false)
+  })
+})
+
+describe('runMigrateR2Hls — real-time row guard (3a/A)', () => {
+  it('default-skips real-time rows in bulk mode and surfaces them in the plan summary', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const { client, handles } = fakeClient({
+        rows: [
+          ROW_VIDEO_VIMEO_1,
+          ROW_VIDEO_REALTIME_SST,
+          ROW_VIDEO_REALTIME_PRECIP,
+          ROW_VIDEO_VIMEO_2,
+        ],
+      })
+      const { ctx, out, err } = makeCtx(client)
+      const code = await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource(),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: fakeUploadHlsBundle(),
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      expect(code).toBe(0)
+      expect(handles.updateDataset).toHaveBeenCalledTimes(2)
+      const migratedIds = handles.updateDataset.mock.calls.map(c => c[0])
+      expect(migratedIds).toContain(ROW_VIDEO_VIMEO_1.id)
+      expect(migratedIds).toContain(ROW_VIDEO_VIMEO_2.id)
+      expect(migratedIds).not.toContain(ROW_VIDEO_REALTIME_SST.id)
+      expect(migratedIds).not.toContain(ROW_VIDEO_REALTIME_PRECIP.id)
+      expect(out.text()).toContain('skipped (real-time guard):  2')
+      expect(out.text()).toContain('vimeo: rows on video/mp4:   4')
+      expect(out.text()).toContain('Sea Surface Temperature - Real-time')
+      expect(out.text()).toContain('Precipitation - Real-time')
+      expect(err.text()).toBe('')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('--no-skip-realtime opts back in and migrates real-time rows', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const { client, handles } = fakeClient({
+        rows: [ROW_VIDEO_REALTIME_SST, ROW_VIDEO_REALTIME_PRECIP],
+      })
+      const { ctx, out } = makeCtx(client, { 'skip-realtime': false })
+      const code = await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource(),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: fakeUploadHlsBundle(),
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      expect(code).toBe(0)
+      expect(handles.updateDataset).toHaveBeenCalledTimes(2)
+      // Plan summary should NOT advertise a skipped count when the
+      // guard is off — keeps the output uncluttered for the
+      // intentional opt-out flow.
+      expect(out.text()).not.toContain('skipped (real-time guard)')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('--id mode bypasses the guard but warns when the targeted row is real-time', async () => {
+    // The existing precedent for --id (see the buildPlan comment)
+    // is "operators using --id are surgically targeting a row and
+    // know what they're typing." The real-time guard mirrors that:
+    // --id overrides the filter so the operator can encode a
+    // real-time row deliberately, but a stderr warning makes the
+    // override visible in case it was a typo.
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const { client, handles } = fakeClient({
+        singleRow: ROW_VIDEO_REALTIME_SST,
+      })
+      const { ctx, out, err } = makeCtx(client, { id: ROW_VIDEO_REALTIME_SST.id })
+      const code = await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource(),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: fakeUploadHlsBundle(),
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      expect(code).toBe(0)
+      expect(handles.updateDataset).toHaveBeenCalledTimes(1)
+      expect(handles.updateDataset.mock.calls[0][0]).toBe(ROW_VIDEO_REALTIME_SST.id)
+      expect(err.text()).toContain('real-time row')
+      expect(err.text()).toContain(ROW_VIDEO_REALTIME_SST.id)
+      expect(err.text()).toContain('--id overrides')
+      expect(out.text()).not.toContain('skipped (real-time guard)')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('--id mode prints no warning for a static row (regression guard)', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const { client } = fakeClient({ singleRow: ROW_VIDEO_VIMEO_1 })
+      const { ctx, err } = makeCtx(client, { id: ROW_VIDEO_VIMEO_1.id })
+      await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource(),
+        encodeHls: fakeEncodeHls(tmp),
+        uploadHlsBundle: fakeUploadHlsBundle(),
+        emitTelemetry: noopEmit(),
+        skipPace: true,
+      })
+      expect(err.text()).not.toContain('real-time')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('caps the skipped-row listing at 5 entries with an "+ N more" tail', async () => {
+    // Match the willRun sample's listing convention so a catalog
+    // with dozens of real-time rows doesn't dump them all into
+    // the plan summary.
+    const tmp = mkdtempSync(join(tmpdir(), 'r2h-'))
+    try {
+      const realtimeRows: PublisherRow[] = []
+      for (let i = 0; i < 8; i++) {
+        realtimeRows.push({
+          id: `DSREAL${String(i).padStart(3, '0')}AAAAAAAAAAAAAAAAAA`,
+          legacy_id: `INTERNAL_SOS_RT${i}`,
+          title: `Realtime Sample ${i} - Real-time`,
+          format: 'video/mp4',
+          data_ref: `vimeo:90000000${i}`,
+          published_at: '2026-04-30T00:00:00.000Z',
+        })
+      }
+      const { client } = fakeClient({ rows: realtimeRows })
+      const { ctx, out } = makeCtx(client, { 'dry-run': true })
+      await runMigrateR2Hls(ctx, {
+        r2Config: R2_CONFIG,
+        workdirRoot: tmp,
+        resolveVimeoSource: fakeResolveVimeoSource(),
+        skipPace: true,
+      })
+      expect(out.text()).toContain('skipped (real-time guard):  8')
+      expect(out.text()).toContain('+ 3 more')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

@@ -841,6 +841,8 @@ npm run terraviz -- migrate-r2-hls --dry-run
 The dry-run output prints:
 
 - The migration plan (number of `vimeo:` rows + the first 5 by id).
+- The number of rows skipped by the **real-time guard** (default-on)
+  — see below.
 - A storage estimate computed by summing source durations from the
   video-proxy metadata and multiplying by an ~244 MB/min ladder
   constant calibrated to the 4K + 1080p + 720p renditions.
@@ -849,6 +851,39 @@ The dry-run output prints:
 - A monthly storage cost in $ at R2's $0.015/GB-month rate. The
   ~136-row catalog typically estimates around 30-50 GB total →
   ~$0.50/month flat; R2 egress is free so delivery costs nothing.
+
+#### Real-time row guard
+
+A handful of SOS rows are titled e.g. `Sea Surface Temperature -
+Real-time` — NOAA's automation re-uploads these to the same
+Vimeo IDs daily. Phase 3 is a one-shot encode, so the R2 copy
+goes stale within 24h for these rows. The migrator filters them
+out at plan time by default, matching the literal substring
+`real-time` (case-insensitive, hyphen / space / joined variants
+all caught) against the row title — the SOS catalog has no
+explicit `update_cadence` field so the title is the only
+reliable signal.
+
+The plan summary surfaces the skipped count + first 5 IDs so
+you can sanity-check the heuristic before the live run:
+
+```
+Migration plan:
+  vimeo: rows on video/mp4:   136
+  skipped (real-time guard):  42 (Vimeo source is updated daily; one-shot R2 copy would go stale)
+  will migrate this run:      94
+  Skipped real-time rows (--no-skip-realtime to override):
+    • DSXXXX...  vimeo:111  Sea Surface Temperature - Real-time
+    • ...
+```
+
+To migrate a real-time row anyway (e.g. you accept the staleness
+or are shipping a known-stale snapshot), pass
+`--no-skip-realtime` for the bulk path or `--id <row>` for
+single-row mode (the `--id` override prints a stderr warning
+when the targeted row matches the heuristic, so a slip-of-the-finger
+is still visible). A proper recurring-refresh mechanism is
+deferred to a Phase 3c follow-up.
 
 #### Live migration
 

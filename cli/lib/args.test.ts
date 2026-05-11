@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getBool, getNumber, getString, parseArgs } from './args'
+import { getBool, getBoolDefault, getNumber, getString, parseArgs } from './args'
 
 describe('parseArgs', () => {
   it('separates positionals from options', () => {
@@ -73,5 +73,19 @@ describe('helpers', () => {
     expect(getBool({ flag: true }, 'flag')).toBe(true)
     expect(getBool({ flag: 'true' }, 'flag')).toBe(false)
     expect(getBool({}, 'flag')).toBe(false)
+  })
+
+  it('getBoolDefault distinguishes unset from explicit --no-flag', () => {
+    // The migrate-r2-hls --skip-realtime guard wants default-on with
+    // explicit --no-skip-realtime as the override; getBool's
+    // presence-only semantics conflate "unset" with "explicit
+    // false," which would lose the default.
+    expect(getBoolDefault({ flag: true }, 'flag', false)).toBe(true)
+    expect(getBoolDefault({ flag: false }, 'flag', true)).toBe(false)
+    expect(getBoolDefault({}, 'flag', true)).toBe(true)
+    expect(getBoolDefault({}, 'flag', false)).toBe(false)
+    // String values are not booleans and do not satisfy either
+    // explicit-true or explicit-false; falls back to default.
+    expect(getBoolDefault({ flag: 'whatever' }, 'flag', true)).toBe(true)
   })
 })

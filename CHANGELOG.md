@@ -16,6 +16,48 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3a — Real-time row guard for migrate-r2-hls
+
+**Branch:** `claude/realtime-row-filtering`
+**Commits:** 3a/A — single follow-up to Phase 3.
+
+Phase 3 was a one-shot encode (Vimeo source → R2-hosted HLS).
+A handful of SOS rows (~40) are titled `… - Real-time` and have
+their Vimeo IDs re-uploaded by NOAA's automation daily — the R2
+copy goes stale within 24h. Without a guard, the bulk migration
+would happily encode these and the SPA would serve yesterday's
+data on the affected rows.
+
+**3/A — `--skip-realtime` flag for `migrate-r2-hls` (default on).**
+Filters the migration plan by matching `/real[-\s]?time/i`
+against the row title. The SOS catalog has no explicit
+`update_cadence` field so the title is the only reliable signal;
+the substring check is the same one the catalog UI uses
+informally to label these rows. Plan summary surfaces the
+skipped count + first 5 IDs so the operator can sanity-check
+the heuristic. `--no-skip-realtime` opts back in for the bulk
+path; `--id <row>` is treated as a deliberate override
+(warning to stderr when the targeted row matches, but no skip).
+
+**Recovery for already-migrated real-time rows.** Phase 3
+shipped `rollback-r2-hls <id> --to-vimeo=<vimeo-id>` (commit 3/F),
+which already does PATCH-back-to-vimeo + R2 prefix delete. For
+operators who migrated real-time rows before the 3a/A guard
+landed, the recovery loop is: identify by title, recover the
+original `vimeo_id` (from the `migration_r2_hls` Grafana events
+or from the SOS snapshot via `cli/lib/snapshot-import.ts`),
+then run `rollback-r2-hls` per row. A bulk variant
+(`terraviz list-realtime-r2` + `--from-stdin` rollback) is
+deferred to 3a/B.
+
+**Non-goals (deferred).** A recurring re-encode mechanism
+(scheduled trigger → re-fetch → re-encode → idempotent overwrite)
+that would let real-time rows live on R2 without staleness is a
+much bigger lift — likely a Phase 3c follow-up. Until then the
+correct answer for real-time rows is "stay on `vimeo:`".
+
+---
+
 ## Phase 3 — R2 + HLS for 4K spherical video
 
 **Branch:** `claude/r2-hls-migration-phase-3-x7Kpq`

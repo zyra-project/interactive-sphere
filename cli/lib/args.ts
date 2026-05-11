@@ -33,6 +33,7 @@ export const BOOLEAN_FLAGS = new Set<string>([
   'draft-only',
   'help',
   'skip-publish-checks',
+  'skip-realtime',
 ])
 
 export function parseArgs(argv: string[], booleans: Set<string> = BOOLEAN_FLAGS): ParsedArgs {
@@ -108,4 +109,20 @@ export function getBool(
   key: string,
 ): boolean {
   return options[key] === true
+}
+
+/**
+ * Helper: read a boolean flag with an explicit default. Distinguishes
+ * "unset" from "explicitly --no-flag", which `getBool` (presence-only)
+ * conflates. Use this when default-on is the safe choice and the
+ * operator's `--no-flag` is the explicit override.
+ */
+export function getBoolDefault(
+  options: Record<string, string | boolean>,
+  key: string,
+  defaultValue: boolean,
+): boolean {
+  if (options[key] === true) return true
+  if (options[key] === false) return false
+  return defaultValue
 }
