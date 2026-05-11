@@ -236,3 +236,57 @@ describe('privacyUI — accessibility shape', () => {
     expect(link?.getAttribute('href')).toBe('/privacy')
   })
 })
+
+describe('privacyUI — experimental flags', () => {
+  function getPhoneArCheckbox(): HTMLInputElement | null {
+    return document.getElementById(
+      'privacy-ui-flag-vrPhoneArEnabled',
+    ) as HTMLInputElement | null
+  }
+
+  it('renders the phone-AR checkbox unchecked by default', () => {
+    openPrivacyUI()
+    const cb = getPhoneArCheckbox()
+    expect(cb).not.toBeNull()
+    expect(cb?.checked).toBe(false)
+  })
+
+  it('reflects the persisted flag on open', () => {
+    localStorage.setItem(
+      'sos-experimental-flags',
+      JSON.stringify({ vrPhoneArEnabled: true }),
+    )
+    openPrivacyUI()
+    expect(getPhoneArCheckbox()?.checked).toBe(true)
+  })
+
+  it('persists the flag on toggle', () => {
+    openPrivacyUI()
+    const cb = getPhoneArCheckbox()
+    if (!cb) throw new Error('checkbox missing')
+    cb.checked = true
+    cb.dispatchEvent(new Event('change'))
+    const stored = JSON.parse(
+      localStorage.getItem('sos-experimental-flags') || '{}',
+    )
+    expect(stored.vrPhoneArEnabled).toBe(true)
+  })
+
+  it('emits settings_changed with the flag key on toggle', () => {
+    openPrivacyUI()
+    const cb = getPhoneArCheckbox()
+    if (!cb) throw new Error('checkbox missing')
+    // Drain any prior settings_changed events so we can assert on the
+    // single one we're about to fire.
+    while (size() > 0) __peek().shift()
+    cb.checked = true
+    cb.dispatchEvent(new Event('change'))
+    const events = __peek()
+    const change = events.find((e) => e.event_type === 'settings_changed')
+    expect(change).toBeTruthy()
+    if (change && change.event_type === 'settings_changed') {
+      expect(change.key).toBe('vr_phone_ar_enabled')
+      expect(change.value_class).toBe('on')
+    }
+  })
+})

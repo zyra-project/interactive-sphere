@@ -29,6 +29,10 @@ import {
 import type { TelemetryTier } from '../types'
 import { t, tAttr, tHtml, type MessageKey } from '../i18n'
 import { escapeHtml } from './domUtils'
+import {
+  loadExperimentalFlags,
+  setExperimentalFlag,
+} from '../utils/experimentalFlags'
 
 let mounted = false
 let isOpen = false
@@ -89,6 +93,20 @@ function buildPanel(): HTMLElement {
         ${renderTierOption('research')}
         ${renderTierOption('off')}
       </fieldset>
+      <fieldset class="privacy-ui-experimental">
+        <legend class="privacy-ui-experimental-heading">${tHtml('privacy.experimental.heading')}</legend>
+        <label class="privacy-ui-experimental-row">
+          <input
+            type="checkbox"
+            id="privacy-ui-flag-vrPhoneArEnabled"
+            data-flag="vrPhoneArEnabled"
+          />
+          <span class="privacy-ui-experimental-body">
+            <span class="privacy-ui-experimental-label">${tHtml('privacy.experimental.phoneAr.label')}</span>
+            <span class="privacy-ui-experimental-desc">${tHtml('privacy.experimental.phoneAr.desc')}</span>
+          </span>
+        </label>
+      </fieldset>
       <div class="privacy-ui-meta">
         <div class="privacy-ui-session">
           <span class="privacy-ui-session-label">${tHtml('privacy.session.label')}</span>
@@ -130,6 +148,15 @@ function syncRadios(): void {
   })
 }
 
+/** Mirror the persisted experimental flags into the checkbox UI. */
+function syncExperimentalFlags(): void {
+  const flags = loadExperimentalFlags()
+  const phoneAr = document.getElementById(
+    'privacy-ui-flag-vrPhoneArEnabled',
+  ) as HTMLInputElement | null
+  if (phoneAr) phoneAr.checked = flags.vrPhoneArEnabled
+}
+
 /** Refresh the session-ID display. Called on every open because the
  * ID rotates on app relaunch; no need to observe it continuously. */
 function syncSessionId(): void {
@@ -164,6 +191,15 @@ function wireEvents(): void {
       { signal },
     )
   })
+
+  const phoneAr = document.getElementById(
+    'privacy-ui-flag-vrPhoneArEnabled',
+  ) as HTMLInputElement | null
+  phoneAr?.addEventListener(
+    'change',
+    () => handlePhoneArToggle(phoneAr.checked),
+    { signal },
+  )
 
   document.addEventListener(
     'keydown',
@@ -237,6 +273,24 @@ function handleTierChange(tier: TelemetryTier): void {
   )
 }
 
+/** Persist the phone-AR opt-in. The change takes effect on the next
+ *  vrButton init (next reload, or whenever main.ts re-runs that
+ *  bootstrap). We don't try to re-render the button in place — keeps
+ *  the boundary between UI and capability-detection one-way. */
+function handlePhoneArToggle(enabled: boolean): void {
+  setExperimentalFlag('vrPhoneArEnabled', enabled)
+  emit({
+    event_type: 'settings_changed',
+    key: 'vr_phone_ar_enabled',
+    value_class: enabled ? 'on' : 'off',
+  })
+  announce(
+    enabled
+      ? t('privacy.experimental.announce.on')
+      : t('privacy.experimental.announce.off'),
+  )
+}
+
 function announce(message: string): void {
   const status = document.getElementById('privacy-ui-status')
   if (!status) return
@@ -255,6 +309,7 @@ function ensureMounted(): void {
 export function openPrivacyUI(triggeredBy?: HTMLElement | null): void {
   ensureMounted()
   syncRadios()
+  syncExperimentalFlags()
   syncSessionId()
   const panel = document.getElementById('privacy-ui-panel')
   const backdrop = document.getElementById('privacy-ui-backdrop')
