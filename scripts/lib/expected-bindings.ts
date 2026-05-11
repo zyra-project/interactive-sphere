@@ -145,4 +145,47 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       'continues to ingest. So a missing binding is operator-actionable (you lose ' +
       'the emergency lever) but does not stop ingest.',
   },
+
+  // ── Cloudflare Stream (Phase 1b uploads + Phase 2 migration) ──
+  // Required once any catalog row's data_ref is on `stream:<uid>`.
+  // The manifest endpoint 503s with `stream_unconfigured` when
+  // resolving a stream: row without these. Phase 2's migrate-videos
+  // CLI talks to Cloudflare Stream directly with operator-shell
+  // credentials, so the CLI side doesn't read these bindings — but
+  // the SPA's playback path does, immediately after the migration
+  // PATCHes data_ref. Configure these BEFORE the first migration
+  // run, otherwise migrated rows are unplayable until the next
+  // deploy picks them up.
+  {
+    name: 'STREAM_CUSTOMER_SUBDOMAIN',
+    type: 'plaintext',
+    environments: BOTH,
+    hint:
+      'Stream customer subdomain (e.g. customer-abc123.cloudflarestream.com). ' +
+      'The manifest endpoint uses it to build HLS playback URLs for stream: ' +
+      'data_refs. Find it in the Cloudflare dashboard → Stream → any video → ' +
+      'API tab. Without it, /api/v1/datasets/{id}/manifest returns 503 ' +
+      'stream_unconfigured for every migrated row.',
+  },
+  {
+    name: 'STREAM_ACCOUNT_ID',
+    type: 'plaintext',
+    environments: BOTH,
+    hint:
+      'Cloudflare account id (32-hex). Used by the publisher API\'s ' +
+      'mintDirectUploadUrl path (Phase 1b CLI upload command) and by any ' +
+      'future server-side Stream operation. Same value as the dashboard\'s ' +
+      'right-sidebar Account ID.',
+  },
+  {
+    name: 'STREAM_API_TOKEN',
+    type: 'secret',
+    environments: BOTH,
+    hint:
+      'Cloudflare API token with Stream:Edit permission. Paired with ' +
+      'STREAM_ACCOUNT_ID for any Pages-side Stream API call. Mint via My ' +
+      'Profile → API Tokens → Create Token → Custom → Stream:Edit. The ' +
+      'Phase 2 migration CLI also reads this from the operator\'s shell, ' +
+      'not from the Pages binding.',
+  },
 ]

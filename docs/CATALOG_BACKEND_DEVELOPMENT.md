@@ -756,14 +756,50 @@ from a CI worker, don't run it from the implementation branch —
 run it from your laptop against the production server with a
 service-token configured.
 
+#### Pages-side prerequisites (do this BEFORE the first run)
+
+The migration's commit point is a `data_ref` PATCH to
+`stream:<uid>`. The moment that PATCH lands, the SPA's manifest
+endpoint switches to resolving the row via Cloudflare Stream
+instead of the legacy Vimeo proxy. That resolution requires three
+Pages env vars to be set on **both Production AND Preview**:
+
+| Type | Name | Where to find it |
+|---|---|---|
+| Plaintext | `STREAM_CUSTOMER_SUBDOMAIN` | Cloudflare dashboard → Stream → any video → API tab. Format: `customer-<hex>.cloudflarestream.com` (no protocol). |
+| Plaintext | `STREAM_ACCOUNT_ID` | Right sidebar of any Cloudflare dashboard page. 32-hex string. |
+| Secret | `STREAM_API_TOKEN` | My Profile → API Tokens → Create Token → Custom → permission `Stream: Edit`. Shown once. |
+
+Without `STREAM_CUSTOMER_SUBDOMAIN` the manifest endpoint returns
+503 `stream_unconfigured` for every migrated row. Without the
+account-id / token pair, any Pages-side Stream API call (the
+publisher API's mintDirectUploadUrl path; future server-side
+Stream operations) fails. Add them in the Cloudflare dashboard →
+Pages → terraviz → Settings → Variables and Secrets, switching
+the environment dropdown to set both Production and Preview.
+**Trigger a redeploy** after saving so the new vars take effect.
+
+Then verify the binding state with the Phase 1f audit:
+
+```sh
+CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
+  npm run check:pages-bindings
+```
+
+The `STREAM_*` rows must all show as present in both environments
+before the migration is safe to run.
+
 #### Pre-flight (always run dry-run first)
 
 The migration is idempotent — re-runs skip rows already on
-`stream:`. The first thing to verify is the cost estimate:
+`stream:`. The first thing to verify is the cost estimate. The
+operator's shell needs the same `STREAM_ACCOUNT_ID` /
+`STREAM_API_TOKEN` pair (the CLI talks to Cloudflare Stream
+directly, not via the Pages binding):
 
 ```sh
-export STREAM_ACCOUNT_ID=...      # same value used by the Pages binding
-export STREAM_API_TOKEN=...       # same token used by the Pages binding
+export STREAM_ACCOUNT_ID=...      # same value as the Pages binding
+export STREAM_API_TOKEN=...       # same token as the Pages binding
 export TERRAVIZ_SERVER=https://your-domain
 export TERRAVIZ_ACCESS_CLIENT_ID=...
 export TERRAVIZ_ACCESS_CLIENT_SECRET=...
