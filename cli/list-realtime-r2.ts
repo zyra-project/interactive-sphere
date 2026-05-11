@@ -103,16 +103,28 @@ export interface ListRealtimeR2Deps {
  * `public/assets/sos-dataset-list.json` relative to the cwd. The
  * operator runs `npm run terraviz` from the repo root, so the
  * relative path resolves correctly without configuration.
+ *
+ * The on-disk shape is `{ datasets: RawSosEntry[] }` (the
+ * canonical SOS snapshot wrapper — see
+ * `scripts/refresh-sos-snapshot.ts` and the snapshot-import
+ * loader). A bare top-level array is also accepted so an
+ * operator can `--snapshot=<path>` a hand-trimmed sub-list
+ * without having to wrap it.
  */
 function defaultLoadSnapshot(snapshotPath: string): SnapshotEntry[] {
   const raw = readFileSync(snapshotPath, 'utf-8')
   const parsed = JSON.parse(raw) as unknown
-  if (!Array.isArray(parsed)) {
-    throw new Error(
-      `Snapshot at ${snapshotPath} is not a JSON array (got ${typeof parsed}).`,
-    )
+  if (Array.isArray(parsed)) {
+    return parsed as SnapshotEntry[]
   }
-  return parsed as SnapshotEntry[]
+  if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { datasets?: unknown }).datasets)) {
+    return (parsed as { datasets: SnapshotEntry[] }).datasets
+  }
+  throw new Error(
+    `Snapshot at ${snapshotPath} must be either a JSON array or ` +
+      `an object with a top-level \`datasets\` array (got ` +
+      `${parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed}).`,
+  )
 }
 
 /**

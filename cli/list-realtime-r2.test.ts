@@ -20,6 +20,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { runListRealtimeR2 } from './list-realtime-r2'
 import type { CommandContext } from './commands'
 import type { TerravizClient } from './lib/client'
@@ -278,6 +281,75 @@ describe('runListRealtimeR2 — output modes', () => {
     const { ctx, out } = makeCtx(client, { human: true })
     await runListRealtimeR2(ctx, { loadSnapshot: () => SNAPSHOT })
     expect(out.text()).toContain('No real-time rows currently migrated to r2:')
+  })
+})
+
+describe('runListRealtimeR2 — default snapshot loader on disk', () => {
+  // The Explore-style introspection assumed the SOS snapshot was
+  // a bare top-level JSON array; the canonical shape on disk is
+  // actually `{ datasets: [...] }` (the wrapper used by both
+  // scripts/refresh-sos-snapshot.ts and cli/lib/snapshot-import.ts).
+  // These tests pin both forms — the wrapped form for the
+  // production layout, and the bare-array form for an operator
+  // overriding with a hand-trimmed snapshot via --snapshot=<path>.
+  function writeFixture(content: unknown): {
+    snapshotPath: string
+    cleanup: () => void
+  } {
+    const tmp = mkdtempSync(join(tmpdir(), 'rt-snap-'))
+    const snapshotPath = join(tmp, 'snapshot.json')
+    writeFileSync(snapshotPath, JSON.stringify(content))
+    return {
+      snapshotPath,
+      cleanup: () => rmSync(tmp, { recursive: true, force: true }),
+    }
+  }
+
+  it('loads the canonical `{ datasets: [...] }` wrapped form', async () => {
+    const { snapshotPath, cleanup } = writeFixture({ datasets: SNAPSHOT })
+    try {
+      const { client } = fakeClient({ rows: [ROW_RT_R2_SST] })
+      const { ctx, out, err } = makeCtx(client, { snapshot: snapshotPath })
+      const code = await runListRealtimeR2(ctx)
+      expect(code).toBe(0)
+      expect(err.text()).toBe('')
+      const lines = out.text().trim().split('\n').filter(l => l.length > 0)
+      expect(lines).toHaveLength(1)
+      expect(JSON.parse(lines[0])).toMatchObject({
+        dataset_id: ROW_RT_R2_SST.id,
+        vimeo_id: '111111111',
+      })
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('loads a bare top-level JSON array (operator-overridden trim)', async () => {
+    const { snapshotPath, cleanup } = writeFixture(SNAPSHOT)
+    try {
+      const { client } = fakeClient({ rows: [ROW_RT_R2_SST] })
+      const { ctx, out } = makeCtx(client, { snapshot: snapshotPath })
+      const code = await runListRealtimeR2(ctx)
+      expect(code).toBe(0)
+      const lines = out.text().trim().split('\n').filter(l => l.length > 0)
+      expect(lines).toHaveLength(1)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('rejects any other JSON shape with a clear message', async () => {
+    const { snapshotPath, cleanup } = writeFixture({ unexpected: 'shape' })
+    try {
+      const { client } = fakeClient({ rows: [] })
+      const { ctx, err } = makeCtx(client, { snapshot: snapshotPath })
+      const code = await runListRealtimeR2(ctx)
+      expect(code).toBe(1)
+      expect(err.text()).toContain('must be either a JSON array')
+      expect(err.text()).toContain('top-level `datasets` array')
+    } finally {
+      cleanup()
+    }
   })
 })
 
