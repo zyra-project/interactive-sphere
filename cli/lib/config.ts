@@ -10,7 +10,7 @@
  *   3. Persisted config in `~/.terraviz/config.json` (created by
  *      `terraviz login` in Phase 3 — Phase 1a only reads it if a
  *      contributor wrote it by hand).
- *   4. Defaults: server `https://terraviz.app`, no auth headers.
+ *   4. Defaults: server `https://terraviz.zyra-project.org`, no auth headers.
  *
  * The auth path is intentionally pluggable: a service-token caller
  * gets `Cf-Access-Client-Id` + `-Secret` headers; a `--insecure-local`
@@ -43,7 +43,7 @@ export interface ResolveOptions {
   configPath?: string
 }
 
-export const DEFAULT_SERVER = 'https://terraviz.app'
+export const DEFAULT_SERVER = 'https://terraviz.zyra-project.org'
 
 interface PersistedConfig {
   server?: string

@@ -656,7 +656,7 @@ Commands:
                                       legacy Vimeo data refs to Stream".
 
 Global flags:
-  --server <url>                      Server base URL (default https://terraviz.app)
+  --server <url>                      Server base URL (default https://terraviz.zyra-project.org)
   --insecure-local                    Skip Access auth (use for localhost dev)
   --client-id <id>                    Cloudflare Access service-token client id
   --client-secret <secret>            Cloudflare Access service-token client secret

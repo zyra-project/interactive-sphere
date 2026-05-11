@@ -414,7 +414,7 @@ Once the bindings are wired, the catalog tables are empty. Two
 paths to seed:
 
 ```bash
-# Pull the upstream SOS snapshot (mirrors what terraviz.app uses):
+# Pull the upstream SOS snapshot (mirrors what terraviz.zyra-project.org uses):
 npx tsx scripts/refresh-sos-snapshot.ts
 
 # Import the rows via the publisher API:
