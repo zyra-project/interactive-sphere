@@ -103,12 +103,24 @@ const DEFAULT_MAX_MINUTES = 300
 /**
  * Per-row memory ceiling for the buffered upload path.
  *
- * Matches Phase 1b's `runUpload` cap (cli/commands.ts:124). Legacy
- * SOS rows average ~50 MB; 256 MB catches surprise oversize
- * sources before they trip Node's heap limits. The migration is
+ * 2 GiB. Phase 1b's `runUpload` cap (cli/commands.ts:124) is
+ * 256 MB because that path uploads via a Cloudflare Pages Function,
+ * and Workers have a hard ~128 MB per-request memory ceiling — the
+ * CLI side has to stay well under it. Phase 2's migration bypasses
+ * the Pages Function entirely (CLI talks directly to Cloudflare
+ * Stream's TUS endpoint), so the Worker limit doesn't apply.
+ *
+ * 2 GiB covers any plausible SOS video at realistic bitrates —
+ * the legacy catalog has ~10-15 rows above 256 MB but none in the
+ * multi-GB range. Memory cost is bounded: the migration is
  * sequential, so only one row's bytes are resident at a time.
+ *
+ * If a future row exceeds this cap, the operator hits a clear
+ * pre-flight error (`source advertises N bytes which exceeds the
+ * per-row buffer cap`) and can either investigate the row or
+ * we ship chunked TUS uploads as a follow-on.
  */
-const BUFFER_LIMIT_BYTES = 256 * 1024 * 1024
+const BUFFER_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
 
 /**
  * Drain a `ReadableStream<Uint8Array>` into a single `Uint8Array`,
@@ -118,14 +130,18 @@ const BUFFER_LIMIT_BYTES = 256 * 1024 * 1024
  * misreported Content-Length doesn't OOM the host.
  *
  * Exported for tests. The migration call site invokes it inline.
+ * The `cap` parameter exists so tests can exercise the cap-exceeded
+ * branches without allocating a 2 GiB Uint8Array; production
+ * callers omit it and get the module-level `BUFFER_LIMIT_BYTES`.
  */
 export async function drainStream(
   stream: ReadableStream<Uint8Array>,
   expectedLength: number,
+  cap: number = BUFFER_LIMIT_BYTES,
 ): Promise<Uint8Array> {
-  if (expectedLength > BUFFER_LIMIT_BYTES) {
+  if (expectedLength > cap) {
     throw new Error(
-      `source advertises ${expectedLength} bytes which exceeds the per-row buffer cap of ${BUFFER_LIMIT_BYTES} bytes (256 MB)`,
+      `source advertises ${expectedLength} bytes which exceeds the per-row buffer cap of ${cap} bytes`,
     )
   }
   const reader = stream.getReader()
@@ -136,10 +152,10 @@ export async function drainStream(
     if (done) break
     if (!value) continue
     total += value.byteLength
-    if (total > BUFFER_LIMIT_BYTES) {
+    if (total > cap) {
       reader.cancel().catch(() => {})
       throw new Error(
-        `source exceeded the per-row buffer cap of ${BUFFER_LIMIT_BYTES} bytes (256 MB) mid-stream`,
+        `source exceeded the per-row buffer cap of ${cap} bytes mid-stream`,
       )
     }
     chunks.push(value)

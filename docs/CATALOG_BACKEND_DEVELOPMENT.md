@@ -860,17 +860,28 @@ Health → "Migration video progress").
 #### Memory ceiling per row
 
 The CLI buffers the source MP4 bytes into a `Uint8Array` before
-the TUS PATCH (matches Phase 1b `runUpload`'s precedent — Node's
-undici can't replay a streaming body on Cloudflare's regional-
-routing redirects). The cap is 256 MB per row. The migration is
-sequential, so only one row's bytes are resident at a time; the
-operator's laptop sees ≤ 256 MB peak regardless of catalog size.
+the TUS PATCH — Node's undici can't replay a streaming body on
+Cloudflare's regional-routing redirects, so buffering is the
+reliable path. The cap is **2 GiB per row**.
 
-Legacy SOS rows average ~50 MB so the cap rarely matters. If you
-hit `source advertises N bytes which exceeds the per-row buffer
-cap` (rare — a row pointing at the wrong Vimeo id, or a Vimeo
-"film" upload mistakenly imported), investigate that specific
-row separately rather than raising the cap.
+(Phase 1b's `runUpload` has a 256 MB cap, but that path goes
+through a Cloudflare Pages Function with a hard ~128 MB Worker
+memory limit. Phase 2's migration bypasses the Pages Function and
+talks to Stream's TUS endpoint directly, so the Worker constraint
+doesn't apply.)
+
+Legacy SOS rows are mostly 30-150 MB; the catalog has roughly 10-15
+rows above 256 MB but none in the multi-GB range. The 2 GiB cap
+covers any plausible 4K narrated source under ~15 minutes. The
+migration is sequential, so only one row's bytes are resident at
+a time; the operator's laptop sees ≤ 2 GiB peak regardless of
+catalog size.
+
+If you hit `source advertises N bytes which exceeds the per-row
+buffer cap` (would require a >2 GiB single source), investigate
+that specific row separately rather than raising the cap — at
+that size the row is likely a mis-imported full-length film or
+points at the wrong Vimeo id.
 
 #### What the commit point is
 

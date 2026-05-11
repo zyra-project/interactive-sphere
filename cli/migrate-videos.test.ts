@@ -652,21 +652,24 @@ describe('drainStream (2/O)', () => {
     expect(new TextDecoder().decode(out)).toBe('hello-world')
   })
 
-  it('rejects pre-flight when expectedLength exceeds the 256 MB cap', async () => {
+  it('rejects pre-flight when expectedLength exceeds the cap', async () => {
+    // Use a small injected cap so the test doesn't have to allocate
+    // 2 GiB to exercise the production 2 GiB ceiling.
     const stream = makeStreamFromChunks([new Uint8Array(8)])
     await expect(
-      drainStream(stream, 257 * 1024 * 1024),
+      drainStream(stream, 2048, /* cap */ 1024),
     ).rejects.toThrow(/per-row buffer cap/)
   })
 
   it('rejects mid-stream when total bytes exceed the cap (advertised length lied)', async () => {
-    // Source claims 8 bytes but pushes 300 MB. The pre-flight cap
-    // can't catch this; the mid-stream cap must.
-    const big = new Uint8Array(1024 * 1024)
+    // Source claims 8 bytes but pushes 2 KB. The pre-flight cap
+    // can't catch this; the mid-stream cap must. Small injected
+    // cap keeps the test cheap.
+    const chunk = new Uint8Array(512)
     const chunks: Uint8Array[] = []
-    for (let i = 0; i < 300; i++) chunks.push(big)
+    for (let i = 0; i < 4; i++) chunks.push(chunk)
     const stream = makeStreamFromChunks(chunks)
-    await expect(drainStream(stream, 8)).rejects.toThrow(/mid-stream/)
+    await expect(drainStream(stream, 8, /* cap */ 1024)).rejects.toThrow(/mid-stream/)
   })
 
   it('handles a zero-chunk stream cleanly', async () => {
