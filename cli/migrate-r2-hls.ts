@@ -42,6 +42,18 @@
  * minutes per row, so the pace is mostly nominal; it exists for
  * politeness to the publisher API.
  *
+ * Real-time row guard: SOS publishes a handful of "Real-time"
+ * datasets (sea surface temperature, precipitation, earthquakes,
+ * etc.) whose Vimeo IDs are re-uploaded daily by NOAA's automation.
+ * Phase 3 is a one-shot encode — the R2 copy goes stale within
+ * 24h for these rows. By default the migration filters them out
+ * at plan time (`--skip-realtime`, default true) by matching
+ * `/real[-\s]?time/i` against the row title. Operators who want
+ * to migrate them anyway (e.g. shipping a known-stale snapshot)
+ * pass `--no-skip-realtime`. `--id <row>` is treated as an explicit
+ * override: the filter doesn't apply, but a warning prints if the
+ * targeted row matches.
+ *
  * Flags:
  *   --dry-run            Print plan + storage estimate; no encoding.
  *   --limit=N            Cap rows migrated this run.
@@ -53,6 +65,9 @@
  *                        success. Failed rows always retained.
  *   --ffmpeg-bin=<path>  Override ffmpeg binary (default PATH).
  *   --proxy-base=<url>   Override the video-proxy base URL.
+ *   --no-skip-realtime   Include real-time titled rows (default:
+ *                        skipped — they need a recurring refresh
+ *                        mechanism that Phase 3 does not ship).
  *
  * R2 credentials read from process.env: R2_S3_ENDPOINT,
  * R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY. The bucket defaults to
@@ -70,7 +85,8 @@ import {
 } from './lib/r2-upload'
 import { makeMigrationTelemetryEmitter, type TelemetryEventPayload } from './lib/migration-telemetry'
 import type { CommandContext } from './commands'
-import { getString, getNumber, getBool } from './lib/args'
+import { getString, getNumber, getBool, getBoolDefault } from './lib/args'
+import { isRealtimeTitle } from './lib/realtime-title'
 
 /** A single row from the publisher list response, narrowed to the
  * fields the migration cares about. */
@@ -254,14 +270,35 @@ function printPlanSummary(
   ctx: CommandContext,
   plan: MigrationCandidate[],
   limit: number,
+  skippedRealtime: MigrationCandidate[],
 ): void {
   const willRun = Math.min(plan.length, limit)
   ctx.stdout.write(
     `Migration plan:\n` +
-      `  vimeo: rows on video/mp4: ${plan.length}\n` +
-      `  will migrate this run:    ${willRun}` +
+      `  vimeo: rows on video/mp4:   ${plan.length + skippedRealtime.length}\n` +
+      (skippedRealtime.length > 0
+        ? `  skipped (real-time guard):  ${skippedRealtime.length}` +
+          ` (Vimeo source is updated daily; one-shot R2 copy would go stale)\n`
+        : '') +
+      `  will migrate this run:      ${willRun}` +
       (limit < plan.length ? ` (capped by --limit)\n` : '\n'),
   )
+  if (skippedRealtime.length > 0) {
+    // Surface the actual skipped IDs + titles so the operator can
+    // sanity-check the heuristic. Cap the listing the same way the
+    // willRun sample does — the full set is recoverable via the
+    // `terraviz list-realtime-r2` subcommand (3a/B, planned).
+    const skippedSample = skippedRealtime.slice(0, 5)
+    ctx.stdout.write(`  Skipped real-time rows (--no-skip-realtime to override):\n`)
+    for (const c of skippedSample) {
+      ctx.stdout.write(`    • ${c.datasetId}  vimeo:${c.vimeoId}  ${c.title}\n`)
+    }
+    if (skippedRealtime.length > skippedSample.length) {
+      ctx.stdout.write(
+        `    • … + ${skippedRealtime.length - skippedSample.length} more\n`,
+      )
+    }
+  }
   if (plan.length === 0) return
   const sample = plan.slice(0, Math.min(willRun, 5))
   for (const c of sample) {
@@ -486,6 +523,7 @@ export async function runMigrateR2Hls(
   const keepWorkdir = getBool(ctx.args.options, 'keep-workdir')
   const ffmpegBin = getString(ctx.args.options, 'ffmpeg-bin')
   const proxyBase = getString(ctx.args.options, 'proxy-base')
+  const skipRealtime = getBoolDefault(ctx.args.options, 'skip-realtime', true)
 
   if (limitFlag !== undefined && limitFlag < 1) {
     ctx.stderr.write(`--limit must be a positive integer (got ${limitFlag}).\n`)
@@ -501,11 +539,41 @@ export async function runMigrateR2Hls(
   const uploadHlsBundle = deps.uploadHlsBundle ?? uploadHlsBundleLib
   const now = deps.now ?? Date.now
 
-  const plan = await buildPlan(ctx, targetId)
-  if (plan === null) return 1
+  const rawPlan = await buildPlan(ctx, targetId)
+  if (rawPlan === null) return 1
+
+  // Real-time row filter (3a/A). Two modes:
+  //   - Bulk mode (no --id): filter the plan, surface the skipped
+  //     count in the summary so the operator sees what was excluded
+  //     and why. Default-on; `--no-skip-realtime` opts back in.
+  //   - --id mode: the operator typed a specific row by hand, so
+  //     the filter does NOT apply (matches the existing precedent
+  //     that --id bypasses the published-status filter). A warning
+  //     prints if the targeted row matches, so a slip-of-the-finger
+  //     migration of a real-time row is still visible.
+  let plan: MigrationCandidate[]
+  let skippedRealtime: MigrationCandidate[]
+  if (targetId) {
+    plan = rawPlan
+    skippedRealtime = []
+    const realtimeHit = rawPlan.find(c => isRealtimeTitle(c.title))
+    if (realtimeHit) {
+      ctx.stderr.write(
+        `Warning: ${realtimeHit.datasetId} (${realtimeHit.title}) is a real-time row — its ` +
+          `Vimeo source is updated daily and the R2 copy will go stale within 24h. ` +
+          `--id overrides the --skip-realtime guard; proceeding anyway.\n`,
+      )
+    }
+  } else if (skipRealtime) {
+    skippedRealtime = rawPlan.filter(c => isRealtimeTitle(c.title))
+    plan = rawPlan.filter(c => !isRealtimeTitle(c.title))
+  } else {
+    plan = rawPlan
+    skippedRealtime = []
+  }
 
   const limit = limitFlag ?? plan.length
-  printPlanSummary(ctx, plan, limit)
+  printPlanSummary(ctx, plan, limit, skippedRealtime)
 
   if (plan.length > 0) {
     try {

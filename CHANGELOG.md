@@ -16,6 +16,74 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3a — Real-time row guard for migrate-r2-hls
+
+**Branch:** `claude/realtime-row-filtering`
+**Commits:** 3a/A through 3a/C — three logical changes (one
+forward-protection guard + two triage helpers).
+
+Phase 3 was a one-shot encode (Vimeo source → R2-hosted HLS).
+A handful of SOS rows (~40) are titled `… - Real-time` and have
+their Vimeo IDs re-uploaded by NOAA's automation daily — the R2
+copy goes stale within 24h. Without a guard, the bulk migration
+would happily encode these and the SPA would serve yesterday's
+data on the affected rows.
+
+**3a/A — `--skip-realtime` flag for `migrate-r2-hls` (default on).**
+Filters the migration plan by matching `/real[-\s]?time/i`
+against the row title. The SOS catalog has no explicit
+`update_cadence` field so the title is the only reliable signal;
+the substring check is the same one the catalog UI uses
+informally to label these rows. Plan summary surfaces the
+skipped count + first 5 IDs so the operator can sanity-check
+the heuristic. `--no-skip-realtime` opts back in for the bulk
+path; `--id <row>` is treated as a deliberate override
+(warning to stderr when the targeted row matches, but no skip).
+
+**3a/B — `terraviz list-realtime-r2` triage helper.**
+Read-only. Walks the catalog (`status=published`), filters to
+rows with `data_ref` starting `r2:videos/` AND `format =
+video/mp4` AND `isRealtimeTitle(title)`, joins each match
+against `public/assets/sos-dataset-list.json` via the row's
+`legacy_id` (1:1 with `entry.id` per the Phase 1d import
+contract) to extract the original Vimeo id from `dataLink`.
+Two output modes: NDJSON by default (one JSON object per line,
+designed for piping into `rollback-r2-hls --from-stdin`), and
+`--human` for a readable table with a rollback-pipe hint.
+Rows whose snapshot lookup fails (legacy_id missing or dataLink
+not a vimeo.com URL) emit to stderr with empty `vimeo_id` so
+they don't pollute the NDJSON pipeline; operator recovers
+those IDs from Grafana's `migration_r2_hls` events (`blob9`)
+or the Vimeo dashboard.
+
+**3a/C — `--from-stdin` bulk mode for `rollback-r2-hls`.**
+Closes the loop: pipes NDJSON from `list-realtime-r2` (or any
+NDJSON producer) into the rollback CLI, which runs the same
+per-row pipeline (GET → PATCH-back-to-vimeo → DELETE-R2-prefix)
+sequentially over each line. The single-row CLI shape is
+preserved bit-for-bit — `--from-stdin` is mutually exclusive
+with the positional dataset id and `--to-vimeo`. Hard failures
+(`parse_failed`, `get_failed`, `wrong_scheme`, `patch_failed`,
+`malformed_ref`) flip the exit code to 1 but don't abort the
+loop; soft failure (`delete_failed` — PATCH succeeded but R2
+DELETE threw) is reported separately as "ok (orphan R2 prefix)"
+so the operator sees how much storage they need to clean up
+later. Idiomatic invocation: `terraviz list-realtime-r2 |
+terraviz rollback-r2-hls --from-stdin`.
+
+**Tests.** 29 new across the three commits — 10 for 3a/A,
+10 for 3a/B, 9 for 3a/C bulk-stdin (plus the 12 pre-existing
+single-row rollback tests still pass against the refactor).
+Full suite 2055/2055.
+
+**Non-goals (deferred).** A recurring re-encode mechanism
+(scheduled trigger → re-fetch → re-encode → idempotent overwrite)
+that would let real-time rows live on R2 without staleness is a
+much bigger lift — likely a Phase 3c follow-up. Until then the
+correct answer for real-time rows is "stay on `vimeo:`".
+
+---
+
 ## Phase 3 — R2 + HLS for 4K spherical video
 
 **Branch:** `claude/r2-hls-migration-phase-3-x7Kpq`

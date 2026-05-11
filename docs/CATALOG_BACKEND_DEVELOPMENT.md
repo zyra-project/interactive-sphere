@@ -841,6 +841,8 @@ npm run terraviz -- migrate-r2-hls --dry-run
 The dry-run output prints:
 
 - The migration plan (number of `vimeo:` rows + the first 5 by id).
+- The number of rows skipped by the **real-time guard** (default-on)
+  — see below.
 - A storage estimate computed by summing source durations from the
   video-proxy metadata and multiplying by an ~244 MB/min ladder
   constant calibrated to the 4K + 1080p + 720p renditions.
@@ -849,6 +851,75 @@ The dry-run output prints:
 - A monthly storage cost in $ at R2's $0.015/GB-month rate. The
   ~136-row catalog typically estimates around 30-50 GB total →
   ~$0.50/month flat; R2 egress is free so delivery costs nothing.
+
+#### Real-time row guard
+
+A handful of SOS rows are titled e.g. `Sea Surface Temperature -
+Real-time` — NOAA's automation re-uploads these to the same
+Vimeo IDs daily. Phase 3 is a one-shot encode, so the R2 copy
+goes stale within 24h for these rows. The migrator filters them
+out at plan time by default, matching the literal substring
+`real-time` (case-insensitive, hyphen / space / joined variants
+all caught) against the row title — the SOS catalog has no
+explicit `update_cadence` field so the title is the only
+reliable signal.
+
+The plan summary surfaces the skipped count + first 5 IDs so
+you can sanity-check the heuristic before the live run:
+
+```
+Migration plan:
+  vimeo: rows on video/mp4:   136
+  skipped (real-time guard):  42 (Vimeo source is updated daily; one-shot R2 copy would go stale)
+  will migrate this run:      94
+  Skipped real-time rows (--no-skip-realtime to override):
+    • DSXXXX...  vimeo:111  Sea Surface Temperature - Real-time
+    • ...
+```
+
+To migrate a real-time row anyway (e.g. you accept the staleness
+or are shipping a known-stale snapshot), pass
+`--no-skip-realtime` for the bulk path or `--id <row>` for
+single-row mode (the `--id` override prints a stderr warning
+when the targeted row matches the heuristic, so a slip-of-the-finger
+is still visible). A proper recurring-refresh mechanism is
+deferred to a Phase 3c follow-up.
+
+##### Triaging real-time rows that are already on r2:
+
+For rows that were migrated *before* the `--skip-realtime` guard
+landed (i.e. they're already serving a 24h-stale snapshot from
+R2), use `terraviz list-realtime-r2` to identify them and
+recover the original Vimeo id needed for rollback:
+
+```sh
+# NDJSON output — one row per match, ready to pipe.
+npm run terraviz -- list-realtime-r2
+
+# Human-readable inspection:
+npm run terraviz -- list-realtime-r2 --human
+```
+
+The lookup walks the catalog (`status=published`), filters to
+`r2:videos/` + `video/mp4` + the same title heuristic, and joins
+each match against `public/assets/sos-dataset-list.json` via
+`legacy_id` → `entry.id` to extract the Vimeo id from
+`dataLink`. Rows whose `legacy_id` isn't in the snapshot — or
+whose `dataLink` isn't a `vimeo.com` URL — surface to stderr
+without polluting the NDJSON stream; recover those IDs from
+Grafana's `migration_r2_hls` events (the `vimeo_id` is on
+`blob9`) or the Vimeo dashboard, then call `rollback-r2-hls`
+manually.
+
+To bulk-roll-back the matched rows:
+
+```sh
+npm run terraviz -- list-realtime-r2 \
+  | npm run terraviz -- rollback-r2-hls --from-stdin
+```
+
+See the `rollback-r2-hls` runbook below for the per-row
+rollback semantics (PATCH-then-DELETE, commit-point ordering).
 
 #### Live migration
 
@@ -932,12 +1003,49 @@ If the DELETE fails, the row is still correctly back on
 cleanup.
 
 The operator provides the original `vimeo:<id>` explicitly. To
-find it: grep the migration's stdout log, or look at the
-dataset's `legacy_id` and cross-reference
-`public/assets/sos-dataset-list.json`.
+find it: grep the migration's stdout log, look up the
+dataset's `legacy_id` in `public/assets/sos-dataset-list.json`,
+or query Grafana's `migration_r2_hls` events (the `vimeo_id`
+is on `blob9`).
 
-For bulk rollback, script a shell loop around the per-id
-invocation. Bulk rollback is deferred to "if it proves common."
+For bulk rollback (e.g. cleaning up the real-time rows
+identified by `terraviz list-realtime-r2`), pipe NDJSON in via
+`--from-stdin`:
+
+```sh
+# Bulk rollback every real-time row currently on r2:
+npm run terraviz -- list-realtime-r2 \
+  | npm run terraviz -- rollback-r2-hls --from-stdin
+
+# Confirm first with a dry-run:
+npm run terraviz -- list-realtime-r2 \
+  | npm run terraviz -- rollback-r2-hls --from-stdin --dry-run
+
+# Roll back an arbitrary set that the operator curated by hand:
+cat my-rollback-list.ndjson \
+  | npm run terraviz -- rollback-r2-hls --from-stdin
+```
+
+Each NDJSON line must be a JSON object with `dataset_id` and
+`vimeo_id` fields (extra fields like `title` and `legacy_id`
+are tolerated, so the `list-realtime-r2` output pipes
+through directly). The bulk path runs the same per-row
+pipeline as the single-row mode (GET → PATCH → DELETE),
+continues past per-row failures rather than aborting on
+the first one, and prints an aggregate summary at the end:
+
+```
+Bulk rollback complete:
+  ok:                       18
+  ok (orphan R2 prefix):    1     ← PATCH committed, R2 DELETE failed or was skipped (creds unset)
+  patch_failed:             1
+```
+
+Exit code: 0 when every row's PATCH succeeded (orphan R2
+prefixes are non-fatal — the catalog is correct, just storage
+to clean up later), 1 if any row had a hard failure
+(`parse_failed`, `get_failed`, `wrong_scheme`, `patch_failed`,
+or `malformed_ref`).
 
 #### Observation window
 
