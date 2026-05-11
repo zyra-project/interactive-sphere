@@ -740,6 +740,216 @@ The Pages-owning account's subscription is what counts; upgrading
 a personal account doesn't help if the Pages project lives under
 an org. Settings → Billing → Subscriptions on the right account.
 
+### Migrating legacy Vimeo data refs to R2/HLS
+
+Phase 1d's bulk import of the legacy SOS catalog landed ~136
+video rows with `data_ref: vimeo:<id>` — playback proxied through
+`video-proxy.zyra-project.org`. Phase 3
+(`terraviz migrate-r2-hls`) walks those rows, FFmpeg-encodes each
+source into a multi-rendition HLS bundle (4K + 1080p + 720p at
+2:1 spherical aspect, 6-second segments), uploads the bundle to
+R2 under `videos/<dataset_id>/`, and PATCHes `data_ref` to
+`r2:videos/<dataset_id>/master.m3u8`. After the migration,
+playback runs through R2's edge serving via your custom domain;
+egress is free.
+
+**One-time, operator-driven.** This is not a CI job. Run it from
+your laptop (or a container with the catalog repo checked out)
+against the production deploy with a service-token configured.
+Encoding takes minutes per row, so plan an overnight session for
+a full ~136-row run.
+
+(Phase 2 originally targeted Cloudflare Stream for this
+migration. The standard Stream plan caps rendition output at
+1080p, which is a UX regression for spherical content where
+viewers zoom into features smaller than the equator. Phase 3
+ships the R2 + HLS alternative that preserves 4K renditions.
+See the Phase 2 → 3 transition note in `CHANGELOG.md`.)
+
+#### Pages-side prerequisites (do this BEFORE the first run)
+
+Three things need to be in place before the migration's PATCH
+step lands a working `r2:` data_ref:
+
+1. **A custom domain bound to the R2 bucket.** Cloudflare
+   dashboard → R2 → `terraviz-assets` → Settings → Connect Domain.
+   The reference deploy uses `video.zyra-project.org`. DNS
+   propagation can take a few minutes.
+
+2. **`R2_PUBLIC_BASE` env var on the Pages project**, set to the
+   custom domain's URL (e.g. `https://video.zyra-project.org`).
+   Set it on **both Production and Preview**. Redeploy after
+   saving so the manifest endpoint picks it up.
+
+3. **CORS policy on the R2 bucket**, allowing GET from the SPA's
+   origin. Cloudflare dashboard → R2 → `terraviz-assets` →
+   Settings → CORS Policy:
+   ```json
+   [{
+     "AllowedOrigins": [
+       "https://terraviz.zyra-project.org",
+       "https://*.terraviz.pages.dev"
+     ],
+     "AllowedMethods": ["GET"],
+     "AllowedHeaders": ["*"],
+     "MaxAgeSeconds": 3600
+   }]
+   ```
+   Without CORS, the SPA's HLS player can't load the playlist
+   cross-origin and playback fails with a console error rather
+   than a clear network error.
+
+Then verify the binding state:
+
+```sh
+CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
+  npm run check:pages-bindings
+```
+
+`R2_PUBLIC_BASE` should show as present in both environments
+before the migration is safe to run.
+
+#### Operator-side prerequisites
+
+- **FFmpeg ≥ 6** on `PATH` (or pass `--ffmpeg-bin=<path>`).
+  Apt: `apt-get update && apt-get install -y ffmpeg`. Static
+  binaries from John Van Sickle work on any glibc Linux without
+  apt dependencies.
+- **R2 S3-API credentials in your shell:** `R2_S3_ENDPOINT`,
+  `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (same trio Phase 2's
+  audit added to `expected-bindings.ts`). Mint at Cloudflare
+  dashboard → R2 → Manage R2 API Tokens → Read+Write scoped to
+  the bucket.
+- **TERRAVIZ_ACCESS_CLIENT_ID / SECRET** for the publisher API
+  PATCH step (same service token used for `import-snapshot` /
+  `verify-deploy`).
+- **At least 256 MB free disk per concurrent row** for the
+  encode workdir (default `/tmp/terraviz-hls/<dataset_id>/`).
+  Migration is sequential, so peak usage is bounded to one row at
+  a time.
+
+#### Pre-flight (always run dry-run first)
+
+The migration is idempotent — re-runs skip rows already on
+`r2:videos/`. The first thing to verify is the storage estimate:
+
+```sh
+set -a; . ~/.terraviz/prod.env; set +a
+npm run terraviz -- migrate-r2-hls --dry-run
+```
+
+The dry-run output prints:
+
+- The migration plan (number of `vimeo:` rows + the first 5 by id).
+- A storage estimate computed by summing source durations from the
+  video-proxy metadata and multiplying by an ~244 MB/min ladder
+  constant calibrated to the 4K + 1080p + 720p renditions.
+  Order-of-magnitude only — actual bundle sizes vary with
+  content complexity (motion, scene cuts).
+- A monthly storage cost in $ at R2's $0.015/GB-month rate. The
+  ~136-row catalog typically estimates around 30-50 GB total →
+  ~$0.50/month flat; R2 egress is free so delivery costs nothing.
+
+#### Live migration
+
+Once the dry-run looks right:
+
+```sh
+# Sanity batch — migrate 1 row, verify playback in the SPA, then continue.
+npm run terraviz -- migrate-r2-hls --limit=1
+
+# Small batch — 5 more rows; watch the Grafana migration row populate.
+npm run terraviz -- migrate-r2-hls --limit=5
+
+# Full run — sequential, paced 1 s between rows. ~5-15 minutes
+# of encode time per row × 130 remaining ≈ many hours.
+npm run terraviz -- migrate-r2-hls
+```
+
+Per-row stdout shows `[<dataset_id>] vimeo:<vimeo_id> →
+r2:<key> (<bytes>, encode <ms>, upload <ms>, total <ms>)`.
+Failures go to stderr with the outcome (`vimeo_fetch_failed`,
+`encode_failed`, `r2_upload_failed`, `data_ref_patch_failed`).
+
+The telemetry session id printed at the start of each run lets
+you correlate per-row events on the Grafana migration row.
+
+#### What the commit point is
+
+The `data_ref` PATCH (step 4 of each row) is the migration's
+commit point. Before it: the row stays on `vimeo:` and playback
+runs through the proxy unchanged. After it: the SPA's manifest
+endpoint resolves `r2:videos/<id>/master.m3u8` to your custom
+domain's URL and HLS playback engages.
+
+Failure modes:
+
+- `vimeo_fetch_failed` — source URL not resolvable (deleted from
+  Vimeo, proxy down). Row unchanged. No encode / upload attempted.
+- `encode_failed` — FFmpeg crashed. Workdir retained at
+  `/tmp/terraviz-hls/<dataset_id>/` for operator inspection.
+  Row unchanged.
+- `r2_upload_failed` — at least one R2 PUT failed mid-bundle.
+  Some segments may already be on R2 as an orphan partial
+  upload; the next migration retry overwrites them.
+- `data_ref_patch_failed` — bundle fully uploaded but the
+  publisher API rejected the PATCH. The orphan R2 prefix is
+  captured in the `migration_r2_hls.r2_key` telemetry field
+  for `terraviz rollback-r2-hls` cleanup.
+
+#### Recovery from partial failures
+
+Re-running `terraviz migrate-r2-hls` is the recovery path.
+The plan-time filter skips rows already on `r2:` so already-
+migrated rows are no-ops. Failed rows attempt fresh.
+
+For `r2_upload_failed` rows specifically: the next attempt
+overwrites any partial uploads under the same prefix, so the
+state converges naturally.
+
+#### Memory + disk ceilings
+
+The encode workdir holds 4K + 1080p + 720p segment files for one
+row at a time. Typical legacy SOS row: 200-400 MB of segments per
+encode. The `--workdir=<path>` flag overrides the default
+`/tmp/terraviz-hls`; `--keep-workdir` skips cleanup on success
+(failed rows always retain their workdir for inspection).
+
+#### Rollback
+
+Single-row rollback is automated via `terraviz rollback-r2-hls`:
+
+```sh
+npm run terraviz -- rollback-r2-hls <dataset_id> --to-vimeo=<original_id> --dry-run
+npm run terraviz -- rollback-r2-hls <dataset_id> --to-vimeo=<original_id>
+```
+
+The tool PATCHes `data_ref` back to `vimeo:<id>` first (commit
+point — once it lands, the SPA resolves through the proxy
+again), then deletes the R2 bundle (cleanup; non-fatal).
+If the DELETE fails, the row is still correctly back on
+`vimeo:` and only an orphan R2 prefix is left for manual
+cleanup.
+
+The operator provides the original `vimeo:<id>` explicitly. To
+find it: grep the migration's stdout log, or look at the
+dataset's `legacy_id` and cross-reference
+`public/assets/sos-dataset-list.json`.
+
+For bulk rollback, script a shell loop around the per-id
+invocation. Bulk rollback is deferred to "if it proves common."
+
+#### Observation window
+
+The Vimeo proxy stays running until the migration is 100%
+complete AND has been observed for ≥1 month. The Grafana
+migration row (commit 3/G — three panels under "Product Health")
+is the headline observation surface — "% video/mp4 rows still
+on `vimeo:`" should be 0 by the end of the run and remain 0 in
+steady state. A non-zero reading after the fact means a stray
+legacy row was re-imported (re-run the migration) or the
+manifest endpoint regressed somehow.
+
 ## Stack
 
 - **Wrangler** (`wrangler pages dev`) is the runner. It loads the

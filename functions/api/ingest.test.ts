@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { TelemetryEvent, SessionStartEvent, LayerLoadedEvent } from '../../src/types'
+import type {
+  TelemetryEvent,
+  SessionStartEvent,
+  LayerLoadedEvent,
+  MigrationR2HlsEvent,
+} from '../../src/types'
 import {
   onRequestPost,
   onRequestOptions,
@@ -124,6 +129,25 @@ function layerLoaded(id = 'A'): LayerLoadedEvent {
     slot_index: '0',
     trigger: 'browse',
     load_ms: 1234,
+  }
+}
+
+function migrationR2Hls(
+  overrides: Partial<MigrationR2HlsEvent> = {},
+): MigrationR2HlsEvent {
+  return {
+    event_type: 'migration_r2_hls',
+    dataset_id: 'DS00001AAAAAAAAAAAAAAAAAAAAA',
+    legacy_id: 'INTERNAL_SOS_768',
+    vimeo_id: '1107911993',
+    r2_key: 'videos/DS00001AAAAAAAAAAAAAAAAAAAAA/master.m3u8',
+    source_bytes: 41_000_000,
+    bundle_bytes: 50_000_000,
+    encode_duration_ms: 30_000,
+    upload_duration_ms: 2_000,
+    duration_ms: 35_000,
+    outcome: 'ok',
+    ...overrides,
   }
 }
 
@@ -507,6 +531,26 @@ describe('onRequestPost — happy path', () => {
     })
     const res = await onRequestPost(ctx)
     expect(res.status).toBe(204)
+  })
+
+  it('accepts migration_r2_hls events (Phase 3 commit E)', async () => {
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([
+        migrationR2Hls(),
+        migrationR2Hls({
+          outcome: 'data_ref_patch_failed',
+          r2_key: 'videos/orphan/master.m3u8',
+        }),
+      ]),
+      ip: '10.0.0.20',
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    const res = await onRequestPost(ctx)
+    expect(res.status).toBe(204)
+    expect(ae.datapoints).toHaveLength(2)
+    expect(ae.datapoints[0].blobs![0]).toBe('migration_r2_hls')
+    expect(ae.datapoints[1].blobs![0]).toBe('migration_r2_hls')
   })
 })
 

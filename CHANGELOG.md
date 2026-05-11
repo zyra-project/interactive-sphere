@@ -16,6 +16,160 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3 — R2 + HLS for 4K spherical video
+
+**Branch:** `claude/r2-hls-migration-phase-3-x7Kpq`
+**Commits:** 3/A through 3/H — eight logical changes.
+
+Phase 2 attempted to migrate the legacy SOS Vimeo catalog to
+Cloudflare Stream but hit the standard Stream plan's 1080p
+rendition ceiling — unworkable for spherical content where
+viewers zoom into features smaller than the equator. Phase 3
+replaces that approach with a self-managed HLS pipeline on
+Cloudflare R2:
+
+1. **Operator-side FFmpeg** pre-encodes each source MP4 into a
+   multi-rendition HLS bundle (4096x2048 + 2160x1080 + 1440x720
+   at 2:1 spherical aspect, 6-second VOD segments).
+2. **R2 upload** stores the bundle (master playlist + variant
+   playlists + .ts segments) under `videos/<dataset_id>/` in
+   the existing `terraviz-assets` bucket via the S3 API.
+3. **R2 public-bucket + custom domain** serves the HLS files
+   directly. No Worker needed for v1.
+4. **Manifest endpoint extension** resolves video `r2:` data_refs
+   to the HLS master playlist URL.
+5. **`r2:videos/<dataset_id>/master.m3u8`** is the data_ref scheme.
+
+Trade-offs vs. Phase 2's Stream approach:
+- **More upfront work**: operator runs FFmpeg locally (hours, not
+  minutes).
+- **More storage**: ~30-50 GB R2 total (3 renditions × 140 min of
+  content), but R2 storage is $0.015/GB/month → ~$0.50-0.75/month.
+- **Zero egress cost**: R2 has no per-delivery charge regardless of
+  viewer count. Stream's $5/mo flat is replaced by R2's
+  pay-for-storage-only model that's cheaper at every catalog size.
+- **True 4K renditions**: 4096x2048 spherical preserved.
+
+| Commit | Summary |
+|---|---|
+| 3/A | `cli/lib/ffmpeg-hls.ts` — wraps the FFmpeg child process that produces a 3-rendition HLS bundle. `buildFfmpegArgs` is exported so tests can pin the exact command shape; `encodeHls` is the high-level API the migrate subcommand calls. Captures the last 4 KB of stderr for clear error attribution. |
+| 3/B | `cli/lib/r2-upload.ts` — walks a local HLS bundle and uploads each file to R2 under a key prefix via the S3 API. SigV4 signing via `aws4fetch` (~2 KB, no transitive deps — much lighter than the full AWS SDK for what's effectively "PUT bytes with a signature"). Bounded parallelism (6 concurrent per bundle). Per-file Content-Type set correctly (`application/vnd.apple.mpegurl` for `.m3u8`, `video/mp2t` for `.ts`). Also exports `deleteR2Prefix` for the rollback path. |
+| 3/C | `terraviz migrate-r2-hls` CLI subcommand. Orchestrates the per-row pipeline: resolve vimeo → encode HLS → upload to R2 → PATCH data_ref → emit telemetry → clean up workdir. Idempotent (rows already on `r2:` skipped at plan time). Includes `cli/lib/vimeo-source.ts` (slimmer than Phase 2's vimeo-fetch — just resolves the source URL since FFmpeg pulls it directly via `-i`) and `cli/lib/migration-telemetry.ts` (event-type-agnostic emitter with Phase 2/M's Origin-header fix carried forward). |
+| 3/D | Manifest endpoint extension — `r2:<key>.m3u8` + video format returns a `kind: 'video'` manifest with `hls` set to the R2 public URL. The existing `r2:` + video path stays for non-`.m3u8` direct-MP4 refs (rare). Case-insensitive on the suffix. |
+| 3/E | `migration_r2_hls` telemetry event. Tier A. Fields: `dataset_id`, `legacy_id`, `vimeo_id`, `r2_key`, `source_bytes`, `bundle_bytes`, `encode_duration_ms`, `upload_duration_ms`, `duration_ms`, `outcome`. Added to `KNOWN_EVENT_TYPES` in `functions/api/ingest.ts` so the events the migration CLI emits actually land in AE → Grafana. |
+| 3/F | `terraviz rollback-r2-hls` subcommand + operator runbook + expected-bindings audit additions. Mirrors Phase 2's would-be rollback-stream: PATCH data_ref back to `vimeo:<id>` first (commit point), then delete the R2 prefix (cleanup; non-fatal). Runbook section in `CATALOG_BACKEND_DEVELOPMENT.md` covers Pages-side prereqs (custom domain, `R2_PUBLIC_BASE`, CORS), operator-side prereqs (FFmpeg + R2 S3 creds), pre-flight dry-run, live migration, failure modes, rollback, and the observation window. `R2_PUBLIC_BASE` + the R2 S3 credentials added to `expected-bindings.ts`. |
+| 3/G | Grafana migration row on `Terraviz — Product Health`. Three panels at y=34: per-day runs by outcome, cumulative ok rows, failure breakdown. Pins `blob7 = outcome` based on `toDataPoint`'s alphabetical ordering of `MigrationR2HlsEvent`'s string fields (dataset_id, legacy_id, outcome, r2_key, vimeo_id at blob5..blob9). Dashboard version 6 → 7. |
+| 3/H | This file. |
+
+### Operator-visible changes
+
+- **New CLI subcommands:**
+  ```sh
+  npm run terraviz -- migrate-r2-hls --dry-run             # plan + storage estimate
+  npm run terraviz -- migrate-r2-hls --limit=5             # sanity batch
+  npm run terraviz -- migrate-r2-hls                       # full run
+  npm run terraviz -- rollback-r2-hls <id> --to-vimeo=<n>  # roll one row back
+  ```
+  Both require `R2_S3_ENDPOINT` + `R2_ACCESS_KEY_ID` +
+  `R2_SECRET_ACCESS_KEY` in the operator's environment, plus
+  `TERRAVIZ_ACCESS_*` for the publisher API.
+
+- **New Pages env var (Production + Preview):** `R2_PUBLIC_BASE`
+  set to your custom domain (e.g. `https://video.zyra-project.org`).
+  Bind the domain in Cloudflare dashboard → R2 →
+  `terraviz-assets` → Settings → Connect Domain. Configure a CORS
+  policy on the bucket allowing GET from the SPA's origins.
+
+- **Re-import the Grafana dashboard** (`grafana/dashboards/product-health.json`)
+  to pick up version 7 with the migration row.
+
+- **Operator prereq:** FFmpeg ≥ 6 on PATH (or pass `--ffmpeg-bin`).
+  Apt: `apt-get install -y ffmpeg`. John Van Sickle static
+  binaries work on any glibc Linux for slim base images.
+
+### Phase 2 transition
+
+Phase 2 shipped as a draft PR targeting Cloudflare Stream but
+was abandoned after live testing revealed the standard Stream
+plan caps rendition output at 1080p height — a UX regression
+for spherical content under SPA zoom. The Phase 2 PR was
+closed unmerged; this Phase 3 branch supersedes it, branching
+fresh from `main` rather than off the Phase 2 work.
+
+Some of the operator workflow patterns (custom domains for
+asset serving, expected-bindings audit, runbook structure)
+carry forward from Phase 2's design exploration. The actual
+code surface is independent — Phase 2's `migrate-videos` and
+`rollback-stream` subcommands never landed; Phase 3 ships
+`migrate-r2-hls` + `rollback-r2-hls` as the production-going
+shape.
+
+### Storage cost calibration
+
+136 rows × ~1 min average × ~244 MB/min for the 3-rendition
+ladder ≈ ~33 GB total → ~$0.50/month flat at R2's $0.015/GB-month
+rate. Egress is free. Compared to Phase 2's $5/mo Stream base
+tier (which would have been needed regardless for 4K renditions
+at an Enterprise tier), R2 is significantly cheaper at any
+catalog size. Storage scales linearly with content duration;
+egress doesn't scale with viewer count.
+
+### No breaking changes
+
+The manifest endpoint resolves all four schemes (`vimeo:`,
+`url:`, `stream:`, `r2:`) — a row mid-migration plays through
+whichever scheme its current `data_ref` references. The SPA's
+HLS player handles both Vimeo-proxy HLS and R2-served HLS via
+the same `hlsService.ts` code path. No frontend changes.
+
+### Rollback
+
+Per-row rollback via `terraviz rollback-r2-hls`:
+
+```sh
+npm run terraviz -- rollback-r2-hls <dataset_id> --to-vimeo=<original_id>
+```
+
+PATCHes data_ref back to `vimeo:` first (commit point), then
+deletes the R2 bundle. If the DELETE fails the row is still
+correctly back on `vimeo:`; orphan R2 prefix stays for manual
+cleanup.
+
+### Out of scope (deferred)
+
+- **Server-side encoding pipeline.** Workers can't run FFmpeg;
+  Cloudflare's Media Transformations binding only downscales.
+  Phase 3 stays operator-side. If catalog growth makes one-shot
+  operator runs painful, a Phase 3b can add a transcoding
+  service (AWS MediaConvert, GCP Transcoder, or a dedicated
+  VM with FFmpeg).
+- **Signed URLs / access control.** R2 public-bucket serves
+  everything publicly. Fine for the SOS catalog (all public
+  datasets). For future private content, swap in a Worker
+  in front of R2.
+- **Live streaming.** Phase 3 is VOD-only.
+- **Image r2: migration.** Phase 1d's import lands images as
+  `url:` data_refs pointing at external CDNs. Migrating those
+  to R2 is a separate phase.
+- **Auxiliary asset migration (thumbnails, legends, SRT captions).**
+  Phase 3 touches only the video `data_ref`. The thumbnail /
+  legend / caption fields on each catalog row still point at
+  NOAA-hosted URLs. Migrating those to
+  `datasets/{id}/{thumbnail,legend,caption}.*` in the same R2
+  bucket is a Phase 3b-shaped follow-up — needed before
+  `/publish` can serve every dataset from a single origin and
+  before federation peers can mirror without reaching back to
+  noaa.gov. Shape sketched in
+  [`docs/CATALOG_ASSETS_PIPELINE.md`](docs/CATALOG_ASSETS_PIPELINE.md)
+  §"Legacy auxiliary-asset migration".
+- **Vimeo proxy retirement.** Stays running until the migration
+  is 100% complete AND has been observed for ≥1 month.
+- **4K renditions of already-migrated rows.** The rendition
+  decision is at encode time. Re-encoding a row requires
+  `rollback-r2-hls` + re-running `migrate-r2-hls`.
+
+---
+
 ## Phase 1f — Cutover stabilisation (PR #62)
 
 **Released:** May 2026

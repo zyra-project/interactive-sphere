@@ -639,6 +639,34 @@ Commands:
                                       when a token is set. --skip-publish-checks
                                       forces public-only.
 
+  migrate-r2-hls [--dry-run] [--limit=N] [--id=<id>] [--pace-ms=N]
+                 [--workdir=<path>] [--keep-workdir]
+                 [--ffmpeg-bin=<path>] [--proxy-base=<url>]
+                                      Operator pump that migrates legacy
+                                      vimeo:<id> data_refs to r2:<key> by
+                                      FFmpeg-encoding each source MP4 into a
+                                      4K + 1080p + 720p HLS bundle (2:1 aspect,
+                                      6 s segments) and uploading to R2 via the
+                                      S3 API. Requires ffmpeg on PATH (or
+                                      --ffmpeg-bin) and R2_S3_ENDPOINT /
+                                      R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+                                      in the environment. Idempotent — re-running
+                                      skips rows already on r2:. Always run
+                                      --dry-run first. See
+                                      CATALOG_BACKEND_DEVELOPMENT.md "Migrating
+                                      legacy Vimeo data refs to R2/HLS".
+
+  rollback-r2-hls <id> --to-vimeo=<vimeo_id> [--dry-run]
+                                      Roll a single migrated dataset back from
+                                      r2:videos/<id>/master.m3u8 to vimeo:<id>.
+                                      PATCHes data_ref first (commit point),
+                                      then deletes the R2 bundle (cleanup;
+                                      non-fatal). Use to back out a botched
+                                      migration or to re-encode at different
+                                      rendition settings. Requires the same R2
+                                      credentials as migrate-r2-hls for the
+                                      bundle deletion.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

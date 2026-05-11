@@ -1020,6 +1020,69 @@ export interface ErrorEvent extends TelemetryEventBase {
   count_in_batch: number
 }
 
+/** Outcome of a single row in the `terraviz migrate-r2-hls`
+ * pump. Mirrors the `MigrationOutcome` string-union type alias
+ * exported from `cli/migrate-r2-hls.ts`; keep these in sync. */
+export type MigrationR2HlsOutcome =
+  | 'ok'
+  | 'vimeo_fetch_failed'
+  | 'encode_failed'
+  | 'r2_upload_failed'
+  | 'data_ref_patch_failed'
+
+/**
+ * Operator-facing migration progress event. Emitted once per
+ * dataset row by `terraviz migrate-r2-hls` (Phase 3 commit C).
+ * One-shot — migration runs are operator-driven, not user
+ * sessions, so throttling is not needed.
+ *
+ * Consumed by the Grafana product-health migration row (commit
+ * 3/G). Three panels: per-day runs by outcome, cumulative count
+ * of `outcome='ok'` rows, and a failure breakdown table. The
+ * operator already knows the original vimeo: row count (~136 at
+ * Phase 3 cut-over) so the cumulative-ok stat is the headline —
+ * it should land at the original total once the migration is
+ * complete.
+ *
+ * No free-text fields — every field is a stable identifier or
+ * scalar. `dataset_id` / `legacy_id` / `vimeo_id` / `r2_key`
+ * are public catalog identifiers (the same values the catalog
+ * manifest endpoint exposes), so no hashing is required.
+ */
+export interface MigrationR2HlsEvent extends TelemetryEventBase {
+  event_type: 'migration_r2_hls'
+  /** Catalog dataset id (`DS<ulid>`) the migration targeted. */
+  dataset_id: string
+  /** Idempotency key from the original SOS import (e.g.
+   * `INTERNAL_SOS_768`); empty string when the row has no
+   * legacy_id. */
+  legacy_id: string
+  /** Source Vimeo numeric id (the value half of `vimeo:<id>`). */
+  vimeo_id: string
+  /** Resulting R2 master playlist key (e.g.
+   * `videos/<id>/master.m3u8`); empty string when the upload
+   * didn't reach completion. Captured even on
+   * `data_ref_patch_failed` so an orphan bundle is recoverable
+   * from the telemetry log via `terraviz rollback-r2-hls`. */
+  r2_key: string
+  /** Advertised source MP4 size in bytes, or 0 if unknown. */
+  source_bytes: number
+  /** Total bytes uploaded to R2 across all files in the bundle;
+   * 0 when the upload didn't complete. */
+  bundle_bytes: number
+  /** ffmpeg wall-clock encode duration in ms; 0 when the encode
+   * didn't run. */
+  encode_duration_ms: number
+  /** R2 upload wall-clock duration in ms; 0 when the upload
+   * didn't run. */
+  upload_duration_ms: number
+  /** Overall per-row wall-clock duration in ms (resolve +
+   * encode + upload + patch). */
+  duration_ms: number
+  /** Per-row outcome. See `MigrationR2HlsOutcome`. */
+  outcome: MigrationR2HlsOutcome
+}
+
 // --- Tier B events ---
 
 export interface DwellEvent extends TelemetryEventBase {
@@ -1152,6 +1215,7 @@ export type TelemetryEvent =
   | VrPlacementEvent
   | PerfSampleEvent
   | ErrorEvent
+  | MigrationR2HlsEvent
   // Tier B
   | DwellEvent
   | OrbitInteractionEvent

@@ -16,7 +16,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { encodeR2Key, resolveAssetRef, resolveR2PublicUrl } from './r2-public-url'
+import {
+  encodeR2Key,
+  resolveAssetRef,
+  resolveR2HlsPublicUrl,
+  resolveR2PublicUrl,
+} from './r2-public-url'
 import type { CatalogEnv } from './env'
 
 describe('resolveR2PublicUrl', () => {
@@ -91,6 +96,51 @@ describe('resolveAssetRef', () => {
     expect(resolveAssetRef(env, null)).toBeNull()
     expect(resolveAssetRef(env, undefined)).toBeNull()
     expect(resolveAssetRef(env, '')).toBeNull()
+  })
+})
+
+describe('resolveR2HlsPublicUrl', () => {
+  // The HLS branch of the manifest endpoint uses this stricter
+  // resolver instead of `resolveR2PublicUrl` so that a typical
+  // production setup (R2_S3_ENDPOINT set for signing PUTs, but
+  // bucket NOT publicly readable through that endpoint) surfaces
+  // as `r2_unconfigured` rather than handing the client a URL
+  // that 403s at HLS play time.
+  const KEY = 'videos/DS001/master.m3u8'
+
+  it('uses R2_PUBLIC_BASE when set', () => {
+    const env: CatalogEnv = {
+      R2_PUBLIC_BASE: 'https://video.example.com',
+      CATALOG_R2_BUCKET: 'terraviz-assets',
+    }
+    expect(resolveR2HlsPublicUrl(env, KEY)).toBe(`https://video.example.com/${KEY}`)
+  })
+
+  it('falls through to MOCK_R2 host when R2_PUBLIC_BASE is unset', () => {
+    const env: CatalogEnv = { MOCK_R2: 'true', CATALOG_R2_BUCKET: 'tv' }
+    expect(resolveR2HlsPublicUrl(env, KEY)).toBe(`https://mock-r2.localhost/tv/${KEY}`)
+  })
+
+  it('returns null when only R2_S3_ENDPOINT is configured', () => {
+    // The whole point of the stricter resolver: the S3-endpoint
+    // fallback that `resolveR2PublicUrl` performs is intentionally
+    // skipped here because that URL pattern doesn't produce a
+    // publicly-readable origin for HLS in a typical production
+    // deployment.
+    const env: CatalogEnv = {
+      R2_S3_ENDPOINT: 'https://acct.r2.cloudflarestorage.com',
+      CATALOG_R2_BUCKET: 'terraviz-assets',
+    }
+    expect(resolveR2HlsPublicUrl(env, KEY)).toBeNull()
+  })
+
+  it('returns null when nothing is configured', () => {
+    expect(resolveR2HlsPublicUrl({}, KEY)).toBeNull()
+  })
+
+  it('strips trailing slash from R2_PUBLIC_BASE', () => {
+    const env: CatalogEnv = { R2_PUBLIC_BASE: 'https://video.example.com/' }
+    expect(resolveR2HlsPublicUrl(env, KEY)).toBe(`https://video.example.com/${KEY}`)
   })
 })
 

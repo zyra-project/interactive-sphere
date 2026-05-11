@@ -470,6 +470,43 @@ Public-visibility datasets serve thumbnails through the bucket's
 public URL plus Cloudflare cache. Restricted datasets serve through
 the `/manifest` endpoint, which issues short-lived presigned URLs.
 
+### Legacy auxiliary-asset migration
+
+The shape above is what the publisher portal writes for new
+uploads, but the existing catalog rows imported from NOAA SOS
+(Phase 1d) carry thumbnails, legends, and SRT captions as
+absolute URLs to NOAA-hosted origins. Phase 3 migrated the
+*video* `data_ref` (vimeo → r2:videos/.../master.m3u8); the
+auxiliary assets are still served off external origins.
+
+A follow-up backfill — call it **Phase 3b** — is needed before
+the catalog is fully self-hosted and `/publish` / `/manifest`
+can rely on a single origin per dataset. The shape mirrors
+Phase 3:
+
+- A `terraviz migrate-r2-assets` CLI subcommand (or one per
+  asset class, depending on whether the auxiliary sources share
+  an origin).
+- Per-row pipeline: fetch the existing URL → PUT to
+  `datasets/{id}/thumbnail.{ext}` (or `legend.{ext}` /
+  `caption.vtt`) → PATCH the corresponding metadata column to
+  the new R2 URL → emit a `migration_r2_assets` telemetry event.
+- Idempotency by checking whether the metadata column already
+  points at the R2 public base.
+- Rollback subcommand symmetric to `rollback-r2-hls`.
+- Decision deferred: whether to convert SRT → VTT inline during
+  the captions migration (Stream's native track format is VTT;
+  the manifest endpoint already accepts either via
+  `caption_ref`), or leave as SRT and let downstream consumers
+  convert. Probably worth doing once during the migration so
+  every row ends up uniform.
+
+This is intentionally not on the Phase 3 critical path — the
+video migration unblocks 4K rendering, the auxiliary-asset
+migration unblocks a fully self-hosted `/publish` endpoint and
+NOAA-origin retirement. Both are needed before federation
+peers can mirror datasets without reaching back to noaa.gov.
+
 ## Tour assets
 
 Tour JSON is stored in R2 and referenced by `tours.tour_json_ref`.
