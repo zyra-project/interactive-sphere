@@ -272,3 +272,68 @@ export async function uploadToStream(
 
   return { streamUid, bytesUploaded, uploadUrl }
 }
+
+/**
+ * Error raised when `deleteStreamAsset` cannot remove the asset.
+ * The rollback CLI treats this as a soft failure — the data_ref
+ * PATCH has already landed by that point, so a delete failure
+ * just leaves an orphan Stream UID that the operator can clean
+ * up manually via the dashboard.
+ */
+export class StreamDeleteError extends Error {
+  readonly status: number | null
+  constructor(status: number | null, message: string) {
+    super(message)
+    this.name = 'StreamDeleteError'
+    this.status = status
+  }
+}
+
+export interface StreamDeleteOptions {
+  fetchImpl?: typeof fetch
+  apiBase?: string
+}
+
+/**
+ * Delete a Stream asset by uid. Treats 404 as success (idempotent
+ * — re-running a rollback that already cleaned up the asset is a
+ * no-op). Throws `StreamDeleteError` for any other non-2xx status
+ * or transport error so the caller can surface a clear log line.
+ */
+export async function deleteStreamAsset(
+  config: StreamUploadConfig,
+  uid: string,
+  options: StreamDeleteOptions = {},
+): Promise<void> {
+  if (!config.accountId || !config.apiToken) {
+    throw new StreamDeleteError(
+      null,
+      'STREAM_ACCOUNT_ID and STREAM_API_TOKEN must both be set to delete from Cloudflare Stream.',
+    )
+  }
+  if (!uid) {
+    throw new StreamDeleteError(null, 'uid is required.')
+  }
+  const fetchImpl = options.fetchImpl ?? fetch
+  const apiBase = (options.apiBase ?? CLOUDFLARE_STREAM_API_BASE).replace(/\/$/, '')
+  const url = `${apiBase}/accounts/${encodeURIComponent(config.accountId)}/stream/${encodeURIComponent(uid)}`
+  let res: Response
+  try {
+    res = await fetchImpl(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${config.apiToken}` },
+    })
+  } catch (e) {
+    throw new StreamDeleteError(
+      null,
+      `DELETE unreachable: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+  // 200 / 204 = deleted; 404 = already gone (idempotent).
+  if (res.status === 200 || res.status === 204 || res.status === 404) return
+  const text = await res.text().catch(() => '')
+  throw new StreamDeleteError(
+    res.status,
+    `DELETE failed (${res.status}): ${text.slice(0, 200) || '(no body)'}`,
+  )
+}

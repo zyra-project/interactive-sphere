@@ -655,6 +655,16 @@ Commands:
                                       CATALOG_BACKEND_DEVELOPMENT.md "Migrating
                                       legacy Vimeo data refs to Stream".
 
+  rollback-stream <id> --to-vimeo=<vimeo_id> [--dry-run]
+                                      Roll a single migrated dataset back from
+                                      stream:<uid> to vimeo:<vimeo_id>. PATCHes
+                                      data_ref first (commit point), then deletes
+                                      the Stream asset (cleanup; non-fatal). Use
+                                      when a re-encode at a different rendition
+                                      tier is needed, or to back out a botched
+                                      migration. Requires STREAM_ACCOUNT_ID +
+                                      STREAM_API_TOKEN for the asset deletion.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.zyra-project.org)
   --insecure-local                    Skip Access auth (use for localhost dev)

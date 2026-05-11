@@ -41,6 +41,7 @@ import {
 import { runImportSnapshot } from './import-snapshot'
 import { runVerifyDeploy } from './verify-deploy'
 import { runMigrateVideos } from './migrate-videos'
+import { runRollbackStream } from './rollback-stream'
 
 async function main(argv: string[]): Promise<number> {
   // Bare `-h` short flag — parseArgs only knows about `--`, so handle
@@ -104,6 +105,8 @@ async function main(argv: string[]): Promise<number> {
       return runVerifyDeploy(ctx, { config })
     case 'migrate-videos':
       return runMigrateVideos(ctx)
+    case 'rollback-stream':
+      return runRollbackStream(ctx)
     default:
       process.stderr.write(`Unknown command: ${command}\n\nRun \`terraviz help\` for usage.\n`)
       return 2

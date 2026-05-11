@@ -23,7 +23,12 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { StreamUploadError, uploadToStream } from './stream-upload'
+import {
+  StreamUploadError,
+  StreamDeleteError,
+  deleteStreamAsset,
+  uploadToStream,
+} from './stream-upload'
 
 const ACCOUNT = 'acc-12345'
 const TOKEN = 'tok-secret'
@@ -321,5 +326,98 @@ describe('uploadToStream — error envelopes', () => {
         { fetchImpl },
       ),
     ).rejects.toMatchObject({ stage: 'upload' })
+  })
+})
+
+describe('deleteStreamAsset (2/R)', () => {
+  const UID = 'abc123uid'
+
+  it('DELETEs the Stream asset against the canonical endpoint', async () => {
+    let captured: { url: string; init: RequestInit } | null = null
+    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
+      captured = { url, init }
+      return new Response(null, { status: 200 })
+    })
+    await deleteStreamAsset(
+      { accountId: ACCOUNT, apiToken: TOKEN },
+      UID,
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    expect(captured!.url).toBe(
+      `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/stream/${UID}`,
+    )
+    expect(captured!.init.method).toBe('DELETE')
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers.Authorization).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('treats 204 as success (canonical DELETE response)', async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }))
+    await expect(
+      deleteStreamAsset(
+        { accountId: ACCOUNT, apiToken: TOKEN },
+        UID,
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('treats 404 as success (idempotent — asset already gone)', async () => {
+    const fetchImpl = vi.fn(async () => new Response('not found', { status: 404 }))
+    await expect(
+      deleteStreamAsset(
+        { accountId: ACCOUNT, apiToken: TOKEN },
+        UID,
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('throws StreamDeleteError on non-2xx / non-404', async () => {
+    const fetchImpl = vi.fn(async () => new Response('forbidden', { status: 403 }))
+    await expect(
+      deleteStreamAsset(
+        { accountId: ACCOUNT, apiToken: TOKEN },
+        UID,
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).rejects.toMatchObject({ name: 'StreamDeleteError', status: 403 })
+  })
+
+  it('throws StreamDeleteError on transport failure', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('connection refused')
+    })
+    await expect(
+      deleteStreamAsset(
+        { accountId: ACCOUNT, apiToken: TOKEN },
+        UID,
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).rejects.toMatchObject({ name: 'StreamDeleteError', status: null })
+  })
+
+  it('refuses to call out without STREAM credentials', async () => {
+    const fetchImpl = vi.fn()
+    await expect(
+      deleteStreamAsset(
+        { accountId: '', apiToken: TOKEN },
+        UID,
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).rejects.toBeInstanceOf(StreamDeleteError)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('refuses when uid is empty', async () => {
+    const fetchImpl = vi.fn()
+    await expect(
+      deleteStreamAsset(
+        { accountId: ACCOUNT, apiToken: TOKEN },
+        '',
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).rejects.toBeInstanceOf(StreamDeleteError)
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })

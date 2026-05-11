@@ -914,21 +914,59 @@ UID is minted, the upload is re-driven, the data_ref patches.
 
 #### Rollback
 
-There is no `--reverse` flag (deferred to a follow-on commit if it
-ever proves common). Single-row rollback is a manual data_ref
-update via the existing PUT route:
+Single-row rollback is automated via `terraviz rollback-stream`
+(commit 2/R, added after a live migration revealed the rendition
+ceiling on the standard Stream plan):
 
 ```sh
-npm run terraviz -- update <dataset_id> '{"data_ref":"vimeo:<original_id>"}'
+npm run terraviz -- rollback-stream <dataset_id> --to-vimeo=<original_id> --dry-run
+npm run terraviz -- rollback-stream <dataset_id> --to-vimeo=<original_id>
 ```
 
-The manifest endpoint resolves both schemes, so reverting a row to
-`vimeo:` immediately restores proxy-based playback.
+The tool PATCHes `data_ref` back to `vimeo:<id>` first (the commit
+point — once this succeeds, the SPA's manifest endpoint resolves
+the row through the Vimeo proxy again), then deletes the Stream
+asset (cleanup; non-fatal). If the Stream DELETE fails, the row
+is still correctly back on `vimeo:`; only an orphan Stream UID is
+left behind for manual cleanup.
 
-Stream UIDs are not easily deletable from the operator side — the
-dashboard's delete is a soft-delete that becomes hard-delete after
-~30 days. If you need to immediately free the storage line item,
-use the Stream API's DELETE endpoint via the same `STREAM_API_TOKEN`.
+The operator provides the original `vimeo:<id>` explicitly — the
+tool is intentionally deploy-agnostic and doesn't try to recover
+the id from the SOS snapshot. You can find the original id by
+grepping the migration's stdout log, or by looking at the dataset's
+`legacy_id` in the publisher API and cross-referencing
+`public/assets/sos-dataset-list.json`.
+
+For bulk rollback (e.g., backing out an entire migration run),
+script a shell loop around the per-id invocation. The brief
+deferred bulk rollback to "if it proves common"; if it does, a
+follow-on can wrap this with a list-of-ids input.
+
+#### Known limitations: Stream rendition ceiling
+
+The standard Cloudflare Stream plan ($5/mo) caps rendition output
+at **1080p height** regardless of source resolution. A 4K source
+will be transcoded into a 1080p / 720p / 480p / 360p / 240p
+rendition ladder (with the top rendition stretched to the source's
+aspect ratio — e.g. 2160x1080 for a 4096x2048 equirectangular
+spherical source).
+
+Higher renditions (1440p / 4K / 8K) require either:
+
+  - A Cloudflare Stream plan-tier upgrade (Enterprise or a
+    rendition-quality add-on, depending on what Cloudflare's
+    current offering is). Per-minute storage and delivery
+    pricing typically changes alongside.
+  - A separate self-hosted HLS pipeline for the highest-tier
+    renditions (out of scope here — would be a Phase 3 effort).
+
+The rendition decision is made at upload time. Changing the
+account-level rendition setting (if/when it becomes available)
+does NOT re-encode existing uploads — already-migrated rows
+stay at their original rendition ceiling unless deleted and
+re-uploaded. Use `terraviz rollback-stream` to back out a row,
+then re-run `terraviz migrate-videos --id=<id>` after the
+rendition setting is in place.
 
 #### Pacing
 
