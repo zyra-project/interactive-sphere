@@ -184,10 +184,19 @@ async function rollbackOne(
 
   // Stage 2 — delete the R2 bundle (cleanup; non-fatal).
   if (!r2Config.endpoint || !r2Config.accessKeyId || !r2Config.secretAccessKey) {
+    const msg = `R2 credentials unset — leaving orphan ${keyPrefix}/ in R2.`
     ctx.stderr.write(
-      `! R2 credentials unset — leaving orphan ${keyPrefix}/ in R2.\n` +
+      `! ${msg}\n` +
         `  data_ref is correctly on vimeo:; delete the orphan via the Cloudflare dashboard or API if needed.\n`,
     )
+    // Same artifact as the throw-path below — PATCH committed,
+    // R2 prefix is orphaned. Reporting both under `delete_failed`
+    // means the bulk-mode summary's "ok (orphan R2 prefix)" line
+    // counts every orphan an operator has to clean up later,
+    // regardless of whether the DELETE was skipped (creds unset)
+    // or attempted-and-failed.
+    result.outcome = 'delete_failed'
+    result.errorMessage = msg
     return result
   }
   try {

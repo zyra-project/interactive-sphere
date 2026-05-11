@@ -53,7 +53,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CommandContext } from './commands'
 import { getBool, getString } from './lib/args'
-import { isRealtimeTitle } from './migrate-r2-hls'
+import { isRealtimeTitle } from './lib/realtime-title'
 
 const LIST_PAGE_LIMIT = 200
 const DEFAULT_SNAPSHOT_PATH = 'public/assets/sos-dataset-list.json'

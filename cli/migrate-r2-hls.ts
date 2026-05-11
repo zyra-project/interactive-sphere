@@ -86,6 +86,7 @@ import {
 import { makeMigrationTelemetryEmitter, type TelemetryEventPayload } from './lib/migration-telemetry'
 import type { CommandContext } from './commands'
 import { getString, getNumber, getBool, getBoolDefault } from './lib/args'
+import { isRealtimeTitle } from './lib/realtime-title'
 
 /** A single row from the publisher list response, narrowed to the
  * fields the migration cares about. */
@@ -114,22 +115,6 @@ interface DatasetUpdateEnvelope {
 const LIST_PAGE_LIMIT = 200
 const DEFAULT_PACE_MS = 1_000
 const DEFAULT_WORKDIR_ROOT = '/tmp/terraviz-hls'
-
-/**
- * Heuristic to identify rows whose Vimeo source is re-uploaded
- * by NOAA on a recurring cadence. The SOS catalog has no explicit
- * `update_cadence` field — the only reliable signal is the literal
- * substring "Real-time" in the row title (e.g. "Sea Surface
- * Temperature - Real-time"). ~40 rows match across the full
- * catalog. The pattern accepts the hyphenated, space-separated,
- * and joined forms case-insensitively because publisher-side
- * editors aren't strictly consistent.
- */
-export const REALTIME_TITLE_PATTERN = /real[-\s]?time/i
-
-export function isRealtimeTitle(title: string): boolean {
-  return REALTIME_TITLE_PATTERN.test(title)
-}
 
 /**
  * Crude bytes-per-minute estimate for the 4K + 1080p + 720p HLS

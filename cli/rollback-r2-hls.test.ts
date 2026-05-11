@@ -512,6 +512,38 @@ describe('runRollbackR2Hls — --from-stdin bulk mode (3a/C)', () => {
     expect(out.text()).toContain('Bulk rollback: 1 row(s) from stdin.')
   })
 
+  it('counts unset R2 creds the same as DELETE-throws in bulk mode (orphan accounting)', async () => {
+    // Copilot review caught this: previously creds-unset returned
+    // outcome=ok, so the bulk-mode summary under-reported the
+    // orphan R2 prefixes (they showed under `ok` instead of
+    // `ok (orphan R2 prefix)`). PATCH committed → catalog correct,
+    // but the operator still has an orphan to clean up. Both the
+    // throw-path and the skip-path now report as delete_failed
+    // so the orphan count is accurate.
+    const { client } = bulkClient([ROW_A])
+    const deleteR2Prefix = vi.fn()
+    // Empty creds config — simulates the operator running
+    // bulk rollback without R2_S3_ENDPOINT / keys in env.
+    const emptyR2Config: R2UploadConfig = {
+      endpoint: '',
+      accessKeyId: '',
+      secretAccessKey: '',
+      bucket: 'terraviz-assets',
+    }
+    const stdin = JSON.stringify({ dataset_id: ROW_A.id, vimeo_id: '111' }) + '\n'
+    const { ctx, out, err } = makeCtx(client, [], { 'from-stdin': true })
+    const code = await runRollbackR2Hls(ctx, {
+      r2Config: emptyR2Config,
+      deleteR2Prefix,
+      readStdin: async () => stdin,
+    })
+    expect(code).toBe(0) // delete_failed is non-fatal in bulk mode
+    expect(deleteR2Prefix).not.toHaveBeenCalled() // skipped, never attempted
+    expect(out.text()).toContain('ok:                       0')
+    expect(out.text()).toContain('ok (orphan R2 prefix):    1')
+    expect(err.text()).toContain('R2 credentials unset')
+  })
+
   it('delete_failed in bulk mode is non-fatal — counted under "ok (orphan R2 prefix)"', async () => {
     // PATCH succeeds; the R2 prefix DELETE throws. The single-row
     // path treats this as exit 0 (catalog correct, orphan storage
