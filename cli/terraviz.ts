@@ -40,6 +40,7 @@ import {
 } from './commands'
 import { runImportSnapshot } from './import-snapshot'
 import { runVerifyDeploy } from './verify-deploy'
+import { runMigrateR2Hls } from './migrate-r2-hls'
 
 async function main(argv: string[]): Promise<number> {
   // Bare `-h` short flag — parseArgs only knows about `--`, so handle
@@ -101,6 +102,8 @@ async function main(argv: string[]): Promise<number> {
       return runImportSnapshot(ctx)
     case 'verify-deploy':
       return runVerifyDeploy(ctx, { config })
+    case 'migrate-r2-hls':
+      return runMigrateR2Hls(ctx)
     default:
       process.stderr.write(`Unknown command: ${command}\n\nRun \`terraviz help\` for usage.\n`)
       return 2
