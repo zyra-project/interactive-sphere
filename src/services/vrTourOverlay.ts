@@ -60,6 +60,7 @@
  */
 
 import type * as THREE from 'three'
+import { t } from '../i18n'
 import type {
   PlayVideoTaskParams,
   ShowImageTaskParams,
@@ -1025,7 +1026,7 @@ function drawQuestionPanel(
     ctx.font = '500 28px system-ui, -apple-system, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('Loading question\u2026', w / 2, h / 2)
+    ctx.fillText(t('tour.question.loading'), w / 2, h / 2)
     state.answerRects = []
     state.continueRect = null
     return
@@ -1112,7 +1113,7 @@ function drawQuestionPanel(
     ctx.font = '600 32px system-ui, -apple-system, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('Continue', px.x + px.w / 2, px.y + px.h / 2 + 2)
+    ctx.fillText(t('tour.question.continue'), px.x + px.w / 2, px.y + px.h / 2 + 2)
     state.answerRects = []
     state.continueRect = pxToUv(px)
     return

@@ -33,5 +33,9 @@
   "tour.legend.alt": "Alt text for tour legend images. Describes the legend; not visible text.",
   "tour.question.alt": "Alt text for tour question icons. Indicates this is a question prompt; not visible text.",
   "tour.question.answer.alt": "Alt text for tour answer icons. Indicates this is an answer; not visible text.",
-  "tour.question.answer.aria": "ARIA label for tour answer buttons. {n} is the answer number (1, 2, 3…). Read aloud by screen readers when the button is focused; not visible text."
+  "tour.question.answer.aria": "ARIA label for tour answer buttons. {n} is the answer number (1, 2, 3…). Read aloud by screen readers when the button is focused; not visible text.",
+  "tour.question.loading": "Placeholder text shown briefly on the VR tour-question overlay while the question image is still being fetched. Keep short — drawn into a fixed canvas.",
+  "vr.controllerTooltip.grip": "Floating tooltip above the user's VR controllers indicating what the grip button does. Keep short — drawn into a fixed-size canvas above each hand. 'Grip' refers to the squeeze button on the side of a VR controller.",
+  "vr.controllerTooltip.thumbstick": "Floating tooltip above the user's VR controllers indicating what the thumbstick does. Keep short — drawn into a fixed-size canvas above each hand.",
+  "vr.controllerTooltip.trigger": "Floating tooltip above the user's VR controllers indicating what the trigger does. Keep short — drawn into a fixed-size canvas above each hand. 'Trigger' refers to the index-finger button on a VR controller."
 }

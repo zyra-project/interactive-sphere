@@ -29,6 +29,7 @@ import type { VrTourInteractiveAction, VrTourOverlayHandle } from './vrTourOverl
 import { MAX_GLOBE_SCALE, MIN_GLOBE_SCALE } from './vrScene'
 import { logger } from '../utils/logger'
 import { emit } from '../analytics'
+import { t } from '../i18n'
 import type { VrGesture } from '../types'
 
 /** Per-gesture rate cap. Tier B `vr_interaction` events fire once
@@ -340,9 +341,9 @@ function buildControllerTooltip(THREE_: typeof THREE): THREE.Sprite {
   ctx.font = '500 38px system-ui, -apple-system, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('Trigger: rotate', 256, 58)
-  ctx.fillText('Grip: exit', 256, 128)
-  ctx.fillText('Thumbstick: zoom', 256, 198)
+  ctx.fillText(t('vr.controllerTooltip.trigger'), 256, 58)
+  ctx.fillText(t('vr.controllerTooltip.grip'), 256, 128)
+  ctx.fillText(t('vr.controllerTooltip.thumbstick'), 256, 198)
 
   const texture = new THREE_.CanvasTexture(canvas)
   texture.colorSpace = THREE_.SRGBColorSpace

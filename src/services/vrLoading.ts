@@ -17,6 +17,7 @@
  */
 
 import type * as THREE from 'three'
+import { t } from '../i18n'
 
 /** Anchor in local-floor space — same spot the globe will occupy when ready. */
 const LOADING_POSITION = { x: 0, y: 1.3, z: -1.5 }
@@ -99,10 +100,18 @@ function drawTitle(ctx: CanvasRenderingContext2D): void {
     x += letterWidth * 0.55 + letterSpacingPx
   }
 
-  // Subtitle in accent
+  // Subtitle in accent. The 2D version applies `text-transform:
+  // uppercase` to the same `loading.subtitle` key; canvas can't
+  // do CSS so we uppercase via `toLocaleUpperCase()` against the
+  // active locale. Scripts without case (Arabic, CJK, etc.) pass
+  // through unchanged.
   ctx.fillStyle = '#4da6ff'
   ctx.font = '500 32px system-ui, -apple-system, sans-serif'
-  ctx.fillText('SCIENCE ON A SPHERE', TITLE_CANVAS_WIDTH / 2, TITLE_CANVAS_HEIGHT / 2 + 64)
+  ctx.fillText(
+    t('loading.subtitle').toLocaleUpperCase(),
+    TITLE_CANVAS_WIDTH / 2,
+    TITLE_CANVAS_HEIGHT / 2 + 64,
+  )
 }
 
 /** Draw the status text canvas. */
