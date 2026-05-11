@@ -95,7 +95,10 @@ export const DEFAULT_AUDIO_BITRATE_KBPS = 192
 export const MASTER_PLAYLIST_NAME = 'master.m3u8'
 
 export interface EncodeHlsOptions {
-  /** Source MP4 file path. Must exist. */
+  /** Source MP4 — either a local file path (must exist) or an
+   * http(s) URL that ffmpeg fetches itself. The Phase 3 migration
+   * passes the video-proxy URL directly so the bytes never touch
+   * the operator's disk on the input side. */
   inputPath: string
   /** Output directory. Created (recursively) if missing. */
   outputDir: string
@@ -233,7 +236,16 @@ export function buildFfmpegArgs(
  * playlist.
  */
 export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> {
-  if (!existsSync(options.inputPath)) {
+  // `inputPath` accepts either a local file path or an http(s)
+  // URL — ffmpeg reads both. The pre-flight existence check only
+  // applies to local paths; URLs are validated by ffmpeg at fetch
+  // time (a 4xx/5xx upstream surfaces as a non-zero exit + stderr
+  // tail, which already produces a clean FfmpegError).
+  //
+  // The Phase 3 migrate-r2-hls subcommand passes the video-proxy's
+  // MP4 URL directly here so ffmpeg streams it without an
+  // intermediate disk write.
+  if (!isHttpUrl(options.inputPath) && !existsSync(options.inputPath)) {
     throw new Error(`encodeHls: input ${options.inputPath} does not exist`)
   }
   mkdirSync(options.outputDir, { recursive: true })
@@ -351,6 +363,12 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
       })
     })
   })
+}
+
+/** True when `inputPath` is an http(s) URL ffmpeg will fetch
+ * over the network rather than read from disk. */
+function isHttpUrl(inputPath: string): boolean {
+  return /^https?:\/\//i.test(inputPath)
 }
 
 /** Concatenate the captured stderr lines and return the last N

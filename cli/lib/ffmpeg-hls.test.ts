@@ -288,6 +288,65 @@ describe('encodeHls', () => {
     ).rejects.toThrow(/does not exist/)
   })
 
+  it('skips the local-existence check when inputPath is an http(s) URL (3/J)', async () => {
+    // The Phase 3 migrate-r2-hls subcommand passes the
+    // video-proxy URL directly to ffmpeg via -i. The pre-flight
+    // existsSync check (3/A) was rejecting these as
+    // "does not exist" before reaching the spawn — this is the
+    // regression that surfaced on the first live single-row run.
+    const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
+    try {
+      let capturedArgs: readonly string[] | null = null
+      const child = makeFakeChild()
+      const spawnImpl = vi.fn((_cmd: string, args: readonly string[]) => {
+        capturedArgs = args
+        setTimeout(() => {
+          writeFileSync(join(tmp, MASTER_PLAYLIST_NAME), '#EXTM3U\n')
+          child.emit('close', 0, null)
+        }, 0)
+        return child as unknown as ReturnType<typeof import('node:child_process').spawn>
+      })
+      const url = 'https://video-proxy.example.org/video/808489116/file.mp4'
+      const result = await encodeHls({
+        inputPath: url,
+        outputDir: tmp,
+        spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+      })
+      expect(spawnImpl).toHaveBeenCalledOnce()
+      // The URL is passed through to ffmpeg as -i.
+      expect(capturedArgs).not.toBeNull()
+      const iIdx = (capturedArgs as unknown as string[]).indexOf('-i')
+      expect(iIdx).toBeGreaterThanOrEqual(0)
+      expect((capturedArgs as unknown as string[])[iIdx + 1]).toBe(url)
+      expect(result.masterPlaylistPath).toBe(join(tmp, MASTER_PLAYLIST_NAME))
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('matches the URL check case-insensitively (HTTP:// works too)', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
+    try {
+      const child = makeFakeChild()
+      const spawnImpl = vi.fn(() => {
+        setTimeout(() => {
+          writeFileSync(join(tmp, MASTER_PLAYLIST_NAME), '#EXTM3U\n')
+          child.emit('close', 0, null)
+        }, 0)
+        return child as unknown as ReturnType<typeof import('node:child_process').spawn>
+      })
+      // Same pre-flight skip should fire for uppercase scheme.
+      await encodeHls({
+        inputPath: 'HTTPS://example.org/x.mp4',
+        outputDir: tmp,
+        spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+      })
+      expect(spawnImpl).toHaveBeenCalledOnce()
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   it('creates the output dir + per-rendition subdirs before spawning ffmpeg', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
     const input = join(tmp, 'in.mp4')
