@@ -22,7 +22,7 @@
  * someone asks.
  */
 
-import { isImmersiveVrSupported, isImmersiveArSupported } from '../utils/vrCapability'
+import { isImmersiveVrSupported, isImmersiveArSupported, classifyXrDevice } from '../utils/vrCapability'
 import { enterImmersive, loadThree, type VrMode, type VrSessionContext } from '../services/vrSession'
 import { pauseForVrEntry, resumeForVrExit, TELEMETRY_BUILD_ENABLED } from '../analytics'
 import { getExperimentalFlag } from '../utils/experimentalFlags'
@@ -33,17 +33,14 @@ const BUTTON_ID = 'vr-enter-btn'
 
 /** Heuristic match for "this device's AR session will use screen-tap
  *  input." There's no pre-session API to learn the input archetype,
- *  so we infer from the UA: Android + ARCore Chrome → screen. False
- *  positives are bounded — Quest's UA contains "Quest", not "Android"
- *  alone (and Quest browsers expose `Mobile` differently), so the
- *  Android-only test won't catch it. False negatives (other handheld-
- *  AR devices) just see the existing default-on behaviour, same as
- *  before this opt-in was added. */
+ *  so we infer from the UA. Reuses `classifyXrDevice` so the bucket
+ *  is consistent with telemetry and so controller-class Android
+ *  headsets (Pico, Quest) correctly fall through — `classifyXrDevice`
+ *  matches `Pico`, `Quest`, `HoloLens`, `Magic Leap`, `Vision` before
+ *  the Android-AR catch-all, so a Pico Neo 4 UA containing both
+ *  `Pico` and `Android` resolves to `pico`, not `android-ar`. */
 export function isHandheldArUserAgent(ua: string): boolean {
-  // `Quest` first so its compound UA (which can include both
-  // `Android` and `Quest` substrings) lands in the controller bucket.
-  if (/Quest/i.test(ua)) return false
-  return /Android/i.test(ua)
+  return classifyXrDevice(ua, 'ar') === 'android-ar'
 }
 
 /**

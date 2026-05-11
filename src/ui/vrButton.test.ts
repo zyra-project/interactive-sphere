@@ -21,10 +21,20 @@ describe('isHandheldArUserAgent', () => {
   })
 
   it('does NOT match a Quest browser UA even though it contains Android', () => {
-    // Quest's UA carries both `Android` and `Quest`. The helper
-    // disambiguates by checking for `Quest` first; otherwise the gate
-    // would hide Enter AR on the reference platform.
+    // Quest's UA carries both `Android` and `Quest`. classifyXrDevice
+    // resolves the conflict by matching `Quest` before the Android-AR
+    // catch-all; otherwise the gate would hide Enter AR on the
+    // reference platform.
     const ua = 'Mozilla/5.0 (Linux; Android 12; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/30.0 Chrome/120.0.0.0 VR Safari/537.36'
+    expect(isHandheldArUserAgent(ua)).toBe(false)
+  })
+
+  it('does NOT match a Pico headset UA even though it contains Android', () => {
+    // Pico's UA also includes Android. Same disambiguation rule —
+    // classifyXrDevice matches `Pico` first, so the controller-class
+    // headset doesn't get its Enter AR button hidden behind the
+    // phone opt-in. Caught in Copilot review of #96.
+    const ua = 'Mozilla/5.0 (Linux; Android 12; Pico Neo 4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile VR Safari/537.36'
     expect(isHandheldArUserAgent(ua)).toBe(false)
   })
 

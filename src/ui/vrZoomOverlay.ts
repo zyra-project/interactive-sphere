@@ -108,26 +108,30 @@ export function createVrZoomOverlay(opts: VrZoomOverlayOptions): VrZoomOverlayHa
 
   let mounted = false
 
-  return {
-    mount(parent) {
-      if (mounted) return
-      parent.appendChild(host)
-      mounted = true
-    },
-    unmount() {
-      if (!mounted) return
-      host.parentElement?.removeChild(host)
-      mounted = false
-    },
-    setScale(scale) {
-      slider.value = String(
-        Math.round(scaleToSlider(scale, opts.minScale, opts.maxScale) * 1000),
-      )
-    },
-    dispose() {
-      slider.removeEventListener('input', onInput)
-      slider.removeEventListener('change', onInput)
-      this.unmount()
-    },
+  // Closed-over helpers so the handle methods don't depend on `this`
+  // binding — callers can destructure (e.g. `const { dispose } = handle`)
+  // without losing the receiver, which would otherwise throw on
+  // dispose. Caught in Copilot review of #96.
+  function mount(parent: HTMLElement): void {
+    if (mounted) return
+    parent.appendChild(host)
+    mounted = true
   }
+  function unmount(): void {
+    if (!mounted) return
+    host.parentElement?.removeChild(host)
+    mounted = false
+  }
+  function setScale(scale: number): void {
+    slider.value = String(
+      Math.round(scaleToSlider(scale, opts.minScale, opts.maxScale) * 1000),
+    )
+  }
+  function dispose(): void {
+    slider.removeEventListener('input', onInput)
+    slider.removeEventListener('change', onInput)
+    unmount()
+  }
+
+  return { mount, unmount, setScale, dispose }
 }

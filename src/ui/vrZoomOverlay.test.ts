@@ -106,6 +106,17 @@ describe('vrZoomOverlay', () => {
     expect(onZoom).not.toHaveBeenCalled()
   })
 
+  it('dispose() works when destructured off the handle (no `this` binding)', () => {
+    // Regression for Copilot review of #96 — a `this.unmount()` body
+    // would throw with TypeError once `dispose` is detached from the
+    // handle object. Verify the destructured form works.
+    const { handle } = makeHandle()
+    handle.mount(document.body)
+    const { dispose } = handle
+    expect(() => dispose()).not.toThrow()
+    expect(document.querySelector('.vr-zoom-overlay')).toBeNull()
+  })
+
   it('uses logical inline-axis positioning for RTL safety (className probe)', () => {
     // Snapshot: the host carries the .vr-zoom-overlay class, whose
     // CSS uses inset-inline-end (verified by inspection in vr.css).

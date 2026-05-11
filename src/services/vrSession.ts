@@ -480,11 +480,21 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       ...(optionalFeatures.length > 0 ? { optionalFeatures } : {}),
     })
   } catch (err) {
-    // Some UAs (notably HoloLens 2 Edge in early builds, and certain
-    // WebXR polyfills) refuse `local-floor` outright. Retry with the
-    // weaker `local` reference space so the session still starts. The
-    // downstream code adjusts GLOBE_POSITION and the anchor ref-space
-    // to match — no other call site needs to know the difference.
+    // Only retry on a feature-unsupported failure (HoloLens 2 Edge in
+    // early builds, certain WebXR polyfills). Permission denial,
+    // transient hardware errors, and any other failure mode propagate
+    // as-is — re-prompting the user a second time would be both
+    // annoying and confusing, and would mask the original error. The
+    // narrowed retry also keeps `vr_session_started.entry_load_ms`
+    // honest on the user-denial path (otherwise a deny → retry →
+    // deny would double the latency).
+    const isFeatureUnsupported =
+      err instanceof DOMException && err.name === 'NotSupportedError'
+    if (!isFeatureUnsupported) {
+      canvas.remove()
+      renderer.dispose()
+      throw err instanceof Error ? err : new Error(String(err))
+    }
     logger.debug('[VR] local-floor unavailable, retrying with local:', err)
     try {
       session = await navigator.xr.requestSession(sessionMode, {
