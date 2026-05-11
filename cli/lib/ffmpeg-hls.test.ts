@@ -68,14 +68,18 @@ describe('buildFfmpegArgs', () => {
   })
 
   it('encodes one shared audio track for all variants', () => {
-    const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192)
+    const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192, true)
     expect(args).toContain('-c:a')
     expect(args[args.indexOf('-c:a') + 1]).toBe('aac')
     expect(args).toContain('-b:a')
     expect(args[args.indexOf('-b:a') + 1]).toBe('192k')
-    // -map 'a:0?' marks audio as optional so silent sources don't fail.
+    // The 3/K refactor switched from `-map 'a:0?'` (optional) to
+    // `-map 'a:0'` (strict) because the audio-present path now
+    // gates on probeHasAudio's result. var_stream_map's `a:0`
+    // reference has no optional syntax, so the strict map keeps
+    // the two halves consistent.
     const audioMapIdx = args.findIndex(
-      (a, i) => a === '-map' && args[i + 1] === 'a:0?',
+      (a, i) => a === '-map' && args[i + 1] === 'a:0',
     )
     expect(audioMapIdx).toBeGreaterThanOrEqual(0)
   })
@@ -121,17 +125,43 @@ describe('buildFfmpegArgs', () => {
     expect(DEFAULT_RENDITIONS[1].height).toBe(1080)
     expect(DEFAULT_RENDITIONS[2].height).toBe(720)
   })
+
+  it('omits audio mapping + var_stream_map a:0 when hasAudio=false (3/K)', () => {
+    // SOS spherical videos are typically silent. With hasAudio=
+    // false the argv must not include `-c:a` / `-b:a` / audio
+    // map, and var_stream_map must not reference a:0 — otherwise
+    // ffmpeg's HLS muxer fails with "Unable to map stream at a:0".
+    const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192, false)
+    expect(args).not.toContain('-c:a')
+    expect(args).not.toContain('-b:a')
+    expect(args).not.toContain('-ac')
+    // Audio output map gone.
+    expect(args.findIndex((a, i) => a === '-map' && args[i + 1] === 'a:0?')).toBe(-1)
+    expect(args.findIndex((a, i) => a === '-map' && args[i + 1] === 'a:0')).toBe(-1)
+    // var_stream_map is video-only.
+    expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0 v:1 v:2')
+  })
+
+  it('includes audio mapping by default (hasAudio implicit true)', () => {
+    const args = buildFfmpegArgs('/in.mp4', '/out', RENDITIONS, 6, 192)
+    expect(args).toContain('-c:a')
+    expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:0 v:2,a:0')
+  })
 })
 
 /** Fake child_process matching the subset of the API encodeHls uses. */
 interface FakeChild extends EventEmitter {
-  stdout: EventEmitter
+  stdout: EventEmitter & { setEncoding: (enc: string) => void }
   stderr: EventEmitter & { setEncoding: (enc: string) => void }
 }
 
 function makeFakeChild(): FakeChild {
   const child = new EventEmitter() as FakeChild
-  child.stdout = new EventEmitter()
+  // Both stdout + stderr need setEncoding because probeHasAudio
+  // calls it on stdout and the encode path calls it on stderr.
+  const stdout = new EventEmitter() as FakeChild['stdout']
+  stdout.setEncoding = () => {}
+  child.stdout = stdout
   const stderr = new EventEmitter() as FakeChild['stderr']
   stderr.setEncoding = () => {}
   child.stderr = stderr
@@ -185,6 +215,10 @@ function runWithStub(
     inputPath,
     outputDir,
     spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+    // Bypass the ffprobe audio check — tests assert encode
+    // behavior, not the probe wiring. The probe gets its own
+    // dedicated test below.
+    hasAudio: true,
     onProgress: line => stderr.push(line),
   })
   return { promise, spawnImpl, stderr }
@@ -311,6 +345,7 @@ describe('encodeHls', () => {
         inputPath: url,
         outputDir: tmp,
         spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+        hasAudio: true,
       })
       expect(spawnImpl).toHaveBeenCalledOnce()
       // The URL is passed through to ffmpeg as -i.
@@ -340,6 +375,7 @@ describe('encodeHls', () => {
         inputPath: 'HTTPS://example.org/x.mp4',
         outputDir: tmp,
         spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+        hasAudio: true,
       })
       expect(spawnImpl).toHaveBeenCalledOnce()
     } finally {
@@ -365,12 +401,133 @@ describe('encodeHls', () => {
         inputPath: input,
         outputDir,
         spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+        hasAudio: true,
       })
       // Three rendition subdirs (default ladder).
       const { existsSync } = await import('node:fs')
       expect(existsSync(join(outputDir, 'stream_0'))).toBe(true)
       expect(existsSync(join(outputDir, 'stream_1'))).toBe(true)
       expect(existsSync(join(outputDir, 'stream_2'))).toBe(true)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('probes for audio via ffprobe when hasAudio is unset (3/K)', async () => {
+    // Simulate ffprobe returning empty stdout — i.e., no audio
+    // stream — and verify that encodeHls's resulting argv omits
+    // the audio mapping. This is the failure mode the live
+    // single-row Tsunami run surfaced: the SOS spherical source
+    // had no audio track, and the static `var_stream_map a:0`
+    // reference broke the HLS muxer.
+    const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
+    const input = join(tmp, 'in.mp4')
+    writeFileSync(input, 'fake-mp4')
+    try {
+      let ffmpegArgs: readonly string[] | null = null
+      const spawnImpl = vi.fn((cmd: string, args: readonly string[]) => {
+        const child = makeFakeChild()
+        if (cmd.endsWith('ffprobe')) {
+          // ffprobe — return empty stdout (no audio stream) + exit 0.
+          setTimeout(() => {
+            child.stdout.emit('data', '')
+            child.emit('close', 0, null)
+          }, 0)
+        } else {
+          // ffmpeg — capture argv + simulate a clean encode.
+          ffmpegArgs = args
+          setTimeout(() => {
+            child.stderr.emit('end')
+            writeFileSync(join(tmp, MASTER_PLAYLIST_NAME), '#EXTM3U\n')
+            child.emit('close', 0, null)
+          }, 0)
+        }
+        return child as unknown as ReturnType<typeof import('node:child_process').spawn>
+      })
+      await encodeHls({
+        inputPath: input,
+        outputDir: tmp,
+        spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+      })
+      expect(spawnImpl).toHaveBeenCalledTimes(2) // probe + encode
+      expect(ffmpegArgs).not.toBeNull()
+      // Audio absent in the argv since ffprobe reported no audio.
+      const args = ffmpegArgs as unknown as string[]
+      expect(args).not.toContain('-c:a')
+      expect(args[args.indexOf('-var_stream_map') + 1]).toMatch(/^v:0 v:1 v:2$/)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('includes audio mapping when ffprobe reports an audio stream', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
+    const input = join(tmp, 'in.mp4')
+    writeFileSync(input, 'fake-mp4')
+    try {
+      let ffmpegArgs: readonly string[] | null = null
+      const spawnImpl = vi.fn((cmd: string, args: readonly string[]) => {
+        const child = makeFakeChild()
+        if (cmd.endsWith('ffprobe')) {
+          setTimeout(() => {
+            // Simulate ffprobe finding one audio stream — non-empty
+            // CSV row on stdout.
+            child.stdout.emit('data', 'aac,2,48000,128000\n')
+            child.emit('close', 0, null)
+          }, 0)
+        } else {
+          ffmpegArgs = args
+          setTimeout(() => {
+            child.stderr.emit('end')
+            writeFileSync(join(tmp, MASTER_PLAYLIST_NAME), '#EXTM3U\n')
+            child.emit('close', 0, null)
+          }, 0)
+        }
+        return child as unknown as ReturnType<typeof import('node:child_process').spawn>
+      })
+      await encodeHls({
+        inputPath: input,
+        outputDir: tmp,
+        spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+      })
+      const args = ffmpegArgs as unknown as string[]
+      expect(args).toContain('-c:a')
+      expect(args[args.indexOf('-var_stream_map') + 1]).toBe('v:0,a:0 v:1,a:0 v:2,a:0')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('treats ffprobe failures as "no audio" (predictable fallback)', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'ffhls-'))
+    const input = join(tmp, 'in.mp4')
+    writeFileSync(input, 'fake-mp4')
+    try {
+      let ffmpegArgs: readonly string[] | null = null
+      const spawnImpl = vi.fn((cmd: string, args: readonly string[]) => {
+        const child = makeFakeChild()
+        if (cmd.endsWith('ffprobe')) {
+          // ffprobe fails — non-zero exit. encodeHls should treat
+          // this as "no audio" and let ffmpeg surface any real
+          // problem during the encode.
+          setTimeout(() => child.emit('close', 1, null), 0)
+        } else {
+          ffmpegArgs = args
+          setTimeout(() => {
+            child.stderr.emit('end')
+            writeFileSync(join(tmp, MASTER_PLAYLIST_NAME), '#EXTM3U\n')
+            child.emit('close', 0, null)
+          }, 0)
+        }
+        return child as unknown as ReturnType<typeof import('node:child_process').spawn>
+      })
+      await encodeHls({
+        inputPath: input,
+        outputDir: tmp,
+        spawnImpl: spawnImpl as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+      })
+      const args = ffmpegArgs as unknown as string[]
+      expect(args).not.toContain('-c:a')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -401,6 +558,7 @@ describe('encodeHls', () => {
         outputDir: tmp,
         ffmpegBin: '/opt/homebrew/bin/ffmpeg',
         spawnImpl: customSpawn as unknown as Parameters<typeof encodeHls>[0]['spawnImpl'],
+        hasAudio: true,
       })
       expect(customSpawn).toHaveBeenCalledOnce()
       expect(spawnImpl).toHaveBeenCalled()

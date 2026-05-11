@@ -110,12 +110,21 @@ export interface EncodeHlsOptions {
   audioBitrateKbps?: number
   /** Override the ffmpeg binary path. Defaults to `ffmpeg` on PATH. */
   ffmpegBin?: string
+  /** Override the ffprobe binary path. Defaults to `ffprobe` on
+   * PATH (typically ships alongside ffmpeg). */
+  ffprobeBin?: string
   /** Test injection — defaults to `node:child_process`'s `spawn`. */
   spawnImpl?: SpawnFn
   /** Called for each line FFmpeg writes to stderr. FFmpeg uses
    * stderr for both progress and errors; the operator CLI prints
    * each line for visibility. */
   onProgress?: (line: string) => void
+  /** Override the audio-presence detection. When unset, encodeHls
+   * runs `ffprobe` against `inputPath` to determine whether to
+   * include audio mapping in the argv. SOS spherical videos are
+   * typically silent — calling them out explicitly is faster than
+   * the probe, but the probe is the safe default. */
+  hasAudio?: boolean
 }
 
 export interface EncodedHls {
@@ -172,6 +181,7 @@ export function buildFfmpegArgs(
   renditions: readonly HlsRendition[],
   segmentSeconds: number,
   audioBitrateKbps: number,
+  hasAudio: boolean = true,
 ): string[] {
   const splits = renditions.length
   const filterParts: string[] = [`[0:v]split=${splits}` + renditions.map((_, i) => `[s${i}]`).join('')]
@@ -202,11 +212,18 @@ export function buildFfmpegArgs(
     args.push(`-sc_threshold:v:${i}`, '0')
   }
 
-  // One audio output, shared across all variants.
-  args.push('-map', 'a:0?')
-  args.push('-c:a', 'aac')
-  args.push('-b:a', `${audioBitrateKbps}k`)
-  args.push('-ac', '2')
+  // One audio output, shared across all variants — but only if
+  // the source actually has an audio stream. SOS spherical
+  // videos are typically silent; mapping `a:0` against a video
+  // with no audio fails the HLS muxer with "Unable to map stream
+  // at a:0" because var_stream_map's audio reference can't be
+  // optional the way `-map a:0?` can.
+  if (hasAudio) {
+    args.push('-map', 'a:0')
+    args.push('-c:a', 'aac')
+    args.push('-b:a', `${audioBitrateKbps}k`)
+    args.push('-ac', '2')
+  }
 
   // HLS muxer config.
   args.push('-f', 'hls')
@@ -216,9 +233,11 @@ export function buildFfmpegArgs(
   args.push('-master_pl_name', MASTER_PLAYLIST_NAME)
 
   // `-var_stream_map` tells the HLS muxer which input streams go
-  // in which variant. Each variant gets one video output (v:i) +
-  // the shared audio (a:0). Three variants → three v:N a:0 pairs.
-  const streamMap = renditions.map((_, i) => `v:${i},a:0`).join(' ')
+  // in which variant. Each variant gets one video output (v:i),
+  // plus the shared audio (a:0) when present.
+  const streamMap = renditions
+    .map((_, i) => (hasAudio ? `v:${i},a:0` : `v:${i}`))
+    .join(' ')
   args.push('-var_stream_map', streamMap)
 
   // Variant playlist filename pattern — `%v` is replaced by the
@@ -257,7 +276,18 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
   const segmentSeconds = options.segmentSeconds ?? DEFAULT_SEGMENT_SECONDS
   const audioBitrateKbps = options.audioBitrateKbps ?? DEFAULT_AUDIO_BITRATE_KBPS
   const ffmpegBin = options.ffmpegBin ?? 'ffmpeg'
+  const ffprobeBin = options.ffprobeBin ?? 'ffprobe'
   const spawnImpl = (options.spawnImpl ?? (nodeSpawn as unknown as SpawnFn))
+
+  // Detect audio presence. SOS spherical videos are typically
+  // silent, but the narrated educational pieces have audio
+  // tracks — we can't assume one shape. ffprobe is the canonical
+  // metadata-only probe; it's a separate binary but ships
+  // alongside ffmpeg in every standard distribution.
+  const hasAudio =
+    options.hasAudio !== undefined
+      ? options.hasAudio
+      : await probeHasAudio(options.inputPath, ffprobeBin, spawnImpl)
 
   // `mkdir -p stream_<n>` for each variant up front — FFmpeg's
   // `-hls_segment_filename` and variant-playlist patterns expect
@@ -272,6 +302,7 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
     renditions,
     segmentSeconds,
     audioBitrateKbps,
+    hasAudio,
   )
 
   const start = Date.now()
@@ -369,6 +400,69 @@ export async function encodeHls(options: EncodeHlsOptions): Promise<EncodedHls> 
  * over the network rather than read from disk. */
 function isHttpUrl(inputPath: string): boolean {
   return /^https?:\/\//i.test(inputPath)
+}
+
+/**
+ * Run `ffprobe` against the input and return true iff the source
+ * has at least one audio stream. Used by `encodeHls` to decide
+ * whether to include the `-c:a aac` / audio-map / var_stream_map
+ * `a:0` references in the argv.
+ *
+ * Failure semantics: on any ffprobe error (binary missing, network
+ * probe of a URL fails, unreadable input), assume no audio and
+ * let ffmpeg surface the real failure during the encode. This
+ * keeps the helper's failure mode predictable — the *encode*
+ * stage is where the operator already expects errors; an
+ * unrecoverable probe shouldn't introduce a different stage they
+ * have to learn about.
+ */
+async function probeHasAudio(
+  inputPath: string,
+  ffprobeBin: string,
+  spawnImpl: SpawnFn,
+): Promise<boolean> {
+  // `-select_streams a` filters to audio streams. `-show_streams`
+  // produces one entry per match. `-of csv=p=0` gives the simplest
+  // possible parseable output (one row per stream). Non-empty
+  // stdout → audio exists.
+  const args = [
+    '-v',
+    'error',
+    '-select_streams',
+    'a',
+    '-show_streams',
+    '-of',
+    'csv=p=0',
+    inputPath,
+  ]
+  return await new Promise<boolean>(resolve => {
+    let child
+    try {
+      child = spawnImpl(ffprobeBin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch {
+      resolve(false)
+      return
+    }
+    let stdout = ''
+    if (child.stdout) {
+      child.stdout.setEncoding('utf-8')
+      child.stdout.on('data', (chunk: string) => {
+        stdout += chunk
+      })
+    }
+    if (child.stderr) {
+      // Consume stderr to keep the pipe drained.
+      child.stderr.on('data', () => {})
+    }
+    child.on('error', () => resolve(false))
+    child.on('close', code => {
+      if (code !== 0) {
+        resolve(false)
+        return
+      }
+      resolve(stdout.trim().length > 0)
+    })
+  })
 }
 
 /** Concatenate the captured stderr lines and return the last N
