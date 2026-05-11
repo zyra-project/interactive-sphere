@@ -57,6 +57,28 @@ describe('check-i18n-strings · scanFile', () => {
     expect(violations).toEqual([])
   })
 
+  it('rejects a bare `i18n-exempt` marker with no colon (reason missing)', () => {
+    // The "mandatory reason" convention is enforced here, not just
+    // documented. A bare marker without `:` doesn't count.
+    const path = tmpFile(
+      'd2.ts',
+      `el.textContent = 'Submit form' // i18n-exempt\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations.length).toBe(1)
+  })
+
+  it('rejects `i18n-exempt:` with no rationale after it (empty reason)', () => {
+    // Colon present, but nothing after — still no reason, still
+    // flagged. Stops drive-by exemption stamps.
+    const path = tmpFile(
+      'd3.ts',
+      `el.textContent = 'Submit form' // i18n-exempt:\n`,
+    )
+    const violations = scanFile(path)
+    expect(violations.length).toBe(1)
+  })
+
   it('skips literals routed through t()', () => {
     const path = tmpFile(
       'e.ts',

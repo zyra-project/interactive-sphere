@@ -5,7 +5,7 @@
  * Catches the regression mode the L1 i18n migration locked out:
  * a developer (or AI agent) writes
  *
- *     element.textContent = 'Submit'
+ *     element.textContent = 'Submit form'
  *
  * instead of
  *
@@ -81,6 +81,14 @@ const ENGLISH_PROSE_RE = /[A-Za-z]{3,}.* /
  *  scans 60 chars left of the literal for any of these tokens. */
 const I18N_CALL_RE = /\b(?:t|plural|interpolate)\s*\(/
 
+/** Strict exemption marker. Requires the literal `i18n-exempt:`
+ *  prefix followed by at least one non-whitespace character —
+ *  i.e., a reason must be present. A bare `i18n-exempt` (no
+ *  colon) or `i18n-exempt:` with no rationale after it does NOT
+ *  bypass the check. The mandatory-reason convention is enforced
+ *  here, not just documented. */
+const I18N_EXEMPT_RE = /\bi18n-exempt:\s*\S/
+
 class CheckError extends Error {}
 
 interface Violation {
@@ -119,7 +127,7 @@ function literalLooksLikeProse(literal: string): boolean {
 }
 
 function isExempt(line: string, literalIndex: number): boolean {
-  if (line.includes('i18n-exempt')) return true
+  if (I18N_EXEMPT_RE.test(line)) return true
   // Look 60 chars left of the literal for a t( / plural( / interpolate(
   // call. Catches `something(t('key'))`-style patterns where the literal
   // we're inspecting is already the localized translation key.
