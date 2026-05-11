@@ -1,6 +1,6 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE martif PUBLIC "ISO 12200:1999A//DTD MARTIF core (DXFcdV04)//EN" "TBXcdv04.dtd">
-<martif type="TBX">
+<martif type="TBX" xml:lang="en">
     <martifHeader>
         <fileDesc>
             <sourceDesc>
@@ -10,6 +10,10 @@
     </martifHeader>
     <text>
         <body>
+            <termEntry id="Application Name">
+                <langSet xml:lang="en"><tig><term>TerraViz</term></tig></langSet>
+                <langSet xml:lang="es"><tig><term></term></tig></langSet>
+            </termEntry>
         </body>
     </text>
 </martif>
