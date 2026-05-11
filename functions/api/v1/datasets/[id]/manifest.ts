@@ -7,18 +7,30 @@
  * endpoint resolves the reference to whatever shape the frontend
  * needs to actually play the asset.
  *
- * Phase 1a scope:
- *   - `vimeo:<id>` for video formats — proxied through the existing
- *     `video-proxy.zyra-project.org` so cutover to a node-served
- *     manifest is a one-line frontend change with no asset re-encoding.
- *   - `url:<href>` for video formats — synthesized single-file
- *     manifest pointing at the external URL (legacy NOAA imagery,
+ * Resolution policy by data_ref scheme + format:
+ *   - `vimeo:<id>` + video — proxied through the existing
+ *     `video-proxy.zyra-project.org`. Surfaces what Vimeo's API
+ *     exposes; subject to the proxy's quality ceiling.
+ *   - `url:<href>` + video — synthesized single-file manifest
+ *     pointing at the external URL (legacy NOAA imagery,
  *     occasional MP4 hosted alongside SOS).
- *   - `url:<href>` for image formats — synthesized progressive-
- *     resolution variants matching the existing `_4096`/`_2048`/
- *     `_1024` ladder the frontend already probes.
- *   - Unknown schemes (`stream:`, `r2:`, `peer:`) and mismatched
- *     scheme/format pairs return 400 with a typed error envelope.
+ *   - `url:<href>` + image — synthesized progressive-resolution
+ *     variants matching the existing `_4096`/`_2048`/`_1024`
+ *     ladder the frontend already probes.
+ *   - `stream:<uid>` + video — Cloudflare Stream HLS playback
+ *     URL (Phase 1b; uncommon now that Phase 3's R2/HLS path is
+ *     preferred for spherical content above 1080p).
+ *   - `r2:<key>` + image — Cloudflare Images variant ladder when
+ *     CF_IMAGES_RESIZE_BASE is configured, otherwise a single
+ *     fallback URL.
+ *   - `r2:<key>.m3u8` + video — HLS master playlist served from
+ *     the R2 public bucket. The Phase 3 r2-hls migration writes
+ *     `r2:videos/<dataset_id>/master.m3u8` here; the SPA's HLS
+ *     player consumes the `hls` field directly.
+ *   - `r2:<key>` + video (non-`.m3u8`) — direct single-file MP4
+ *     manifest. Rare; mostly future-proofing.
+ *   - `peer:` returns 501; mismatched scheme/format pairs return
+ *     400 with a typed error envelope.
  *
  * Wire shape:
  *   - Video: matches the existing `VideoProxyResponse` shape
@@ -296,9 +308,26 @@ export async function resolveManifest(
       return { manifest: { kind: 'image', variants: [], fallback: url } }
     }
     if (isVideo) {
-      // Non-Stream video sitting on R2 (rare in 1b — Stream is the
-      // default — but possible for the >4K HLS-on-R2 path described
-      // in `CATALOG_ASSETS_PIPELINE.md` "Resolution tiers"). Emit a
+      // HLS bundles (Phase 3 r2-hls migration): when the key ends
+      // in `.m3u8`, the value is an HLS master playlist URL. The
+      // SPA's hlsService.ts uses the `hls` field; `files` stays
+      // empty (no direct-file alternative needed because the
+      // master playlist references its own variant streams + ts
+      // segments via relative paths under the same R2 prefix).
+      if (parsed.value.toLowerCase().endsWith('.m3u8')) {
+        return {
+          manifest: {
+            kind: 'video',
+            id: row.id,
+            title: '',
+            duration: 0,
+            hls: url,
+            files: [],
+          },
+        }
+      }
+      // Non-HLS video sitting on R2 (rare — direct MP4 hosted on
+      // R2 instead of Stream or an external URL). Emit a
       // single-file manifest pointing at the direct URL.
       return { manifest: externalVideoManifest(row.id, url, row.format) }
     }

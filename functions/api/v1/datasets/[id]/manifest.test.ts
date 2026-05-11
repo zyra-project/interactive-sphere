@@ -364,6 +364,98 @@ describe('GET /api/v1/datasets/{id}/manifest', () => {
     expect(body.fallback).toContain('mock-r2.localhost/terraviz-assets/datasets/x/asset.png')
   })
 
+  it('resolves r2:<key>.m3u8 + video to an HLS video manifest (Phase 3)', async () => {
+    const sqlite = seedFixtures({ count: 1 })
+    sqlite
+      .prepare(
+        `UPDATE datasets SET
+            data_ref = 'r2:videos/DS000AAAAAAAAAAAAAAAAAAAAA/master.m3u8',
+            format = 'video/mp4'
+         WHERE slug = 'dataset-0'`,
+      )
+      .run()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      R2_PUBLIC_BASE: 'https://video.example.com',
+    }
+    const ctx = makeCtx<'id'>({ env, params: { id: 'DS000AAAAAAAAAAAAAAAAAAAAA' } })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(200)
+    const body = await readJson<{
+      kind: string
+      hls: string
+      files: unknown[]
+    }>(res)
+    expect(body.kind).toBe('video')
+    expect(body.hls).toBe(
+      'https://video.example.com/videos/DS000AAAAAAAAAAAAAAAAAAAAA/master.m3u8',
+    )
+    // Phase 3's HLS branch leaves files empty — the master
+    // playlist references its variants via relative paths under
+    // the same R2 prefix; the SPA's hlsService.ts consumes
+    // `hls` and walks from there.
+    expect(body.files).toEqual([])
+  })
+
+  it('falls back to single-file MP4 for r2: video data_refs that do not end in .m3u8', async () => {
+    const sqlite = seedFixtures({ count: 1 })
+    sqlite
+      .prepare(
+        `UPDATE datasets SET
+            data_ref = 'r2:videos/DS000AAAAAAAAAAAAAAAAAAAAA/source.mp4',
+            format = 'video/mp4'
+         WHERE slug = 'dataset-0'`,
+      )
+      .run()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      R2_PUBLIC_BASE: 'https://video.example.com',
+    }
+    const ctx = makeCtx<'id'>({ env, params: { id: 'DS000AAAAAAAAAAAAAAAAAAAAA' } })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(200)
+    const body = await readJson<{
+      kind: string
+      hls: string
+      files: Array<{ link: string }>
+    }>(res)
+    expect(body.kind).toBe('video')
+    // Non-HLS path keeps the direct-MP4 shape: empty hls, single
+    // entry in files pointing at the R2 URL.
+    expect(body.hls).toBe('')
+    expect(body.files).toHaveLength(1)
+    expect(body.files[0].link).toBe(
+      'https://video.example.com/videos/DS000AAAAAAAAAAAAAAAAAAAAA/source.mp4',
+    )
+  })
+
+  it('case-insensitive on the .m3u8 suffix', async () => {
+    // Operator might accidentally upload with .M3U8; the manifest
+    // should still treat it as HLS.
+    const sqlite = seedFixtures({ count: 1 })
+    sqlite
+      .prepare(
+        `UPDATE datasets SET
+            data_ref = 'r2:videos/X/MASTER.M3U8',
+            format = 'video/mp4'
+         WHERE slug = 'dataset-0'`,
+      )
+      .run()
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      R2_PUBLIC_BASE: 'https://video.example.com',
+    }
+    const ctx = makeCtx<'id'>({ env, params: { id: 'DS000AAAAAAAAAAAAAAAAAAAAA' } })
+    const res = await onRequestGet(ctx)
+    expect(res.status).toBe(200)
+    const body = await readJson<{ hls: string; files: unknown[] }>(res)
+    expect(body.hls).toMatch(/MASTER\.M3U8$/)
+    expect(body.files).toEqual([])
+  })
+
   it('returns 503 r2_unconfigured when no R2 read-URL source is set', async () => {
     const sqlite = seedFixtures({ count: 1 })
     sqlite
