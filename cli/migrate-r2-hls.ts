@@ -49,7 +49,7 @@
  * 24h for these rows. By default the migration filters them out
  * at plan time (`--skip-realtime`, default true) by matching
  * `/real[-\s]?time/i` against the row title. Operators who want
- * to migrate them anyway (e.g. for a shipping-known-stale snapshot)
+ * to migrate them anyway (e.g. shipping a known-stale snapshot)
  * pass `--no-skip-realtime`. `--id <row>` is treated as an explicit
  * override: the filter doesn't apply, but a warning prints if the
  * targeted row matches.

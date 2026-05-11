@@ -3,11 +3,12 @@
  * whose Vimeo source is re-uploaded on a recurring (typically
  * daily) cadence by NOAA's automation.
  *
- * Phase 3a commit E. Originally lived inside `cli/migrate-r2-hls.ts`
- * (3a/A) and was re-exported for `cli/list-realtime-r2.ts` (3a/B)
- * to consume. Extracted here so the read-only triage helper
- * doesn't transitively drag in ffmpeg-hls / r2-upload / vimeo-source
- * just to ask "is this title real-time?"
+ * Shared by `cli/migrate-r2-hls.ts` (which uses it to skip
+ * real-time rows at plan time, default-on via `--skip-realtime`)
+ * and `cli/list-realtime-r2.ts` (the read-only triage helper).
+ * Lives in `cli/lib/` rather than in either command so the
+ * triage helper doesn't transitively drag in ffmpeg-hls /
+ * r2-upload / vimeo-source just to ask "is this title real-time?"
  *
  * The SOS catalog has no explicit `update_cadence` field — the
  * row title is the only reliable signal (e.g. `Sea Surface

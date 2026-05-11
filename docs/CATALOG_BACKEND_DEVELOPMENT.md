@@ -1021,7 +1021,7 @@ npm run terraviz -- list-realtime-r2 \
 npm run terraviz -- list-realtime-r2 \
   | npm run terraviz -- rollback-r2-hls --from-stdin --dry-run
 
-# Roll back an arbitrary set the operator curated by hand:
+# Roll back an arbitrary set that the operator curated by hand:
 cat my-rollback-list.ndjson \
   | npm run terraviz -- rollback-r2-hls --from-stdin
 ```
@@ -1037,7 +1037,7 @@ the first one, and prints an aggregate summary at the end:
 ```
 Bulk rollback complete:
   ok:                       18
-  ok (orphan R2 prefix):    1     ← PATCH succeeded but R2 DELETE failed
+  ok (orphan R2 prefix):    1     ← PATCH committed, R2 DELETE failed or was skipped (creds unset)
   patch_failed:             1
 ```
 

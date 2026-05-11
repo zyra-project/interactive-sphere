@@ -36,10 +36,14 @@
  *
  *      Rows where the snapshot lookup fails (legacy_id not in
  *      snapshot, or dataLink doesn't match the Vimeo URL pattern)
- *      are emitted with `vimeo_id: ""` and a stderr note. The
- *      rollback CLI requires an explicit Vimeo id, so unmatched
- *      rows can't be auto-rolled — operator has to recover the
- *      id from another source (Grafana telemetry, Vimeo dashboard).
+ *      are deliberately omitted from stdout — emitting them with
+ *      `vimeo_id: ""` would poison a `... | rollback-r2-hls
+ *      --from-stdin` pipe (the downstream CLI rejects empty
+ *      vimeo_ids). Instead each unmatched row is summarized to
+ *      stderr at the end of the run so the operator can see them
+ *      and recover the id from another source (Grafana telemetry's
+ *      `migration_r2_hls` events, Vimeo dashboard) and call
+ *      `rollback-r2-hls` per row manually.
  *
  * Read-only: makes no mutations to the catalog or R2.
  *

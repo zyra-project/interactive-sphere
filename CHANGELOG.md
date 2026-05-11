@@ -29,7 +29,7 @@ copy goes stale within 24h. Without a guard, the bulk migration
 would happily encode these and the SPA would serve yesterday's
 data on the affected rows.
 
-**3/A — `--skip-realtime` flag for `migrate-r2-hls` (default on).**
+**3a/A — `--skip-realtime` flag for `migrate-r2-hls` (default on).**
 Filters the migration plan by matching `/real[-\s]?time/i`
 against the row title. The SOS catalog has no explicit
 `update_cadence` field so the title is the only reliable signal;
