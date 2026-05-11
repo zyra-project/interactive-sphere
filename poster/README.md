@@ -123,18 +123,19 @@ mission / TOC scaffolding.
 |---|---|
 | `sec-01-hero.html` | Hero — title, author, NOAA + Zyra logos, QR codes |
 | `sec-02-mission.html` | The mission — *Same data, no museum required* |
-| `sec-03-features.html` | Ten-card feature gallery (TOC) |
+| `sec-03-features.html` | Eleven-card feature gallery (TOC) |
 | `sec-04-globe.html` | §1 · The globe under the hood — MapLibre + WebGL2 |
 | `sec-05-multiglobe.html` | §2 · Multi-globe comparison + camera-lockstep diagram |
 | `sec-06-tours.html` | §3 · Tours — data-driven storytelling |
 | `sec-07-orbit.html` | §4 · Orbit — the digital docent + research callout |
 | `sec-08-immersive.html` | §5 · AR / VR via WebXR + phone-AR `<model-viewer>` |
 | `sec-09-platforms.html` | §6 · One codebase, every platform |
-| `sec-10-federation.html` | §7 · Federated catalog & custom backend |
-| `sec-10b-publishing.html` | §8 · Publishing & search — publisher portal, tour creator, asset / decimation pipeline, authoring CLI, semantic search |
-| `sec-11-analytics.html` | §9 · Privacy-first analytics |
-| `sec-12-techstack.html` | §10 · Tech stack |
-| `sec-13-cta.html` | §11 · Try it · Get involved |
+| `sec-09b-localization.html` | §7 · Localization — UI strings, RTL, translator loop, Weblate |
+| `sec-10-federation.html` | §8 · Federated catalog & custom backend |
+| `sec-10b-publishing.html` | §9 · Publishing & search — publisher portal, tour creator, asset / decimation pipeline, authoring CLI, semantic search |
+| `sec-11-analytics.html` | §10 · Privacy-first analytics |
+| `sec-12-techstack.html` | §11 · Tech stack |
+| `sec-13-cta.html` | §12 · Try it · Get involved |
 | `sec-14-footer-block.html` | Footer (semantic `<footer>` element) |
 
 Build phases and per-phase commits are tracked in

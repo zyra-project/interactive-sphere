@@ -1,0 +1,214 @@
+    <section id="sec-9b-localization"
+             class="section section--alt fade-in"
+             aria-labelledby="sec-9b-loc-title">
+      <div class="loc__container">
+        <p class="section__eyebrow">§7 · Localization</p>
+        <h2 id="sec-9b-loc-title" class="loc__title">Earth science doesn't have a primary language.</h2>
+        <p class="loc__lede">
+          NOAA collects planetary data for everyone, but a curious 12-year-old in Mexico City or a Kabyle-speaking student in Algeria shouldn't need English to explore it. TerraViz separates the UI strings from the source, wires every screen to a language picker, and routes translator effort through the same tools translators already know.
+        </p>
+
+        <h3 class="loc__subhead">What ships today</h3>
+        <p class="loc__subhead-hint">
+          Foundation work for any locale a community decides to contribute. A language appears in the in-app picker once it reaches ≥80% key coverage; below that, reachable via <code>?lang=&lt;code&gt;</code> for testing.
+        </p>
+
+        <ul class="loc__stats" aria-label="Localization coverage at a glance">
+          <li class="loc__stat">
+            <span class="loc__stat-num">365</span>
+            <span class="loc__stat-label">UI strings extracted from source</span>
+            <span class="loc__stat-detail"><code>locales/en.json</code></span>
+          </li>
+          <li class="loc__stat loc__stat--shipping">
+            <span class="loc__stat-num">100%</span>
+            <span class="loc__stat-label">Spanish · shipping</span>
+            <span class="loc__stat-detail">community-translated via Weblate</span>
+          </li>
+          <li class="loc__stat loc__stat--inflight">
+            <span class="loc__stat-num">RTL</span>
+            <span class="loc__stat-label">Arabic · layout wired</span>
+            <span class="loc__stat-detail">awaiting translator on <code>?lang=ar</code></span>
+          </li>
+          <li class="loc__stat loc__stat--inflight">
+            <span class="loc__stat-num">3%</span>
+            <span class="loc__stat-label">Kabyle · in progress</span>
+            <span class="loc__stat-detail">first contribution by @ButterflyOfFire</span>
+          </li>
+        </ul>
+
+        <p class="loc__prose">
+          The runtime is a thin layer — <code>t()</code>, <code>plural()</code>, and <code>interpolate()</code> over flat key→value JSON. The codegen builds a TypeScript <code>MessageKey</code> union from <code>en.json</code>, so any unresolved key fails type-check before it ships. <code>&lt;html dir&gt;</code> auto-flips for right-to-left locales; every stylesheet uses logical CSS properties (<code>padding-inline-start</code>, <code>inset-inline-end</code>, <code>text-align: start</code>) so the layout mirrors correctly without per-locale overrides. Orbit — the digital docent — inherits the active locale via a single LLM-prompt anchor, so chat answers arrive in the user's language without a per-locale prompt fork to maintain.
+        </p>
+
+        <figure class="loc__pair"
+                aria-label="TerraViz UI rendered in English and Spanish, side-by-side">
+          <div class="loc__pair-row">
+            <figure class="loc__pair-figure">
+              <img src="assets/screenshots/terraviz-en.webp"
+                   alt="TerraViz running in English — the photoreal globe with English-language chrome, tools menu, and dataset panel">
+              <figcaption><code>en</code> · 100%</figcaption>
+            </figure>
+            <figure class="loc__pair-figure">
+              <img src="assets/screenshots/terraviz-es.webp"
+                   alt="TerraViz running in Spanish — the same layout as the English screenshot, with every interface string translated">
+              <figcaption><code>es</code> · 100%</figcaption>
+            </figure>
+          </div>
+          <figcaption class="loc__pair-caption">Same app. Same data. Different language.</figcaption>
+        </figure>
+
+        <h3 class="loc__subhead">The translator loop</h3>
+        <p class="loc__subhead-hint">
+          Translators don't need git. Weblate is a web editor with translation memory, glossaries, suggestion voting, and per-string developer notes — the same tooling Mozilla, KDE, and the Tor Project use. A GitHub Actions workflow round-trips translator changes back into <code>main</code> as DCO-signed pull requests; the codegen acts as the canonical formatter so re-sync never produces whitespace-only churn.
+        </p>
+
+        <figure class="loc__flow">
+          <svg viewBox="0 0 760 220"
+               role="img"
+               aria-label="Translator loop diagram. Five boxes left to right. en.json holds the source strings. The generate-locales codegen validates, sorts keys, and canonicalizes the JSON to match Weblate's exact format. Translators edit in Weblate's web editor, which commits to a GitHub PR with DCO sign-off. The PR is reviewed by a maintainer and merged into main, where the next deploy ships the translations.">
+            <defs>
+              <marker id="arrow-loc" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 Z" fill="#737373" />
+              </marker>
+              <style>
+                .loc-box       { fill: #ffffff; stroke: #d4d4d4; stroke-width: 1.2; }
+                .loc-box-emph  { fill: rgba(77, 166, 255, 0.06); stroke: #4da6ff; stroke-width: 1.4; }
+                .loc-box-final { fill: #00172D; stroke: #00529E; stroke-width: 1.5; }
+                .loc-text      { font-family: 'Source Sans 3', sans-serif; font-size: 13px; fill: #171717; font-weight: 600; }
+                .loc-text-light { fill: #fafafa; }
+                .loc-mono      { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #525252; }
+                .loc-mono-mist { font-family: 'Source Code Pro', monospace; font-size: 11px; fill: #9AB2B1; }
+                .loc-arrow     { stroke: #737373; stroke-width: 1.4; fill: none; }
+                .loc-arrow-label { font-family: 'Source Code Pro', monospace; font-size: 10px; fill: #525252; }
+              </style>
+            </defs>
+
+            <g transform="translate(20,80)">
+              <rect class="loc-box" x="0" y="0" width="130" height="60" rx="8" />
+              <text class="loc-text" x="65" y="26" text-anchor="middle">en.json</text>
+              <text class="loc-mono" x="65" y="44" text-anchor="middle">source of truth</text>
+            </g>
+            <path class="loc-arrow" d="M150,110 L185,110" marker-end="url(#arrow-loc)" />
+            <text class="loc-arrow-label" x="167" y="102" text-anchor="middle">read</text>
+
+            <g transform="translate(190,80)">
+              <rect class="loc-box-emph" x="0" y="0" width="160" height="60" rx="8" />
+              <text class="loc-text" x="80" y="22" text-anchor="middle">generate-locales</text>
+              <text class="loc-mono" x="80" y="40" text-anchor="middle">validate · canonical</text>
+              <text class="loc-mono" x="80" y="54" text-anchor="middle">sort · LF · 2-space</text>
+            </g>
+            <path class="loc-arrow" d="M350,110 L385,110" marker-end="url(#arrow-loc)" />
+            <text class="loc-arrow-label" x="367" y="102" text-anchor="middle">save</text>
+
+            <g transform="translate(390,80)">
+              <rect class="loc-box" x="0" y="0" width="150" height="60" rx="8" />
+              <text class="loc-text" x="75" y="22" text-anchor="middle">Weblate</text>
+              <text class="loc-mono" x="75" y="40" text-anchor="middle">translator UI</text>
+              <text class="loc-mono" x="75" y="54" text-anchor="middle">memory · glossary</text>
+            </g>
+            <path class="loc-arrow" d="M540,110 L575,110" marker-end="url(#arrow-loc)" />
+            <text class="loc-arrow-label" x="557" y="102" text-anchor="middle">push</text>
+
+            <g transform="translate(580,80)">
+              <rect class="loc-box" x="0" y="0" width="150" height="60" rx="8" />
+              <text class="loc-text" x="75" y="22" text-anchor="middle">GitHub PR</text>
+              <text class="loc-mono" x="75" y="40" text-anchor="middle">DCO sign-off</text>
+              <text class="loc-mono" x="75" y="54" text-anchor="middle">native-speaker review</text>
+            </g>
+
+            <path class="loc-arrow" d="M655,140 L655,170" marker-end="url(#arrow-loc)" />
+            <text class="loc-arrow-label" x="670" y="158" text-anchor="start">merge</text>
+            <g transform="translate(580,170)">
+              <rect class="loc-box-final" x="0" y="0" width="150" height="36" rx="6" />
+              <text class="loc-text loc-text-light" x="75" y="22" text-anchor="middle">main · deploy</text>
+            </g>
+          </svg>
+          <figcaption class="loc__flow-caption">
+            EN.JSON → CODEGEN · CANONICAL → WEBLATE → GITHUB PR → MAIN · DEPLOY
+          </figcaption>
+        </figure>
+
+        <ul class="loc__callouts">
+          <li>
+            <strong><a href="https://github.com/zyra-project/terraviz/blob/main/scripts/generate-locales.ts" target="_blank" rel="noopener">The codegen is the canonical formatter.</a></strong>
+            Predev/prebuild rewrite every locale JSON to match Weblate's exact output (2-space indent, sorted keys, no blank lines). Translator round-trips never produce whitespace-only diffs against <code>main</code>.
+          </li>
+          <li>
+            <strong>Explanations live in the repo.</strong>
+            <a href="https://github.com/zyra-project/terraviz/blob/main/locales/_explanations.json" target="_blank" rel="noopener"><code>locales/_explanations.json</code></a> carries per-string developer notes for the ~30 strings where the key alone leaves a translator guessing (preserve <code>{placeholders}</code>, <code>&lt;&lt;LOAD:DATASET_ID&gt;&gt;</code> markers, ARIA descriptions). A GitHub Actions workflow auto-syncs those into Weblate's per-string Explanation field on every change.
+          </li>
+          <li>
+            <strong>LLM responses inherit the locale.</strong>
+            Orbit's system prompt anchors to the active language, with a reminder string injected just before the user's turn. The same English source-of-truth handles every locale; no per-locale prompt copy to maintain.
+          </li>
+        </ul>
+
+        <h3 class="loc__subhead">What's deferred</h3>
+        <p class="loc__subhead-hint">
+          L1 (UI chrome) and L1.5 (RTL) ship now. Three further waves are scoped but blocked on the federated catalog backend — same plumbing that makes self-hosted publishing possible.
+        </p>
+
+        <div class="loc__waves">
+          <div class="loc__wave">
+            <div class="loc__wave-target">
+              L2
+              <small>partner overrides</small>
+            </div>
+            <div class="loc__wave-body">
+              Per-publisher UI string overrides via an <code>/api/v1/locale/&lt;lang&gt;</code> overlay endpoint, plus a publisher-portal locale-override editor. Lets a partner relabel <em>their</em> deployment without forking the source.
+            </div>
+            <span class="loc__wave-block">blocked on Catalog Phase 3</span>
+          </div>
+
+          <div class="loc__wave">
+            <div class="loc__wave-target">
+              L3
+              <small>dataset metadata</small>
+            </div>
+            <div class="loc__wave-body">
+              Dataset titles, abstracts, and source attribution localized via a <code>dataset_translations</code> sidecar table, CLI <code>--lang</code> sidecar files, and federation propagation of signed translation rows so a translation made at one peer surfaces across the network.
+            </div>
+            <span class="loc__wave-block">blocked on Catalog Phases 3 + 4</span>
+          </div>
+
+          <div class="loc__wave">
+            <div class="loc__wave-target">
+              L4
+              <small>tour narration</small>
+            </div>
+            <div class="loc__wave-body">
+              Tour-author narration translated alongside the tour JSON. Sits on top of L3 plus the tour authoring tooling — the per-language captions need a UI to author and a stable round-trip mechanism through the federation.
+            </div>
+            <span class="loc__wave-block">blocked on L3 + tour authoring</span>
+          </div>
+        </div>
+
+        <p class="loc__prose loc__prose--close">
+          The split is deliberate: shipping the UI in your language is something a single community translator can accomplish in a week on Weblate. Translating the catalog requires schema, signing, and federation — work that lands when the publishing backbone itself does.
+        </p>
+
+        <aside class="loc__cta" aria-label="Translate TerraViz on Weblate">
+          <div class="loc__cta-copy">
+            <p class="section__eyebrow">Help translate</p>
+            <h3>Pick a language. Or request a new one.</h3>
+            <p>
+              Translation memory, glossary entries, and developer notes are already in place. First contribution is a few clicks — no git, no setup, no review queue to wait on before you can start.
+            </p>
+            <p class="loc__cta-host">
+              Hosted on <a href="https://weblate.org/en/hosting/" target="_blank" rel="noopener">Weblate Libre</a> — free for open-source projects under the same license.
+            </p>
+          </div>
+          <figure class="loc__cta-qr">
+            <div class="loc__cta-qr-img">
+              <img src="assets/qr/weblate.png" alt="QR code to the TerraViz translation project on Weblate">
+            </div>
+            <span class="loc__cta-qr-label">Translate on Weblate</span>
+            <span class="loc__cta-qr-url">hosted.weblate.org/engage/terraviz/</span>
+          </figure>
+        </aside>
+
+        <p class="loc__refs">
+          Full plan, phase table, and runtime API live in <a href="https://github.com/zyra-project/terraviz/blob/main/docs/I18N_PLAN.md" target="_blank" rel="noopener"><code>docs/I18N_PLAN.md</code></a>; the translator workflow, glossary conventions, and DCO setup are documented in <a href="https://github.com/zyra-project/terraviz/blob/main/CONTRIBUTING-TRANSLATIONS.md" target="_blank" rel="noopener"><code>CONTRIBUTING-TRANSLATIONS.md</code></a>.
+        </p>
+      </div>
+    </section>
