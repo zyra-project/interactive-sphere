@@ -460,6 +460,12 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // UX. Optional because not all UAs implement anchors yet.
     optionalFeatures.push('anchors')
   }
+  // Reference-space contract for the rest of the session. `local-floor`
+  // gives the globe a stable Y above the user's actual floor; `local`
+  // anchors at the head pose at session start with no floor offset.
+  // The session-features list, the default GLOBE_POSITION, and the
+  // placement reference space all key off this — keep them consistent.
+  let referenceSpaceType: 'local-floor' | 'local' = 'local-floor'
   let session: XRSession
   try {
     session = await navigator.xr.requestSession(sessionMode, {
@@ -467,9 +473,23 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       ...(optionalFeatures.length > 0 ? { optionalFeatures } : {}),
     })
   } catch (err) {
-    canvas.remove()
-    renderer.dispose()
-    throw err instanceof Error ? err : new Error(String(err))
+    // Some UAs (notably HoloLens 2 Edge in early builds, and certain
+    // WebXR polyfills) refuse `local-floor` outright. Retry with the
+    // weaker `local` reference space so the session still starts. The
+    // downstream code adjusts GLOBE_POSITION and the anchor ref-space
+    // to match — no other call site needs to know the difference.
+    logger.debug('[VR] local-floor unavailable, retrying with local:', err)
+    try {
+      session = await navigator.xr.requestSession(sessionMode, {
+        requiredFeatures: ['local'],
+        ...(optionalFeatures.length > 0 ? { optionalFeatures } : {}),
+      })
+      referenceSpaceType = 'local'
+    } catch (retryErr) {
+      canvas.remove()
+      renderer.dispose()
+      throw retryErr instanceof Error ? retryErr : new Error(String(retryErr))
+    }
   }
 
   // Bind the session to the renderer. Three.js handles
@@ -542,7 +562,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // --- Build the scene ---
   // AR mode → transparent background so the passthrough camera feed
   // shows behind everything we render.
-  const scene = createVrScene(THREE_, isAr)
+  const scene = createVrScene(THREE_, isAr, referenceSpaceType)
   const hud = createVrHud(THREE_)
   scene.scene.add(hud.mesh)
 
@@ -627,9 +647,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   let placementRefSpace: XRReferenceSpace | null = null
   if (isAr) {
     try {
-      placementRefSpace = await session.requestReferenceSpace('local-floor')
+      // Use the same reference space the session was actually
+      // granted. Requesting `local-floor` here when the session was
+      // granted only `local` would fail every time on the fallback
+      // path and leave anchor restoration silently broken.
+      placementRefSpace = await session.requestReferenceSpace(referenceSpaceType)
     } catch (err) {
-      logger.debug('[VR] local-floor reference space unavailable:', err)
+      logger.debug(`[VR] ${referenceSpaceType} reference space unavailable:`, err)
     }
 
     if ('requestHitTestSource' in session) {
