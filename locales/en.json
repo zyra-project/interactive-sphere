@@ -372,5 +372,8 @@
   "vr.enter.aria": "Enter immersive VR mode",
   "vr.enter.label": "Enter VR",
   "vr.enter.title": "Enter immersive VR mode",
-  "vr.error.failed": "Failed to enter {mode}"
+  "vr.error.failed": "Failed to enter {mode}",
+  "vr.zoomSlider.aria": "Zoom the globe",
+  "vr.zoomSlider.label": "Zoom",
+  "vr.zoomSlider.title": "Drag to zoom in or out"
 }
