@@ -7,8 +7,16 @@ Quest, identifies the gaps that block other WebXR-capable devices
 from being usable in practice, and proposes phased work to close
 those gaps.
 
-Status: **draft for review, v4 — localization, tours, multi-globe on
-small screens, and rollout cadence folded in on top of v3.**
+Status: **v5 — Phase 1 shipped.** PR 1 (#94: input archetype +
+analytics scaffolding), PR 2 + PR 3 (#96: phone-AR UX +
+`local-floor` → `local` fallback) merged. One on-device confirmation
+from a recent Android phone — drag-rotate + zoom slider + HUD ✕
+exit all working. The proposed experimental-flag rollout step
+(see §Rollout cadence) was tried in PR 2 and then removed before
+merge because the gate UI was reported as confusing and the spike
+result removed its rationale. Phase 2 (transient-pointer widening)
+and Phase 3 (PCVR verification) are still pending hardware test
+passes.
 
 > **Verification key:** ✓ = traced through code; ⚠ = inferred from spec
 > or comments but not testable without hardware; ✗ = was incorrect in
@@ -56,7 +64,7 @@ already handles that correctly via `isSessionSupported`.
 |---|---|---|---|
 | Meta Quest 2 / 3 / Pro | AR (passthrough) | Full | — (reference) |
 | Quest Link / Air Link → PC | VR | Full | — |
-| **Android phone (ARCore + Chrome)** | AR | Session starts; globe renders; **single tap places via screen input** but no rotate / zoom / exit; HUD targets unreachable | `targetRayMode === 'screen'` input handling; DOM touch overlay for pan / pinch-zoom / exit |
+| **Android phone (ARCore + Chrome)** | AR | Full ✓ — tap to place, drag to rotate, DOM zoom slider to scale, HUD ✕ exit to leave. Verified on one recent Android phone (one tester so far). | Wider hardware coverage; consider adding ARCore depth-API occlusion (Phase 4 polish) |
 | **Apple Vision Pro** (Safari on visionOS) | AR + VR | Session starts; globe renders; transient-pointer pinch-to-select works on HUD; **no thumbstick → no zoom; no grip → can only exit via system gesture** | DOM/HUD-driven zoom alternative; HUD exit button for non-controller devices |
 | **PCVR (SteamVR + Chrome/Edge)** Index / Vive / WMR / Varjo | VR | Should be full — same trigger / grip / thumbstick mapping as Quest. Untested on our hardware. | Verification only; no code changes expected |
 | **Pico 4 / 4 Ultra** | AR + VR | Should match Quest — same controller layout, ARCore-style hit-test | Verification; persistent anchors are Meta-specific (silent no-op) |
@@ -182,50 +190,46 @@ Phase 2 below.
 
 ## Phases
 
-### Phase 1 — Android phone AR (highest value, smallest change)
+### Phase 1 — Android phone AR (highest value, smallest change) — SHIPPED
 
 Goal: a user on Chrome on an ARCore phone taps **Enter AR**, sees
 the globe in their room, can tap to place it, can drag with one
-finger to rotate (subject to the rotation-feel caveat above), can
-pinch to zoom, can tap a clearly-visible exit button to leave.
+finger to rotate, can use the DOM zoom slider, can tap the HUD ✕
+to exit.
 
-The friend's fork suggests this is mostly free at the session-start
-level. The new UX work is exit + zoom affordances.
+**What shipped:**
 
-**Changes:**
-
-| File | Change | Verified? |
+| File | Change | Status |
 |---|---|---|
-| `src/services/vrSession.ts` | Detect `targetRayMode === 'screen'` on any input source at session start (the existing `connected` listener at vrInteraction.ts:1060 already surfaces the `XRInputSource`); plumb an `inputClass: 'screen' \| 'controller' \| 'transient'` into the session struct. | Plumbing only — no risk |
-| `src/services/vrInteraction.ts` | No change required for screen-tap. `updateThumbstickZoom` already null-guards `source?.gamepad` and silently no-ops when absent. | ✓ traced |
-| `src/services/vrHud.ts` | Add a "✕ Exit" button to the HUD canvas, visible whenever `inputClass !== 'controller'`. Wires through existing `VrHudAction` channel. Existing HUD-armed/select machinery handles the tap. | ✓ traced (vrInteraction.ts:914–928) |
-| `src/ui/vrZoomOverlay.ts` *(new)* | DOM overlay on top of the WebXR canvas: vertical zoom slider on the right edge for screen / transient devices. Updates `globe.scale` via a callback. Only mounted when `inputClass !== 'controller'`. Size estimate is a guess — could grow if pinch-to-zoom on touch turns out to need its own gesture state machine. **Placed under `src/ui/` (not `src/services/`) so the `check:i18n-strings` lint scans it for hard-coded strings.** | ⚠ unverified — needs spike |
-| `src/services/vrSession.ts` | Mount/unmount the zoom overlay during enter/exit. | Straightforward |
-| **`local-floor` fallback** — deferred to a separate slice. See revised scope note below. | | |
-| `src/utils/vrCapability.ts` | Add `getInputArchetype(session)` helper consumed by `vrSession`. | New code; trivial |
+| `src/services/vrSession.ts` | Plumbs `inputClass: 'controller' \| 'screen' \| 'transient' \| 'unknown'` onto the session telemetry struct, resolved lazily on the first `inputsourceschange` event (a handheld-AR session has zero sources at start; the first source appears on the user's tap). | ✓ #94 |
+| `src/services/vrInteraction.ts` | No change — `updateThumbstickZoom` already null-guards `source?.gamepad` so screen-tap silently no-ops. The drag-rotate + select-hit-routing machinery treats the screen-tap target-ray space the same as a controller's. | ✓ traced; verified on phone |
+| `src/services/vrHud.ts` | No change — the HUD's ✕ exit-vr button already existed in the canvas layout from the original Quest implementation, and the `select`-based hit routing fires equally on screen-tap. | ✓ no-op |
+| `src/ui/vrZoomOverlay.ts` *(new)* | Vertical DOM range slider on the inline-end edge, mounted only when `inputClass === 'screen'`. Log-mapped so each unit of travel is a constant multiplicative zoom; RTL-safe via `writing-mode: vertical-lr` + `inset-inline-end`. Routed through `t()` for i18n. | ✓ #96 |
+| `src/services/vrSession.ts` | Mounts/unmounts the overlay reactively on every `inputsourceschange`; `disposeZoomOverlay` cleans up on session end. | ✓ #96 |
+| `src/utils/vrCapability.ts` | `getInputArchetype(session)` helper + broadened `classifyXrDevice(ua, mode)` (now also buckets `android-ar`, `pico`, `hololens`, `magic-leap`). | ✓ #94 |
+| `src/services/vrSession.ts` | `local-floor` → `local` reference-space fallback (PR 3) — same session struct, retry path narrowed to `NotSupportedError` so user-denials don't trigger a second permission prompt. | ✓ #96 |
 
-**Revised scope note on `local-floor` fallback.** Touching three
-places at once (session features, default `GLOBE_POSITION`, anchor
-ref-space). Defer to its own PR so we don't entangle it with the
-zoom/exit UX. Most likely device that needs it (HoloLens 2)
-isn't gating Phase 1 success.
+**Verification status:**
 
-**Verification:**
+- ✓ One recent Android phone (ARCore + Chrome stable): enter AR,
+  place, drag-rotate, zoom via the DOM slider, tap HUD ✕ to exit.
+  Globe stays anchored to the surface when the user walks around.
+- ☐ Additional Android phones (Pixel 7/8, Samsung Galaxy S22+,
+  other ARCore-supported hardware): coverage still desired.
+- ☐ Quest 3 regression sweep against this branch — relies on
+  unchanged controller-class code path; nothing in the diff
+  should affect it but a manual pass is still warranted.
+- ✓ Desktop / Tauri / non-XR browsers see zero bundle delta —
+  `vrZoomOverlay.ts` is imported only from `vrSession.ts`, which
+  is already in the lazy chunk.
 
-- Pixel 7 / 8 (ARCore), Chrome stable: enter AR, place, drag-rotate,
-  pinch-zoom, tap exit. Confirm globe stays anchored to the surface
-  when the user walks around.
-- Samsung Galaxy S22+: same.
-- Confirm no behavior change on Quest 3 (still in `controller`
-  archetype; zoom overlay never mounts; HUD exit button hidden).
-- Confirm desktop / Tauri / non-XR browsers see zero bundle delta —
-  `vrZoomOverlay.ts` is imported only from `vrSession.ts`, which is
-  already in the lazy chunk.
-
-**Telemetry:** extend `vr_session_started.device_class` enum with
-`android-ar` (UA contains `Android` and session is `immersive-ar`).
-Update the catalog row in [`ANALYTICS.md`](ANALYTICS.md) and the
-positional layout in [`ANALYTICS_QUERIES.md`](ANALYTICS_QUERIES.md).
+**Telemetry:** `vr_session_started.device_class` now buckets
+`android-ar`, `pico`, `hololens`, `magic-leap` alongside the
+existing `quest` / `quest-pro` / `vision-pro` / `pcvr` /
+`unknown`. Catalog row in [`ANALYTICS.md`](ANALYTICS.md),
+positional layout in [`ANALYTICS_QUERIES.md`](ANALYTICS_QUERIES.md),
+Grafana panel in `grafana/dashboards/product-health.json` all
+updated.
 
 ### Phase 2 — Vision Pro and hand-tracking devices
 
@@ -498,36 +502,58 @@ a phone feel like grabbing the globe, or does it feel disconnected?*
 ## Rollout cadence
 
 The existing AR/VR button auto-appears on any device that passes
-`isImmersiveArSupported` / `isImmersiveVrSupported`. That means
-once PR 2 ships, every ARCore Android user on the next page load
-sees "Enter AR" with no soft-launch buffer. Given the unverified
-drag-feel risk (see Testing §spike), that's more confidence than
-the verification level warrants.
+`isImmersiveArSupported` / `isImmersiveVrSupported`. That meant
+once PR 2 shipped, every ARCore Android user would see "Enter AR"
+on the next page load with no soft-launch buffer. The plan
+originally hedged against that with an opt-in flag (see §History
+below); after on-device testing the flag was removed and phone-AR
+shipped default-on alongside Quest, PCVR, etc.
 
-**Proposed rollout for the user-visible phone-AR PR (PR 2):**
+**What shipped (current behaviour):**
 
-1. **Default off.** Add a `flags.vrPhoneArEnabled` boolean (default
-   `false`) in `localStorage` under the existing `sos-docent-config`
-   pattern, surfaced in **Tools → Privacy / Experimental** (next to
-   the existing telemetry tier picker). When false, `vrButton`
-   treats `inputClass === 'screen'` as unsupported and hides the
-   button — exactly the pre-Phase-1 behaviour.
-2. **Opt-in for testers and dogfooders.** Anyone who flips the
-   toggle sees Enter AR on their phone immediately. Telemetry's
-   `device_class === 'android-ar'` then tells us how often they
-   actually use it, with a sample size we control.
-3. **Default-on flip lands as a separate one-line PR** after the
-   spike has come back positive *and* at least two team members
-   have used the feature on different phone models for a non-toy
-   workload (look at a real dataset, place + walk around, exit
-   cleanly, re-enter).
-4. **Quest is never gated by this flag.** Controller-class devices
-   keep the existing default-on behaviour. The flag only affects
-   `inputClass !== 'controller'`.
+The button appears on any device whose UA + `isSessionSupported`
+combination passes the standard feature detector. There is no
+per-device feature flag. The DOM zoom slider and HUD ✕ exit
+button mount reactively when `inputClass` resolves to `'screen'`,
+which only happens on a real handheld-AR session — controller
+sessions never see either affordance. Quest, Pico, and PCVR
+sessions behave exactly as they did before Phase 1.
 
-Same pattern applies in Phase 2 for `vrTransientInputEnabled` (or
-collapse to one flag — `vrExperimentalDevicesEnabled` — if that
-reads simpler to users).
+**Verification status (one tester each is not "verified for the
+population"):**
+
+- Android phone (ARCore + Chrome): ✓ confirmed on one recent
+  phone — drag-rotate, zoom slider, HUD ✕ exit.
+- Quest: not regression-checked yet against this branch; relies
+  on existing manual Quest pass discipline + the unchanged
+  controller-class code path.
+- Vision Pro / HoloLens / Pico / PCVR: unverified on hardware
+  (Phase 2 / Phase 3 work).
+
+**History — the experimental-flag rollout that didn't ship:**
+
+The plan originally proposed a `flags.vrPhoneArEnabled` boolean
+default-off, surfaced in Tools → Privacy / Experimental, that
+would hide the Enter AR button on Android phones until users
+opted in. PR 2 implemented it. Two problems surfaced once it was
+in users' hands:
+
+1. The toggle's home was confusing — an AR feature in the
+   Privacy panel reads as misfiled.
+2. The toggle had no immediate effect (only the next
+   `initVrButton` would re-evaluate it), so flipping it looked
+   broken on the same page-load.
+
+Combined with a positive spike result on the one Android phone
+that got tested, the plan's "spike + two team members → flip
+default-on" gate was overshooting the risk it was guarding
+against. PR 2 removed the flag (the `experimentalFlags` module,
+the Privacy panel's Experimental section, the `vrButton` gate,
+and ~415 lines of supporting code) in favour of default-on.
+
+If a future device class needs a more cautious rollout (Vision
+Pro on first ship?), reach for a flag again then — but do not
+park it in the Privacy panel.
 
 Vision Pro deserves its own thought here: by the time Phase 2
 lands the device might already have an installed base, in which
@@ -536,37 +562,45 @@ scoped, not now.
 
 ## Implementation order
 
-Recommended PR sequence, each independently shippable behind the
-existing AR/VR button:
+PR sequence, each independently shippable behind the existing
+AR/VR button. PRs 1-3 are merged; 4-6 are pending.
 
-1. **PR 1 — Phase 1 scaffolding:** `getInputArchetype` helper +
-   unit tests, `inputClass` plumbed through `vrSession`,
-   `device_class` enum extension. Includes the analytics
-   contributing checklist work end-to-end — row in
+1. **PR 1 — Phase 1 scaffolding** *(✓ shipped, #94).*
+   `getInputArchetype` helper + unit tests, `inputClass` plumbed
+   through `vrSession`, `device_class` enum extension. Plus the
+   analytics contributing checklist work end-to-end — row in
    [`ANALYTICS.md`](ANALYTICS.md), positional layout in
-   [`ANALYTICS_QUERIES.md`](ANALYTICS_QUERIES.md), Grafana panel —
-   so we can verify in production that non-Quest sessions are
-   actually showing up before the user-visible PR lands. No
-   user-visible change. ~80 LOC of TS + the docs.
-2. **PR 2 — Phase 1 phone-AR UX:** zoom overlay, HUD exit button,
-   gating. **Precondition: the one-day on-device spike described
-   in Testing has come back with a go.** If no-go, re-estimate
-   scope before opening this PR. |
-3. **PR 3 — `local-floor` → `local` fallback:** session features,
-   default `GLOBE_POSITION`, anchor ref-space. Held back from
-   PR 2 because it touches three independent things and the
-   primary phone-AR target doesn't need it.
-4. **PR 4 — Phase 2 hand-tracking widening:** widen the
-   `inputClass !== 'controller'` gate to cover transient-pointer,
-   suppress two-hand pinch when transient. Vision Pro / HoloLens /
-   hand-mode Quest. Pairs with a Vision Pro test pass.
-5. **PR 5 — Phase 3 PCVR verification:** any axis-mapping
-   generalization that falls out of testing. Likely small.
-6. **PR 6 — Documentation pass:** update
+   [`ANALYTICS_QUERIES.md`](ANALYTICS_QUERIES.md), Grafana panel
+   so we could verify in production that non-Quest sessions were
+   actually showing up before the user-visible PR landed. No
+   user-visible change.
+2. **PR 2 — Phase 1 phone-AR UX** *(✓ shipped, #96 as part of a
+   combined PR 2 + PR 3).* DOM zoom slider, reactive mount on
+   `inputClass === 'screen'`. The HUD ✕ exit button already
+   existed and was reused as-is. The on-device drag-feel spike
+   the original plan listed as a precondition came back positive
+   *during* this PR rather than before it; the proposed
+   `flags.vrPhoneArEnabled` opt-in (§Rollout cadence §History)
+   was implemented and then removed before merge in favour of
+   default-on.
+3. **PR 3 — `local-floor` → `local` fallback** *(✓ shipped, #96
+   alongside PR 2).* Session features, default `GLOBE_POSITION`,
+   anchor ref-space — three changes coordinated through one
+   `referenceSpaceType` variable. Retry narrowed to
+   `NotSupportedError` so user-denials don't re-prompt.
+4. **PR 4 — Phase 2 hand-tracking widening** *(pending hardware).*
+   Widen the `inputClass !== 'controller'` gate to cover
+   transient-pointer, suppress two-hand pinch when transient.
+   Vision Pro / HoloLens / hand-mode Quest. Pairs with a Vision
+   Pro test pass.
+5. **PR 5 — Phase 3 PCVR verification** *(pending hardware).*
+   Any axis-mapping generalization that falls out of testing.
+   Likely small.
+6. **PR 6 — Documentation pass** *(this PR).* Update
    [`VR_INVESTIGATION_PLAN.md`](VR_INVESTIGATION_PLAN.md) status
-   header, the device matrix in this doc, and
-   [`ANALYTICS.md`](ANALYTICS.md) `device_class` enum.
+   header, the device matrix and §Rollout cadence in this doc,
+   and [`CLAUDE.md`](../CLAUDE.md)'s module map.
 
-Each PR keeps the Quest experience identical (verified by the
-existing VR tests + a manual Quest pass) and adds one device
-class to the supported set.
+Each merged PR has kept the Quest experience identical
+(controller-class code path unchanged; zoom overlay never mounts;
+HUD ✕ exit button wired the same way it always was).
