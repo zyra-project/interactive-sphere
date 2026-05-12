@@ -8,7 +8,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { formatBytes } from './downloadService'
+import { formatBytes, __test__ } from './downloadService'
+
+const { isHttpUrl, extFromUrl, pickBestVideoFile, orderImageCandidates } = __test__
 
 // --- formatBytes ---
 
@@ -193,51 +195,63 @@ describe('Vimeo ID extraction', () => {
 })
 
 // --- Node-mode manifest envelope walking ---
-// Same shape datasetLoader.ts consumes; these tests pin the
-// download-side walker so the two paths can't drift silently.
+// These exercise the real pickBestVideoFile / orderImageCandidates
+// exported via __test__, so production drift (re-ordering, lost
+// HLS guard, lost http(s) filter) surfaces as a test failure.
 
-describe('node-mode video manifest walking', () => {
+describe('pickBestVideoFile', () => {
   it('picks the highest-width file from a video manifest envelope', () => {
-    const envelope = {
-      kind: 'video' as const,
+    const best = pickBestVideoFile({
+      kind: 'video',
       files: [
-        { quality: '480p', width: 854, size: 20_000_000, type: 'video/mp4', link: 'https://r2.example/480.mp4' },
-        { quality: '4K', width: 3840, size: 500_000_000, type: 'video/mp4', link: 'https://r2.example/4k.mp4' },
-        { quality: '1080p', width: 1920, size: 100_000_000, type: 'video/mp4', link: 'https://r2.example/1080.mp4' },
+        { quality: '480p', width: 854, height: 480, size: 20_000_000, type: 'video/mp4', link: 'https://r2.example/480.mp4' },
+        { quality: '4K', width: 3840, height: 2160, size: 500_000_000, type: 'video/mp4', link: 'https://r2.example/4k.mp4' },
+        { quality: '1080p', width: 1920, height: 1080, size: 100_000_000, type: 'video/mp4', link: 'https://r2.example/1080.mp4' },
       ],
-    }
-    const sorted = [...envelope.files].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))
-    expect(sorted[0].quality).toBe('4K')
-    expect(sorted[0].link).toBe('https://r2.example/4k.mp4')
+    })
+    expect(best.link).toBe('https://r2.example/4k.mp4')
+    expect(best.size).toBe(500_000_000)
   })
 
-  it('treats an HLS-only manifest (empty files[]) as a non-downloadable streaming dataset', () => {
+  it('throws a clear HLS-streaming error when files[] is empty', () => {
     // The Phase 3 r2-hls migration populates `hls` but leaves
-    // `files[]` empty — the SPA's download path must surface a
-    // clear error rather than passing the m3u8 URL to reqwest
-    // (which has no way to reassemble a playlist + segments into
-    // a single offline file). resolveVideoAssets throws the same
-    // "HLS-streamed and not yet available for offline download"
-    // message; this test just locks the empty-files predicate.
-    const envelope = { kind: 'video' as const, files: [] }
-    expect(envelope.files.length).toBe(0)
+    // `files[]` empty. Without this guard the SPA would hand the
+    // playlist URL to reqwest, which has no way to reassemble a
+    // playlist + .ts segments into a single offline file.
+    expect(() => pickBestVideoFile({ kind: 'video', files: [] })).toThrow(/HLS-streamed/)
+  })
+
+  it('throws a clear HLS-streaming error when files is omitted entirely', () => {
+    expect(() => pickBestVideoFile({ kind: 'video' })).toThrow(/HLS-streamed/)
+  })
+
+  it('rejects a manifest whose best file has a non-http(s) link', () => {
+    // Guards against the catalog serializer regression where a
+    // raw `r2:` or `stream:` ref leaks through resolveDataRef.
+    expect(() =>
+      pickBestVideoFile({
+        kind: 'video',
+        files: [
+          { quality: '4K', width: 3840, height: 2160, size: 0, type: 'video/mp4', link: 'r2:datasets/foo/4k.mp4' },
+        ],
+      }),
+    ).toThrow(/non-HTTP file link/)
   })
 })
 
-describe('node-mode image manifest walking', () => {
+describe('orderImageCandidates', () => {
   it('orders variants by descending width and appends the fallback', () => {
-    const envelope = {
-      kind: 'image' as const,
-      variants: [
-        { width: 1024, url: 'https://r2.example/1024.jpg' },
-        { width: 4096, url: 'https://r2.example/4096.jpg' },
-        { width: 2048, url: 'https://r2.example/2048.jpg' },
-      ],
-      fallback: 'https://r2.example/original.jpg',
-    }
-    const sorted = [...envelope.variants].sort((a, b) => b.width - a.width)
-    const ordered = [...sorted.map(v => v.url), envelope.fallback]
-    expect(ordered).toEqual([
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [
+          { width: 1024, url: 'https://r2.example/1024.jpg' },
+          { width: 4096, url: 'https://r2.example/4096.jpg' },
+          { width: 2048, url: 'https://r2.example/2048.jpg' },
+        ],
+        fallback: 'https://r2.example/original.jpg',
+      }),
+    ).toEqual([
       'https://r2.example/4096.jpg',
       'https://r2.example/2048.jpg',
       'https://r2.example/1024.jpg',
@@ -245,27 +259,76 @@ describe('node-mode image manifest walking', () => {
     ])
   })
 
-  it('derives the filename extension from a variant URL, tolerant of query strings', () => {
-    // Cloudflare Images variants come back with `?format=auto`-style
-    // query strings; extFromUrl needs to strip those before the
-    // suffix-match.
-    const url = 'https://r2.example/cdn-cgi/image/width=4096/datasets/foo.jpg?format=auto'
-    const match = url.match(/(\.\w+)(\?|#|$)/)
-    expect(match?.[1]).toBe('.jpg')
+  it('omits the fallback when none is provided', () => {
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [{ width: 1024, url: 'https://r2.example/1024.jpg' }],
+      }),
+    ).toEqual(['https://r2.example/1024.jpg'])
+  })
+
+  it('filters out non-http(s) variants and fallback', () => {
+    // Defensive: even if the manifest endpoint leaks raw refs in
+    // variants, the SPA never hands them to the Rust downloader.
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [
+          { width: 4096, url: 'r2:datasets/foo/4096.jpg' },
+          { width: 2048, url: 'https://r2.example/2048.jpg' },
+        ],
+        fallback: 'stream:abc123',
+      }),
+    ).toEqual(['https://r2.example/2048.jpg'])
+  })
+
+  it('returns an empty array when nothing is usable (callers throw their own error)', () => {
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [{ width: 4096, url: 'r2:datasets/foo/4096.jpg' }],
+      }),
+    ).toEqual([])
   })
 })
 
-describe('supplementary asset URL guard', () => {
+describe('extFromUrl', () => {
+  it('extracts a simple .jpg extension', () => {
+    expect(extFromUrl('https://r2.example/foo.jpg', '.png')).toBe('.jpg')
+  })
+
+  it('extracts .png ignoring the path before the dot', () => {
+    expect(extFromUrl('https://r2.example/path/to/earth.png', '.jpg')).toBe('.png')
+  })
+
+  it('is tolerant of query strings (Cloudflare Images variant URLs)', () => {
+    // Without the `(\?|#|$)` boundary in the regex, the original
+    // suffix-match swallows the query string as part of the
+    // extension, producing a junk filename.
+    expect(
+      extFromUrl(
+        'https://r2.example/cdn-cgi/image/width=4096/datasets/foo.jpg?format=auto',
+        '.png',
+      ),
+    ).toBe('.jpg')
+  })
+
+  it('is tolerant of fragments', () => {
+    expect(extFromUrl('https://r2.example/foo.png#anchor', '.jpg')).toBe('.png')
+  })
+
+  it('falls back to the default when no extension is present', () => {
+    expect(extFromUrl('https://r2.example/datasets/no-ext', '.png')).toBe('.png')
+  })
+})
+
+describe('isHttpUrl', () => {
   // The catalog serializer currently surfaces thumbnail_ref /
   // legend_ref / caption_ref as raw URIs (r2:, stream:, vimeo:),
-  // not resolved HTTPS URLs. downloadService.ts has to filter those
-  // out before pushing them to the Rust downloader, otherwise
-  // reqwest fails the whole download with `builder error`.
-  const isHttpUrl = (url: string | null | undefined): boolean => {
-    if (!url) return false
-    return /^https?:\/\//i.test(url)
-  }
-
+  // not resolved HTTPS URLs. downloadService.ts filters those out
+  // before pushing them to the Rust downloader, otherwise reqwest
+  // fails the whole download with `builder error`.
   it('accepts absolute https URLs', () => {
     expect(isHttpUrl('https://example.com/thumb.jpg')).toBe(true)
   })

@@ -6,6 +6,22 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tokio::sync::{Mutex, RwLock};
 
+/// Strip the query string and fragment off a URL before quoting it
+/// in a user-facing error. Vimeo proxy URLs and Cloudflare Images
+/// signed URLs both carry credentials in the query, so leaking those
+/// into UI tooltips or `error_detail` analytics payloads would be a
+/// regression. Returns the input unchanged if no `?` or `#` is
+/// present, and bails out cleanly on malformed URLs.
+fn redact_url_query(url: &str) -> String {
+    let cutoff = url
+        .find('?')
+        .into_iter()
+        .chain(url.find('#'))
+        .min()
+        .unwrap_or(url.len());
+    url[..cutoff].to_string()
+}
+
 /// Metadata stored alongside each downloaded dataset.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadedDataset {
@@ -162,20 +178,27 @@ impl DownloadManager {
         dest: &PathBuf,
         cancel_rx: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<u64, String> {
+        // We want enough URL context in user-facing errors to tell
+        // which asset failed (the dataset has up to four), but the
+        // Vimeo proxy and Cloudflare Images both return signed,
+        // time-limited URLs whose query strings contain access
+        // tokens. Strip the query + fragment before formatting so
+        // we never bake credentials into UI tooltips or analytics
+        // error_detail payloads. The full URL is still available in
+        // the Rust log (the caller logs it) for offline diagnosis.
+        let redacted = redact_url_query(url);
         let response = self
             .client
             .get(url)
             .send()
             .await
-            // Include the URL so log readers can tell which asset
-            // failed when a dataset has multiple. reqwest's
-            // `builder error` in particular collapses Url::parse
-            // failures into a generic message; emitting the URL is
-            // the cheapest way to make the failure self-diagnosing.
-            .map_err(|e| format!("HTTP request failed for {url}: {e}"))?;
+            .map_err(|e| format!("HTTP request failed for {redacted}: {e}"))?;
 
         if !response.status().is_success() {
-            return Err(format!("Server returned {} for {url}", response.status()));
+            return Err(format!(
+                "Server returned {} for {redacted}",
+                response.status()
+            ));
         }
 
         let mut stream = response.bytes_stream();
@@ -292,5 +315,37 @@ impl DownloadManager {
     pub async fn total_size(&self) -> u64 {
         let index = self.index.read().await;
         index.datasets.values().map(|d| d.total_bytes).sum()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_query_string_from_signed_vimeo_proxy_url() {
+        let url = "https://video-proxy.zyra-project.org/12345/master.mp4?token=abc.signed&expires=9999";
+        assert_eq!(
+            redact_url_query(url),
+            "https://video-proxy.zyra-project.org/12345/master.mp4"
+        );
+    }
+
+    #[test]
+    fn redacts_fragment_from_url() {
+        let url = "https://r2.example/foo.jpg#section";
+        assert_eq!(redact_url_query(url), "https://r2.example/foo.jpg");
+    }
+
+    #[test]
+    fn picks_earliest_of_question_mark_or_hash() {
+        let url = "https://r2.example/foo.jpg?a=1#frag";
+        assert_eq!(redact_url_query(url), "https://r2.example/foo.jpg");
+    }
+
+    #[test]
+    fn returns_url_unchanged_when_no_query_or_fragment() {
+        let url = "https://r2.example/datasets/01KQG/image_4096.jpg";
+        assert_eq!(redact_url_query(url), url);
     }
 }

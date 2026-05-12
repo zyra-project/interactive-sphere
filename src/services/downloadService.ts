@@ -148,6 +148,55 @@ async function fetchManifestEnvelope(dataLink: string): Promise<
   return res.json()
 }
 
+/**
+ * Pure picker over a video manifest envelope's `files[]`: returns the
+ * highest-width MP4 with an http(s) link, or throws a typed error.
+ * Extracted so unit tests can call into the real selection logic
+ * (sort + HLS-empty guard + non-HTTP guard) rather than re-implementing
+ * it inline.
+ */
+function pickBestVideoFile(envelope: { kind: 'video'; files?: VideoProxyFile[] }): {
+  link: string
+  size: number
+} {
+  const files = envelope.files ?? []
+  if (files.length === 0) {
+    // R2 HLS bundles (Phase 3 r2-hls migration) populate `hls` but
+    // leave `files[]` empty — there's no direct MP4 to grab and
+    // reassembling a playlist + .ts segments into a single offline
+    // file is a follow-on feature. Surface a clear error so the UI
+    // can render something better than reqwest's `builder error`.
+    throw new Error(
+      'This dataset is HLS-streamed and not yet available for offline download. ' +
+      'Open it online to view, or try a different dataset for offline use.',
+    )
+  }
+  const sorted = [...files].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))
+  const best = sorted[0]
+  if (!isHttpUrl(best.link)) {
+    throw new Error(`Video manifest returned a non-HTTP file link: ${best.link}`)
+  }
+  return { link: best.link, size: best.size }
+}
+
+/**
+ * Pure ordering over an image manifest envelope: returns http(s)-only
+ * candidate URLs, highest-width variant first, with `fallback`
+ * appended last. Empty result is valid — callers throw their own
+ * "no usable variants" error so the message matches their context.
+ */
+function orderImageCandidates(envelope: {
+  kind: 'image'
+  variants?: Array<{ width: number; url: string }>
+  fallback?: string
+}): string[] {
+  const variants = [...(envelope.variants ?? [])].sort((a, b) => b.width - a.width)
+  return [
+    ...variants.map(v => v.url),
+    ...(envelope.fallback ? [envelope.fallback] : []),
+  ].filter(isHttpUrl)
+}
+
 /** Resolve the best video file for download (highest quality MP4). */
 async function resolveVideoAssets(dataset: Dataset): Promise<{ assets: AssetInput[]; totalSize: number }> {
   // Node-mode: dataLink is `/api/v1/datasets/{id}/manifest`. Fetch
@@ -160,23 +209,7 @@ async function resolveVideoAssets(dataset: Dataset): Promise<{ assets: AssetInpu
     if (envelope.kind !== 'video') {
       throw new Error(`Expected a video manifest; got kind=${envelope.kind}.`)
     }
-    const files = envelope.files ?? []
-    if (files.length === 0) {
-      // R2 HLS bundles (Phase 3 r2-hls migration) populate `hls` but
-      // leave `files[]` empty — there's no direct MP4 to grab and
-      // reassembling a playlist + .ts segments into a single offline
-      // file is a follow-on feature. Surface a clear error so the UI
-      // can render something better than reqwest's `builder error`.
-      throw new Error(
-        'This dataset is HLS-streamed and not yet available for offline download. ' +
-        'Open it online to view, or try a different dataset for offline use.',
-      )
-    }
-    const sorted = [...files].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))
-    const best = sorted[0]
-    if (!isHttpUrl(best.link)) {
-      throw new Error(`Video manifest returned a non-HTTP file link: ${best.link}`)
-    }
+    const best = pickBestVideoFile(envelope)
     return { assets: [{ url: best.link, filename: 'video.mp4' }], totalSize: best.size }
   }
 
@@ -203,11 +236,7 @@ async function resolveImageAssets(dataset: Dataset): Promise<{ assets: AssetInpu
     if (envelope.kind !== 'image') {
       throw new Error(`Expected an image manifest; got kind=${envelope.kind}.`)
     }
-    const variants = [...(envelope.variants ?? [])].sort((a, b) => b.width - a.width)
-    const ordered: string[] = [
-      ...variants.map(v => v.url),
-      ...(envelope.fallback ? [envelope.fallback] : []),
-    ].filter(isHttpUrl)
+    const ordered = orderImageCandidates(envelope)
     if (ordered.length === 0) {
       throw new Error('Image manifest returned no usable variants')
     }
@@ -420,4 +449,18 @@ export function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)} ${units[i]}`
+}
+
+/**
+ * Test-only surface. Exposes the pure helpers used by `resolveVideo
+ * Assets` / `resolveImageAssets` / `downloadDataset` so unit tests
+ * call into the real implementation rather than re-running the same
+ * logic inline (which would let production drift silently). Don't
+ * import this outside `*.test.ts`.
+ */
+export const __test__ = {
+  isHttpUrl,
+  extFromUrl,
+  pickBestVideoFile,
+  orderImageCandidates,
 }

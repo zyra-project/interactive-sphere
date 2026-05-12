@@ -108,12 +108,17 @@ jobs:
           # these were wired up. Distinct from the iOS App Store
           # *Apple Distribution* cert (APPLE_CERTIFICATE_BASE64) — see
           # release.yml for the cert-type rationale.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          #
+          # Scoped to macOS runners via `runner.os == 'macOS'` so the
+          # certificate / password / notary credentials never appear in
+          # the Linux or Windows job environments. See release.yml for
+          # the matching rationale.
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tauriScript: npx tauri
 

@@ -190,14 +190,19 @@ jobs:
           # Apple ID are shared across both; the certs and their
           # passwords are not.
           #
-          # Empty on non-macOS runners — tauri-action only acts on them
-          # when building for darwin targets.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Scoped to macOS runners via `runner.os == 'macOS'`: the
+          # certificate / password / notary credentials never get
+          # materialised in the Linux or Windows job environments. The
+          # team ID and Apple ID are non-sensitive identifiers and
+          # could be passed on every runner without harm, but we gate
+          # them the same way for symmetry and to keep the audit story
+          # simple ("APPLE_* only on macOS").
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tauriScript: npx tauri
           releaseId: ${{ needs.create-release.outputs.release_id }}
