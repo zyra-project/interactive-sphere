@@ -14,6 +14,17 @@ interaction (surface-pinned drag, two-hand pinch+rotate, thumbstick
 zoom, flick-to-spin inertia), floating HUD, animated 3D loading
 scene. The 2D experience is unchanged when WebXR is absent.
 
+Broader-device-support work in
+[`VR_DEVICE_SUPPORT_PLAN.md`](VR_DEVICE_SUPPORT_PLAN.md) has
+shipped Phase 1 (Android phone AR via a DOM zoom slider, with the
+`local-floor` → `local` reference-space fallback for devices that
+lack floor tracking) — `vr_session_started.device_class` now
+buckets `android-ar`, `pico`, `hololens`, `magic-leap` alongside
+the existing `quest` / `quest-pro` / `vision-pro` / `pcvr` /
+`unknown`. Phase 2 (transient-pointer / Vision Pro / HoloLens /
+Quest hand-mode) and Phase 3 (PCVR verification) are pending
+hardware test passes.
+
 Remaining phases not yet built: VR tours (3.5), 2D↔VR camera sync
 (4), voice docent + hand tracking (5), AR-native enhancements
 (spatial audio, annotations, capture/share, real-time data,
