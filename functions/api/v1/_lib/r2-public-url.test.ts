@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest'
 import {
   encodeR2Key,
   resolveAssetRef,
+  resolveAssetRefStrict,
   resolveR2HlsPublicUrl,
   resolveR2PublicUrl,
 } from './r2-public-url'
@@ -141,6 +142,55 @@ describe('resolveR2HlsPublicUrl', () => {
   it('strips trailing slash from R2_PUBLIC_BASE', () => {
     const env: CatalogEnv = { R2_PUBLIC_BASE: 'https://video.example.com/' }
     expect(resolveR2HlsPublicUrl(env, KEY)).toBe(`https://video.example.com/${KEY}`)
+  })
+})
+
+describe('resolveAssetRefStrict (3b/O)', () => {
+  // The serializer's dataset GET path uses this stricter resolver
+  // so a missing R2_PUBLIC_BASE produces a missing-field omission
+  // rather than a URL that 403s in the browser. Same no-fallback
+  // policy as the manifest endpoint's HLS branch.
+
+  it('resolves r2: refs via R2_PUBLIC_BASE when set', () => {
+    const env: CatalogEnv = { R2_PUBLIC_BASE: 'https://assets.example.com' }
+    expect(
+      resolveAssetRefStrict(env, 'r2:datasets/DS001/thumbnail.jpg'),
+    ).toBe('https://assets.example.com/datasets/DS001/thumbnail.jpg')
+  })
+
+  it('falls through to MOCK_R2 host when R2_PUBLIC_BASE is unset', () => {
+    const env: CatalogEnv = { MOCK_R2: 'true', CATALOG_R2_BUCKET: 'tv' }
+    expect(
+      resolveAssetRefStrict(env, 'r2:datasets/DS001/thumbnail.jpg'),
+    ).toBe('https://mock-r2.localhost/tv/datasets/DS001/thumbnail.jpg')
+  })
+
+  it('returns null for an r2: ref when only R2_S3_ENDPOINT is set (no public-bucket fallback)', () => {
+    // This is the whole point of the strict resolver: production
+    // typically has R2_S3_ENDPOINT bound for signed PUTs (CLI use)
+    // but the bucket is NOT publicly readable through that endpoint.
+    // The lenient resolveAssetRef would emit an S3-endpoint URL
+    // here; the strict variant omits it so the caller can drop
+    // the field from the wire entirely.
+    const env: CatalogEnv = {
+      R2_S3_ENDPOINT: 'https://acct.r2.cloudflarestorage.com',
+      CATALOG_R2_BUCKET: 'terraviz-assets',
+    }
+    expect(resolveAssetRefStrict(env, 'r2:datasets/DS001/thumbnail.jpg')).toBeNull()
+  })
+
+  it('passes bare https URLs through unchanged (pre-migration rows)', () => {
+    const env: CatalogEnv = {}
+    expect(
+      resolveAssetRefStrict(env, 'https://d3sik7mbbzunjo.cloudfront.net/x/thumb.jpg'),
+    ).toBe('https://d3sik7mbbzunjo.cloudfront.net/x/thumb.jpg')
+  })
+
+  it('returns null for empty / null / undefined inputs', () => {
+    const env: CatalogEnv = { R2_PUBLIC_BASE: 'https://assets.example.com' }
+    expect(resolveAssetRefStrict(env, null)).toBeNull()
+    expect(resolveAssetRefStrict(env, undefined)).toBeNull()
+    expect(resolveAssetRefStrict(env, '')).toBeNull()
   })
 })
 

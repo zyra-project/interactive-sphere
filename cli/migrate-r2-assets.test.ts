@@ -278,8 +278,8 @@ describe('runMigrateR2Assets — plan + dry-run', () => {
     })
     expect(code).toBe(0)
     expect(handles.updateDataset).not.toHaveBeenCalled()
-    expect(out.text()).toContain('rows scanned:                  2')
-    expect(out.text()).toContain('rows with at least one asset:  2')
+    expect(out.text()).toContain('rows scanned:                          2')
+    expect(out.text()).toContain('rows with at least one eligible asset: 2  (non-r2: *_ref values)')
     expect(out.text()).toContain('thumbnail      1') // DS_B already done, only DS_A's thumb counts
     expect(out.text()).toContain('legend         2')
     expect(out.text()).toContain('caption        1')
@@ -341,8 +341,8 @@ describe('runMigrateR2Assets — plan + dry-run', () => {
       uploadR2Object: fakeUploadR2Object().fn,
     })
     // 5 rows × 2 types = 10 eligible total; limit=2 → 4 in this run.
-    expect(out.text()).toContain('will migrate this run:         2 (capped by --limit)')
-    expect(out.text()).toContain('total asset uploads:           4  (of 10 eligible across all rows)')
+    expect(out.text()).toContain('will migrate this run:                 2 (capped by --limit)')
+    expect(out.text()).toContain('total asset uploads:                   4  (of 10 eligible across all rows)')
     expect(out.text()).toContain('thumbnail      2  (of 5)')
     expect(out.text()).toContain('legend         2  (of 5)')
   })

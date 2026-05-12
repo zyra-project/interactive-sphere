@@ -306,11 +306,12 @@ function printPlanSummary(
   const totalAllUploads = types.reduce((sum, t) => sum + perTypeCounts[t], 0)
   ctx.stdout.write(
     `Asset migration plan:\n` +
-      `  rows scanned:                  ${rows.length}\n` +
-      `  rows with at least one asset:  ${eligibleRows.length}\n` +
-      `  will migrate this run:         ${willRun}` +
+      `  rows scanned:                          ${rows.length}\n` +
+      `  rows with at least one eligible asset: ${eligibleRows.length}` +
+      `  (non-r2: *_ref values)\n` +
+      `  will migrate this run:                 ${willRun}` +
       (limitInForce ? ` (capped by --limit)\n` : '\n') +
-      `  total asset uploads:           ${totalRunUploads}` +
+      `  total asset uploads:                   ${totalRunUploads}` +
       (limitInForce ? `  (of ${totalAllUploads} eligible across all rows)\n` : '\n') +
       `  types: ${types.join(', ')}\n`,
   )
