@@ -704,6 +704,28 @@ Commands:
                                       CATALOG_BACKEND_DEVELOPMENT.md
                                       "Migrating auxiliary asset URLs to R2".
 
+  rollback-r2-assets <id> [--types=t1,t2,...]
+                          [--to-url=<url>] [--dry-run]
+                                      Roll a row's auxiliary asset columns
+                                      back from r2: to the original NOAA URLs.
+                                      Original URL recovered from the SOS
+                                      snapshot by legacy_id; --to-url=<url>
+                                      overrides for non-SOS catalogs
+                                      (requires --types=<single-type>).
+                                      PATCHes the column first (commit point),
+                                      then deletes the R2 object (cleanup;
+                                      non-fatal).
+
+  rollback-r2-assets --from-stdin [--dry-run]
+                                      Bulk rollback. Reads NDJSON from stdin
+                                      (one { "dataset_id", "asset_type" } per
+                                      line) and runs the per-asset pipeline
+                                      sequentially. Continues past failures
+                                      and prints an aggregate summary. Pipe
+                                      a filtered slice of the migration's
+                                      Grafana telemetry to roll back a
+                                      specific subset.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

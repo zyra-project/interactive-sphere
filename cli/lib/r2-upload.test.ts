@@ -23,6 +23,7 @@ import { join } from 'node:path'
 import {
   buildObjectUrl,
   contentTypeForFile,
+  deleteR2Object,
   deleteR2Prefix,
   loadR2ConfigFromEnv,
   parseListKeys,
@@ -529,5 +530,77 @@ describe('uploadR2Object (3b/F)', () => {
     )
     expect(capturedBody).not.toBeNull()
     expect(new TextDecoder('utf-8').decode(new Uint8Array(capturedBody!))).toBe(text)
+  })
+})
+
+describe('deleteR2Object (3b/I)', () => {
+  // Single-object DELETE helper used by the 3b/I rollback path.
+  // One HTTP round-trip instead of LIST + DELETE-each, scoped
+  // to an exact key so unrelated objects sharing a prefix
+  // aren't touched.
+
+  it('issues DELETE against the path-style URL with SigV4', async () => {
+    let captured: { url: string; method: string; auth: string } | null = null
+    const fetchImpl = vi.fn(async (req: Request) => {
+      captured = {
+        url: req.url,
+        method: req.method,
+        auth: req.headers.get('Authorization') ?? '',
+      }
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+    const result = await deleteR2Object(
+      CONFIG,
+      'datasets/DS001/thumbnail.jpg',
+      { fetchImpl },
+    )
+    expect(result.key).toBe('datasets/DS001/thumbnail.jpg')
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+    expect(captured).not.toBeNull()
+    expect(captured!.method).toBe('DELETE')
+    expect(captured!.url).toBe(
+      'https://acct123.r2.cloudflarestorage.com/terraviz-assets/datasets/DS001/thumbnail.jpg',
+    )
+    expect(captured!.auth).toMatch(/^AWS4-HMAC-SHA256 /)
+  })
+
+  it('throws R2UploadError on a 403 with the key + status preserved', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('AccessDenied', { status: 403 }),
+    ) as unknown as typeof fetch
+    const err = await deleteR2Object(
+      CONFIG,
+      'datasets/DS001/thumbnail.jpg',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBe(403)
+    expect(err.key).toBe('datasets/DS001/thumbnail.jpg')
+  })
+
+  it('throws R2UploadError on a network throw with status=null', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('socket hang up')
+    }) as unknown as typeof fetch
+    const err = await deleteR2Object(
+      CONFIG,
+      'datasets/DS001/legend.png',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBeNull()
+    expect(err.message).toMatch(/DELETE .* unreachable.*socket hang up/)
+  })
+
+  it('refuses to DELETE when config is incomplete', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const err = await deleteR2Object(
+      { ...CONFIG, secretAccessKey: '' },
+      'datasets/DS001/thumbnail.jpg',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.message).toContain('R2_SECRET_ACCESS_KEY')
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })

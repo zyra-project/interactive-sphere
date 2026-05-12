@@ -392,6 +392,71 @@ export async function uploadR2Object(
  * one dataset at a time), per-object DELETE is simpler and
  * reliable.
  */
+/**
+ * Delete a single R2 object by exact key. Phase 3b uses this on
+ * the per-asset rollback path (3b/I) — one row's
+ * `datasets/<id>/<asset>.<ext>` deletion. Distinct from
+ * `deleteR2Prefix` because:
+ *
+ *   - 3b assets are one-file-per-column, not directory bundles.
+ *     Using deleteR2Prefix for a single file works (prefix-match)
+ *     but leaves room for false-positive matches if another
+ *     object happens to share a prefix.
+ *   - The single-DELETE path is one HTTP round-trip instead of
+ *     a LIST + N DELETEs, which is meaningful when the rollback
+ *     pump processes hundreds of assets.
+ *
+ * Throws `R2UploadError` on:
+ *   - missing config (validateR2Config),
+ *   - network throw during the DELETE,
+ *   - non-2xx response (404 included — the caller decides
+ *     whether a missing-object DELETE is fatal; this helper
+ *     surfaces it cleanly).
+ */
+export async function deleteR2Object(
+  config: R2UploadConfig,
+  key: string,
+  options: UploadR2ObjectOptions = {},
+): Promise<{ key: string; durationMs: number }> {
+  validateR2Config(config)
+  const fetchImpl = options.fetchImpl ?? fetch
+  const client = new AwsClient({
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    service: 's3',
+    region: R2_REGION,
+  })
+
+  const start = Date.now()
+  const url = buildObjectUrl(config, key)
+  const signed = await client.sign(url, { method: 'DELETE' })
+
+  let res: Response
+  try {
+    res = await fetchImpl(signed)
+  } catch (e) {
+    throw new R2UploadError(
+      null,
+      key,
+      `DELETE ${key} unreachable: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+  // S3 returns 204 on successful single-object DELETE. R2 follows
+  // the same semantics. Anything outside 2xx is an error here —
+  // the caller (rollback path) treats orphan storage as
+  // non-fatal but still wants to log a clean message.
+  if (res.status < 200 || res.status >= 300) {
+    const text = await res.text().catch(() => '')
+    throw new R2UploadError(
+      res.status,
+      key,
+      `DELETE ${key} failed (${res.status}): ${text.slice(0, 200) || '(no body)'}`,
+    )
+  }
+
+  return { key, durationMs: Date.now() - start }
+}
+
 export async function deleteR2Prefix(
   config: R2UploadConfig,
   keyPrefix: string,
