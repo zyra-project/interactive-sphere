@@ -51,14 +51,16 @@ describe('vrZoomOverlay', () => {
   })
 
   it('positions the initial value at the log midpoint', () => {
-    // Initial scale 1.0 between min 0.3 and max 2.5 → log midpoint
-    // is (ln 0.3 + ln 2.5) / 2 ≈ ln(sqrt(0.3 * 2.5)) ≈ ln(0.866) ≈ -0.144
-    // The fractional position is (ln 1 - ln 0.3) / (ln 2.5 - ln 0.3)
-    // = 1.204 / 2.120 ≈ 0.568. Slider value = 568 (out of 1000).
+    // Initial scale 1.0 between min 0.3 and max 2.5.
+    // fractional position = (ln 1 - ln 0.3) / (ln 2.5 - ln 0.3)
+    //                     = 1.20397 / 2.12026
+    //                     ≈ 0.56784
+    // Math.round(0.56784 * 1000) = 568 — assert exact since the
+    // mapping is deterministic and the slider value is an integer.
     const { handle } = makeHandle()
     handle.mount(document.body)
     const slider = document.querySelector('input[type="range"]') as HTMLInputElement
-    expect(Number(slider.value)).toBeCloseTo(568, -1)
+    expect(Number(slider.value)).toBe(568)
   })
 
   it('fires onZoom on input with a log-mapped scale', () => {

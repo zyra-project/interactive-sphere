@@ -112,10 +112,15 @@ body.browse-open #vr-enter-btn {
 }
 
 .vr-zoom-overlay-slider {
-    /* Vertical slider — `appearance: slider-vertical` is the
-     * Chromium/WebKit knob; Firefox respects the `orient="vertical"`
-     * attribute set in JS. We fall back to a CSS rotate as a third
-     * line of defence in browsers that ignore both. */
+    /* Vertical slider — three independent hints because no single
+     * one works everywhere:
+     *   - `appearance: slider-vertical` covers older Chromium/WebKit
+     *   - `orient="vertical"` (set in JS on the element) covers
+     *     Firefox
+     *   - `writing-mode: vertical-lr` is the modern spec-blessed
+     *     route picked up by recent Chromium and WebKit
+     * The combination renders correctly on every engine we've
+     * tested without needing a CSS rotate fallback. */
     -webkit-appearance: slider-vertical;
     appearance: slider-vertical;
     writing-mode: vertical-lr;
