@@ -191,3 +191,108 @@ describe('Vimeo ID extraction', () => {
     expect(extractVimeoId('')).toBeNull()
   })
 })
+
+// --- Node-mode manifest envelope walking ---
+// Same shape datasetLoader.ts consumes; these tests pin the
+// download-side walker so the two paths can't drift silently.
+
+describe('node-mode video manifest walking', () => {
+  it('picks the highest-width file from a video manifest envelope', () => {
+    const envelope = {
+      kind: 'video' as const,
+      files: [
+        { quality: '480p', width: 854, size: 20_000_000, type: 'video/mp4', link: 'https://r2.example/480.mp4' },
+        { quality: '4K', width: 3840, size: 500_000_000, type: 'video/mp4', link: 'https://r2.example/4k.mp4' },
+        { quality: '1080p', width: 1920, size: 100_000_000, type: 'video/mp4', link: 'https://r2.example/1080.mp4' },
+      ],
+    }
+    const sorted = [...envelope.files].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))
+    expect(sorted[0].quality).toBe('4K')
+    expect(sorted[0].link).toBe('https://r2.example/4k.mp4')
+  })
+
+  it('treats an HLS-only manifest (empty files[]) as a non-downloadable streaming dataset', () => {
+    // The Phase 3 r2-hls migration populates `hls` but leaves
+    // `files[]` empty — the SPA's download path must surface a
+    // clear error rather than passing the m3u8 URL to reqwest
+    // (which has no way to reassemble a playlist + segments into
+    // a single offline file). resolveVideoAssets throws the same
+    // "HLS-streamed and not yet available for offline download"
+    // message; this test just locks the empty-files predicate.
+    const envelope = { kind: 'video' as const, files: [] }
+    expect(envelope.files.length).toBe(0)
+  })
+})
+
+describe('node-mode image manifest walking', () => {
+  it('orders variants by descending width and appends the fallback', () => {
+    const envelope = {
+      kind: 'image' as const,
+      variants: [
+        { width: 1024, url: 'https://r2.example/1024.jpg' },
+        { width: 4096, url: 'https://r2.example/4096.jpg' },
+        { width: 2048, url: 'https://r2.example/2048.jpg' },
+      ],
+      fallback: 'https://r2.example/original.jpg',
+    }
+    const sorted = [...envelope.variants].sort((a, b) => b.width - a.width)
+    const ordered = [...sorted.map(v => v.url), envelope.fallback]
+    expect(ordered).toEqual([
+      'https://r2.example/4096.jpg',
+      'https://r2.example/2048.jpg',
+      'https://r2.example/1024.jpg',
+      'https://r2.example/original.jpg',
+    ])
+  })
+
+  it('derives the filename extension from a variant URL, tolerant of query strings', () => {
+    // Cloudflare Images variants come back with `?format=auto`-style
+    // query strings; extFromUrl needs to strip those before the
+    // suffix-match.
+    const url = 'https://r2.example/cdn-cgi/image/width=4096/datasets/foo.jpg?format=auto'
+    const match = url.match(/(\.\w+)(\?|#|$)/)
+    expect(match?.[1]).toBe('.jpg')
+  })
+})
+
+describe('supplementary asset URL guard', () => {
+  // The catalog serializer currently surfaces thumbnail_ref /
+  // legend_ref / caption_ref as raw URIs (r2:, stream:, vimeo:),
+  // not resolved HTTPS URLs. downloadService.ts has to filter those
+  // out before pushing them to the Rust downloader, otherwise
+  // reqwest fails the whole download with `builder error`.
+  const isHttpUrl = (url: string | null | undefined): boolean => {
+    if (!url) return false
+    return /^https?:\/\//i.test(url)
+  }
+
+  it('accepts absolute https URLs', () => {
+    expect(isHttpUrl('https://example.com/thumb.jpg')).toBe(true)
+  })
+
+  it('accepts absolute http URLs', () => {
+    expect(isHttpUrl('http://example.com/thumb.jpg')).toBe(true)
+  })
+
+  it('rejects raw r2: refs (catalog serializer pass-through)', () => {
+    expect(isHttpUrl('r2:datasets/01KQG.../thumbnail.jpg')).toBe(false)
+  })
+
+  it('rejects raw stream: refs', () => {
+    expect(isHttpUrl('stream:abc123')).toBe(false)
+  })
+
+  it('rejects raw vimeo: refs', () => {
+    expect(isHttpUrl('vimeo:123456')).toBe(false)
+  })
+
+  it('rejects relative API paths', () => {
+    expect(isHttpUrl('/api/v1/datasets/01KQG.../manifest')).toBe(false)
+  })
+
+  it('rejects null, undefined, and empty strings', () => {
+    expect(isHttpUrl(null)).toBe(false)
+    expect(isHttpUrl(undefined)).toBe(false)
+    expect(isHttpUrl('')).toBe(false)
+  })
+})

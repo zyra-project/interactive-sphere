@@ -167,10 +167,15 @@ impl DownloadManager {
             .get(url)
             .send()
             .await
-            .map_err(|e| format!("HTTP request failed: {e}"))?;
+            // Include the URL so log readers can tell which asset
+            // failed when a dataset has multiple. reqwest's
+            // `builder error` in particular collapses Url::parse
+            // failures into a generic message; emitting the URL is
+            // the cheapest way to make the failure self-diagnosing.
+            .map_err(|e| format!("HTTP request failed for {url}: {e}"))?;
 
         if !response.status().is_success() {
-            return Err(format!("Server returned {}", response.status()));
+            return Err(format!("Server returned {} for {url}", response.status()));
         }
 
         let mut stream = response.bytes_stream();
