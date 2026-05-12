@@ -781,23 +781,36 @@ step lands a working `r2:` data_ref:
    Set it on **both Production and Preview**. Redeploy after
    saving so the manifest endpoint picks it up.
 
-3. **CORS policy on the R2 bucket**, allowing GET from the SPA's
-   origin. Cloudflare dashboard → R2 → `terraviz-assets` →
-   Settings → CORS Policy:
+3. **CORS policy on the R2 bucket**, allowing GET from every
+   origin the SPA actually runs from. Cloudflare dashboard → R2
+   → `terraviz-assets` → Settings → CORS Policy:
    ```json
    [{
      "AllowedOrigins": [
        "https://terraviz.zyra-project.org",
-       "https://*.terraviz.pages.dev"
+       "https://*.terraviz.pages.dev",
+       "tauri://localhost",
+       "http://tauri.localhost",
+       "https://tauri.localhost"
      ],
      "AllowedMethods": ["GET"],
      "AllowedHeaders": ["*"],
      "MaxAgeSeconds": 3600
    }]
    ```
-   Without CORS, the SPA's HLS player can't load the playlist
-   cross-origin and playback fails with a console error rather
-   than a clear network error.
+   The three `tauri.localhost` entries cover the Tauri desktop
+   webview: macOS uses the custom scheme `tauri://localhost` and
+   Windows/Linux use `http(s)://tauri.localhost`. Mirrors the
+   allowlist already accepted by `functions/api/ingest.ts`.
+   Without these, HLS.js's internal XHR manifest fetch from the
+   desktop build fails with `manifestLoadError` and the playlist
+   request shows `Origin tauri://localhost is not allowed by
+   Access-Control-Allow-Origin` in the console — see the
+   "Tauri webview is not a CORS-free zone" troubleshooting note
+   below. Without CORS entirely (the original baseline before
+   any allowed origins), the SPA's HLS player can't load the
+   playlist cross-origin and playback fails with a console error
+   rather than a clear network error.
 
 Then verify the binding state:
 
@@ -1231,8 +1244,23 @@ matter which route surfaced it.
 - **CORS in local mode.** The Pages Function returns
   `Access-Control-Allow-Origin: http://localhost:5173` for the
   Vite dev server. Serve the frontend on a different port and
-  you must set `FRONTEND_ORIGIN` in `.dev.vars`. Tauri webviews
-  bypass CORS entirely — desktop dev never sees this.
+  you must set `FRONTEND_ORIGIN` in `.dev.vars`. For the Tauri
+  desktop build, `apiFetch` (`src/services/catalogSource.ts`)
+  routes `/api/*` calls through the Tauri HTTP plugin so the
+  Rust side issues the request and webview CORS doesn't apply —
+  desktop dev never sees CORS errors *on Pages Function calls*.
+- **Tauri webview is not a CORS-free zone.** The bypass above
+  only covers paths that explicitly use the Tauri HTTP plugin
+  (`apiFetch`, `llmProvider`, `downloadService`). Everything
+  else — `fetch()` calls in services, `<img>`/`<video>` element
+  loads, HLS.js's internal XHR loader for `.m3u8` and `.ts`
+  segments — runs inside the webview and *is* subject to
+  standard CORS. If a Tauri build fails with `Origin
+  tauri://localhost is not allowed by Access-Control-Allow-Origin`,
+  the fix is on the origin server: add `tauri://localhost`,
+  `http://tauri.localhost`, and `https://tauri.localhost` to its
+  CORS allowlist (the R2 bucket section above is the canonical
+  example).
 - **`MOCK_STREAM` flips silently.** Setting `MOCK_STREAM=true`
   requires a Wrangler restart to pick up; the binding is read
   once at startup. Symptom is a manifest endpoint returning real
