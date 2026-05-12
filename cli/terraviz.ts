@@ -43,6 +43,7 @@ import { runVerifyDeploy } from './verify-deploy'
 import { runMigrateR2Hls } from './migrate-r2-hls'
 import { runRollbackR2Hls } from './rollback-r2-hls'
 import { runListRealtimeR2 } from './list-realtime-r2'
+import { runMigrateR2Assets } from './migrate-r2-assets'
 
 async function main(argv: string[]): Promise<number> {
   // Bare `-h` short flag — parseArgs only knows about `--`, so handle
@@ -110,6 +111,8 @@ async function main(argv: string[]): Promise<number> {
       return runRollbackR2Hls(ctx)
     case 'list-realtime-r2':
       return runListRealtimeR2(ctx)
+    case 'migrate-r2-assets':
+      return runMigrateR2Assets(ctx)
     default:
       process.stderr.write(`Unknown command: ${command}\n\nRun \`terraviz help\` for usage.\n`)
       return 2

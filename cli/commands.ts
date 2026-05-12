@@ -690,6 +690,20 @@ Commands:
                                       --from-stdin; --human prints a readable
                                       table. Read-only — no mutations.
 
+  migrate-r2-assets [--dry-run] [--limit=N] [--id=<id>]
+                    [--types=t1,t2,...] [--pace-ms=N]
+                                      Migrate per-row auxiliary asset URLs
+                                      (thumbnail, legend, caption, color_table)
+                                      from NOAA CloudFront to R2 under
+                                      datasets/<id>/<asset>.<ext>. Idempotent —
+                                      assets already on r2: skip. Captions
+                                      auto-convert SRT → VTT inline. Requires
+                                      the same R2 credentials as migrate-r2-hls.
+                                      Use --types to do one class at a time
+                                      (default: all four). See
+                                      CATALOG_BACKEND_DEVELOPMENT.md
+                                      "Migrating auxiliary asset URLs to R2".
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)
