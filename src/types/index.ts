@@ -59,13 +59,18 @@ export interface Dataset {
   abstractTxt?: string
   thumbnailLink?: string
   legendLink?: string
+  /** Color-ramp image used by interactive probing — distinct from
+   * legendLink in ~2 of 14 rows where both are present (legendLink
+   * is the UI-visible swatch, colorTableLink is the canonical
+   * gradient). Phase 3b restored this from the SOS snapshot. */
+  colorTableLink?: string
   tags?: string[]
-  
+
   // Temporal metadata
   startTime?: string  // ISO 8601
   endTime?: string    // ISO 8601
   period?: string     // ISO 8601 duration
-  
+
   // Other metadata
   isHidden?: boolean
   weight?: number
@@ -73,8 +78,38 @@ export interface Dataset {
   websiteLink?: string
   runTourOnLoad?: string
 
+  /** Pixel-coords → data-value mapping for the color table, used
+   * by SOS desktop's hover-to-probe feature. Stored as a JSON
+   * object in D1 (`probing_info` column) and serialized verbatim;
+   * SPA consumption is deferred to a later phase. */
+  probingInfo?: ProbingInfo
+
+  /** Variable-by-variable min/max ranges from the SOS
+   * `boundingVariables` field. Persisted as JSON in
+   * `bounding_variables` and surfaced verbatim. ~27 rows. */
+  boundingVariables?: unknown
+
   // Enriched metadata (from sos_dataset_metadata.json cross-reference)
   enriched?: EnrichedMetadata
+}
+
+/** Probing metadata recovered from the SOS snapshot. Pixel
+ * positions (`minPos` / `maxPos`) reference coordinates on the
+ * color table image; sampling the rendered pixel and interpolating
+ * between min and max gives the data value at that screen point.
+ *
+ * Stored on `datasets.probing_info` as a JSON-stringified blob.
+ * The validator (`validateProbingInfo` in
+ * `functions/api/v1/_lib/validators.ts`) gates the exact shape on
+ * write; the runtime type here is intentionally permissive so a
+ * downstream consumer can read and pick the fields it needs.
+ */
+export interface ProbingInfo {
+  units?: string
+  minVal?: number
+  maxVal?: number
+  minPos?: { x?: number; y?: number; XUnits?: string; YUnits?: string }
+  maxPos?: { x?: number; y?: number; XUnits?: string; YUnits?: string }
 }
 
 /**

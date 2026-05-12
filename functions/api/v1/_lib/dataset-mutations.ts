@@ -348,12 +348,13 @@ export async function createDataset(
     .prepare(
       `INSERT INTO datasets (
          id, slug, origin_node, title, abstract, organization, format, data_ref,
-         thumbnail_ref, legend_ref, caption_ref, website_link,
+         thumbnail_ref, legend_ref, caption_ref, color_table_ref, website_link,
          start_time, end_time, period, weight, visibility, is_hidden, run_tour_on_load,
          license_spdx, license_url, license_statement, attribution_text,
          rights_holder, doi, citation_text, legacy_id,
+         probing_info, bounding_variables,
          schema_version, created_at, updated_at, published_at, publisher_id
-       ) VALUES (?,?,(SELECT node_id FROM node_identity LIMIT 1),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       ) VALUES (?,?,(SELECT node_id FROM node_identity LIMIT 1),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       id,
@@ -371,6 +372,7 @@ export async function createDataset(
       body.thumbnail_ref ?? null,
       body.legend_ref ?? null,
       body.caption_ref ?? null,
+      body.color_table_ref ?? null,
       body.website_link ?? null,
       body.start_time ?? null,
       body.end_time ?? null,
@@ -387,6 +389,12 @@ export async function createDataset(
       body.doi ?? null,
       body.citation_text ?? null,
       body.legacy_id ?? null,
+      // Phase 3b restored these from the SOS snapshot. Validated
+      // upstream as plain JSON-stringified blobs; D1 stores them
+      // verbatim and the serializer hands them back to callers
+      // unchanged. Empty / null on rows that don't carry the data.
+      body.probing_info ?? null,
+      body.bounding_variables ?? null,
       1,
       now,
       now,
@@ -439,6 +447,9 @@ export async function updateDataset(
   if (body.thumbnail_ref !== undefined) set('thumbnail_ref', body.thumbnail_ref)
   if (body.legend_ref !== undefined) set('legend_ref', body.legend_ref)
   if (body.caption_ref !== undefined) set('caption_ref', body.caption_ref)
+  if (body.color_table_ref !== undefined) set('color_table_ref', body.color_table_ref)
+  if (body.probing_info !== undefined) set('probing_info', body.probing_info)
+  if (body.bounding_variables !== undefined) set('bounding_variables', body.bounding_variables)
   if (body.website_link !== undefined) set('website_link', body.website_link)
   if (body.start_time !== undefined) set('start_time', body.start_time)
   if (body.end_time !== undefined) set('end_time', body.end_time)

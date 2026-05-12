@@ -55,6 +55,9 @@ function fakeRow(overrides: Partial<DatasetRow> = {}): DatasetRow {
     retracted_at: null,
     publisher_id: null,
     legacy_id: null,
+    color_table_ref: null,
+    probing_info: null,
+    bounding_variables: null,
     ...overrides,
   }
 }
@@ -129,5 +132,70 @@ describe('serializeDataset — tour rows', () => {
       passthroughResolver,
     )
     expect(wire.tourJsonUrl).toBeUndefined()
+  })
+})
+
+describe('serializeDataset — Phase 3b columns', () => {
+  // The three columns added in migration 0009: color_table_ref
+  // (auxiliary asset URL, serialized verbatim) plus probing_info
+  // and bounding_variables (JSON-stringified text in D1, parsed
+  // to objects on the wire).
+  it('emits colorTableLink from color_table_ref verbatim', () => {
+    const wire = serializeDataset(
+      fakeRow({ color_table_ref: 'https://example.org/colortable.png' }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.colorTableLink).toBe('https://example.org/colortable.png')
+  })
+
+  it('omits colorTableLink when color_table_ref is null', () => {
+    const wire = serializeDataset(fakeRow({ color_table_ref: null }), emptyDecoration, fakeIdentity)
+    expect(wire.colorTableLink).toBeUndefined()
+  })
+
+  it('parses probing_info JSON text on read', () => {
+    const probing = {
+      units: 'psu',
+      minVal: 20,
+      maxVal: 38,
+      minPos: { x: 45, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+      maxPos: { x: 277, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+    }
+    const wire = serializeDataset(
+      fakeRow({ probing_info: JSON.stringify(probing) }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.probingInfo).toEqual(probing)
+  })
+
+  it('parses bounding_variables JSON text on read', () => {
+    const bounding = { ranges: [[0, 100]] }
+    const wire = serializeDataset(
+      fakeRow({ bounding_variables: JSON.stringify(bounding) }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.boundingVariables).toEqual(bounding)
+  })
+
+  it('returns undefined for malformed JSON rather than 500-ing', () => {
+    // The validator gates write-side shape, so the only way a row
+    // ends up with malformed JSON here is an out-of-band DB edit.
+    // We surface that as a missing field rather than a hard
+    // serializer failure (the read endpoint stays available).
+    const wire = serializeDataset(
+      fakeRow({ probing_info: 'not json {' }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.probingInfo).toBeUndefined()
+  })
+
+  it('omits the fields entirely when both are null (default state)', () => {
+    const wire = serializeDataset(fakeRow({}), emptyDecoration, fakeIdentity)
+    expect(wire.probingInfo).toBeUndefined()
+    expect(wire.boundingVariables).toBeUndefined()
   })
 })

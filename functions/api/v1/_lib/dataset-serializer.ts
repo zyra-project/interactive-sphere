@@ -36,6 +36,11 @@ export interface WireDataset {
   thumbnailLink?: string
   legendLink?: string
   closedCaptionLink?: string
+  /** Color-ramp image used by interactive probing — populated
+   * verbatim from the catalog's `color_table_ref`. Distinct from
+   * `legendLink` in ~2 of 14 overlap cases. Optional; omitted when
+   * the row carries no value. */
+  colorTableLink?: string
   websiteLink?: string
   startTime?: string
   endTime?: string
@@ -80,6 +85,14 @@ export interface WireDataset {
    * created by hand. Phase 1d/T.
    */
   legacyId?: string
+  /** Probing metadata recovered from the SOS snapshot — pixel
+   * coords on the color table image mapped to data values. Wire
+   * type is the parsed JSON object (not the raw string D1 stores).
+   * Phase 3b. */
+  probingInfo?: unknown
+  /** Per-variable data ranges (SOS `boundingVariables`). Wire type
+   * is the parsed JSON; D1 stores as a string. Phase 3b. */
+  boundingVariables?: unknown
   /**
    * For `tour/json` rows: the resolved URL the SPA's tour engine
    * fetches the tour document from, bypassing the manifest endpoint
@@ -107,6 +120,23 @@ export type DataRefResolver = (dataRef: string) => string | null
 
 function nonNull<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
+}
+
+/**
+ * Parse a JSON-stringified text column into its object form for
+ * the wire. Empty / null / unparseable values become `undefined`
+ * so the field is omitted from the serialized row. The columns
+ * this is used for (Phase 3b's `probing_info` and
+ * `bounding_variables`) are validated on write, so a parse
+ * failure here only happens if the row was edited out-of-band.
+ */
+function parseJsonField(v: string | null | undefined): unknown {
+  if (v == null || v.length === 0) return undefined
+  try {
+    return JSON.parse(v) as unknown
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -154,6 +184,7 @@ export function serializeDataset(
     thumbnailLink: nonNull(row.thumbnail_ref),
     legendLink: nonNull(row.legend_ref),
     closedCaptionLink: nonNull(row.caption_ref),
+    colorTableLink: nonNull(row.color_table_ref),
     websiteLink: nonNull(row.website_link),
     startTime: nonNull(row.start_time),
     endTime: nonNull(row.end_time),
@@ -181,6 +212,14 @@ export function serializeDataset(
     updatedAt: row.updated_at,
     publishedAt: nonNull(row.published_at),
     legacyId: nonNull(row.legacy_id),
+    // D1 stores these as JSON-stringified text. Parsing here keeps
+    // the wire-side shape friendly for consumers; a malformed
+    // string is dropped silently (returned as undefined) rather
+    // than 500-ing the read endpoint — Phase 3b's import validates
+    // shape on write, so corrupted JSON on the column is an
+    // operator-side database edit, not a publisher API request.
+    probingInfo: parseJsonField(row.probing_info),
+    boundingVariables: parseJsonField(row.bounding_variables),
   }
 
   // Tour rows carry a fetchable JSON URL alongside the manifest
