@@ -379,11 +379,23 @@ breakpoint, which gives mobile a head start. New work needed:
 
 - Existing Apple Developer Program account
 - App ID using existing bundle identifier `org.zyra-project.interactive-sphere`
-- Distribution certificate (.p12) and App Store provisioning profile, both
-  stored as encrypted GitHub secrets
+- **Apple Distribution** certificate (.p12) and App Store provisioning
+  profile, both stored as encrypted GitHub secrets
+  (`APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`,
+  `APPLE_PROVISIONING_PROFILE`, `APPLE_TEAM_ID`)
 - Build via `tauri ios build --export-method app-store-connect`
 - Upload via `xcrun altool` or `fastlane pilot` to TestFlight
 - TestFlight for internal/beta testing, then App Store submission
+
+> **Distinct from desktop signing.** The macOS `.dmg` distributed
+> outside the App Store requires a **Developer ID Application**
+> certificate, not the Apple Distribution cert above. Both certs
+> live under the same Apple Developer account, but `.p12` exports
+> and passwords are separate. The desktop workflow reads its cert
+> from `APPLE_DEVELOPER_ID_CERTIFICATE_BASE64` /
+> `APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD`; `APPLE_ID`,
+> `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` are shared.
+> See [`DESKTOP_APP_PLAN.md`](DESKTOP_APP_PLAN.md) §Setup steps.
 
 ### Android (Phase 4+)
 

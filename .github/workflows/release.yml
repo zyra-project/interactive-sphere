@@ -174,20 +174,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple Developer ID signing + notarization. When these are set,
-          # tauri-action imports the .p12 into a temporary keychain on the
-          # macOS runner, signs the .app/.dmg with the Developer ID identity,
-          # and submits the bundle to Apple's notary service via notarytool.
-          # Without these, the aarch64 .dmg is only ad-hoc signed and macOS
-          # Gatekeeper rejects it on download with "Terraviz is damaged and
-          # can't be opened." (See docs/DESKTOP_APP_PLAN.md §Setup steps.)
-          # Empty on non-macOS runners — tauri-action only acts on them when
-          # building for darwin targets.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # Apple Developer ID signing + notarization for the macOS .dmg.
+          # When these are set, tauri-action imports the .p12 into a
+          # temporary keychain on the macOS runner, signs the .app/.dmg
+          # with the Developer ID identity, and submits the bundle to
+          # Apple's notary service via notarytool. Without them, the
+          # aarch64 .dmg is only ad-hoc signed and macOS Gatekeeper
+          # rejects it on download with "Terraviz is damaged and can't
+          # be opened." (See docs/DESKTOP_APP_PLAN.md §Setup steps.)
+          #
+          # Note: this is a *Developer ID Application* certificate — a
+          # different cert type from the *Apple Distribution* cert used
+          # for the iOS App Store build (APPLE_CERTIFICATE_BASE64,
+          # see docs/MOBILE_APP_PLAN.md §Distribution). The team ID and
+          # Apple ID are shared across both; the certs and their
+          # passwords are not.
+          #
+          # Empty on non-macOS runners — tauri-action only acts on them
+          # when building for darwin targets.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tauriScript: npx tauri
