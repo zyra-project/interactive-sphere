@@ -160,3 +160,70 @@ describe('product-health dashboard — Phase 3 migration row', () => {
     expect(sql).toMatch(/AS\s+ok_rows/)
   })
 })
+
+describe('product-health dashboard — Phase 3b asset migration row', () => {
+  const dashboard = load()
+  const assetPanels = dashboard.panels.filter(p =>
+    p.title.toLowerCase().includes('migration assets'),
+  )
+
+  it('exposes three asset-migration panels (commit 3b/J)', () => {
+    expect(assetPanels).toHaveLength(3)
+    const titles = assetPanels.map(p => p.title).sort()
+    expect(titles).toEqual([
+      'Migration assets — cumulative ok by asset_type',
+      'Migration assets — events per day by outcome',
+      'Migration assets — failure breakdown by asset_type',
+    ])
+  })
+
+  it('places the asset-migration row on its own grid y (distinct from the video row)', () => {
+    const ys = new Set(assetPanels.map(p => p.gridPos.y))
+    expect(ys.size).toBe(1)
+    const [y] = [...ys]
+    // The video migration row sits at y=34 (8 tall); this row
+    // lands at y=42 so the rows don't overlap.
+    expect(y).toBe(42)
+  })
+
+  it('pins blob1 = migration_r2_assets on every query', () => {
+    for (const panel of assetPanels) {
+      for (const target of panel.targets) {
+        const sql = target.url_options?.data ?? ''
+        expect(sql).toMatch(/blob1\s*=\s*'migration_r2_assets'/)
+      }
+    }
+  })
+
+  it('uses blob5 for asset_type and blob8 for outcome', () => {
+    // Walking MigrationR2AssetsEvent's fields alphabetically (after
+    // the 4 server-stamped blobs and excluding event_type):
+    //   asset_type   (str) → blob5
+    //   dataset_id   (str) → blob6
+    //   duration_ms  (num) → double1
+    //   legacy_id    (str) → blob7
+    //   outcome      (str) → blob8  ← pinned here
+    //   r2_key       (str) → blob9
+    //   source_bytes (num) → double2
+    //   source_url   (str) → blob10
+    const breakdown = assetPanels.find(p => p.title.includes('failure breakdown'))
+    expect(breakdown).toBeDefined()
+    const sql = breakdown!.targets[0].url_options!.data!
+    expect(sql).toMatch(/blob5\s+AS\s+asset_type/)
+    expect(sql).toMatch(/blob8\s+AS\s+outcome/)
+    expect(sql).toMatch(/blob8\s*!=\s*'ok'/)
+  })
+
+  it('cumulative ok query filters blob8 = ok and groups by asset_type', () => {
+    const cumulative = assetPanels.find(p => p.title.includes('cumulative'))
+    expect(cumulative).toBeDefined()
+    const sql = cumulative!.targets[0].url_options!.data!
+    expect(sql).toMatch(/blob8\s*=\s*'ok'/)
+    expect(sql).toMatch(/blob5\s+AS\s+asset_type/)
+    expect(sql).toMatch(/AS\s+ok_rows/)
+  })
+
+  it('dashboard version bumps to 8 so operators re-import on upgrade', () => {
+    expect(dashboard.version).toBe(8)
+  })
+})
