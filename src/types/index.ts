@@ -59,13 +59,18 @@ export interface Dataset {
   abstractTxt?: string
   thumbnailLink?: string
   legendLink?: string
+  /** Color-ramp image used by interactive probing — distinct from
+   * legendLink in ~2 of 14 rows where both are present (legendLink
+   * is the UI-visible swatch, colorTableLink is the canonical
+   * gradient). Phase 3b restored this from the SOS snapshot. */
+  colorTableLink?: string
   tags?: string[]
-  
+
   // Temporal metadata
   startTime?: string  // ISO 8601
   endTime?: string    // ISO 8601
   period?: string     // ISO 8601 duration
-  
+
   // Other metadata
   isHidden?: boolean
   weight?: number
@@ -73,8 +78,42 @@ export interface Dataset {
   websiteLink?: string
   runTourOnLoad?: string
 
+  /** Pixel-coords → data-value mapping for the color table, used
+   * by SOS desktop's hover-to-probe feature. Stored as a JSON
+   * object in D1 (`probing_info` column) and serialized verbatim;
+   * SPA consumption is deferred to a later phase. */
+  probingInfo?: ProbingInfo
+
+  /** Variable-by-variable min/max ranges from the SOS
+   * `boundingVariables` field. Persisted as JSON in
+   * `bounding_variables` and surfaced verbatim. ~27 rows. */
+  boundingVariables?: unknown
+
   // Enriched metadata (from sos_dataset_metadata.json cross-reference)
   enriched?: EnrichedMetadata
+}
+
+/** Probing metadata recovered from the SOS snapshot. Pixel
+ * positions (`minPos` / `maxPos`) reference coordinates on the
+ * color table image; sampling the rendered pixel and interpolating
+ * between min and max gives the data value at that screen point.
+ *
+ * Stored on `datasets.probing_info` as a JSON-stringified blob.
+ * Write-side validation (`validateJsonStringField` in
+ * `functions/api/v1/_lib/validators.ts`) only confirms the value
+ * is a JSON-parseable string under the 4096-char cap — it does
+ * NOT enforce this specific object shape. The shape declared
+ * here is documentation of the SOS snapshot's payload, not a
+ * runtime contract on what consumers will see. A downstream
+ * consumer should treat each field as optional and pick the
+ * ones it needs.
+ */
+export interface ProbingInfo {
+  units?: string
+  minVal?: number
+  maxVal?: number
+  minPos?: { x?: number; y?: number; XUnits?: string; YUnits?: string }
+  maxPos?: { x?: number; y?: number; XUnits?: string; YUnits?: string }
 }
 
 /**
@@ -1083,6 +1122,68 @@ export interface MigrationR2HlsEvent extends TelemetryEventBase {
   outcome: MigrationR2HlsOutcome
 }
 
+/** Outcome of a single asset migration in
+ * `terraviz migrate-r2-assets`. Mirrors the `AssetOutcome`
+ * string-union type alias exported from
+ * `cli/migrate-r2-assets.ts`; keep these in sync. */
+export type MigrationR2AssetsOutcome =
+  | 'ok'
+  | 'fetch_failed'
+  | 'upload_failed'
+  | 'patch_failed'
+
+/** Which auxiliary asset the migration event describes. Mirrors
+ * the `AssetType` string-union from `cli/migrate-r2-assets.ts`. */
+export type MigrationR2AssetsType = 'thumbnail' | 'legend' | 'caption' | 'color_table'
+
+/**
+ * Operator-facing asset-migration progress event. Emitted once
+ * per attempted asset migration by `terraviz migrate-r2-assets`
+ * (Phase 3b commit G). One event per (row, asset_type) pair —
+ * a row migrating thumbnail + legend produces two events.
+ *
+ * Distinguished from `migration_r2_hls` (Phase 3): that pump
+ * handles the video `data_ref` (one event per row), this one
+ * handles the auxiliary asset columns (one event per asset, up
+ * to 4 per row).
+ *
+ * Consumed by a Grafana asset-migration row (Phase 3b commit J).
+ *
+ * No free-text fields — `dataset_id` / `legacy_id` / `r2_key` /
+ * `source_url` are public catalog references; `asset_type` /
+ * `outcome` are enums. No hashing required.
+ */
+export interface MigrationR2AssetsEvent extends TelemetryEventBase {
+  event_type: 'migration_r2_assets'
+  /** Catalog dataset id (`DS<ulid>`) the migration targeted. */
+  dataset_id: string
+  /** Idempotency key from the original SOS import (e.g.
+   * `INTERNAL_SOS_768`); empty string when the row has no
+   * legacy_id. */
+  legacy_id: string
+  /** Which asset column on the row this event describes. */
+  asset_type: MigrationR2AssetsType
+  /** Upstream URL the asset was fetched from (the value of the
+   * row's `<asset>_ref` column at run time). Public catalog
+   * data — same URLs the SPA renders today. */
+  source_url: string
+  /** Resulting R2 key (e.g. `datasets/<id>/thumbnail.png`).
+   * Empty string when the migration didn't reach the PUT step.
+   * Captured even on `patch_failed` so orphan objects are
+   * recoverable via `terraviz rollback-r2-assets`. */
+  r2_key: string
+  /** Bytes received from the upstream fetch; 0 when the fetch
+   * didn't complete. */
+  source_bytes: number
+  /** Per-asset wall-clock duration in ms (fetch + optional
+   * SRT→VTT conversion + upload). Does NOT include the row-level
+   * PATCH — that's tallied once per row even though it
+   * influences every asset's final outcome. */
+  duration_ms: number
+  /** Per-asset outcome. See `MigrationR2AssetsOutcome`. */
+  outcome: MigrationR2AssetsOutcome
+}
+
 // --- Tier B events ---
 
 export interface DwellEvent extends TelemetryEventBase {
@@ -1216,6 +1317,7 @@ export type TelemetryEvent =
   | PerfSampleEvent
   | ErrorEvent
   | MigrationR2HlsEvent
+  | MigrationR2AssetsEvent
   // Tier B
   | DwellEvent
   | OrbitInteractionEvent

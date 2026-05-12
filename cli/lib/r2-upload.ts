@@ -286,6 +286,99 @@ export async function uploadHlsBundle(
   }
 }
 
+export interface UploadR2ObjectOptions {
+  /** Test injection. Defaults to the global `fetch`. */
+  fetchImpl?: typeof fetch
+}
+
+export interface UploadR2ObjectResult {
+  /** The full R2 key the object was PUT under (echoed back so the
+   * caller doesn't have to thread it alongside the result). */
+  key: string
+  /** Number of bytes uploaded. */
+  bytes: number
+  /** Wall-clock upload duration in ms. */
+  durationMs: number
+}
+
+/**
+ * Upload a single in-memory object to R2 via the S3 API. Used by
+ * the 3b migrate-r2-assets pump, which fetches a single thumbnail
+ * / legend / caption / color-table file from upstream and PUTs
+ * it to R2 under `datasets/{id}/<asset>.<ext>`.
+ *
+ * Companion to `uploadHlsBundle`, which uploads a directory of
+ * many files. The per-file logic is intentionally NOT factored
+ * out of `uploadHlsBundle` here — keeping the bundle uploader's
+ * inner loop self-contained means a future change to the
+ * single-file path doesn't risk breaking the bundle path.
+ *
+ * Throws `R2UploadError` on:
+ *   - missing config (validateR2Config),
+ *   - network throw during the PUT,
+ *   - non-2xx response from R2.
+ */
+export async function uploadR2Object(
+  config: R2UploadConfig,
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+  options: UploadR2ObjectOptions = {},
+): Promise<UploadR2ObjectResult> {
+  validateR2Config(config)
+  const fetchImpl = options.fetchImpl ?? fetch
+  const client = new AwsClient({
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    service: 's3',
+    region: R2_REGION,
+  })
+
+  const start = Date.now()
+  const url = buildObjectUrl(config, key)
+  // Same ArrayBuffer round-trip as the bundle uploader so the
+  // DOM `BodyInit` type-check is happy. The slice copies — fine
+  // for the small per-file payloads in scope (thumbnails up to
+  // a few MB, captions a few KB).
+  const ab = body.buffer.slice(
+    body.byteOffset,
+    body.byteOffset + body.byteLength,
+  ) as ArrayBuffer
+  const signed = await client.sign(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(body.byteLength),
+    },
+    body: ab,
+  })
+
+  let res: Response
+  try {
+    res = await fetchImpl(signed)
+  } catch (e) {
+    throw new R2UploadError(
+      null,
+      key,
+      `PUT ${key} unreachable: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+  if (res.status < 200 || res.status >= 300) {
+    const text = await res.text().catch(() => '')
+    throw new R2UploadError(
+      res.status,
+      key,
+      `PUT ${key} failed (${res.status}): ${text.slice(0, 200) || '(no body)'}`,
+    )
+  }
+
+  return {
+    key,
+    bytes: body.byteLength,
+    durationMs: Date.now() - start,
+  }
+}
+
 /**
  * Delete every object under a key prefix. Used by the rollback
  * subcommand (3/F) — after the data_ref PATCH lands, this is
@@ -299,6 +392,71 @@ export async function uploadHlsBundle(
  * one dataset at a time), per-object DELETE is simpler and
  * reliable.
  */
+/**
+ * Delete a single R2 object by exact key. Phase 3b uses this on
+ * the per-asset rollback path (3b/I) — one row's
+ * `datasets/<id>/<asset>.<ext>` deletion. Distinct from
+ * `deleteR2Prefix` because:
+ *
+ *   - 3b assets are one-file-per-column, not directory bundles.
+ *     Using deleteR2Prefix for a single file works (prefix-match)
+ *     but leaves room for false-positive matches if another
+ *     object happens to share a prefix.
+ *   - The single-DELETE path is one HTTP round-trip instead of
+ *     a LIST + N DELETEs, which is meaningful when the rollback
+ *     pump processes hundreds of assets.
+ *
+ * Throws `R2UploadError` on:
+ *   - missing config (validateR2Config),
+ *   - network throw during the DELETE,
+ *   - non-2xx response (404 included — the caller decides
+ *     whether a missing-object DELETE is fatal; this helper
+ *     surfaces it cleanly).
+ */
+export async function deleteR2Object(
+  config: R2UploadConfig,
+  key: string,
+  options: UploadR2ObjectOptions = {},
+): Promise<{ key: string; durationMs: number }> {
+  validateR2Config(config)
+  const fetchImpl = options.fetchImpl ?? fetch
+  const client = new AwsClient({
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    service: 's3',
+    region: R2_REGION,
+  })
+
+  const start = Date.now()
+  const url = buildObjectUrl(config, key)
+  const signed = await client.sign(url, { method: 'DELETE' })
+
+  let res: Response
+  try {
+    res = await fetchImpl(signed)
+  } catch (e) {
+    throw new R2UploadError(
+      null,
+      key,
+      `DELETE ${key} unreachable: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+  // S3 returns 204 on successful single-object DELETE. R2 follows
+  // the same semantics. Anything outside 2xx is an error here —
+  // the caller (rollback path) treats orphan storage as
+  // non-fatal but still wants to log a clean message.
+  if (res.status < 200 || res.status >= 300) {
+    const text = await res.text().catch(() => '')
+    throw new R2UploadError(
+      res.status,
+      key,
+      `DELETE ${key} failed (${res.status}): ${text.slice(0, 200) || '(no body)'}`,
+    )
+  }
+
+  return { key, durationMs: Date.now() - start }
+}
+
 export async function deleteR2Prefix(
   config: R2UploadConfig,
   keyPrefix: string,

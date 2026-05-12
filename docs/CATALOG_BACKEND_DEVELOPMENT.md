@@ -1058,6 +1058,191 @@ steady state. A non-zero reading after the fact means a stray
 legacy row was re-imported (re-run the migration) or the
 manifest endpoint regressed somehow.
 
+### Migrating auxiliary asset URLs to R2
+
+Phase 3b extends the asset-hosting story to the per-row
+auxiliary asset columns: `thumbnail_ref`, `legend_ref`,
+`caption_ref`, and the new `color_table_ref`. Each row's
+`<asset>_ref` flips from a NOAA CloudFront URL (e.g.
+`https://d3sik7mbbzunjo.cloudfront.net/atmosphere/.../thumb.jpg`)
+to an R2 reference (`r2:datasets/<id>/<asset>.<ext>`). After
+3b ships, the catalog is fully self-hosted and federation peers
+can mirror without reaching back to noaa.gov.
+
+The runbook mirrors the Phase 3 video migration's shape, but
+the per-row pipeline is one PATCH covering up to four asset
+columns and one telemetry event per (row, asset_type) pair.
+
+#### Prerequisites
+
+Same R2 credentials as Phase 3 (`R2_S3_ENDPOINT` /
+`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` in the operator's
+shell), same `R2_PUBLIC_BASE` on Pages — used by the publisher
+API's dataset serializer (`functions/api/v1/_lib/dataset-serializer.ts`,
+through the `resolveAssetRef` callback) to flip the `r2:<key>`
+values that 3b writes into the `*_ref` columns back to the
+public HTTPS form the SPA renders. (Note: the manifest
+endpoint at `/api/v1/datasets/<id>/manifest` only resolves
+`data_ref` for video / image playback — the auxiliary asset
+columns are surfaced via the row's serializer, not the
+manifest, so it's the regular dataset GET path that needs
+`R2_PUBLIC_BASE` to do the right thing for thumbnails,
+legends, captions, and color tables.) The migration uses the
+same custom-domain origin Phase 3 set up — no new env vars,
+no new Cloudflare configuration.
+
+One prerequisite specific to 3b: **back-fill the three new
+catalog columns** (`color_table_ref`, `probing_info`,
+`bounding_variables`) onto rows that were imported under
+Phase 1d. Without the back-fill, `color_table_ref` will be
+NULL on every row even though the SOS snapshot has the data.
+
+```sh
+# Confirm the plan — should report `rows to backfill: N`.
+set -a; . ~/.terraviz/prod.env; set +a
+npm run terraviz -- import-snapshot --update-existing --dry-run
+
+# Run for real (writes the three new columns; never touches
+# title / abstract / publisher-edited fields).
+npm run terraviz -- import-snapshot --update-existing
+```
+
+The flag is idempotent — re-running on already-backfilled
+rows reports them under `backfill_noop` and issues no PATCH.
+
+#### Pre-flight dry-run
+
+```sh
+npm run terraviz -- migrate-r2-assets --dry-run
+```
+
+Sample output:
+
+```
+Asset migration plan:
+  rows scanned:                  204
+  rows with at least one asset:  152
+  will migrate this run:         152
+  total asset uploads:           372
+  types: thumbnail, legend, caption, color_table
+    thumbnail      135
+    legend         119
+    caption        35
+    color-table    15
+
+  • DSXXXX...  thumbnail+legend+caption  Sea Surface Salinity
+  • …
+```
+
+Per-type counts confirm the four-class breakdown; the per-row
+sample lists which assets are eligible on each row (skipping
+columns already on `r2:` or null). The migration is idempotent:
+re-running picks up only rows whose `<asset>_ref` is still on a
+NOAA URL.
+
+#### Live migration
+
+```sh
+# Sanity batch — migrate 5 rows, verify in Grafana / SPA.
+npm run terraviz -- migrate-r2-assets --limit=5
+
+# Full run — sequential, paced 200 ms between rows. Each row
+# processes up to 4 asset uploads + 1 PATCH. Captions
+# auto-convert SRT → VTT inline so every caption in R2 ends
+# up as `.vtt` regardless of upstream format.
+npm run terraviz -- migrate-r2-assets
+
+# Per-type rollout — do thumbnails first to verify the
+# end-to-end pipeline on the most-trafficked asset class
+# before broadening:
+npm run terraviz -- migrate-r2-assets --types=thumbnail
+npm run terraviz -- migrate-r2-assets --types=legend,color_table
+npm run terraviz -- migrate-r2-assets --types=caption
+```
+
+Per-asset stdout shows `[<dataset_id>] <type> ok (<bytes>, <ms>)
+→ <r2_key>`. Failures go to stderr with the outcome
+(`fetch_failed` / `upload_failed` / `patch_failed`).
+
+The telemetry session id printed at the start of each run lets
+you correlate per-asset events on the Grafana asset-migration
+row (Phase 3b commit J — three panels alongside the video
+migration row at y=42).
+
+#### What the commit point is
+
+The per-row PATCH (step 7 of `migrateOne`) is the migration's
+commit point. Failures before the PATCH leave the row's
+`<asset>_ref` columns unchanged (the SPA keeps fetching from
+NOAA). A PATCH that fails AFTER R2 PUTs succeeded promotes
+every successful asset's telemetry from `ok` to `patch_failed`
+so the orphan R2 objects show up in the Grafana failure
+breakdown — operator cleans up via `rollback-r2-assets`.
+
+Re-running `migrate-r2-assets` after any failure is the
+recovery path. Already-migrated assets skip (idempotency);
+failed assets retry. The R2 PUT is overwrite-on-key, so a
+partial upload from a previous run is safely clobbered.
+
+#### Rollback
+
+Per-row rollback (single asset):
+
+```sh
+npm run terraviz -- rollback-r2-assets <dataset_id> \
+  --types=thumbnail --dry-run
+npm run terraviz -- rollback-r2-assets <dataset_id> --types=thumbnail
+```
+
+The tool recovers the original NOAA URL by indexing the row's
+`legacy_id` against the SOS snapshot's matching link field
+(`thumbnailLink` / `legendLink` / `closedCaptionLink` /
+`colorTableLink`). If the row has no `legacy_id` (publisher-
+portal row, not SOS-imported), pass `--to-url=<url>` to name
+the target explicitly:
+
+```sh
+npm run terraviz -- rollback-r2-assets <dataset_id> \
+  --types=thumbnail --to-url=https://example.org/thumb.png
+```
+
+For bulk rollback (e.g. backing out a botched asset_type after
+a Grafana review), pipe NDJSON in via `--from-stdin`. Each
+line is `{ "dataset_id": "...", "asset_type": "..." }` — the
+same shape `migration_r2_assets` events carry, so a
+telemetry-filtered subset pipes through directly:
+
+```sh
+# Roll back every patch_failed thumbnail in this hour. The
+# Grafana datasource → "view data" → "Export CSV" path lets
+# you derive the NDJSON for the failed subset.
+cat patch-failed.ndjson \
+  | npm run terraviz -- rollback-r2-assets --from-stdin --dry-run
+cat patch-failed.ndjson \
+  | npm run terraviz -- rollback-r2-assets --from-stdin
+```
+
+Per-asset pipeline: PATCH `<asset>_ref` back to the recovered
+URL (commit point), then DELETE the R2 object (cleanup;
+non-fatal — orphan storage left on DELETE failure is
+operator-visible as "ok (orphan R2 object)" in the bulk summary).
+
+#### Observation window
+
+Same shape as the video migration: the Phase 3b Grafana row
+(commit 3b/J) shows "cumulative ok by asset_type" — after a
+complete run the four rows should land near (thumbnail: ~135,
+legend: ~119, caption: ~35, color_table: ~15). The exact
+numbers depend on how many rows have each asset populated in
+the snapshot; the dry-run plan summary is authoritative for
+the targets.
+
+A clean migration is signalled by the failure-breakdown table
+going empty. NOAA CloudFront URLs serve indefinitely so
+there's no hard deadline to flip the `*_ref` columns — but
+the federation work (peer mirroring) and `/publish` endpoint's
+single-origin guarantee depend on this being done.
+
 ## Stack
 
 - **Wrangler** (`wrangler pages dev`) is the runner. It loads the

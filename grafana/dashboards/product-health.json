@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 8,
   "refresh": "5m",
   "time": {
     "from": "now-7d",
@@ -766,6 +766,175 @@
           "parser": "backend",
           "root_selector": "data",
           "columns": [
+            {
+              "selector": "outcome",
+              "text": "outcome",
+              "type": "string"
+            },
+            {
+              "selector": "rows",
+              "text": "rows",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Migration assets — events per day by outcome",
+      "description": "Phase 3b (catalog 3b/J): per-day count of migration_r2_assets events split by outcome (ok / fetch_failed / upload_failed / patch_failed). One event per (row, asset_type) pair so a busy day can show 4× the row count. Mostly empty in steady state — non-zero values during the migration window, then quiet afterwards.",
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT toStartOfDay(timestamp) AS day, blob8 AS outcome, count() AS rows FROM terraviz_events WHERE blob1 = 'migration_r2_assets' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY day, outcome ORDER BY day, outcome",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "day",
+              "text": "day",
+              "type": "timestamp"
+            },
+            {
+              "selector": "outcome",
+              "text": "outcome",
+              "type": "string"
+            },
+            {
+              "selector": "rows",
+              "text": "rows",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Migration assets — cumulative ok by asset_type",
+      "description": "Phase 3b (catalog 3b/J): total count of migration_r2_assets events with outcome='ok', grouped by asset_type. After a complete migration the four rows should land near (thumbnail: ~135, legend: ~119, caption: ~35, color_table: ~15) — the upper bounds the Phase 1d import surfaced in the SOS snapshot audit.",
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT blob5 AS asset_type, count() AS ok_rows FROM terraviz_events WHERE blob1 = 'migration_r2_assets' AND blob8 = 'ok' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY asset_type ORDER BY ok_rows DESC",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "asset_type",
+              "text": "asset_type",
+              "type": "string"
+            },
+            {
+              "selector": "ok_rows",
+              "text": "ok_rows",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Migration assets — failure breakdown by asset_type",
+      "description": "Phase 3b (catalog 3b/J): non-ok outcome counts grouped by asset_type. Empty table after a clean migration; rows here mean the operator should re-run `terraviz migrate-r2-assets` (idempotent — already-migrated assets skip) and investigate the per-asset stderr. patch_failed rows leave orphan R2 objects — clean up via `terraviz rollback-r2-assets`.",
+      "gridPos": {
+        "x": 18,
+        "y": 42,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT blob5 AS asset_type, blob8 AS outcome, count() AS rows FROM terraviz_events WHERE blob1 = 'migration_r2_assets' AND blob8 != 'ok' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY asset_type, outcome ORDER BY rows DESC",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "asset_type",
+              "text": "asset_type",
+              "type": "string"
+            },
             {
               "selector": "outcome",
               "text": "outcome",

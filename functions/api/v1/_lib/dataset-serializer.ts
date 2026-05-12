@@ -36,6 +36,11 @@ export interface WireDataset {
   thumbnailLink?: string
   legendLink?: string
   closedCaptionLink?: string
+  /** Color-ramp image used by interactive probing — populated
+   * verbatim from the catalog's `color_table_ref`. Distinct from
+   * `legendLink` in ~2 of 14 overlap cases. Optional; omitted when
+   * the row carries no value. */
+  colorTableLink?: string
   websiteLink?: string
   startTime?: string
   endTime?: string
@@ -80,6 +85,14 @@ export interface WireDataset {
    * created by hand. Phase 1d/T.
    */
   legacyId?: string
+  /** Probing metadata recovered from the SOS snapshot — pixel
+   * coords on the color table image mapped to data values. Wire
+   * type is the parsed JSON object (not the raw string D1 stores).
+   * Phase 3b. */
+  probingInfo?: unknown
+  /** Per-variable data ranges (SOS `boundingVariables`). Wire type
+   * is the parsed JSON; D1 stores as a string. Phase 3b. */
+  boundingVariables?: unknown
   /**
    * For `tour/json` rows: the resolved URL the SPA's tour engine
    * fetches the tour document from, bypassing the manifest endpoint
@@ -105,8 +118,52 @@ export interface WireDataset {
  */
 export type DataRefResolver = (dataRef: string) => string | null
 
+/**
+ * Resolves an `r2:<key>` auxiliary-asset reference (the post-3b
+ * shape on `thumbnail_ref` / `legend_ref` / `caption_ref` /
+ * `color_table_ref` columns) to a publicly-readable URL. Bare
+ * `https://` values pass through unchanged so pre-migration
+ * rows on NOAA CloudFront still serialize correctly.
+ *
+ * The callback shape lets the serializer stay env-agnostic — the
+ * route handler binds it once via `resolveAssetRef` from
+ * `r2-public-url.ts`. When omitted, the serializer falls back
+ * to verbatim passthrough (useful in tests that don't care
+ * about R2 resolution); production routes must always pass one
+ * or the SPA receives unrenderable `r2:` strings.
+ */
+export type AssetRefResolver = (ref: string | null | undefined) => string | null
+
 function nonNull<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
+}
+
+/** Apply an optional asset-ref resolver, falling back to
+ * verbatim passthrough when none is provided. */
+function resolveAsset(
+  ref: string | null | undefined,
+  resolver: AssetRefResolver | undefined,
+): string | undefined {
+  if (!ref) return undefined
+  if (!resolver) return ref
+  return nonNull(resolver(ref))
+}
+
+/**
+ * Parse a JSON-stringified text column into its object form for
+ * the wire. Empty / null / unparseable values become `undefined`
+ * so the field is omitted from the serialized row. The columns
+ * this is used for (Phase 3b's `probing_info` and
+ * `bounding_variables`) are validated on write, so a parse
+ * failure here only happens if the row was edited out-of-band.
+ */
+function parseJsonField(v: string | null | undefined): unknown {
+  if (v == null || v.length === 0) return undefined
+  try {
+    return JSON.parse(v) as unknown
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -142,7 +199,16 @@ export function serializeDataset(
   decoration: DecorationRows,
   identity: NodeIdentityRow,
   resolveDataRef?: DataRefResolver,
+  resolveAssetRef?: AssetRefResolver,
 ): WireDataset {
+  // Auxiliary asset URLs may be either:
+  //   - bare https:// (pre-Phase-3b: NOAA CloudFront), or
+  //   - `r2:<key>` (post-Phase-3b migration: R2-hosted under
+  //     datasets/<id>/<asset>.<ext>).
+  // The SPA renders these as <img src=...> / <track src=...>
+  // and can't fetch a `r2:` scheme; the resolver flips r2: to a
+  // publicly-readable URL via R2_PUBLIC_BASE. Bare URLs pass
+  // through unchanged. See r2-public-url.ts:resolveAssetRef.
   const wire: WireDataset = {
     id: row.id,
     slug: row.slug,
@@ -151,9 +217,10 @@ export function serializeDataset(
     dataLink: manifestLink(identity.base_url, row.id),
     organization: nonNull(row.organization),
     abstractTxt: nonNull(row.abstract),
-    thumbnailLink: nonNull(row.thumbnail_ref),
-    legendLink: nonNull(row.legend_ref),
-    closedCaptionLink: nonNull(row.caption_ref),
+    thumbnailLink: resolveAsset(row.thumbnail_ref, resolveAssetRef),
+    legendLink: resolveAsset(row.legend_ref, resolveAssetRef),
+    closedCaptionLink: resolveAsset(row.caption_ref, resolveAssetRef),
+    colorTableLink: resolveAsset(row.color_table_ref, resolveAssetRef),
     websiteLink: nonNull(row.website_link),
     startTime: nonNull(row.start_time),
     endTime: nonNull(row.end_time),
@@ -181,6 +248,17 @@ export function serializeDataset(
     updatedAt: row.updated_at,
     publishedAt: nonNull(row.published_at),
     legacyId: nonNull(row.legacy_id),
+    // D1 stores these as JSON-stringified text. Parsing here keeps
+    // the wire-side shape friendly for consumers; a malformed
+    // string is dropped silently (returned as undefined) rather
+    // than 500-ing the read endpoint. Phase 3b's write-side
+    // validator (validateJsonStringField) only checks JSON
+    // parseability + the 4096-char cap — NOT the object's
+    // field-level shape. The 'returned as undefined' fallback
+    // handles the case where an out-of-band DB edit lands
+    // unparseable text on the column.
+    probingInfo: parseJsonField(row.probing_info),
+    boundingVariables: parseJsonField(row.bounding_variables),
   }
 
   // Tour rows carry a fetchable JSON URL alongside the manifest

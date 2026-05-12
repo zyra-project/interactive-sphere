@@ -115,3 +115,32 @@ export function resolveAssetRef(env: CatalogEnv, ref: string | null | undefined)
   // Bare URLs (https://, http://) and unknown schemes pass through.
   return ref
 }
+
+/**
+ * Strict variant of `resolveAssetRef` for surfaces where the SPA
+ * actually fetches the URL — dataset thumbnails / legends /
+ * captions / color tables surfaced by `serializeDataset`.
+ *
+ * Differs from `resolveAssetRef` in one place: when the ref is
+ * `r2:<key>` it uses `resolveR2HlsPublicUrl` (which omits the
+ * `R2_S3_ENDPOINT` fallback) instead of `resolveR2PublicUrl`.
+ * The S3 endpoint is for signed PUTs in a typical production
+ * setup — the bucket usually isn't publicly readable through it.
+ * Falling through to it would yield a thumbnail / legend /
+ * caption URL that 403s in the browser. Better to surface the
+ * misconfiguration as a missing-field omission so the operator
+ * knows R2_PUBLIC_BASE needs to be bound.
+ *
+ * Bare URLs pass through unchanged, same as `resolveAssetRef` —
+ * pre-Phase-3b rows on NOAA CloudFront keep working.
+ */
+export function resolveAssetRefStrict(
+  env: CatalogEnv,
+  ref: string | null | undefined,
+): string | null {
+  if (!ref) return null
+  if (ref.startsWith('r2:')) {
+    return resolveR2HlsPublicUrl(env, ref.slice('r2:'.length))
+  }
+  return ref
+}

@@ -146,14 +146,16 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       'the emergency lever) but does not stop ingest.',
   },
 
-  // ── R2 public-bucket serving (Phase 3 r2-hls migration) ───────
+  // ── R2 public-bucket serving (Phase 3 r2-hls + Phase 3b assets) ─
   // Required for the manifest endpoint to construct playable HLS
-  // URLs for r2:videos/<id>/master.m3u8 data_refs. Phase 3
-  // migrates ~136 video rows here; the SPA's HLS player fetches
-  // master.m3u8 from this base URL. Missing on either env →
-  // /api/v1/datasets/<id>/manifest returns 503 r2_unconfigured
-  // for the HLS branch specifically (the R2_S3_ENDPOINT fallback
-  // is intentionally skipped there — see
+  // URLs for r2:videos/<id>/master.m3u8 data_refs (Phase 3) AND
+  // for the publisher API + SPA to resolve r2:datasets/<id>/<asset>
+  // references on thumbnail / legend / caption / color_table
+  // columns (Phase 3b). Phase 3 migrates ~136 video rows;
+  // Phase 3b migrates up to ~370 auxiliary asset URLs. Missing
+  // on either env → /api/v1/datasets/<id>/manifest returns 503
+  // r2_unconfigured for the HLS branch specifically (the
+  // R2_S3_ENDPOINT fallback is intentionally skipped there — see
   // `functions/api/v1/_lib/r2-public-url.ts:resolveR2HlsPublicUrl`).
   {
     name: 'R2_PUBLIC_BASE',
@@ -164,18 +166,22 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       '(e.g. https://video.zyra-project.org). Bind the domain in ' +
       'Cloudflare dashboard → R2 → bucket → Settings → Connect Domain ' +
       'first. The manifest endpoint uses this base to construct HLS ' +
-      'master playlist URLs for Phase 3 r2:videos/ data_refs. Note: ' +
-      'R2_S3_ENDPOINT is NOT a fallback for the HLS branch — that ' +
-      'endpoint is for signed S3-API access, not public reads, and ' +
-      'falling through to it would yield an hls URL that 403s at ' +
-      'play time on a typical (non-public-bucket) production setup.',
+      'master playlist URLs for Phase 3 r2:videos/ data_refs, and the ' +
+      'publisher API + SPA use it for Phase 3b r2:datasets/<id>/<asset> ' +
+      'auxiliary-asset references. Note: R2_S3_ENDPOINT is NOT a ' +
+      'fallback for the HLS branch — that endpoint is for signed ' +
+      'S3-API access, not public reads, and falling through to it ' +
+      'would yield an hls URL that 403s at play time on a typical ' +
+      '(non-public-bucket) production setup.',
   },
 
-  // ── R2 S3-API credentials (Phase 3 operator-side migration) ───
-  // The migrate-r2-hls CLI talks to R2 via the S3 API (no native
-  // R2 binding outside the Worker runtime). The audit lists these
-  // here so the operator sees them as MISSING before the
-  // migration attempt errors out at credential-validation.
+  // ── R2 S3-API credentials (Phase 3 + 3b operator-side migrations) ─
+  // The migrate-r2-hls (Phase 3) and migrate-r2-assets (Phase 3b)
+  // CLIs talk to R2 via the S3 API (no native R2 binding outside
+  // the Worker runtime). Same three env vars cover both CLIs.
+  // The audit lists these here so the operator sees them as
+  // MISSING before the migration attempt errors out at
+  // credential-validation.
   {
     name: 'R2_S3_ENDPOINT',
     type: 'secret',
@@ -183,8 +189,9 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
     hint:
       'R2 S3-API endpoint URL (e.g. https://<acct>.r2.cloudflarestorage.com). ' +
       'Shown alongside the access key when the R2 API token is minted. ' +
-      'Read by the Phase 3 migrate-r2-hls / rollback-r2-hls CLIs from the ' +
-      "operator's shell as well — same value goes in both places.",
+      'Read by the migrate-r2-hls / rollback-r2-hls (Phase 3) and ' +
+      'migrate-r2-assets / rollback-r2-assets (Phase 3b) CLIs from ' +
+      "the operator's shell as well — same value goes in both places.",
   },
   {
     name: 'R2_ACCESS_KEY_ID',

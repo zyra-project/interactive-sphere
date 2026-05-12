@@ -6,6 +6,7 @@ import {
   mapSnapshot,
   mapSnapshotEntry,
   normalizeTitle,
+  pickDataLink,
   type RawEnrichedEntry,
   type RawSosEntry,
 } from './snapshot-import'
@@ -308,5 +309,149 @@ describe('mapSnapshot — whole-snapshot orchestration', () => {
     expect(plan.outcomes).toEqual([])
     expect(plan.counts.ok).toBe(0)
     expect(plan.counts.skipped.duplicate_id).toBe(0)
+  })
+})
+
+describe('pickDataLink (3b/B)', () => {
+  // The upstream snapshot has 4 rows that ship the field as
+  // lowercase `datalink` instead of canonical `dataLink`. Without
+  // this fallback those rows skip with `missing_data_link` even
+  // though the URL is right there. Pin the fallback so a future
+  // tighter typing of `RawSosEntry` can't remove the rescue.
+  it('prefers canonical dataLink when set', () => {
+    expect(
+      pickDataLink({
+        ...sample,
+        dataLink: 'https://vimeo.com/111',
+        datalink: 'https://vimeo.com/222',
+      }),
+    ).toBe('https://vimeo.com/111')
+  })
+
+  it('falls back to lowercase datalink when canonical is empty', () => {
+    expect(
+      pickDataLink({
+        ...sample,
+        dataLink: '',
+        datalink: 'https://vimeo.com/222',
+      }),
+    ).toBe('https://vimeo.com/222')
+  })
+
+  it('returns empty string when neither is set', () => {
+    expect(pickDataLink({ ...sample, dataLink: '', datalink: undefined })).toBe('')
+  })
+
+  it('treats whitespace-only canonical dataLink as empty (matches missing_data_link)', () => {
+    expect(
+      pickDataLink({
+        ...sample,
+        dataLink: '   ',
+        datalink: 'https://vimeo.com/222',
+      }),
+    ).toBe('https://vimeo.com/222')
+  })
+})
+
+describe('mapSnapshotEntry — case-mismatch rescue (3b/B)', () => {
+  it('imports rows that have only lowercase datalink', () => {
+    // Pre-3b this row would skip with `missing_data_link`. The
+    // SOS snapshot has 4 such rows; rescuing them is the visible
+    // win of the case-normalization fix.
+    const lowercase: RawSosEntry = {
+      ...sample,
+      dataLink: '',
+      datalink: 'https://vimeo.com/1234567',
+    }
+    const outcome = mapSnapshotEntry(lowercase, undefined)
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.data_ref).toBe('vimeo:1234567')
+  })
+
+  it('still skips rows missing both forms', () => {
+    const outcome = mapSnapshotEntry({ ...sample, dataLink: '', datalink: '' }, undefined)
+    expect(outcome.kind).toBe('skipped')
+    if (outcome.kind !== 'skipped') return
+    expect(outcome.row.reason).toBe('missing_data_link')
+  })
+})
+
+describe('mapSnapshotEntry — Phase 3b auxiliary fields', () => {
+  // The three SOS fields the Phase 1d import dropped: colorTableLink,
+  // probingInfo, boundingVariables. Now mapped into the catalog as
+  // color_table_ref / probing_info (JSON-stringified) /
+  // bounding_variables (JSON-stringified) so future imports populate
+  // them and 3b/C's backfill can read them for already-migrated rows.
+
+  it('maps colorTableLink to color_table_ref', () => {
+    const outcome = mapSnapshotEntry(
+      { ...sample, colorTableLink: 'https://example.org/colortable.png' },
+      undefined,
+    )
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.color_table_ref).toBe('https://example.org/colortable.png')
+  })
+
+  it('omits color_table_ref when the SOS field is absent', () => {
+    const outcome = mapSnapshotEntry({ ...sample }, undefined)
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.color_table_ref).toBeUndefined()
+  })
+
+  it('JSON-stringifies probingInfo and persists it on probing_info', () => {
+    const probing = {
+      units: 'psu',
+      minVal: 20,
+      maxVal: 38,
+      minPos: { x: 45, y: 99, XUnits: 'Pixels' as const, YUnits: 'Pixels' as const },
+      maxPos: { x: 277, y: 99, XUnits: 'Pixels' as const, YUnits: 'Pixels' as const },
+    }
+    const outcome = mapSnapshotEntry({ ...sample, probingInfo: probing }, undefined)
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    // Stringified for the validator's JSON-text contract — caller
+    // parses on read. Round-tripping gives back the original object.
+    expect(typeof outcome.row.draft.probing_info).toBe('string')
+    expect(JSON.parse(outcome.row.draft.probing_info!)).toEqual(probing)
+  })
+
+  it('JSON-stringifies boundingVariables and persists it on bounding_variables', () => {
+    const bounding = { ranges: [[0, 100]] }
+    const outcome = mapSnapshotEntry({ ...sample, boundingVariables: bounding }, undefined)
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(JSON.parse(outcome.row.draft.bounding_variables!)).toEqual(bounding)
+  })
+
+  it('drops a probingInfo / boundingVariables value that exceeds the 4096-char cap', () => {
+    // The validator caps JSON-text columns at 4096 chars. The
+    // importer pre-filters so an oversize blob doesn't trigger
+    // `invalid_after_mapping` — keeps the SOS import idempotent
+    // even on rows the validator would otherwise reject.
+    const huge = { blob: 'x'.repeat(5000) }
+    const outcome = mapSnapshotEntry(
+      { ...sample, probingInfo: huge as unknown as never, boundingVariables: huge },
+      undefined,
+    )
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.probing_info).toBeUndefined()
+    expect(outcome.row.draft.bounding_variables).toBeUndefined()
+  })
+
+  it('drops a non-object probingInfo value silently', () => {
+    // A future schema drift in the upstream snapshot could land a
+    // string or number here; we defensively skip rather than
+    // forcing the validator into the `invalid_json` path.
+    const outcome = mapSnapshotEntry(
+      { ...sample, probingInfo: 'not an object' as unknown as never },
+      undefined,
+    )
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.probing_info).toBeUndefined()
   })
 })

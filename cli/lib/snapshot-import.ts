@@ -23,13 +23,22 @@
  * `functions/api/v1/_lib/validators.ts`):
  *   - title            ← SOS `title`
  *   - format           ← validator-allowed mime (see `mapFormat`)
- *   - data_ref         ← `vimeo:<id>` or `url:<href>`
+ *   - data_ref         ← `vimeo:<id>` or `url:<href>`, sourced from
+ *                       `dataLink` with a fallback to lowercase
+ *                       `datalink` (4 SOS rows have the case-mangled
+ *                       form and would otherwise drop). See
+ *                       `pickDataLink`.
  *   - abstract         ← enriched.description ?? SOS abstractTxt
  *   - organization     ← SOS organization
  *   - website_link     ← SOS websiteLink
  *   - thumbnail_ref    ← SOS thumbnailLink
  *   - legend_ref       ← SOS legendLink
  *   - caption_ref      ← SOS closedCaptionLink
+ *   - color_table_ref  ← SOS colorTableLink (Phase 3b restore)
+ *   - probing_info     ← SOS probingInfo, JSON-stringified
+ *                       (Phase 3b restore)
+ *   - bounding_variables ← SOS boundingVariables, JSON-stringified
+ *                          (Phase 3b restore)
  *   - start_time/end_time ← SOS, normalised to ISO-Z
  *   - period, weight, run_tour_on_load ← SOS, pass-through
  *   - is_hidden        ← SOS `isHidden` (preserves SOS curation flag)
@@ -57,15 +66,48 @@ export interface RawSosEntry {
   endTime?: string
   period?: string
   dataLink: string
+  /** Upstream data-hygiene bug: a handful of SOS rows ship the
+   * `dataLink` key as lowercase `datalink`. Without this fallback,
+   * `pickDataLink` returns empty and the row trips the
+   * `missing_data_link` skip. Surfaced as an optional alias so the
+   * mapper can rescue them transparently. Phase 3b. */
+  datalink?: string
   format: string
   websiteLink?: string
   legendLink?: string
   thumbnailLink?: string
   closedCaptionLink?: string
+  /** Phase 3b — restored from the SOS snapshot. The fourth
+   * auxiliary asset URL: the canonical color ramp used by
+   * interactive probing. Distinct from legendLink in ~2 of 14
+   * overlap rows. */
+  colorTableLink?: string
+  /** Structured probing metadata. Mapped to `probing_info` as a
+   * JSON-stringified blob (the catalog stores it verbatim; the
+   * SPA-side renderer is deferred to a later phase). */
+  probingInfo?: ProbingInfo
+  /** Per-variable data ranges. Mapped to `bounding_variables`
+   * as a JSON-stringified blob. */
+  boundingVariables?: unknown
   tags?: string[]
   weight?: number
   isHidden?: boolean
   runTourOnLoad?: string
+}
+
+/**
+ * Pixel-coords → data-value mapping recovered from the SOS
+ * snapshot. Documented narrowly here so the mapper has something
+ * specific to type against; the catalog and SPA types treat the
+ * stored blob as opaque JSON since downstream consumers may want
+ * to evolve the shape independently.
+ */
+export interface ProbingInfo {
+  units?: string
+  minVal?: number
+  maxVal?: number
+  minPos?: { x?: number; y?: number; XUnits?: string; YUnits?: string }
+  maxPos?: { x?: number; y?: number; XUnits?: string; YUnits?: string }
 }
 
 /** A single row in `public/assets/sos_dataset_metadata.json`. */
@@ -176,6 +218,23 @@ export function mapDataRef(dataLink: string): string {
 }
 
 /**
+ * Pick the SOS data link, tolerating an upstream case-mismatch.
+ * A handful of SOS rows in `sos-dataset-list.json` ship the field
+ * as lowercase `datalink` instead of canonical `dataLink`; without
+ * this fallback those rows skip with `missing_data_link` even
+ * though the URL is right there.
+ *
+ * The canonical-cased value wins when both are present — the
+ * snapshot is supposed to canonicalise, so the canonical field is
+ * authoritative on the rare row that has both.
+ */
+export function pickDataLink(sos: RawSosEntry): string {
+  if (sos.dataLink && sos.dataLink.trim()) return sos.dataLink
+  if (sos.datalink && sos.datalink.trim()) return sos.datalink
+  return ''
+}
+
+/**
  * Map the raw SOS `format` field onto the validator's allow-list.
  * Returns `null` for formats this pipeline can't render — the
  * caller skips with `unsupported_format`. The mapper is intentionally
@@ -209,6 +268,31 @@ function toIsoZ(value: string | undefined): string | undefined {
     return `${value}:00Z`
   }
   return undefined
+}
+
+/**
+ * Stringify a structured snapshot field for storage in a JSON-text
+ * column (Phase 3b's `probing_info` / `bounding_variables`).
+ * Returns undefined when the source is null / undefined / a
+ * non-object, when the stringified form is empty, or when it
+ * exceeds the validator's 4096-char cap. The cap matches
+ * `validateJsonStringField` in `functions/api/v1/_lib/validators.ts`;
+ * real-world SOS payloads are well under 1KB.
+ */
+function stringifyJsonField(value: unknown): string | undefined {
+  if (value == null) return undefined
+  if (typeof value !== 'object') return undefined
+  let json: string
+  try {
+    json = JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+  if (json.length === 0 || json === 'null' || json === '{}' || json === '[]') {
+    return undefined
+  }
+  if (json.length > 4096) return undefined
+  return json
 }
 
 /** Trim + size-clip; returns undefined if the result would be empty or non-string. */
@@ -288,7 +372,8 @@ export function mapSnapshotEntry(
   if (!sos.title || !sos.title.trim()) {
     return { kind: 'skipped', row: { legacyId, reason: 'missing_title' } }
   }
-  if (!sos.dataLink || !sos.dataLink.trim()) {
+  const dataLink = pickDataLink(sos)
+  if (!dataLink) {
     return { kind: 'skipped', row: { legacyId, reason: 'missing_data_link' } }
   }
   const format = mapFormat(sos.format)
@@ -302,7 +387,7 @@ export function mapSnapshotEntry(
   const draft: DatasetDraftBody = {
     title: clipString(sos.title, TITLE_MAX),
     format,
-    data_ref: mapDataRef(sos.dataLink),
+    data_ref: mapDataRef(dataLink),
     visibility: 'public',
     license_statement: DEFAULT_LICENSE_STATEMENT,
   }
@@ -324,6 +409,20 @@ export function mapSnapshotEntry(
 
   const caption = clipString(sos.closedCaptionLink, 1024)
   if (caption) draft.caption_ref = caption
+
+  const colorTable = clipString(sos.colorTableLink, 1024)
+  if (colorTable) draft.color_table_ref = colorTable
+
+  // Phase 3b: persist the structured probing + bounding metadata
+  // verbatim. Stored as a JSON-stringified blob; the validator
+  // (validateJsonStringField) confirms it parses and bounds the
+  // length. Skipped entirely if the source row has no value or
+  // the value isn't an object — guards against publishers
+  // somehow handing us a primitive.
+  const probingJson = stringifyJsonField(sos.probingInfo)
+  if (probingJson) draft.probing_info = probingJson
+  const boundingJson = stringifyJsonField(sos.boundingVariables)
+  if (boundingJson) draft.bounding_variables = boundingJson
 
   const start = toIsoZ(sos.startTime)
   if (start) draft.start_time = start

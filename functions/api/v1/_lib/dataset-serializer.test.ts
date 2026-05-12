@@ -55,6 +55,9 @@ function fakeRow(overrides: Partial<DatasetRow> = {}): DatasetRow {
     retracted_at: null,
     publisher_id: null,
     legacy_id: null,
+    color_table_ref: null,
+    probing_info: null,
+    bounding_variables: null,
     ...overrides,
   }
 }
@@ -129,5 +132,170 @@ describe('serializeDataset — tour rows', () => {
       passthroughResolver,
     )
     expect(wire.tourJsonUrl).toBeUndefined()
+  })
+})
+
+describe('serializeDataset — Phase 3b columns', () => {
+  // The three columns added in migration 0009: color_table_ref
+  // (auxiliary asset URL, serialized verbatim) plus probing_info
+  // and bounding_variables (JSON-stringified text in D1, parsed
+  // to objects on the wire).
+  it('emits colorTableLink from color_table_ref verbatim', () => {
+    const wire = serializeDataset(
+      fakeRow({ color_table_ref: 'https://example.org/colortable.png' }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.colorTableLink).toBe('https://example.org/colortable.png')
+  })
+
+  it('omits colorTableLink when color_table_ref is null', () => {
+    const wire = serializeDataset(fakeRow({ color_table_ref: null }), emptyDecoration, fakeIdentity)
+    expect(wire.colorTableLink).toBeUndefined()
+  })
+
+  it('parses probing_info JSON text on read', () => {
+    const probing = {
+      units: 'psu',
+      minVal: 20,
+      maxVal: 38,
+      minPos: { x: 45, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+      maxPos: { x: 277, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+    }
+    const wire = serializeDataset(
+      fakeRow({ probing_info: JSON.stringify(probing) }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.probingInfo).toEqual(probing)
+  })
+
+  it('parses bounding_variables JSON text on read', () => {
+    const bounding = { ranges: [[0, 100]] }
+    const wire = serializeDataset(
+      fakeRow({ bounding_variables: JSON.stringify(bounding) }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.boundingVariables).toEqual(bounding)
+  })
+
+  it('returns undefined for malformed JSON rather than 500-ing', () => {
+    // The validator gates write-side shape, so the only way a row
+    // ends up with malformed JSON here is an out-of-band DB edit.
+    // We surface that as a missing field rather than a hard
+    // serializer failure (the read endpoint stays available).
+    const wire = serializeDataset(
+      fakeRow({ probing_info: 'not json {' }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.probingInfo).toBeUndefined()
+  })
+
+  it('omits the fields entirely when both are null (default state)', () => {
+    const wire = serializeDataset(fakeRow({}), emptyDecoration, fakeIdentity)
+    expect(wire.probingInfo).toBeUndefined()
+    expect(wire.boundingVariables).toBeUndefined()
+  })
+})
+
+describe('serializeDataset — asset-ref resolution (3b/N)', () => {
+  // After Phase 3b's migrate-r2-assets writes `r2:datasets/<id>/<asset>.<ext>`
+  // to the *_ref columns, the serializer MUST resolve them back to
+  // public HTTPS URLs before handing the row to the SPA. Otherwise
+  // the browser tries to load `<img src="r2:...">` and the asset
+  // 404s. Phase 3b/N added the AssetRefResolver callback parameter;
+  // these tests pin the contract.
+  const noaaThumbnail = 'https://d3sik7mbbzunjo.cloudfront.net/x/thumb.jpg'
+  const r2Thumbnail = 'r2:datasets/DS_TEST/thumbnail.jpg'
+
+  function r2Resolver(ref: string | null | undefined): string | null {
+    if (!ref) return null
+    if (ref.startsWith('r2:')) {
+      return `https://video.example.com/${ref.slice('r2:'.length)}`
+    }
+    return ref
+  }
+
+  it('resolves r2: asset refs to public URLs via the callback', () => {
+    const wire = serializeDataset(
+      fakeRow({
+        thumbnail_ref: r2Thumbnail,
+        legend_ref: 'r2:datasets/DS_TEST/legend.png',
+        caption_ref: 'r2:datasets/DS_TEST/caption.vtt',
+        color_table_ref: 'r2:datasets/DS_TEST/color-table.png',
+      }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      r2Resolver,
+    )
+    expect(wire.thumbnailLink).toBe('https://video.example.com/datasets/DS_TEST/thumbnail.jpg')
+    expect(wire.legendLink).toBe('https://video.example.com/datasets/DS_TEST/legend.png')
+    expect(wire.closedCaptionLink).toBe('https://video.example.com/datasets/DS_TEST/caption.vtt')
+    expect(wire.colorTableLink).toBe('https://video.example.com/datasets/DS_TEST/color-table.png')
+  })
+
+  it('passes bare https URLs through unchanged (pre-migration rows)', () => {
+    const wire = serializeDataset(
+      fakeRow({
+        thumbnail_ref: noaaThumbnail,
+        legend_ref: 'https://d3sik7mbbzunjo.cloudfront.net/x/legend.png',
+      }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      r2Resolver,
+    )
+    expect(wire.thumbnailLink).toBe(noaaThumbnail)
+    expect(wire.legendLink).toBe('https://d3sik7mbbzunjo.cloudfront.net/x/legend.png')
+  })
+
+  it('omits fields when null even with the resolver bound', () => {
+    const wire = serializeDataset(
+      fakeRow({
+        thumbnail_ref: null,
+        legend_ref: null,
+        caption_ref: null,
+        color_table_ref: null,
+      }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      r2Resolver,
+    )
+    expect(wire.thumbnailLink).toBeUndefined()
+    expect(wire.legendLink).toBeUndefined()
+    expect(wire.closedCaptionLink).toBeUndefined()
+    expect(wire.colorTableLink).toBeUndefined()
+  })
+
+  it('omits fields when the resolver itself returns null (orphaned r2: ref with no R2_PUBLIC_BASE)', () => {
+    // Production behavior when R2_PUBLIC_BASE is unset and the row
+    // is on r2: — `resolveAssetRef` returns null. Better to omit
+    // the field entirely than to send the unrenderable r2: string
+    // to the SPA.
+    const nullingResolver = () => null
+    const wire = serializeDataset(
+      fakeRow({ thumbnail_ref: r2Thumbnail }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      nullingResolver,
+    )
+    expect(wire.thumbnailLink).toBeUndefined()
+  })
+
+  it('falls back to verbatim passthrough when no resolver is given (test convenience)', () => {
+    // Existing tests don't pass a resolver. Behavior must stay
+    // unchanged (verbatim r2: string) so we don't have to pipe a
+    // resolver through every legacy test fixture.
+    const wire = serializeDataset(
+      fakeRow({ thumbnail_ref: r2Thumbnail }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.thumbnailLink).toBe(r2Thumbnail)
   })
 })

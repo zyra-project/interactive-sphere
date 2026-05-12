@@ -41,6 +41,7 @@ import {
 } from './_lib/catalog-store'
 import { serializeDataset, maxUpdatedAt, type WireDataset } from './_lib/dataset-serializer'
 import { makeDataRefResolver } from './_lib/data-ref-resolver'
+import { resolveAssetRefStrict } from './_lib/r2-public-url'
 import {
   buildAndCacheSnapshot,
   computeEtag,
@@ -107,8 +108,16 @@ async function renderCatalog(
     rows.map(r => r.id),
   )
   const resolveDataRef = makeDataRefResolver(env)
+  // See datasets/[id].ts for why the asset resolver is bound here:
+  // Phase 3b's migrate-r2-assets writes `r2:<key>` to the
+  // *_ref columns, and the SPA needs the resolved HTTPS form.
+  // The *Strict variant skips the R2_S3_ENDPOINT fallback so a
+  // missing R2_PUBLIC_BASE omits the field instead of emitting
+  // a URL that 403s on the SPA. Same policy as the manifest
+  // endpoint's HLS branch (commit 3/P).
+  const assetResolver = (ref: string | null | undefined) => resolveAssetRefStrict(env, ref)
   const datasets = rows.map(r =>
-    serializeDataset(r, decorationMap.get(r.id)!, identity, resolveDataRef),
+    serializeDataset(r, decorationMap.get(r.id)!, identity, resolveDataRef, assetResolver),
   )
 
   // The etag stamped in the response header MUST equal the one

@@ -151,7 +151,7 @@ describe('validateDraftCreate', () => {
 
   it('rejects an over-long legacy_id', () => {
     const errs = validateDraftCreate({
-      title: 'X',
+      title: 'Color table row',
       format: 'video/mp4',
       legacy_id: 'L'.repeat(101),
     })
@@ -164,10 +164,82 @@ describe('validateDraftCreate', () => {
     // failed at the SQLite UNIQUE-index level — opaque to the CLI.
     // Validator-level rejection keeps the mutation layer's
     // truthy-check honest.
-    const empty = validateDraftCreate({ title: 'X', format: 'video/mp4', legacy_id: '' })
+    const empty = validateDraftCreate({ title: 'Color table row', format: 'video/mp4', legacy_id: '' })
     expect(empty.some(e => e.field === 'legacy_id' && e.code === 'too_short')).toBe(true)
-    const ws = validateDraftCreate({ title: 'X', format: 'video/mp4', legacy_id: '   ' })
+    const ws = validateDraftCreate({ title: 'Color table row', format: 'video/mp4', legacy_id: '   ' })
     expect(ws.some(e => e.field === 'legacy_id' && e.code === 'too_short')).toBe(true)
+  })
+
+  it('accepts color_table_ref and bounds it at 1024 chars (3b/A)', () => {
+    expect(
+      validateDraftCreate({
+        title: 'Color table row',
+        format: 'video/mp4',
+        color_table_ref: 'https://example.org/color.png',
+      }),
+    ).toEqual([])
+    const errs = validateDraftCreate({
+      title: 'Color table row',
+      format: 'video/mp4',
+      color_table_ref: 'x'.repeat(2000),
+    })
+    expect(errs.some(e => e.field === 'color_table_ref' && e.code === 'too_long')).toBe(true)
+  })
+
+  it('accepts well-formed JSON probing_info / bounding_variables (3b/A)', () => {
+    // Both fields persist as JSON-stringified text. The validator
+    // accepts the stringified form (caller does the stringify) and
+    // confirms it parses. This pins the "wire-side is a string,
+    // not a structured object" contract.
+    const probing = JSON.stringify({
+      units: 'psu',
+      minVal: 20,
+      maxVal: 38,
+      minPos: { x: 45, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+      maxPos: { x: 277, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+    })
+    expect(
+      validateDraftCreate({
+        title: 'Color table row',
+        format: 'video/mp4',
+        probing_info: probing,
+        bounding_variables: JSON.stringify({ ranges: [[0, 100]] }),
+      }),
+    ).toEqual([])
+  })
+
+  it('rejects malformed-JSON probing_info / bounding_variables', () => {
+    // Catch operator hand-edits or unstringified raw objects before
+    // they hit D1 — the serializer parses these on read and
+    // otherwise would silently drop them.
+    expect(
+      validateDraftCreate({
+        title: 'Color table row',
+        format: 'video/mp4',
+        probing_info: 'not json {',
+      }).some(e => e.field === 'probing_info' && e.code === 'invalid_json'),
+    ).toBe(true)
+    expect(
+      validateDraftCreate({
+        title: 'Color table row',
+        format: 'video/mp4',
+        bounding_variables: '{ unterminated',
+      }).some(e => e.field === 'bounding_variables' && e.code === 'invalid_json'),
+    ).toBe(true)
+  })
+
+  it('caps probing_info / bounding_variables length at 4096 chars', () => {
+    // Length-cap belt-and-braces — even valid JSON shouldn't bloat
+    // the row. The real-world payloads are <300 chars; the cap is
+    // generous.
+    const oversize = JSON.stringify({ blob: 'x'.repeat(5000) })
+    expect(
+      validateDraftCreate({
+        title: 'Color table row',
+        format: 'video/mp4',
+        probing_info: oversize,
+      }).some(e => e.field === 'probing_info' && e.code === 'too_long'),
+    ).toBe(true)
   })
 })
 

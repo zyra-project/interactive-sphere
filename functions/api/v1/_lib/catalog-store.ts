@@ -57,6 +57,20 @@ export interface DatasetRow {
    * `INTERNAL_SOS_*` id). NULL for publisher-created drafts.
    */
   legacy_id: string | null
+  /** Fourth auxiliary-asset URL: the color ramp used by
+   * interactive probing. Distinct from `legend_ref` in ~2 of 14
+   * overlapping rows. Phase 3b restored this from the SOS
+   * snapshot via migration 0009. NULL on rows that don't ship one. */
+  color_table_ref: string | null
+  /** JSON-stringified probing metadata
+   * (`{ units, minVal, maxVal, minPos, maxPos }`) recovered from
+   * the SOS snapshot. The SPA-side probe tooltip is a separate
+   * downstream change; this column just persists the data. */
+  probing_info: string | null
+  /** JSON-stringified per-variable data ranges from the SOS
+   * `boundingVariables` field. Persisted verbatim; consumers can
+   * surface or ignore. */
+  bounding_variables: string | null
 }
 
 export interface DecorationRows {

@@ -163,7 +163,7 @@ CREATE TABLE datasets (
 
   published_at       TEXT,
   retracted_at       TEXT,
-  publisher_id       TEXT, legacy_id TEXT,
+  publisher_id       TEXT, legacy_id TEXT, color_table_ref TEXT, probing_info TEXT, bounding_variables TEXT,
   FOREIGN KEY (publisher_id) REFERENCES publishers(id)
 );
 

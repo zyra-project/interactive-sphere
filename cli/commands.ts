@@ -690,6 +690,42 @@ Commands:
                                       --from-stdin; --human prints a readable
                                       table. Read-only — no mutations.
 
+  migrate-r2-assets [--dry-run] [--limit=N] [--id=<id>]
+                    [--types=t1,t2,...] [--pace-ms=N]
+                                      Migrate per-row auxiliary asset URLs
+                                      (thumbnail, legend, caption, color_table)
+                                      from NOAA CloudFront to R2 under
+                                      datasets/<id>/<asset>.<ext>. Idempotent —
+                                      assets already on r2: skip. Captions
+                                      auto-convert SRT → VTT inline. Requires
+                                      the same R2 credentials as migrate-r2-hls.
+                                      Use --types to do one class at a time
+                                      (default: all four). See
+                                      CATALOG_BACKEND_DEVELOPMENT.md
+                                      "Migrating auxiliary asset URLs to R2".
+
+  rollback-r2-assets <id> [--types=t1,t2,...]
+                          [--to-url=<url>] [--dry-run]
+                                      Roll a row's auxiliary asset columns
+                                      back from r2: to the original NOAA URLs.
+                                      Original URL recovered from the SOS
+                                      snapshot by legacy_id; --to-url=<url>
+                                      overrides for non-SOS catalogs
+                                      (requires --types=<single-type>).
+                                      PATCHes the column first (commit point),
+                                      then deletes the R2 object (cleanup;
+                                      non-fatal).
+
+  rollback-r2-assets --from-stdin [--dry-run]
+                                      Bulk rollback. Reads NDJSON from stdin
+                                      (one { "dataset_id", "asset_type" } per
+                                      line) and runs the per-asset pipeline
+                                      sequentially. Continues past failures
+                                      and prints an aggregate summary. Pipe
+                                      a filtered slice of the migration's
+                                      Grafana telemetry to roll back a
+                                      specific subset.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

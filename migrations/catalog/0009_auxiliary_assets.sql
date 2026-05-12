@@ -1,0 +1,53 @@
+-- 0009_auxiliary_assets.sql — Phase 3b — restore three SOS fields the
+-- Phase 1d import dropped on the floor, and add a fourth auxiliary
+-- asset column whose URL we'll migrate to R2.
+--
+-- Three new columns on `datasets`:
+--
+--   color_table_ref     TEXT — fourth auxiliary asset reference,
+--                              parallel to legend_ref. Some SOS rows
+--                              (~18) ship a distinct "color table"
+--                              image alongside the visible legend
+--                              (e.g. `colorbar.png` vs
+--                              `colortable.png`). The color table is
+--                              the canonical color ramp used for
+--                              interactive probing; the legend is
+--                              the UI-visible swatch. In 12 of 14
+--                              overlapping rows they're the same URL,
+--                              but in the remaining 2 they differ and
+--                              the probing feature needs the color
+--                              table specifically.
+--
+--   probing_info        TEXT — JSON-stringified probing metadata:
+--                              { units, minVal, maxVal,
+--                                minPos: { x, y, XUnits, YUnits },
+--                                maxPos: { x, y, XUnits, YUnits } }
+--                              Maps pixel coordinates on the color
+--                              table image to data values, so the
+--                              SPA can implement hover-to-probe.
+--                              ~19 rows in the SOS snapshot. The
+--                              SPA-side tooltip rendering is a
+--                              separate downstream change; this
+--                              column just persists the data.
+--
+--   bounding_variables  TEXT — JSON-stringified data ranges from the
+--                              SOS `boundingVariables` field
+--                              (variable-by-variable min/max). ~27
+--                              rows. Same "persist-now, render-later"
+--                              policy as probing_info.
+--
+-- All three are nullable. Existing rows imported under Phase 1d will
+-- start NULL; the Phase 3b backfill subcommand (3b/C) reads from the
+-- SOS snapshot to populate them retroactively. Phase 3b's
+-- snapshot-import update (3b/B) populates them on every future
+-- import.
+--
+-- No new indexes — these columns are read with the row, never
+-- queried independently. (If a future probing feature ever wants
+-- "which datasets support probing?" the lookup is a `WHERE
+-- probing_info IS NOT NULL` table scan over the small datasets
+-- table, which is cheap.)
+
+ALTER TABLE datasets ADD COLUMN color_table_ref TEXT;
+ALTER TABLE datasets ADD COLUMN probing_info TEXT;
+ALTER TABLE datasets ADD COLUMN bounding_variables TEXT;

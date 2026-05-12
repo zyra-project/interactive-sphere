@@ -23,11 +23,13 @@ import { join } from 'node:path'
 import {
   buildObjectUrl,
   contentTypeForFile,
+  deleteR2Object,
   deleteR2Prefix,
   loadR2ConfigFromEnv,
   parseListKeys,
   R2UploadError,
   uploadHlsBundle,
+  uploadR2Object,
   validateR2Config,
   walkBundleFiles,
   type R2UploadConfig,
@@ -419,5 +421,186 @@ describe('deleteR2Prefix', () => {
     expect(err.status).toBeNull()
     expect(err.key).toBe('videos/x/master.m3u8')
     expect(err.message).toMatch(/DELETE .* unreachable/)
+  })
+})
+
+describe('uploadR2Object (3b/F)', () => {
+  // Single-file PUT primitive companion to uploadHlsBundle. Used
+  // by the 3b/G migrate-r2-assets pump for one-thumbnail-per-row
+  // uploads (no master playlist, no bundle walk).
+
+  it('PUTs the body to the signed URL with the right content-type', async () => {
+    let captured: { url: string; method: string; contentType: string; body: ArrayBuffer } | null = null
+    const fetchImpl = vi.fn(async (req: Request) => {
+      captured = {
+        url: req.url,
+        method: req.method,
+        contentType: req.headers.get('content-type') ?? '',
+        body: await req.arrayBuffer(),
+      }
+      return new Response('', { status: 200 })
+    }) as unknown as typeof fetch
+    const payload = new TextEncoder().encode('fake png bytes')
+    const result = await uploadR2Object(
+      CONFIG,
+      'datasets/DS001/thumbnail.png',
+      payload,
+      'image/png',
+      { fetchImpl },
+    )
+    expect(result.key).toBe('datasets/DS001/thumbnail.png')
+    expect(result.bytes).toBe(payload.byteLength)
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+    expect(captured).not.toBeNull()
+    expect(captured!.method).toBe('PUT')
+    expect(captured!.contentType).toBe('image/png')
+    // Path-style addressing: <endpoint>/<bucket>/<key-with-slashes>.
+    expect(captured!.url).toBe(
+      'https://acct123.r2.cloudflarestorage.com/terraviz-assets/datasets/DS001/thumbnail.png',
+    )
+    expect(new Uint8Array(captured!.body)).toEqual(payload)
+  })
+
+  it('throws R2UploadError on a non-2xx response with the key + status', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('AccessDenied', { status: 403 }),
+    ) as unknown as typeof fetch
+    const err = await uploadR2Object(
+      CONFIG,
+      'datasets/DS001/legend.png',
+      new Uint8Array([1, 2, 3]),
+      'image/png',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBe(403)
+    expect(err.key).toBe('datasets/DS001/legend.png')
+    expect(err.message).toMatch(/PUT datasets\/DS001\/legend\.png failed \(403\)/)
+    expect(err.message).toContain('AccessDenied')
+  })
+
+  it('wraps a network throw as R2UploadError with the key + null status', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('socket hang up')
+    }) as unknown as typeof fetch
+    const err = await uploadR2Object(
+      CONFIG,
+      'datasets/DS001/caption.vtt',
+      new Uint8Array(10),
+      'text/vtt',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBeNull()
+    expect(err.key).toBe('datasets/DS001/caption.vtt')
+    expect(err.message).toMatch(/PUT .* unreachable.*socket hang up/)
+  })
+
+  it('refuses to PUT when config is incomplete', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const err = await uploadR2Object(
+      { ...CONFIG, accessKeyId: '' },
+      'datasets/DS001/thumbnail.png',
+      new Uint8Array(10),
+      'image/png',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.message).toContain('R2_ACCESS_KEY_ID')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('preserves UTF-8 multibyte sequences through the ArrayBuffer round-trip', async () => {
+    // Captions and other text assets are UTF-8. Guard against a
+    // subtle bug where the .buffer.slice copy would silently
+    // truncate when byteOffset > 0.
+    let capturedBody: ArrayBuffer | null = null
+    const fetchImpl = vi.fn(async (req: Request) => {
+      capturedBody = await req.arrayBuffer()
+      return new Response('', { status: 200 })
+    }) as unknown as typeof fetch
+    const text = 'WEBVTT\n\n1\n00:00:00.500 --> 00:00:01.200\nÁllo, mañana — ¿qué tal?\n'
+    const payload = new TextEncoder().encode(text)
+    await uploadR2Object(
+      CONFIG,
+      'datasets/DS001/caption.vtt',
+      payload,
+      'text/vtt',
+      { fetchImpl },
+    )
+    expect(capturedBody).not.toBeNull()
+    expect(new TextDecoder('utf-8').decode(new Uint8Array(capturedBody!))).toBe(text)
+  })
+})
+
+describe('deleteR2Object (3b/I)', () => {
+  // Single-object DELETE helper used by the 3b/I rollback path.
+  // One HTTP round-trip instead of LIST + DELETE-each, scoped
+  // to an exact key so unrelated objects sharing a prefix
+  // aren't touched.
+
+  it('issues DELETE against the path-style URL with SigV4', async () => {
+    let captured: { url: string; method: string; auth: string } | null = null
+    const fetchImpl = vi.fn(async (req: Request) => {
+      captured = {
+        url: req.url,
+        method: req.method,
+        auth: req.headers.get('Authorization') ?? '',
+      }
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+    const result = await deleteR2Object(
+      CONFIG,
+      'datasets/DS001/thumbnail.jpg',
+      { fetchImpl },
+    )
+    expect(result.key).toBe('datasets/DS001/thumbnail.jpg')
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+    expect(captured).not.toBeNull()
+    expect(captured!.method).toBe('DELETE')
+    expect(captured!.url).toBe(
+      'https://acct123.r2.cloudflarestorage.com/terraviz-assets/datasets/DS001/thumbnail.jpg',
+    )
+    expect(captured!.auth).toMatch(/^AWS4-HMAC-SHA256 /)
+  })
+
+  it('throws R2UploadError on a 403 with the key + status preserved', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('AccessDenied', { status: 403 }),
+    ) as unknown as typeof fetch
+    const err = await deleteR2Object(
+      CONFIG,
+      'datasets/DS001/thumbnail.jpg',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBe(403)
+    expect(err.key).toBe('datasets/DS001/thumbnail.jpg')
+  })
+
+  it('throws R2UploadError on a network throw with status=null', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('socket hang up')
+    }) as unknown as typeof fetch
+    const err = await deleteR2Object(
+      CONFIG,
+      'datasets/DS001/legend.png',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.status).toBeNull()
+    expect(err.message).toMatch(/DELETE .* unreachable.*socket hang up/)
+  })
+
+  it('refuses to DELETE when config is incomplete', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const err = await deleteR2Object(
+      { ...CONFIG, secretAccessKey: '' },
+      'datasets/DS001/thumbnail.jpg',
+      { fetchImpl },
+    ).catch(e => e) as R2UploadError
+    expect(err).toBeInstanceOf(R2UploadError)
+    expect(err.message).toContain('R2_SECRET_ACCESS_KEY')
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })
