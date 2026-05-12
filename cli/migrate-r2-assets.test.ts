@@ -518,7 +518,12 @@ describe('runMigrateR2Assets — live migration', () => {
     // Both telemetry events flipped to patch_failed.
     expect(events).toHaveLength(2)
     for (const e of events) expect(e.outcome).toBe('patch_failed')
-    expect(err.text()).toContain('data_ref PATCH failed')
+    // Log mentions the specific auxiliary columns the PATCH tried
+    // (not "data_ref" — that's the video pump's column). Helps
+    // operator triage point at the right code path.
+    expect(err.text()).toContain('asset *_ref PATCH failed')
+    expect(err.text()).toContain('thumbnail_ref')
+    expect(err.text()).toContain('legend_ref')
   })
 
   it('--id targets a single row via GET', async () => {

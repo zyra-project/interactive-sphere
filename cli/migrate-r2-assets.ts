@@ -416,10 +416,13 @@ async function migrateOne(
     // PATCH failed after R2 uploads succeeded — every successful
     // asset is now orphaned. Promote those results to patch_failed
     // so the operator's telemetry surface the orphans cleanly.
+    const columnsAttempted = Object.keys(updates).join(', ')
     const msg =
       `${patched.status}: ${patched.error}` +
       (patched.message ? ` — ${patched.message}` : '')
-    deps.stderr.write(`[${row.id}] data_ref PATCH failed: ${msg}\n`)
+    deps.stderr.write(
+      `[${row.id}] asset *_ref PATCH failed (${columnsAttempted}): ${msg}\n`,
+    )
     for (const r of results) {
       if (r.outcome === 'ok') {
         r.outcome = 'patch_failed'
