@@ -317,6 +317,35 @@ describe('runMigrateR2Assets — plan + dry-run', () => {
     expect(err.text()).toMatch(/unknown asset type "bogus"/)
     expect(handles.list).not.toHaveBeenCalled()
   })
+
+  it('plan summary per-type counts respect --limit (3b/N)', async () => {
+    // Pre-3b/N the per-type counts were computed across ALL eligible
+    // rows even when --limit capped the run. Operator running
+    // `--limit=2` saw "thumbnail: 5" and over-estimated. The
+    // counts now reflect just the rows the run will actually touch,
+    // with an "(of N)" suffix preserving the unfiltered total
+    // for context.
+    const rows: PublisherRow[] = []
+    for (let i = 0; i < 5; i++) {
+      rows.push(makeRow({
+        id: `DS_${i}`,
+        thumbnail_ref: `${NOAA}/${i}/t.jpg`,
+        legend_ref: `${NOAA}/${i}/l.png`,
+      }))
+    }
+    const { client } = fakeClient({ rows })
+    const { ctx, out } = makeCtx(client, { 'dry-run': true, limit: '2' })
+    await runMigrateR2Assets(ctx, {
+      r2Config: R2_CONFIG,
+      fetchAsset: fakeFetchAsset(),
+      uploadR2Object: fakeUploadR2Object().fn,
+    })
+    // 5 rows × 2 types = 10 eligible total; limit=2 → 4 in this run.
+    expect(out.text()).toContain('will migrate this run:         2 (capped by --limit)')
+    expect(out.text()).toContain('total asset uploads:           4  (of 10 eligible across all rows)')
+    expect(out.text()).toContain('thumbnail      2  (of 5)')
+    expect(out.text()).toContain('legend         2  (of 5)')
+  })
 })
 
 describe('runMigrateR2Assets — live migration', () => {

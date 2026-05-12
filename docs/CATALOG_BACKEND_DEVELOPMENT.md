@@ -1077,8 +1077,17 @@ columns and one telemetry event per (row, asset_type) pair.
 
 Same R2 credentials as Phase 3 (`R2_S3_ENDPOINT` /
 `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` in the operator's
-shell), same `R2_PUBLIC_BASE` on Pages so the manifest endpoint
-resolves the new `r2:` references. The migration uses the
+shell), same `R2_PUBLIC_BASE` on Pages — used by the publisher
+API's dataset serializer (`functions/api/v1/_lib/dataset-serializer.ts`,
+through the `resolveAssetRef` callback) to flip the `r2:<key>`
+values that 3b writes into the `*_ref` columns back to the
+public HTTPS form the SPA renders. (Note: the manifest
+endpoint at `/api/v1/datasets/<id>/manifest` only resolves
+`data_ref` for video / image playback — the auxiliary asset
+columns are surfaced via the row's serializer, not the
+manifest, so it's the regular dataset GET path that needs
+`R2_PUBLIC_BASE` to do the right thing for thumbnails,
+legends, captions, and color tables.) The migration uses the
 same custom-domain origin Phase 3 set up — no new env vars,
 no new Cloudflare configuration.
 

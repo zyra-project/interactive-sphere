@@ -281,19 +281,45 @@ function printPlanSummary(
 ): void {
   const eligibleRows = rows.filter(r => rowHasWork(r, types))
   const willRun = Math.min(eligibleRows.length, limit)
-  const totalAssets = types.reduce((sum, t) => sum + perTypeCounts[t], 0)
+  // Recompute per-type counts against just the rows the run will
+  // actually process (eligibleRows.slice(0, limit)). Without this
+  // a `--limit=5` operator would still see "thumbnail: 135" in
+  // the breakdown and over-estimate the run's scope. Show both
+  // when --limit is in effect so the unfiltered totals stay
+  // visible too — operators often want to know "how much is
+  // left to do" alongside "what this run will do."
+  const limited = eligibleRows.slice(0, willRun)
+  const limitInForce = limit < eligibleRows.length
+  const runCounts: Record<AssetType, number> = {
+    thumbnail: 0,
+    legend: 0,
+    caption: 0,
+    color_table: 0,
+  }
+  for (const r of limited) {
+    for (const t of types) {
+      const v = r[ASSET_META[t].column as keyof PublisherDatasetRow] as string | null
+      if (refNeedsMigration(v)) runCounts[t]++
+    }
+  }
+  const totalRunUploads = types.reduce((sum, t) => sum + runCounts[t], 0)
+  const totalAllUploads = types.reduce((sum, t) => sum + perTypeCounts[t], 0)
   ctx.stdout.write(
     `Asset migration plan:\n` +
       `  rows scanned:                  ${rows.length}\n` +
       `  rows with at least one asset:  ${eligibleRows.length}\n` +
       `  will migrate this run:         ${willRun}` +
-      (limit < eligibleRows.length ? ` (capped by --limit)\n` : '\n') +
-      `  total asset uploads:           ${totalAssets}\n` +
+      (limitInForce ? ` (capped by --limit)\n` : '\n') +
+      `  total asset uploads:           ${totalRunUploads}` +
+      (limitInForce ? `  (of ${totalAllUploads} eligible across all rows)\n` : '\n') +
       `  types: ${types.join(', ')}\n`,
   )
   for (const t of types) {
+    const runN = runCounts[t]
+    const allN = perTypeCounts[t]
+    const suffix = limitInForce ? `  (of ${allN})` : ''
     ctx.stdout.write(
-      `    ${ASSET_META[t].basename.padEnd(14)} ${perTypeCounts[t]}\n`,
+      `    ${ASSET_META[t].basename.padEnd(14)} ${runN}${suffix}\n`,
     )
   }
   if (eligibleRows.length === 0) return

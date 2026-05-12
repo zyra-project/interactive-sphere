@@ -118,8 +118,35 @@ export interface WireDataset {
  */
 export type DataRefResolver = (dataRef: string) => string | null
 
+/**
+ * Resolves an `r2:<key>` auxiliary-asset reference (the post-3b
+ * shape on `thumbnail_ref` / `legend_ref` / `caption_ref` /
+ * `color_table_ref` columns) to a publicly-readable URL. Bare
+ * `https://` values pass through unchanged so pre-migration
+ * rows on NOAA CloudFront still serialize correctly.
+ *
+ * The callback shape lets the serializer stay env-agnostic — the
+ * route handler binds it once via `resolveAssetRef` from
+ * `r2-public-url.ts`. When omitted, the serializer falls back
+ * to verbatim passthrough (useful in tests that don't care
+ * about R2 resolution); production routes must always pass one
+ * or the SPA receives unrenderable `r2:` strings.
+ */
+export type AssetRefResolver = (ref: string | null | undefined) => string | null
+
 function nonNull<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
+}
+
+/** Apply an optional asset-ref resolver, falling back to
+ * verbatim passthrough when none is provided. */
+function resolveAsset(
+  ref: string | null | undefined,
+  resolver: AssetRefResolver | undefined,
+): string | undefined {
+  if (!ref) return undefined
+  if (!resolver) return ref
+  return nonNull(resolver(ref))
 }
 
 /**
@@ -172,7 +199,16 @@ export function serializeDataset(
   decoration: DecorationRows,
   identity: NodeIdentityRow,
   resolveDataRef?: DataRefResolver,
+  resolveAssetRef?: AssetRefResolver,
 ): WireDataset {
+  // Auxiliary asset URLs may be either:
+  //   - bare https:// (pre-Phase-3b: NOAA CloudFront), or
+  //   - `r2:<key>` (post-Phase-3b migration: R2-hosted under
+  //     datasets/<id>/<asset>.<ext>).
+  // The SPA renders these as <img src=...> / <track src=...>
+  // and can't fetch a `r2:` scheme; the resolver flips r2: to a
+  // publicly-readable URL via R2_PUBLIC_BASE. Bare URLs pass
+  // through unchanged. See r2-public-url.ts:resolveAssetRef.
   const wire: WireDataset = {
     id: row.id,
     slug: row.slug,
@@ -181,10 +217,10 @@ export function serializeDataset(
     dataLink: manifestLink(identity.base_url, row.id),
     organization: nonNull(row.organization),
     abstractTxt: nonNull(row.abstract),
-    thumbnailLink: nonNull(row.thumbnail_ref),
-    legendLink: nonNull(row.legend_ref),
-    closedCaptionLink: nonNull(row.caption_ref),
-    colorTableLink: nonNull(row.color_table_ref),
+    thumbnailLink: resolveAsset(row.thumbnail_ref, resolveAssetRef),
+    legendLink: resolveAsset(row.legend_ref, resolveAssetRef),
+    closedCaptionLink: resolveAsset(row.caption_ref, resolveAssetRef),
+    colorTableLink: resolveAsset(row.color_table_ref, resolveAssetRef),
     websiteLink: nonNull(row.website_link),
     startTime: nonNull(row.start_time),
     endTime: nonNull(row.end_time),

@@ -21,6 +21,7 @@ import {
 } from '../_lib/catalog-store'
 import { serializeDataset } from '../_lib/dataset-serializer'
 import { makeDataRefResolver } from '../_lib/data-ref-resolver'
+import { resolveAssetRef } from '../_lib/r2-public-url'
 import { computeEtag } from '../_lib/snapshot'
 
 const CACHE_CONTROL = 'public, max-age=60, stale-while-revalidate=300'
@@ -58,7 +59,12 @@ export const onRequestGet: PagesFunction<CatalogEnv, 'id'> = async context => {
 
   const decorations = await getDecorations(db, [id])
   const resolveDataRef = makeDataRefResolver(context.env)
-  const dataset = serializeDataset(row, decorations.get(id)!, identity, resolveDataRef)
+  // Bind env into the asset resolver so r2:<key> references on
+  // thumbnail/legend/caption/color_table_ref columns get resolved
+  // to the public R2 URL — Phase 3b's migrate-r2-assets writes
+  // r2: handles, the SPA needs HTTPS.
+  const assetResolver = (ref: string | null | undefined) => resolveAssetRef(context.env, ref)
+  const dataset = serializeDataset(row, decorations.get(id)!, identity, resolveDataRef, assetResolver)
   const body = JSON.stringify(dataset)
   const etag = await computeEtag(body)
 
