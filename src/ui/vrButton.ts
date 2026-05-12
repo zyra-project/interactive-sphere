@@ -22,26 +22,13 @@
  * someone asks.
  */
 
-import { isImmersiveVrSupported, isImmersiveArSupported, classifyXrDevice } from '../utils/vrCapability'
+import { isImmersiveVrSupported, isImmersiveArSupported } from '../utils/vrCapability'
 import { enterImmersive, loadThree, type VrMode, type VrSessionContext } from '../services/vrSession'
 import { pauseForVrEntry, resumeForVrExit, TELEMETRY_BUILD_ENABLED } from '../analytics'
-import { getExperimentalFlag } from '../utils/experimentalFlags'
 import { logger } from '../utils/logger'
 import { t } from '../i18n'
 
 const BUTTON_ID = 'vr-enter-btn'
-
-/** Heuristic match for "this device's AR session will use screen-tap
- *  input." There's no pre-session API to learn the input archetype,
- *  so we infer from the UA. Reuses `classifyXrDevice` so the bucket
- *  is consistent with telemetry and so controller-class Android
- *  headsets (Pico, Quest) correctly fall through — `classifyXrDevice`
- *  matches `Pico`, `Quest`, `HoloLens`, `Magic Leap`, `Vision` before
- *  the Android-AR catch-all, so a Pico Neo 4 UA containing both
- *  `Pico` and `Android` resolves to `pico`, not `android-ar`. */
-export function isHandheldArUserAgent(ua: string): boolean {
-  return classifyXrDevice(ua, 'ar') === 'android-ar'
-}
 
 /**
  * Wire the immersive-mode button. Safe to call even if the button
@@ -77,17 +64,6 @@ export async function initVrButton(ctx: VrSessionContext): Promise<void> {
   // Prefer AR — it's the better SOS experience. Fall back to VR for
   // hardware that lacks passthrough.
   const mode: VrMode = arSupported ? 'ar' : 'vr'
-
-  // Phone-AR opt-in gate. ARCore Chrome on Android advertises
-  // immersive-ar, but the screen-tap input UX hasn't shipped yet;
-  // hide the button until the user opts in via Tools → Privacy.
-  // Controller-class devices (Quest, PCVR, Pico) keep their existing
-  // default-on behaviour because the UA test excludes them.
-  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  if (mode === 'ar' && isHandheldArUserAgent(ua) && !getExperimentalFlag('vrPhoneArEnabled')) {
-    logger.debug('[VR] Android-AR detected but vrPhoneArEnabled flag off — button stays hidden')
-    return
-  }
   const labelText = t(mode === 'ar' ? 'vr.enter.ar.label' : 'vr.enter.label')
   const titleText = t(mode === 'ar' ? 'vr.enter.ar.title' : 'vr.enter.title')
 
