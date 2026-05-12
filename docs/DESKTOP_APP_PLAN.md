@@ -239,9 +239,15 @@ Backend code (tile cache, API proxy) requires Rust.
    - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/interactive-sphere.key`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — the password you chose during generation
 
-4. (Optional) macOS notarization — add these secrets when you have an Apple Developer certificate:
-   - `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`
-   - `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
+4. macOS Developer ID signing + notarization — strongly recommended; without these the aarch64 `.dmg` is only ad-hoc signed and macOS Gatekeeper rejects it on download with "Terraviz is damaged and can't be opened." The release workflow already passes these through to `tauri-action`; you just need to set the repository secrets:
+   - `APPLE_CERTIFICATE` — base64-encoded `.p12` export of the **Developer ID Application** certificate from Keychain Access. Generate with `base64 -i cert.p12 | pbcopy`.
+   - `APPLE_CERTIFICATE_PASSWORD` — the password chosen when exporting the `.p12`.
+   - `APPLE_SIGNING_IDENTITY` — the full common name of the identity, e.g. `Developer ID Application: Zyra Project (ABCDE12345)`. Run `security find-identity -v -p codesigning` on a Mac with the cert imported to copy the exact string.
+   - `APPLE_ID` — the Apple ID email associated with the Apple Developer account.
+   - `APPLE_PASSWORD` — an **app-specific password** generated at [appleid.apple.com](https://appleid.apple.com/) → Sign-In and Security → App-Specific Passwords. Do **not** use the account password.
+   - `APPLE_TEAM_ID` — the 10-character team ID, visible at [developer.apple.com/account](https://developer.apple.com/account) under Membership.
+
+   When all six are present, `tauri-action` imports the cert into a temporary keychain on the macOS runner, signs the `.app` and `.dmg` with the Developer ID, then submits the bundle to Apple's notary service via `notarytool` and staples the ticket. The resulting `.dmg` opens cleanly on Apple Silicon without the "damaged" Gatekeeper error.
 
 5. (Optional) Windows Authenticode — sign the MSI/EXE with a code signing certificate. Not required for distribution but suppresses SmartScreen warnings.
 
