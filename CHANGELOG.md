@@ -16,6 +16,151 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3b — Auxiliary asset migration + catalog data completeness
+
+**Branch:** `claude/auxiliary-asset-migration-phase-3b`
+**Commits:** 3b/A through 3b/K — eleven logical changes.
+
+Phase 3 migrated the video `data_ref`; Phase 3b migrates the
+*auxiliary* asset URLs (thumbnail / legend / caption /
+color-table) from NOAA's CloudFront onto R2 under
+`datasets/{id}/...`. After 3b ships, the catalog is fully self-
+hosted end-to-end — federation peers can mirror datasets without
+reaching back to noaa.gov.
+
+A side-effect of the audit work that motivated the expanded
+scope: the Phase 1d import dropped several useful SOS fields on
+the floor. 3b restores three of them.
+
+**3b/A — Schema migration `0009`.** Three new columns on
+`datasets`: `color_table_ref` (4th auxiliary asset URL distinct
+from `legend_ref` in ~2 of 14 overlap rows), `probing_info`
+(JSON-stringified pixel-coords → data-value mapping for the SOS
+interactive-probe feature; 19 rows), `bounding_variables`
+(JSON-stringified per-variable data ranges; 27 rows). Plumbed
+through `DatasetRow` / `WireDataset` / `Dataset` /
+`DatasetDraftBody` / `createDataset` / `updateDataset` /
+`serializeDataset`. New `validateJsonStringField` enforces
+JSON parseability + 4096-char cap on write. Backwards-compatible
+additive only.
+
+**3b/B — Importer reads the new fields + rescues 4 dropped rows.**
+`cli/lib/snapshot-import.ts` reads `colorTableLink` /
+`probingInfo` / `boundingVariables` from the SOS snapshot and
+JSON-stringifies the structured pair for D1 storage. New
+`pickDataLink(sos)` helper rescues 4 SOS rows (Venus, Moon,
+Moon Topography, Pluto) that previously dropped as
+`missing_data_link` due to an upstream `datalink` (lowercase l)
+casing inconsistency.
+
+**3b/C — `--update-existing` backfill flag on `import-snapshot`.**
+Tight-scope PATCH: a constant `BACKFILL_FIELDS` tuple defines
+exactly which columns get touched (the three new ones), so a
+re-import never clobbers publisher-edited title / abstract /
+etc. Reports `backfilled` / `backfill_noop` / `backfill_failed`
+in the summary. `--dry-run` shows the per-row count without
+issuing PATCHes.
+
+**3b/D — `cli/lib/asset-fetch.ts`.** HTTP GET with 50 MiB default
+size cap, two-step rejection (Content-Length pre-flight + mid-
+stream cancel), URL-derived extension, Content-Type fallback
+to a URL-extension lookup when the server returns
+`application/octet-stream` (NOAA CloudFront's behavior for
+`.srt` captions). Exports `extensionFromUrl`, `mimeForExtension`,
+`resolveContentType` for downstream consumers.
+
+**3b/E — `cli/lib/srt-to-vtt.ts`.** Small pure-function library.
+Prepends `WEBVTT` header, swaps comma → period in cue timestamps
+(anchored on the `-->` arrow so dialogue commas are untouched),
+strips UTF-8 BOM, normalizes CRLF/CR to LF. Cue numbering
+preserved (legal in WebVTT as cue identifiers).
+
+**3b/F — `uploadR2Object` extension to `cli/lib/r2-upload.ts`.**
+Single-file PUT companion to `uploadHlsBundle`. Same SigV4
+signing, `R2UploadError` on failure.
+
+**3b/G — `cli/migrate-r2-assets.ts` main pump.** Walks the
+catalog, per-asset pipeline: read `*_ref` → skip if r2:- or
+empty → fetchAsset → optional SRT→VTT inline → uploadR2Object →
+single row-level PATCH covering every asset that succeeded.
+One `migration_r2_assets` telemetry event per attempted asset.
+A `patch_failed` row promotes every prior `ok` asset's event
+to `patch_failed` so orphan R2 objects are visible in Grafana.
+Per-asset failures don't abandon other assets on the row.
+
+**3b/H — `migration_r2_assets` Tier A telemetry event.** New
+`MigrationR2AssetsEvent` interface (+ `MigrationR2AssetsOutcome`
++ `MigrationR2AssetsType` unions) added to `TelemetryEvent`
+union; `migration_r2_assets` registered in `KNOWN_EVENT_TYPES`
+on the ingest endpoint. One event per (row, asset_type) pair,
+not per row.
+
+**3b/I — `cli/rollback-r2-assets.ts`.** Symmetric inverse of
+3b/G. Per-row + bulk (`--from-stdin`) modes; single-row
+supports `--types` and `--to-url` overrides. Original NOAA URL
+recovered from the SOS snapshot by legacy_id; `--to-url=<url>`
+overrides for non-SOS catalogs. PATCH then DELETE (single-key
+via new `deleteR2Object` helper in `r2-upload.ts`). Delete
+failures non-fatal — catalog correct, orphan R2 storage
+operator-visible.
+
+**3b/J — Grafana asset-migration row on Product Health.** Three
+new panels at y=42 keyed off `migration_r2_assets`. Cumulative
+ok grouped by asset_type, runs per day by outcome, failure
+breakdown table. Dashboard version 7 → 8.
+
+**3b/K — Docs.** This CHANGELOG entry, runbook section in
+`CATALOG_BACKEND_DEVELOPMENT.md` covering the migrate → list →
+rollback flow, and expected-bindings audit (no new env vars —
+the migration uses the same `R2_PUBLIC_BASE` / `R2_S3_ENDPOINT`
+/ `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` as Phase 3,
+documented with the new asset-migration use case).
+
+**Tests.** 95 new across the eleven commits — full suite
+~2220 passing on completion. Per-module breakdown in the PR
+description on PR #99.
+
+**Operator-visible changes.**
+
+```sh
+# Backfill already-imported rows with the three new columns:
+npm run terraviz -- import-snapshot --update-existing --dry-run
+npm run terraviz -- import-snapshot --update-existing
+
+# Migrate asset URLs to R2 (idempotent — re-runs safe):
+npm run terraviz -- migrate-r2-assets --dry-run
+npm run terraviz -- migrate-r2-assets --limit=5     # sanity batch
+npm run terraviz -- migrate-r2-assets               # full run
+
+# Per-type rollout (do thumbnails first, captions later):
+npm run terraviz -- migrate-r2-assets --types=thumbnail
+
+# Per-row rollback (snapshot recovers the NOAA URL):
+npm run terraviz -- rollback-r2-assets <id> --types=thumbnail
+
+# Bulk rollback from telemetry-filtered NDJSON:
+... | npm run terraviz -- rollback-r2-assets --from-stdin
+```
+
+No new env vars. Schema migration 0009 is additive (three
+nullable columns, no indexes) and reverts cleanly via
+`ALTER TABLE … DROP COLUMN`.
+
+**Non-goals (deferred to later phases).**
+
+- **Tour JSON migration** — Phase 3c-shaped follow-up. ~199
+  SOS rows reference tour JSON files but the `tours` table is
+  empty.
+- **SPA consumption of `probing_info`** — interactive hover-to-
+  probe tooltips. Separate downstream feature; this PR just
+  persists the data.
+- **Non-Earth globe support** — `celestialBody` / `radiusMi` for
+  Mars / Moon / Pluto. Phase 5+ feature.
+- **The other 12 dropped SOS fields** — SOS-desktop UI flags /
+  GIS-only / VR-search filters. No web SPA equivalent.
+
+---
+
 ## Phase 3a — Real-time row guard for migrate-r2-hls
 
 **Branch:** `claude/realtime-row-filtering`
