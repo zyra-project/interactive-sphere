@@ -70,3 +70,77 @@ body.browse-open #vr-enter-btn {
         display: none;
     }
 }
+
+/* --- In-AR vertical zoom slider ---
+ * Mounted by vrSession on screen-tap / transient-pointer sessions.
+ * Floats on the inline-end edge of the viewport, vertically
+ * centered. Logical inline properties so the slider flips correctly
+ * in RTL locales. The WebXR canvas itself is below the DOM (covers
+ * the entire viewport), so this overlay reads as a proper
+ * touch-friendly control on top of it.
+ */
+.vr-zoom-overlay {
+    position: fixed;
+    top: 50%;
+    inset-inline-end: 0.75rem;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.6rem 0.45rem;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--glass-border);
+    border-radius: var(--radius-lg);
+    color: var(--color-text);
+    z-index: 950;
+    pointer-events: auto;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+    /* Tap targets need to clear ~44 px to be reliable on touch. */
+    min-width: 44px;
+}
+
+.vr-zoom-overlay-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    font-weight: 700;
+}
+
+.vr-zoom-overlay-slider {
+    /* Vertical slider — three independent hints because no single
+     * one works everywhere:
+     *   - `appearance: slider-vertical` covers older Chromium/WebKit
+     *   - `orient="vertical"` (set in JS on the element) covers
+     *     Firefox
+     *   - `writing-mode: vertical-lr` is the modern spec-blessed
+     *     route picked up by recent Chromium and WebKit
+     * The combination renders correctly on every engine we've
+     * tested without needing a CSS rotate fallback. */
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    writing-mode: vertical-lr;
+    direction: rtl; /* Fills bottom-to-top per UX expectation. */
+    width: 24px;
+    height: 200px;
+    accent-color: var(--color-accent);
+    cursor: ns-resize;
+    margin: 0;
+    background: transparent;
+}
+
+.vr-zoom-overlay-slider:focus-visible {
+    outline: 2px solid var(--accent-o70);
+    outline-offset: 4px;
+    border-radius: var(--radius-sm);
+}
+
+@media (max-height: 480px) {
+    .vr-zoom-overlay-slider {
+        height: 140px;
+    }
+}

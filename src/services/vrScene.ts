@@ -43,8 +43,23 @@ export type { VrDatasetTexture } from './photorealEarth'
  * places `y=0` at the user's standing floor, so `y=1.3` is roughly
  * eye-height for a seated user. `z=-1.5` puts the globe about
  * arm's-length ahead of them.
+ *
+ * On devices that fall back to the `local` reference space (no
+ * floor), the origin is the head pose at session start, so `y=0`
+ * is already eye level — we override the y-coordinate via
+ * {@link createVrScene}'s `referenceSpaceType` argument. Keep the
+ * default constant unchanged so existing call sites that read
+ * `GLOBE_POSITION.x` / `.z` for arc-layout math don't drift.
  */
 const GLOBE_POSITION = { x: 0, y: 1.3, z: -1.5 }
+
+/** Eye-level y coordinate when running in `local` reference space —
+ *  the head-pose origin is already at eye height, so any offset
+ *  would push the globe above or below the natural gaze. A small
+ *  negative bias would simulate "looking slightly down at an
+ *  object" but risks landing the globe in the user's lap on shorter
+ *  posture; keep at 0 until on-device feedback says otherwise. */
+const GLOBE_POSITION_Y_LOCAL = 0
 
 /** Globe radius in metres. Pinch-zoom scales the mesh, this stays fixed. */
 const GLOBE_RADIUS = 0.5
@@ -130,11 +145,20 @@ export interface VrSceneHandle {
  *   the scene background stays unset so the renderer's clear pixels
  *   reveal the camera feed behind. When false (VR mode), a dark
  *   "deep space" background is set so the user is fully immersed.
+ * @param referenceSpaceType Which XR reference space the session was
+ *   actually granted. `'local-floor'` (default) keeps the globe at
+ *   floor-relative eye height; `'local'` shifts it to the head-pose
+ *   eye level so it doesn't appear at the user's knees on devices
+ *   that lack floor tracking.
  */
 export function createVrScene(
   THREE_: typeof THREE,
   transparentBackground = false,
+  referenceSpaceType: 'local-floor' | 'local' = 'local-floor',
 ): VrSceneHandle {
+  const globePosition = referenceSpaceType === 'local'
+    ? { x: GLOBE_POSITION.x, y: GLOBE_POSITION_Y_LOCAL, z: GLOBE_POSITION.z }
+    : GLOBE_POSITION
   const scene = new THREE_.Scene()
   if (!transparentBackground) {
     scene.background = new THREE_.Color(0x000814) // deep space blue
@@ -147,7 +171,7 @@ export function createVrScene(
   // sun-direction update.
   const earth: PhotorealEarthHandle = createPhotorealEarth(THREE_, {
     radius: GLOBE_RADIUS,
-    position: GLOBE_POSITION,
+    position: globePosition,
   })
   earth.addTo(scene)
   const globe = earth.globe
@@ -248,11 +272,11 @@ export function createVrScene(
    * AR anchor preservation).
    */
   function arcPosition(i: number, total: number): { x: number; y: number; z: number } {
-    if (total <= 1) return GLOBE_POSITION
+    if (total <= 1) return globePosition
     const spacing = GLOBE_RADIUS * 2 + 0.2
     const totalWidth = (total - 1) * spacing
-    const x = GLOBE_POSITION.x - totalWidth / 2 + i * spacing
-    return { x, y: GLOBE_POSITION.y, z: GLOBE_POSITION.z }
+    const x = globePosition.x - totalWidth / 2 + i * spacing
+    return { x, y: globePosition.y, z: globePosition.z }
   }
 
   /** Build a simple secondary globe — basic Phong, no shader patches. */

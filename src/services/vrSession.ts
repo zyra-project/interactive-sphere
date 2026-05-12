@@ -25,6 +25,8 @@ import { createVrTimeLabel, type VrTimeLabelHandle } from './vrTimeLabel'
 import { setVrTourOverlaySink } from '../ui/tourUI'
 import { createVrInteraction, type VrInteractionHandle } from './vrInteraction'
 import { createVrLoading, type VrLoadingHandle } from './vrLoading'
+import { createVrZoomOverlay, type VrZoomOverlayHandle } from '../ui/vrZoomOverlay'
+import { MAX_GLOBE_SCALE, MIN_GLOBE_SCALE } from './vrScene'
 import { createVrPlacement, liftedPlacementPosition, type VrPlacementHandle } from './vrPlacement'
 import {
   clearPersistedAnchorHandle,
@@ -198,6 +200,11 @@ interface ActiveSession {
   camera: THREE.PerspectiveCamera
   scene: VrSceneHandle
   hud: VrHudHandle
+  /** Teardown hook for the DOM zoom slider — removes the
+   *  `inputsourceschange` listener and disposes the overlay if one
+   *  is currently mounted. Idempotent. Always present (a no-op for
+   *  controller-only sessions that never mount the overlay). */
+  disposeZoomOverlay: () => void
   interaction: VrInteractionHandle
   /** In-VR dataset browse panel. */
   browse: VrBrowseHandle
@@ -460,6 +467,12 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // UX. Optional because not all UAs implement anchors yet.
     optionalFeatures.push('anchors')
   }
+  // Reference-space contract for the rest of the session. `local-floor`
+  // gives the globe a stable Y above the user's actual floor; `local`
+  // anchors at the head pose at session start with no floor offset.
+  // The session-features list, the default GLOBE_POSITION, and the
+  // placement reference space all key off this — keep them consistent.
+  let referenceSpaceType: 'local-floor' | 'local' = 'local-floor'
   let session: XRSession
   try {
     session = await navigator.xr.requestSession(sessionMode, {
@@ -467,9 +480,33 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
       ...(optionalFeatures.length > 0 ? { optionalFeatures } : {}),
     })
   } catch (err) {
-    canvas.remove()
-    renderer.dispose()
-    throw err instanceof Error ? err : new Error(String(err))
+    // Only retry on a feature-unsupported failure (HoloLens 2 Edge in
+    // early builds, certain WebXR polyfills). Permission denial,
+    // transient hardware errors, and any other failure mode propagate
+    // as-is — re-prompting the user a second time would be both
+    // annoying and confusing, and would mask the original error. The
+    // narrowed retry also keeps `vr_session_started.entry_load_ms`
+    // honest on the user-denial path (otherwise a deny → retry →
+    // deny would double the latency).
+    const isFeatureUnsupported =
+      err instanceof DOMException && err.name === 'NotSupportedError'
+    if (!isFeatureUnsupported) {
+      canvas.remove()
+      renderer.dispose()
+      throw err instanceof Error ? err : new Error(String(err))
+    }
+    logger.debug('[VR] local-floor unavailable, retrying with local:', err)
+    try {
+      session = await navigator.xr.requestSession(sessionMode, {
+        requiredFeatures: ['local'],
+        ...(optionalFeatures.length > 0 ? { optionalFeatures } : {}),
+      })
+      referenceSpaceType = 'local'
+    } catch (retryErr) {
+      canvas.remove()
+      renderer.dispose()
+      throw retryErr instanceof Error ? retryErr : new Error(String(retryErr))
+    }
   }
 
   // Bind the session to the renderer. Three.js handles
@@ -542,7 +579,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   // --- Build the scene ---
   // AR mode → transparent background so the passthrough camera feed
   // shows behind everything we render.
-  const scene = createVrScene(THREE_, isAr)
+  const scene = createVrScene(THREE_, isAr, referenceSpaceType)
   const hud = createVrHud(THREE_)
   scene.scene.add(hud.mesh)
 
@@ -627,9 +664,13 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
   let placementRefSpace: XRReferenceSpace | null = null
   if (isAr) {
     try {
-      placementRefSpace = await session.requestReferenceSpace('local-floor')
+      // Use the same reference space the session was actually
+      // granted. Requesting `local-floor` here when the session was
+      // granted only `local` would fail every time on the fallback
+      // path and leave anchor restoration silently broken.
+      placementRefSpace = await session.requestReferenceSpace(referenceSpaceType)
     } catch (err) {
-      logger.debug('[VR] local-floor reference space unavailable:', err)
+      logger.debug(`[VR] ${referenceSpaceType} reference space unavailable:`, err)
     }
 
     if ('requestHitTestSource' in session) {
@@ -991,12 +1032,46 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     },
   })
 
+  // --- Phase 1 phone-AR zoom slider ---
+  // Mount the DOM zoom overlay reactively when `inputClass` resolves
+  // to `screen`. Controller sessions never see it (their thumbstick
+  // already does this job); transient-pointer devices get widened in
+  // Phase 2 PR 4. The listener runs the sync now (in case inputClass
+  // resolved during the slow Three.js + setSession path above) and
+  // on every subsequent inputsourceschange.
+  let zoomOverlay: VrZoomOverlayHandle | null = null
+  const syncZoomOverlay = (): void => {
+    const wantOverlay = sessionTelemetry.inputClass === 'screen'
+    if (wantOverlay && !zoomOverlay) {
+      zoomOverlay = createVrZoomOverlay({
+        onZoom: (raw) => {
+          const clamped = Math.max(MIN_GLOBE_SCALE, Math.min(MAX_GLOBE_SCALE, raw))
+          scene.globe.scale.setScalar(clamped)
+        },
+        initialScale: scene.globe.scale.x,
+        minScale: MIN_GLOBE_SCALE,
+        maxScale: MAX_GLOBE_SCALE,
+      })
+      zoomOverlay.mount(document.body)
+    } else if (!wantOverlay && zoomOverlay) {
+      zoomOverlay.dispose()
+      zoomOverlay = null
+    }
+  }
+  syncZoomOverlay()
+  session.addEventListener('inputsourceschange', syncZoomOverlay)
+
   active = {
     session,
     renderer,
     camera,
     scene,
     hud,
+    disposeZoomOverlay: () => {
+      session.removeEventListener('inputsourceschange', syncZoomOverlay)
+      zoomOverlay?.dispose()
+      zoomOverlay = null
+    },
     browse,
     tourControls,
     tourOverlay,
@@ -1323,6 +1398,7 @@ export async function enterImmersive(mode: VrMode, ctx: VrSessionContext): Promi
     // onFlyTo handler).
     cancelFlyTo()
     a.interaction.dispose()
+    a.disposeZoomOverlay()
     a.hud.dispose()
     a.browse.dispose()
     a.scene.scene.remove(a.tourControls.mesh)
