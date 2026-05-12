@@ -80,10 +80,10 @@ describe('srtToVtt — encoding hygiene', () => {
     // parsers when it precedes the magic header. Some SRT
     // authoring tools (notably Subtitle Edit) emit one by
     // default.
-    const srt = '﻿1\n00:00:00,500 --> 00:00:01,200\nhi\n'
+    const srt = String.fromCharCode(0xFEFF) + '1\n00:00:00,500 --> 00:00:01,200\nhi\n'
     const vtt = srtToVtt(srt)
     expect(vtt.startsWith('WEBVTT\n\n')).toBe(true)
-    expect(vtt.includes('﻿')).toBe(false)
+    expect(vtt.includes(String.fromCharCode(0xFEFF))).toBe(false)
   })
 
   it('normalizes CRLF line endings to LF', () => {

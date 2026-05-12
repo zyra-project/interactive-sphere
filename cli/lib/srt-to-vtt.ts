@@ -42,9 +42,15 @@ const VTT_HEADER = 'WEBVTT\n\n'
  * — callers that want stricter validation can check `input.length`
  * before calling.
  */
+/** UTF-8 BOM as an explicit code-point escape. Using a literal
+ * U+FEFF in source is invisible in most editors and trivially
+ * eaten by an over-eager formatter. The escape form keeps the
+ * intent unambiguous for the next reader. */
+const UTF8_BOM = String.fromCharCode(0xFEFF)
+
 export function srtToVtt(srtText: string): string {
   let body = srtText
-  if (body.startsWith('﻿')) body = body.slice(1)
+  if (body.startsWith(UTF8_BOM)) body = body.slice(1)
   body = body.replace(/\r\n?/g, '\n')
   // SRT cue arrow lines look like:
   //   00:00:00,500 --> 00:00:01,200

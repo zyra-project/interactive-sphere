@@ -215,9 +215,12 @@ export function serializeDataset(
     // D1 stores these as JSON-stringified text. Parsing here keeps
     // the wire-side shape friendly for consumers; a malformed
     // string is dropped silently (returned as undefined) rather
-    // than 500-ing the read endpoint — Phase 3b's import validates
-    // shape on write, so corrupted JSON on the column is an
-    // operator-side database edit, not a publisher API request.
+    // than 500-ing the read endpoint. Phase 3b's write-side
+    // validator (validateJsonStringField) only checks JSON
+    // parseability + the 4096-char cap — NOT the object's
+    // field-level shape. The 'returned as undefined' fallback
+    // handles the case where an out-of-band DB edit lands
+    // unparseable text on the column.
     probingInfo: parseJsonField(row.probing_info),
     boundingVariables: parseJsonField(row.bounding_variables),
   }

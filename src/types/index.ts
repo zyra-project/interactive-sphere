@@ -99,10 +99,14 @@ export interface Dataset {
  * between min and max gives the data value at that screen point.
  *
  * Stored on `datasets.probing_info` as a JSON-stringified blob.
- * The validator (`validateProbingInfo` in
- * `functions/api/v1/_lib/validators.ts`) gates the exact shape on
- * write; the runtime type here is intentionally permissive so a
- * downstream consumer can read and pick the fields it needs.
+ * Write-side validation (`validateJsonStringField` in
+ * `functions/api/v1/_lib/validators.ts`) only confirms the value
+ * is a JSON-parseable string under the 4096-char cap — it does
+ * NOT enforce this specific object shape. The shape declared
+ * here is documentation of the SOS snapshot's payload, not a
+ * runtime contract on what consumers will see. A downstream
+ * consumer should treat each field as optional and pick the
+ * ones it needs.
  */
 export interface ProbingInfo {
   units?: string
