@@ -80,6 +80,41 @@ const SNAPSHOT_FIXTURE = {
   ],
 }
 
+/**
+ * Phase 3b/C fixture — exercises `--update-existing` backfill of
+ * the new auxiliary columns. Held separately from `SNAPSHOT_FIXTURE`
+ * so adding rows here doesn't break the row-count assertions in
+ * the older Phase 1d test cases.
+ */
+const AUX_SNAPSHOT_FIXTURE = {
+  datasets: [
+    {
+      id: 'INTERNAL_SOS_811',
+      title: 'Sea Surface Salinity',
+      format: 'video/mp4',
+      dataLink: 'https://vimeo.com/811811811',
+      colorTableLink: 'https://example.org/salinity-color.png',
+      probingInfo: {
+        units: 'psu',
+        minVal: 20,
+        maxVal: 38,
+        minPos: { x: 45, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+        maxPos: { x: 277, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
+      },
+      boundingVariables: { ranges: [[20, 38]] },
+    },
+    {
+      // No new auxiliary fields on this row — exercises the
+      // backfill_noop counter (legacy_id matches an existing row
+      // but the snapshot has nothing to backfill).
+      id: 'INTERNAL_SOS_812',
+      title: 'Static Sea Ice',
+      format: 'video/mp4',
+      dataLink: 'https://vimeo.com/812812812',
+    },
+  ],
+}
+
 const ENRICHED_FIXTURE = [
   {
     title: 'Hurricane Season - 2024',
@@ -94,6 +129,7 @@ interface FakeClientHandles {
   createDataset: ReturnType<typeof vi.fn>
   publishDataset: ReturnType<typeof vi.fn>
   reindexDataset: ReturnType<typeof vi.fn>
+  updateDataset: ReturnType<typeof vi.fn>
 }
 
 interface FakeClientOptions {
@@ -105,6 +141,9 @@ interface FakeClientOptions {
   publishFailFor?: Set<string>
   /** Override `reindexDataset` to fail with 503 for these dataset ids. */
   reindexFailFor?: Set<string>
+  /** Override `updateDataset` to fail with 503 for these dataset ids
+   * (3b/C — exercises the `--update-existing` backfill failure path). */
+  updateFailFor?: Set<string>
 }
 
 function fakeClient(opts: FakeClientOptions = {}): { client: TerravizClient; handles: FakeClientHandles } {
@@ -207,33 +246,53 @@ function fakeClient(opts: FakeClientOptions = {}): { client: TerravizClient; han
     }
   })
 
+  const updateDataset = vi.fn(async (id: string, body: Record<string, unknown>) => {
+    if (opts.updateFailFor?.has(id)) {
+      return {
+        ok: false as const,
+        status: 503,
+        error: 'upstream_unavailable',
+        message: 'D1 timeout',
+      }
+    }
+    return {
+      ok: true as const,
+      status: 200,
+      body: { dataset: { id, slug: `slug-${id}`, title: 't', published_at: null, ...body } },
+    }
+  })
+
   const stub = {
     serverUrl: 'http://localhost:8788',
     list,
     createDataset,
     publishDataset,
     reindexDataset,
+    updateDataset,
   }
   return {
     client: stub as unknown as TerravizClient,
-    handles: { list, createDataset, publishDataset, reindexDataset },
+    handles: { list, createDataset, publishDataset, reindexDataset, updateDataset },
   }
 }
 
 function makeCtx(
   client: TerravizClient,
   flags: Record<string, string | boolean> = {},
+  options: { snapshot?: typeof SNAPSHOT_FIXTURE } = {},
 ): { ctx: CommandContext; out: BufStream; err: BufStream } {
   const out = makeStream()
   const err = makeStream()
   const argv: string[] = []
   for (const [k, v] of Object.entries(flags)) {
     if (v === true) argv.push(`--${k}`)
+    else if (v === false) argv.push(`--no-${k}`)
     else argv.push(`--${k}=${String(v)}`)
   }
   const args = parseArgs(argv)
+  const snapshot = options.snapshot ?? SNAPSHOT_FIXTURE
   const readFile = (path: string): string => {
-    if (path.endsWith('sos-dataset-list.json')) return JSON.stringify(SNAPSHOT_FIXTURE)
+    if (path.endsWith('sos-dataset-list.json')) return JSON.stringify(snapshot)
     if (path.endsWith('sos_dataset_metadata.json')) return JSON.stringify(ENRICHED_FIXTURE)
     throw new Error(`unexpected read: ${path}`)
   }
@@ -423,5 +482,138 @@ describe('runImportSnapshot --reindex', () => {
     expect(err.text()).toContain('Embed bindings are not configured.')
     expect(out.text()).toContain('reindexed:             1')
     expect(out.text()).toContain('failed:                1')
+  })
+})
+
+describe('runImportSnapshot --update-existing (3b/C)', () => {
+  // Backfill of the auxiliary columns added in 3b/A
+  // (color_table_ref, probing_info, bounding_variables) onto
+  // already-imported rows. Without --update-existing, an existing
+  // row skips silently — these tests cover the opt-in PATCH path.
+
+  it('default behaviour: existing rows skip; new rows publish unchanged', async () => {
+    // Both rows of AUX_SNAPSHOT_FIXTURE already exist in the
+    // catalog. Without --update-existing, the importer just skips
+    // them — backfill counters stay 0.
+    const { client, handles } = fakeClient({
+      existing: [
+        { id: 'DS_SALINITY', legacy_id: 'INTERNAL_SOS_811' },
+        { id: 'DS_ICE', legacy_id: 'INTERNAL_SOS_812' },
+      ],
+    })
+    const { ctx, out } = makeCtx(client, {}, { snapshot: AUX_SNAPSHOT_FIXTURE })
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(handles.createDataset).not.toHaveBeenCalled()
+    expect(out.text()).toContain('already imported:      2')
+    // No backfill columns surface in the summary when the flag is off.
+    expect(out.text()).not.toContain('backfilled:')
+  })
+
+  it('--update-existing PATCHes the three new columns on the existing row', async () => {
+    const { client, handles } = fakeClient({
+      existing: [{ id: 'DS_SALINITY', legacy_id: 'INTERNAL_SOS_811' }],
+    })
+    const { ctx, out } = makeCtx(
+      client,
+      { 'update-existing': true },
+      { snapshot: { datasets: [AUX_SNAPSHOT_FIXTURE.datasets[0]] } },
+    )
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    // One PATCH call, scoped to the three auxiliary columns.
+    expect(handles.updateDataset).toHaveBeenCalledTimes(1)
+    const [calledId, calledBody] = handles.updateDataset.mock.calls[0] as [string, Record<string, unknown>]
+    expect(calledId).toBe('DS_SALINITY')
+    expect(Object.keys(calledBody).sort()).toEqual(
+      ['bounding_variables', 'color_table_ref', 'probing_info'].sort(),
+    )
+    expect(calledBody.color_table_ref).toBe('https://example.org/salinity-color.png')
+    // The JSON columns arrive as stringified blobs (the validator's
+    // wire contract); round-trip parse confirms.
+    expect(JSON.parse(calledBody.probing_info as string)).toMatchObject({
+      units: 'psu',
+      minVal: 20,
+      maxVal: 38,
+    })
+    expect(JSON.parse(calledBody.bounding_variables as string)).toEqual({ ranges: [[20, 38]] })
+    // No publisher-edited fields (title / abstract / etc.) on the body.
+    expect(calledBody.title).toBeUndefined()
+    expect(calledBody.abstract).toBeUndefined()
+    expect(handles.createDataset).not.toHaveBeenCalled()
+    expect(out.text()).toContain('backfilled:            1')
+  })
+
+  it('counts existing rows with nothing to backfill under backfill_noop', async () => {
+    const { client, handles } = fakeClient({
+      existing: [{ id: 'DS_ICE', legacy_id: 'INTERNAL_SOS_812' }],
+    })
+    // Row 812 has no auxiliary fields — there's nothing to PATCH.
+    const { ctx, out } = makeCtx(
+      client,
+      { 'update-existing': true },
+      { snapshot: { datasets: [AUX_SNAPSHOT_FIXTURE.datasets[1]] } },
+    )
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    // No PATCH issued — avoids a useless round-trip.
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(out.text()).toContain('backfilled:            0')
+    expect(out.text()).toContain('backfill no-op:        1')
+  })
+
+  it('falls through to create+publish for non-existing rows even when --update-existing is set', async () => {
+    // Mixed plan: row 811 already exists (backfill), row 812 is new
+    // (create + publish). Both should happen in the same run.
+    const { client, handles } = fakeClient({
+      existing: [{ id: 'DS_SALINITY', legacy_id: 'INTERNAL_SOS_811' }],
+    })
+    const { ctx, out } = makeCtx(
+      client,
+      { 'update-existing': true },
+      { snapshot: AUX_SNAPSHOT_FIXTURE },
+    )
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    expect(handles.updateDataset).toHaveBeenCalledTimes(1)
+    expect(handles.createDataset).toHaveBeenCalledTimes(1)
+    expect(handles.publishDataset).toHaveBeenCalledTimes(1)
+    expect(out.text()).toContain('imported:              1')
+    expect(out.text()).toContain('backfilled:            1')
+  })
+
+  it('PATCH failure increments backfill_failed and trips the exit code', async () => {
+    const { client, handles } = fakeClient({
+      existing: [{ id: 'DS_SALINITY', legacy_id: 'INTERNAL_SOS_811' }],
+      updateFailFor: new Set(['DS_SALINITY']),
+    })
+    const { ctx, err } = makeCtx(
+      client,
+      { 'update-existing': true },
+      { snapshot: { datasets: [AUX_SNAPSHOT_FIXTURE.datasets[0]] } },
+    )
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(1)
+    expect(handles.updateDataset).toHaveBeenCalledTimes(1)
+    expect(err.text()).toContain('[INTERNAL_SOS_811] backfill failed')
+    expect(err.text()).toContain('D1 timeout')
+  })
+
+  it('--dry-run --update-existing surfaces the backfill count without PATCHing', async () => {
+    const { client, handles } = fakeClient({
+      existing: [{ id: 'DS_SALINITY', legacy_id: 'INTERNAL_SOS_811' }],
+    })
+    const { ctx, out } = makeCtx(
+      client,
+      { 'update-existing': true, 'dry-run': true },
+      { snapshot: { datasets: [AUX_SNAPSHOT_FIXTURE.datasets[0]] } },
+    )
+    const code = await runImportSnapshot(ctx)
+    expect(code).toBe(0)
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(out.text()).toContain('rows to backfill:      1')
+    expect(out.text()).toContain('--update-existing on color_table_ref / probing_info / bounding_variables')
+    expect(out.text()).toContain('Dry run')
   })
 })

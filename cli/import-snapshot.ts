@@ -21,6 +21,15 @@
  * suggested approach — no API change required). For ~600 rows this
  * is two or three pages of round-trips at ~200 rows each.
  *
+ * `--update-existing` (Phase 3b/C) flips the legacy_id-matched
+ * branch from "skip silently" to "PATCH the row with the
+ * Phase-3b columns from the snapshot." Useful when a new schema
+ * migration (e.g. 0009's `color_table_ref` / `probing_info` /
+ * `bounding_variables`) lands and the operator needs to backfill
+ * already-imported rows from upstream values. Scoped to the
+ * `BACKFILL_FIELDS` list explicitly so a re-import never clobbers
+ * publisher-side edits to title / abstract / etc.
+ *
  * `--dry-run` prints the planned mutations and exits before any
  * write. The contributor walkthrough in `CATALOG_BACKEND_DEVELOPMENT.md`
  * (commit 1d/H) requires a dry-run pass before running the live
@@ -134,7 +143,27 @@ interface PlanCounts {
   skippedExisting: number
   failedCreate: number
   failedPublish: number
+  /** `--update-existing`: rows that matched a legacy_id and received
+   * a PATCH with one or more of the Phase-3b columns (3b/C).
+   * Always 0 when `--update-existing` is not set. */
+  backfilled: number
+  /** `--update-existing`: rows that matched a legacy_id but had no
+   * new field values in the snapshot — nothing to PATCH, no
+   * round-trip made. */
+  backfillNoop: number
+  /** `--update-existing`: PATCH failures. */
+  backfillFailed: number
 }
+
+/**
+ * Fields the `--update-existing` PATCH includes for an existing
+ * row. Tightly scoped — the operator opted in to a backfill of
+ * specific columns the schema gained, not to a full re-sync that
+ * could clobber publisher-side edits to title / abstract / etc.
+ * Listed here so a future column addition decides explicitly
+ * whether the backfill flag covers it.
+ */
+const BACKFILL_FIELDS = ['color_table_ref', 'probing_info', 'bounding_variables'] as const
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
@@ -215,7 +244,13 @@ async function runReindexAll(ctx: CommandContext, dryRun: boolean): Promise<numb
  * Pretty-print the dry-run plan. Used by both `--dry-run` and the
  * pre-flight summary the live import emits before its first POST.
  */
-function summarisePlan(ctx: CommandContext, plan: ImportPlan, alreadyImported: number): void {
+function summarisePlan(
+  ctx: CommandContext,
+  plan: ImportPlan,
+  alreadyImported: number,
+  backfillCandidates: number,
+  updateExisting: boolean,
+): void {
   const okRows = plan.outcomes.filter(o => o.kind === 'ok')
   const newRows = okRows.length - alreadyImported
   ctx.stdout.write(
@@ -223,6 +258,10 @@ function summarisePlan(ctx: CommandContext, plan: ImportPlan, alreadyImported: n
       `  ok rows:               ${okRows.length}\n` +
       `  already imported:      ${alreadyImported}\n` +
       `  new rows to publish:   ${newRows}\n` +
+      (updateExisting
+        ? `  rows to backfill:      ${backfillCandidates}` +
+          `  (--update-existing on ${BACKFILL_FIELDS.join(' / ')})\n`
+        : '') +
       `  skipped (mapping):     ${plan.outcomes.length - okRows.length}\n`,
   )
   for (const reason of [
@@ -244,6 +283,7 @@ export async function runImportSnapshot(ctx: CommandContext): Promise<number> {
   )
   const dryRun = getBool(ctx.args.options, 'dry-run')
   const reindex = getBool(ctx.args.options, 'reindex')
+  const updateExisting = getBool(ctx.args.options, 'update-existing')
 
   if (reindex) {
     return runReindexAll(ctx, dryRun)
@@ -275,28 +315,76 @@ export async function runImportSnapshot(ctx: CommandContext): Promise<number> {
   if (!index) return 1
 
   let alreadyImported = 0
+  let backfillCandidates = 0
   for (const o of plan.outcomes) {
-    if (o.kind === 'ok' && index.has(o.row.legacyId)) alreadyImported++
+    if (o.kind !== 'ok') continue
+    if (!index.has(o.row.legacyId)) continue
+    alreadyImported++
+    if (updateExisting && hasBackfillData(o.row.draft as Record<string, unknown>)) {
+      backfillCandidates++
+    }
   }
 
-  summarisePlan(ctx, plan, alreadyImported)
+  summarisePlan(ctx, plan, alreadyImported, backfillCandidates, updateExisting)
 
   if (dryRun) {
     ctx.stdout.write('\nDry run — no rows will be imported. Re-run without --dry-run to apply.\n')
     return 0
   }
 
-  // --- Stage 3 — publish each ok row not already imported ----------
+  // --- Stage 3 — publish new rows + (optionally) backfill existing -
   const counts: PlanCounts = {
     imported: 0,
     skippedExisting: alreadyImported,
     failedCreate: 0,
     failedPublish: 0,
+    backfilled: 0,
+    backfillNoop: 0,
+    backfillFailed: 0,
   }
   for (const outcome of plan.outcomes) {
     if (outcome.kind !== 'ok') continue
     const { legacyId, draft } = outcome.row
-    if (index.has(legacyId)) continue
+    const existingId = index.get(legacyId)
+
+    if (existingId) {
+      if (!updateExisting) continue
+      // --update-existing path. Backfill the Phase-3b columns
+      // only — never touch publisher-edited fields like title or
+      // abstract. If the snapshot has no value for any of the
+      // backfill fields, skip the PATCH (no need for an HTTP
+      // round-trip to clear nothing).
+      const patchBody: Record<string, unknown> = {}
+      for (const f of BACKFILL_FIELDS) {
+        const v = (draft as Record<string, unknown>)[f]
+        if (v !== undefined) patchBody[f] = v
+      }
+      if (Object.keys(patchBody).length === 0) {
+        counts.backfillNoop++
+        continue
+      }
+      const patched = await ctx.client.updateDataset<DatasetEnvelope>(existingId, patchBody)
+      if (!patched.ok) {
+        counts.backfillFailed++
+        ctx.stderr.write(
+          `[${legacyId}] backfill failed (${patched.status}): ${patched.error}` +
+            (patched.message ? ` — ${patched.message}` : '') +
+            '\n',
+        )
+        if (patched.errors?.length) {
+          for (const e of patched.errors) {
+            ctx.stderr.write(`    ${e.field}: ${e.code} — ${e.message}\n`)
+          }
+        }
+        continue
+      }
+      counts.backfilled++
+      ctx.stdout.write(
+        `[${legacyId}] backfilled ${Object.keys(patchBody).join(', ')} → ${existingId}\n`,
+      )
+      if (PUBLISH_PACE_MS > 0) await sleep(PUBLISH_PACE_MS)
+      continue
+    }
 
     const created = await ctx.client.createDataset<DatasetEnvelope>({
       ...draft,
@@ -343,8 +431,27 @@ export async function runImportSnapshot(ctx: CommandContext): Promise<number> {
     `\nImport complete:\n` +
       `  imported:              ${counts.imported}\n` +
       `  already imported:      ${counts.skippedExisting}\n` +
+      (updateExisting
+        ? `  backfilled:            ${counts.backfilled}\n` +
+          `  backfill no-op:        ${counts.backfillNoop}` +
+          ` (legacy_id matched but no new field values in snapshot)\n` +
+          `  backfill failed:       ${counts.backfillFailed}\n`
+        : '') +
       `  failed (create):       ${counts.failedCreate}\n` +
       `  failed (publish):      ${counts.failedPublish}\n`,
   )
-  return counts.failedCreate + counts.failedPublish > 0 ? 1 : 0
+  return counts.failedCreate + counts.failedPublish + counts.backfillFailed > 0 ? 1 : 0
+}
+
+/**
+ * True if the mapped draft carries at least one BACKFILL_FIELDS
+ * value worth PATCHing. Empty drafts skip the round-trip entirely
+ * in `--update-existing` mode so a row that's already-imported AND
+ * has no new field values doesn't produce a stale "no diff" PATCH.
+ */
+function hasBackfillData(draft: Record<string, unknown>): boolean {
+  for (const f of BACKFILL_FIELDS) {
+    if (draft[f] !== undefined) return true
+  }
+  return false
 }
