@@ -4,6 +4,7 @@ import type {
   SessionStartEvent,
   LayerLoadedEvent,
   MigrationR2HlsEvent,
+  MigrationR2AssetsEvent,
 } from '../../src/types'
 import {
   onRequestPost,
@@ -146,6 +147,23 @@ function migrationR2Hls(
     encode_duration_ms: 30_000,
     upload_duration_ms: 2_000,
     duration_ms: 35_000,
+    outcome: 'ok',
+    ...overrides,
+  }
+}
+
+function migrationR2Assets(
+  overrides: Partial<MigrationR2AssetsEvent> = {},
+): MigrationR2AssetsEvent {
+  return {
+    event_type: 'migration_r2_assets',
+    dataset_id: 'DS00001AAAAAAAAAAAAAAAAAAAAA',
+    legacy_id: 'INTERNAL_SOS_768',
+    asset_type: 'thumbnail',
+    source_url: 'https://d3sik7mbbzunjo.cloudfront.net/atmosphere/hurricane_season_2024/thumb.jpg',
+    r2_key: 'datasets/DS00001AAAAAAAAAAAAAAAAAAAAA/thumbnail.jpg',
+    source_bytes: 240_000,
+    duration_ms: 700,
     outcome: 'ok',
     ...overrides,
   }
@@ -551,6 +569,43 @@ describe('onRequestPost — happy path', () => {
     expect(ae.datapoints).toHaveLength(2)
     expect(ae.datapoints[0].blobs![0]).toBe('migration_r2_hls')
     expect(ae.datapoints[1].blobs![0]).toBe('migration_r2_hls')
+  })
+
+  it('accepts migration_r2_assets events (Phase 3b commit H)', async () => {
+    // One event per (row, asset_type) pair. The 3b/G pump emits
+    // up to 4 events per row (thumbnail / legend / caption /
+    // color_table). All four asset types pass validation; partial
+    // failure outcomes propagate to AE alongside the ok ones.
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([
+        migrationR2Assets({ asset_type: 'thumbnail' }),
+        migrationR2Assets({ asset_type: 'legend' }),
+        migrationR2Assets({
+          asset_type: 'caption',
+          source_url: 'https://d3sik7mbbzunjo.cloudfront.net/extras/x.srt',
+          r2_key: 'datasets/DS00001AAAAAAAAAAAAAAAAAAAAA/caption.vtt',
+        }),
+        migrationR2Assets({
+          asset_type: 'color_table',
+          outcome: 'fetch_failed',
+          r2_key: '',
+        }),
+        migrationR2Assets({
+          asset_type: 'thumbnail',
+          outcome: 'patch_failed',
+          r2_key: 'datasets/orphan/thumbnail.png',
+        }),
+      ]),
+      ip: '10.0.0.21',
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    const res = await onRequestPost(ctx)
+    expect(res.status).toBe(204)
+    expect(ae.datapoints).toHaveLength(5)
+    for (const dp of ae.datapoints) {
+      expect(dp.blobs![0]).toBe('migration_r2_assets')
+    }
   })
 })
 
