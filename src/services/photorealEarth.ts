@@ -124,6 +124,16 @@ const NIGHT_LIGHT_STRENGTH = 0.5
 const ATMOSPHERE_SEGMENTS = 64
 
 /**
+ * Multiplier applied to the ACES-tonemapped scattered colour
+ * before composition. The shared `SUN_INTENSITY` sets the article-
+ * style baseline; this is a per-renderer fine-tune for the
+ * specific scene exposure (background brightness, other shader
+ * outputs) the Three.js Earth lives in. Mirrors
+ * `ATMOSPHERE_INTENSITY` in `earthTileLayer.ts`.
+ */
+const ATMOSPHERE_INTENSITY = 1.0
+
+/**
  * Sun distance as a multiple of globe radius. At the VR default
  * (radius 0.5), this gives 10 — matches the original. At Orbit's
  * planetary preset (radius 4.0) it gives 80, keeping the sun
@@ -532,6 +542,7 @@ export function createPhotorealEarth(
       uniform vec3 uSunDir;
       uniform vec3 uPlanetCenter;
       uniform float uKmPerWorldUnit;
+      uniform float uIntensity;
       varying vec3 vWorldPosition;
       ${ATMOSPHERE_GLSL_CONSTANTS}
       ${ATMOSPHERE_GLSL_DENSITY}
@@ -554,7 +565,7 @@ export function createPhotorealEarth(
         // via the material's CustomBlending (OneFactor,
         // SrcAlphaFactor) below.
         vec4 result = computeAtmosphereScattering(camKm, rayDir, uSunDir);
-        gl_FragColor = vec4(acesFilm(result.rgb), result.a);
+        gl_FragColor = vec4(acesFilm(result.rgb) * uIntensity, result.a);
       }
     `
 
@@ -568,6 +579,7 @@ export function createPhotorealEarth(
         uSunDir: sunDirUniform,
         uPlanetCenter: planetCenterUniform,
         uKmPerWorldUnit: kmPerWorldUnitUniform,
+        uIntensity: { value: ATMOSPHERE_INTENSITY },
         uTransmittanceLut: { value: transmittanceLutTexture },
       },
       transparent: true,

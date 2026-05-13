@@ -114,10 +114,27 @@ export const OZONE_WIDTH_KM = 15.0
 
 /**
  * Direct-sun intensity multiplier applied to accumulated scattering.
- * Tuned so the noon-zenith sky reads as believable blue after ACES
- * tonemap. Re-tune if the tonemap or coefficients change.
+ *
+ * The article uses ~22 alongside a full HDR pipeline that defers
+ * ACES to a final composition pass. Our shaders apply ACES per-
+ * fragment and then additively composite the result over the
+ * framebuffer (via `(ONE, SRC_ALPHA)` blending — see the renderers'
+ * atmosphere passes). In that hybrid pipeline the article's value
+ * over-saturates ACES at noon-zenith viewing, blowing out the
+ * planet behind the atmosphere with a cyan wash, while the
+ * physically correct path-length scaling at the limb produces a
+ * believable halo.
+ *
+ * 3.0 was chosen empirically: brings noon-zenith blue contribution
+ * down to ~0.05 per fragment (subtle tint, planet detail intact)
+ * while the limb halo's longer path still pushes scattered close
+ * to 1.0 after ACES (visible glow). Tunable; raise for richer
+ * skies, lower for a more subtle atmosphere. Each renderer also
+ * has a per-pass `uIntensity` knob (`ATMOSPHERE_INTENSITY` in
+ * `earthTileLayer.ts`, `uIntensity` in `photorealEarth.ts`) for
+ * fine adjustment without changing the shared physics.
  */
-export const SUN_INTENSITY = 20.0
+export const SUN_INTENSITY = 3.0
 
 // ── Raymarch step counts ───────────────────────────────────────────
 //
