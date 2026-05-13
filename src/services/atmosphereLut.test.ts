@@ -8,7 +8,7 @@
  * step count and may shift slightly if those are tuned).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   TRANSMITTANCE_LUT_WIDTH,
   TRANSMITTANCE_LUT_HEIGHT,
@@ -16,15 +16,11 @@ import {
   _resetLutCacheForTests,
 } from './atmosphereLut'
 
-beforeEach(() => {
-  // The compute memoizes by `${w}x${h}`; reset between cases so the
-  // assertions on the first call always exercise the cold path.
-  _resetLutCacheForTests()
-})
-
 describe('computeTransmittanceLut', () => {
-  // Compute once and share. The full LUT takes ~10-50ms; reuse keeps
-  // the suite snappy.
+  // Compute once and share — the full LUT takes ~10-50ms and the
+  // assertions below are read-only. The memoization test explicitly
+  // resets the cache before exercising its own calls so its
+  // assertions still hit the cold-then-warm path.
   const lut = computeTransmittanceLut()
 
   it('produces RGBA pixels at the default resolution', () => {
@@ -111,6 +107,9 @@ describe('computeTransmittanceLut', () => {
   })
 
   it('memoizes results by size — second call returns the same object', () => {
+    // Reset only here so the first compute below is guaranteed cold;
+    // the read-only tests above don't need a clean cache.
+    _resetLutCacheForTests()
     const a = computeTransmittanceLut(64, 32)
     const b = computeTransmittanceLut(64, 32)
     expect(b).toBe(a)

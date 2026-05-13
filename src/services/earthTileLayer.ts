@@ -165,30 +165,25 @@ function unprojectClip(
  * from. For MapLibre's globe view that's ECEF unit-sphere coords
  * (planet radius = 1). Caller scales to km if needed.
  *
- * Writes into `out`. If the matrix is singular or the projection
- * is orthographic (parallel rays), falls back to the first ray's
- * near-plane intersection, which is "in front of" the camera —
- * close enough for a raymarch's ray-direction calculation.
+ * Writes into `out` and returns `true` on success. Returns `false`
+ * (without touching `out`) if the matrix is singular, any
+ * unprojection lands on the projective-infinity plane, or the two
+ * world-space rays are parallel — caller must skip the atmosphere
+ * pass in that case. Falling back to (0, 0, 0) would put the
+ * raymarch's ray origin at the planet centre, which produces
+ * extreme artifacts rather than a clean degradation.
  */
 function computeCameraWorldPosFromMatrix(
   matrix: ArrayLike<number>, out: [number, number, number],
-): void {
-  if (!invertMat4(_invMatrixScratch, matrix)) {
-    out[0] = 0; out[1] = 0; out[2] = 0
-    return
-  }
-  // If any unprojection lands on the projective-infinity plane the
-  // intersection math below is undefined; bail with (0,0,0). In
-  // practice this never happens for a well-formed projection-view
-  // matrix from MapLibre's globe transform.
+): boolean {
+  if (!invertMat4(_invMatrixScratch, matrix)) return false
   if (
     !unprojectClip(_invMatrixScratch, 0,   0, -1, _projScratch1) ||
     !unprojectClip(_invMatrixScratch, 0,   0,  1, _projScratch2) ||
     !unprojectClip(_invMatrixScratch, 0.5, 0, -1, _projScratch3) ||
     !unprojectClip(_invMatrixScratch, 0.5, 0,  1, _projScratch4)
   ) {
-    out[0] = 0; out[1] = 0; out[2] = 0
-    return
+    return false
   }
 
   const d1x = _projScratch2[0] - _projScratch1[0]
@@ -208,16 +203,15 @@ function computeCameraWorldPosFromMatrix(
   const ed2 = ex * d2x + ey * d2y + ez * d2z
   const denom = d1d1 * d2d2 - d1d2 * d1d2
 
-  if (Math.abs(denom) < 1e-10) {
-    out[0] = _projScratch1[0]
-    out[1] = _projScratch1[1]
-    out[2] = _projScratch1[2]
-    return
-  }
+  // Parallel rays (orthographic projection) — no perspective
+  // convergence point, no camera position to extract.
+  if (Math.abs(denom) < 1e-10) return false
+
   const t = (ed1 * d2d2 - ed2 * d1d2) / denom
   out[0] = _projScratch1[0] + t * d1x
   out[1] = _projScratch1[1] + t * d1y
   out[2] = _projScratch1[2] + t * d1z
+  return true
 }
 
 // --- Sphere geometry ---
@@ -1551,7 +1545,16 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       // ceiling; each front-face fragment is the camera-side entry
       // point of that pixel's ray, and the shader integrates inward
       // through Rayleigh + Mie + ozone densities.
-      if (atmosphere && mapRef) {
+      // Camera position derived from the projection matrix so the
+      // raymarch ray geometry is correct at any zoom level. ECEF
+      // unit-sphere coords scaled to km for the shader. Skip the
+      // atmosphere pass entirely on failure rather than placing the
+      // camera at (0, 0, 0) — the raymarch would treat that as the
+      // planet centre and produce extreme artifacts.
+      if (
+        atmosphere && mapRef &&
+        computeCameraWorldPosFromMatrix(matrix, cameraEcefScratch)
+      ) {
         // Article-style composition (Tier 3.5 fix):
         //   result = src.rgb × 1 + dst.rgb × src.alpha
         //         = scattered + bg × viewTransmittance
@@ -1563,13 +1566,24 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         // washed out the planet face at noon viewing.
         gl2.blendFunc(gl2.ONE, gl2.SRC_ALPHA)
 
-        // Camera position derived from the projection matrix so the
-        // raymarch ray geometry is correct at any zoom level. ECEF
-        // unit-sphere coords scaled to km for the shader.
-        computeCameraWorldPosFromMatrix(matrix, cameraEcefScratch)
         const cx = cameraEcefScratch[0] * PLANET_RADIUS_KM
         const cy = cameraEcefScratch[1] * PLANET_RADIUS_KM
         const cz = cameraEcefScratch[2] * PLANET_RADIUS_KM
+
+        // Cull selection. The shell mesh has outward-facing normals,
+        // so from OUTSIDE the shell the front (camera-facing) side
+        // is what we want — default BACK culling. From INSIDE the
+        // shell (high zoom, camera within the atmosphere), front
+        // faces point away from the camera and BACK culling would
+        // hide the atmosphere entirely; switching to FRONT culling
+        // renders the inner surface that's actually visible.
+        const shellRadiusEcef = terrainRadiusScale * ATMOSPHERE_RADIUS_FACTOR
+        const cameraDistEcefSq =
+          cameraEcefScratch[0] * cameraEcefScratch[0] +
+          cameraEcefScratch[1] * cameraEcefScratch[1] +
+          cameraEcefScratch[2] * cameraEcefScratch[2]
+        const cameraInsideShell = cameraDistEcefSq < shellRadiusEcef * shellRadiusEcef
+        gl2.cullFace(cameraInsideShell ? gl2.FRONT : gl2.BACK)
 
         gl2.useProgram(atmosphere.program)
         gl2.uniformMatrix4fv(atmosphere.matrixLoc, false, matrix)
