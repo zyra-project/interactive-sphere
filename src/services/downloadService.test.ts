@@ -8,7 +8,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { formatBytes } from './downloadService'
+import { formatBytes, __test__ } from './downloadService'
+
+const { isHttpUrl, extFromUrl, pickBestVideoFile, orderImageCandidates } = __test__
 
 // --- formatBytes ---
 
@@ -189,5 +191,171 @@ describe('Vimeo ID extraction', () => {
 
   it('returns null for empty string', () => {
     expect(extractVimeoId('')).toBeNull()
+  })
+})
+
+// --- Node-mode manifest envelope walking ---
+// These exercise the real pickBestVideoFile / orderImageCandidates
+// exported via __test__, so production drift (re-ordering, lost
+// HLS guard, lost http(s) filter) surfaces as a test failure.
+
+describe('pickBestVideoFile', () => {
+  it('picks the highest-width file from a video manifest envelope', () => {
+    const best = pickBestVideoFile({
+      kind: 'video',
+      files: [
+        { quality: '480p', width: 854, height: 480, size: 20_000_000, type: 'video/mp4', link: 'https://r2.example/480.mp4' },
+        { quality: '4K', width: 3840, height: 2160, size: 500_000_000, type: 'video/mp4', link: 'https://r2.example/4k.mp4' },
+        { quality: '1080p', width: 1920, height: 1080, size: 100_000_000, type: 'video/mp4', link: 'https://r2.example/1080.mp4' },
+      ],
+    })
+    expect(best.link).toBe('https://r2.example/4k.mp4')
+    expect(best.size).toBe(500_000_000)
+  })
+
+  it('throws a clear HLS-streaming error when files[] is empty', () => {
+    // The Phase 3 r2-hls migration populates `hls` but leaves
+    // `files[]` empty. Without this guard the SPA would hand the
+    // playlist URL to reqwest, which has no way to reassemble a
+    // playlist + .ts segments into a single offline file.
+    expect(() => pickBestVideoFile({ kind: 'video', files: [] })).toThrow(/HLS-streamed/)
+  })
+
+  it('throws a clear HLS-streaming error when files is omitted entirely', () => {
+    expect(() => pickBestVideoFile({ kind: 'video' })).toThrow(/HLS-streamed/)
+  })
+
+  it('rejects a manifest whose best file has a non-http(s) link', () => {
+    // Guards against the catalog serializer regression where a
+    // raw `r2:` or `stream:` ref leaks through resolveDataRef.
+    expect(() =>
+      pickBestVideoFile({
+        kind: 'video',
+        files: [
+          { quality: '4K', width: 3840, height: 2160, size: 0, type: 'video/mp4', link: 'r2:datasets/foo/4k.mp4' },
+        ],
+      }),
+    ).toThrow(/non-HTTP file link/)
+  })
+})
+
+describe('orderImageCandidates', () => {
+  it('orders variants by descending width and appends the fallback', () => {
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [
+          { width: 1024, url: 'https://r2.example/1024.jpg' },
+          { width: 4096, url: 'https://r2.example/4096.jpg' },
+          { width: 2048, url: 'https://r2.example/2048.jpg' },
+        ],
+        fallback: 'https://r2.example/original.jpg',
+      }),
+    ).toEqual([
+      'https://r2.example/4096.jpg',
+      'https://r2.example/2048.jpg',
+      'https://r2.example/1024.jpg',
+      'https://r2.example/original.jpg',
+    ])
+  })
+
+  it('omits the fallback when none is provided', () => {
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [{ width: 1024, url: 'https://r2.example/1024.jpg' }],
+      }),
+    ).toEqual(['https://r2.example/1024.jpg'])
+  })
+
+  it('filters out non-http(s) variants and fallback', () => {
+    // Defensive: even if the manifest endpoint leaks raw refs in
+    // variants, the SPA never hands them to the Rust downloader.
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [
+          { width: 4096, url: 'r2:datasets/foo/4096.jpg' },
+          { width: 2048, url: 'https://r2.example/2048.jpg' },
+        ],
+        fallback: 'stream:abc123',
+      }),
+    ).toEqual(['https://r2.example/2048.jpg'])
+  })
+
+  it('returns an empty array when nothing is usable (callers throw their own error)', () => {
+    expect(
+      orderImageCandidates({
+        kind: 'image',
+        variants: [{ width: 4096, url: 'r2:datasets/foo/4096.jpg' }],
+      }),
+    ).toEqual([])
+  })
+})
+
+describe('extFromUrl', () => {
+  it('extracts a simple .jpg extension', () => {
+    expect(extFromUrl('https://r2.example/foo.jpg', '.png')).toBe('.jpg')
+  })
+
+  it('extracts .png ignoring the path before the dot', () => {
+    expect(extFromUrl('https://r2.example/path/to/earth.png', '.jpg')).toBe('.png')
+  })
+
+  it('is tolerant of query strings (Cloudflare Images variant URLs)', () => {
+    // Without the `(\?|#|$)` boundary in the regex, the original
+    // suffix-match swallows the query string as part of the
+    // extension, producing a junk filename.
+    expect(
+      extFromUrl(
+        'https://r2.example/cdn-cgi/image/width=4096/datasets/foo.jpg?format=auto',
+        '.png',
+      ),
+    ).toBe('.jpg')
+  })
+
+  it('is tolerant of fragments', () => {
+    expect(extFromUrl('https://r2.example/foo.png#anchor', '.jpg')).toBe('.png')
+  })
+
+  it('falls back to the default when no extension is present', () => {
+    expect(extFromUrl('https://r2.example/datasets/no-ext', '.png')).toBe('.png')
+  })
+})
+
+describe('isHttpUrl', () => {
+  // The catalog serializer currently surfaces thumbnail_ref /
+  // legend_ref / caption_ref as raw URIs (r2:, stream:, vimeo:),
+  // not resolved HTTPS URLs. downloadService.ts filters those out
+  // before pushing them to the Rust downloader, otherwise reqwest
+  // fails the whole download with `builder error`.
+  it('accepts absolute https URLs', () => {
+    expect(isHttpUrl('https://example.com/thumb.jpg')).toBe(true)
+  })
+
+  it('accepts absolute http URLs', () => {
+    expect(isHttpUrl('http://example.com/thumb.jpg')).toBe(true)
+  })
+
+  it('rejects raw r2: refs (catalog serializer pass-through)', () => {
+    expect(isHttpUrl('r2:datasets/01KQG.../thumbnail.jpg')).toBe(false)
+  })
+
+  it('rejects raw stream: refs', () => {
+    expect(isHttpUrl('stream:abc123')).toBe(false)
+  })
+
+  it('rejects raw vimeo: refs', () => {
+    expect(isHttpUrl('vimeo:123456')).toBe(false)
+  })
+
+  it('rejects relative API paths', () => {
+    expect(isHttpUrl('/api/v1/datasets/01KQG.../manifest')).toBe(false)
+  })
+
+  it('rejects null, undefined, and empty strings', () => {
+    expect(isHttpUrl(null)).toBe(false)
+    expect(isHttpUrl(undefined)).toBe(false)
+    expect(isHttpUrl('')).toBe(false)
   })
 })

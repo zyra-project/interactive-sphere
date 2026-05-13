@@ -239,9 +239,22 @@ Backend code (tile cache, API proxy) requires Rust.
    - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/interactive-sphere.key`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — the password you chose during generation
 
-4. (Optional) macOS notarization — add these secrets when you have an Apple Developer certificate:
-   - `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`
-   - `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
+4. macOS Developer ID signing + notarization — strongly recommended; without these the aarch64 `.dmg` is only ad-hoc signed and macOS Gatekeeper rejects it on download with "Terraviz is damaged and can't be opened." The release workflow already passes these through to `tauri-action`; you just need to set the repository secrets.
+
+   > **Cert type matters.** macOS direct distribution (the `.dmg` shipped from GitHub Releases) requires a **Developer ID Application** certificate. This is a *different* cert type from the **Apple Distribution** cert used for the iOS App Store build (see [`MOBILE_APP_PLAN.md`](MOBILE_APP_PLAN.md) §Distribution). Both are generated under the same Apple Developer account, but the `.p12` exports and their passwords are not interchangeable. Generate the Developer ID Application cert under [developer.apple.com/account/resources/certificates](https://developer.apple.com/account/resources/certificates) → "+" → Software → **Developer ID Application**.
+
+   Secrets to set in the repo (Settings → Secrets and variables → Actions):
+
+   | Secret name | What it holds | Shared with iOS? |
+   |---|---|---|
+   | `APPLE_DEVELOPER_ID_CERTIFICATE_BASE64` | base64 of the Developer ID Application `.p12`. Generate with `base64 -i cert.p12 \| pbcopy` on a Mac with the cert exported from Keychain Access. | no — different cert type |
+   | `APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD` | password chosen when exporting the `.p12`. | no — separate cert, separate password |
+   | `APPLE_SIGNING_IDENTITY` | full common name of the identity, e.g. `Developer ID Application: Zyra Project (ABCDE12345)`. Run `security find-identity -v -p codesigning` on a Mac with the cert imported to copy the exact string. | no — Developer ID only |
+   | `APPLE_ID` | Apple ID email associated with the Apple Developer account. | yes — same account |
+   | `APPLE_APP_SPECIFIC_PASSWORD` | app-specific password generated at [appleid.apple.com](https://appleid.apple.com/) → Sign-In and Security → App-Specific Passwords. Do **not** use the account password. | yes — same Apple ID |
+   | `APPLE_TEAM_ID` | 10-character team ID, visible at [developer.apple.com/account](https://developer.apple.com/account) under Membership. | yes — already set up |
+
+   The workflow maps these to `tauri-action`'s canonical env-var names (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_PASSWORD`, etc.) in `release.yml`. When all six are present, `tauri-action` imports the cert into a temporary keychain on the macOS runner, signs the `.app` and `.dmg` with the Developer ID, then submits the bundle to Apple's notary service via `notarytool` and staples the ticket. The resulting `.dmg` opens cleanly on Apple Silicon without the "damaged" Gatekeeper error.
 
 5. (Optional) Windows Authenticode — sign the MSI/EXE with a code signing certificate. Not required for distribution but suppresses SmartScreen warnings.
 

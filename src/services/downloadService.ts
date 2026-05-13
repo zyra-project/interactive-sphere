@@ -6,6 +6,7 @@
 
 import type { Dataset } from '../types'
 import { dataService } from './dataService'
+import { apiFetch, isManifestUrl } from './catalogSource'
 import { logger } from '../utils/logger'
 
 const IS_TAURI = !!(window as any).__TAURI__
@@ -107,8 +108,112 @@ export function isDownloadAvailable(): boolean {
   return IS_TAURI
 }
 
+/**
+ * True if `url` is an absolute http(s) URL — i.e. something the Rust
+ * download manager (reqwest) can actually fetch. Catches the failure
+ * modes that previously surfaced as opaque `HTTP request failed:
+ * builder error` in the Rust log: relative paths (`/api/v1/...`),
+ * raw `r2:` / `stream:` / `vimeo:` data_ref schemes leaked through
+ * the catalog serializer, and empty strings.
+ */
+function isHttpUrl(url: string | null | undefined): url is string {
+  if (!url) return false
+  return /^https?:\/\//i.test(url)
+}
+
+/**
+ * Pull the file extension off a URL (`.mp4`, `.jpg`, `.png`), tolerant
+ * of query strings. Falls back to `defaultExt` if nothing matches.
+ */
+function extFromUrl(url: string, defaultExt: string): string {
+  const match = url.match(/(\.\w+)(\?|#|$)/)
+  return match ? match[1] : defaultExt
+}
+
+/**
+ * Fetch the catalog's manifest envelope for a node-mode dataset. The
+ * envelope shape is documented in
+ * `functions/api/v1/datasets/[id]/manifest.ts`: `{ kind: 'video' |
+ * 'image', ... }` with `files[]` for videos and `variants[]` +
+ * `fallback` for images. Same shape datasetLoader.ts consumes for
+ * playback, kept in sync here so download and play resolve to the
+ * same underlying URLs.
+ */
+async function fetchManifestEnvelope(dataLink: string): Promise<
+  | { kind: 'video'; files?: VideoProxyFile[] }
+  | { kind: 'image'; variants?: Array<{ width: number; url: string }>; fallback?: string }
+> {
+  const res = await apiFetch(dataLink, { headers: { Accept: 'application/json' } })
+  if (!res.ok) throw new Error(`Manifest fetch failed: ${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+/**
+ * Pure picker over a video manifest envelope's `files[]`: returns the
+ * highest-width MP4 with an http(s) link, or throws a typed error.
+ * Extracted so unit tests can call into the real selection logic
+ * (sort + HLS-empty guard + non-HTTP guard) rather than re-implementing
+ * it inline.
+ */
+function pickBestVideoFile(envelope: { kind: 'video'; files?: VideoProxyFile[] }): {
+  link: string
+  size: number
+} {
+  const files = envelope.files ?? []
+  if (files.length === 0) {
+    // R2 HLS bundles (Phase 3 r2-hls migration) populate `hls` but
+    // leave `files[]` empty — there's no direct MP4 to grab and
+    // reassembling a playlist + .ts segments into a single offline
+    // file is a follow-on feature. Surface a clear error so the UI
+    // can render something better than reqwest's `builder error`.
+    throw new Error(
+      'This dataset is HLS-streamed and not yet available for offline download. ' +
+      'Open it online to view, or try a different dataset for offline use.',
+    )
+  }
+  const sorted = [...files].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))
+  const best = sorted[0]
+  if (!isHttpUrl(best.link)) {
+    throw new Error(`Video manifest returned a non-HTTP file link: ${best.link}`)
+  }
+  return { link: best.link, size: best.size }
+}
+
+/**
+ * Pure ordering over an image manifest envelope: returns http(s)-only
+ * candidate URLs, highest-width variant first, with `fallback`
+ * appended last. Empty result is valid — callers throw their own
+ * "no usable variants" error so the message matches their context.
+ */
+function orderImageCandidates(envelope: {
+  kind: 'image'
+  variants?: Array<{ width: number; url: string }>
+  fallback?: string
+}): string[] {
+  const variants = [...(envelope.variants ?? [])].sort((a, b) => b.width - a.width)
+  return [
+    ...variants.map(v => v.url),
+    ...(envelope.fallback ? [envelope.fallback] : []),
+  ].filter(isHttpUrl)
+}
+
 /** Resolve the best video file for download (highest quality MP4). */
 async function resolveVideoAssets(dataset: Dataset): Promise<{ assets: AssetInput[]; totalSize: number }> {
+  // Node-mode: dataLink is `/api/v1/datasets/{id}/manifest`. Fetch
+  // the envelope and walk `files[]` — same path datasetLoader.ts
+  // uses for playback. The legacy direct-Vimeo path below stays for
+  // catalogs that still serve vimeo.com URLs in dataLink (the
+  // `legacy` catalog source).
+  if (isManifestUrl(dataset.dataLink)) {
+    const envelope = await fetchManifestEnvelope(dataset.dataLink)
+    if (envelope.kind !== 'video') {
+      throw new Error(`Expected a video manifest; got kind=${envelope.kind}.`)
+    }
+    const best = pickBestVideoFile(envelope)
+    return { assets: [{ url: best.link, filename: 'video.mp4' }], totalSize: best.size }
+  }
+
+  // Legacy catalog: dataLink is a vimeo.com URL, resolve via proxy.
   const vimeoId = dataService.extractVimeoId(dataset.dataLink)
   if (!vimeoId) throw new Error(`Cannot extract Vimeo ID from ${dataset.dataLink}`)
 
@@ -116,25 +221,51 @@ async function resolveVideoAssets(dataset: Dataset): Promise<{ assets: AssetInpu
   if (!res.ok) throw new Error(`Video proxy returned ${res.status}`)
   const manifest: VideoProxyResponse = await res.json()
 
-  // Pick highest quality MP4
   const sorted = [...manifest.files].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))
   const best = sorted[0]
   if (!best) throw new Error('No video files available')
-
-  const assets: AssetInput[] = [{ url: best.link, filename: 'video.mp4' }]
-  let totalSize = best.size
-
-  return { assets, totalSize }
+  return { assets: [{ url: best.link, filename: 'video.mp4' }], totalSize: best.size }
 }
 
 /** Resolve image assets for download (highest available resolution). */
 async function resolveImageAssets(dataset: Dataset): Promise<{ assets: AssetInput[]; primaryFile: string }> {
+  // Node-mode: dataLink is the manifest endpoint. Walk `variants[]`
+  // highest-width-first, HEAD-probe each, fall back to `fallback`.
+  if (isManifestUrl(dataset.dataLink)) {
+    const envelope = await fetchManifestEnvelope(dataset.dataLink)
+    if (envelope.kind !== 'image') {
+      throw new Error(`Expected an image manifest; got kind=${envelope.kind}.`)
+    }
+    const ordered = orderImageCandidates(envelope)
+    if (ordered.length === 0) {
+      throw new Error('Image manifest returned no usable variants')
+    }
+    for (const candidateUrl of ordered) {
+      try {
+        const probe = await corsFetch(candidateUrl, { method: 'HEAD' })
+        if (probe.ok) {
+          const ext = extFromUrl(candidateUrl, '.jpg')
+          const filename = `image${ext}`
+          return { assets: [{ url: candidateUrl, filename }], primaryFile: filename }
+        }
+      } catch { /* try next */ }
+    }
+    // No HEAD probe succeeded; trust the highest-resolution variant
+    // and let the Rust downloader surface the real HTTP error if it
+    // 404s. Same fail-soft posture as the legacy path below.
+    const fallback = ordered[0]
+    const ext = extFromUrl(fallback, '.jpg')
+    const filename = `image${ext}`
+    return { assets: [{ url: fallback, filename }], primaryFile: filename }
+  }
+
+  // Legacy: SPA mangles the suffix to probe `_4096` / `_2048` /
+  // original. Kept for catalogs that still serve direct asset URLs.
   const url = dataset.dataLink
   const ext = url.match(/(\.\w+)$/)
   const base = ext ? url.slice(0, -ext[1].length) : url
   const suffix = ext ? ext[1] : ''
 
-  // Try resolutions from highest to lowest; use the first that responds 200
   const candidates = [
     { url: `${base}_4096${suffix}`, filename: `image_4096${suffix}` },
     { url: `${base}_2048${suffix}`, filename: `image_2048${suffix}` },
@@ -192,24 +323,43 @@ export async function downloadDataset(dataset: Dataset): Promise<void> {
     primaryFile = result.primaryFile
   }
 
-  // Add supplementary assets
-  if (dataset.thumbnailLink) {
-    const thumbExt = dataset.thumbnailLink.match(/(\.\w+)$/)?.[1] ?? '.jpg'
+  // Supplementary assets. The catalog serializer currently passes
+  // `thumbnail_ref` / `legend_ref` / `caption_ref` through verbatim
+  // (see functions/api/v1/_lib/dataset-serializer.ts:154-156), so
+  // they may arrive as raw `r2:` / `stream:` / `vimeo:` URIs rather
+  // than absolute https URLs. Filter to http(s) only — reqwest
+  // refuses anything else with a `builder error` that previously
+  // killed the whole download, and a missing thumbnail is much
+  // better UX than a failed download.
+  let hasThumbnail = false
+  let hasLegend = false
+  let hasCaption = false
+  if (isHttpUrl(dataset.thumbnailLink)) {
+    const thumbExt = extFromUrl(dataset.thumbnailLink, '.jpg')
     assets.push({ url: dataset.thumbnailLink, filename: `thumbnail${thumbExt}` })
+    hasThumbnail = true
+  } else if (dataset.thumbnailLink) {
+    logger.warn('[Download] Skipping non-HTTP thumbnail ref:', dataset.thumbnailLink)
   }
-  if (dataset.legendLink) {
-    const legendExt = dataset.legendLink.match(/(\.\w+)$/)?.[1] ?? '.png'
+  if (isHttpUrl(dataset.legendLink)) {
+    const legendExt = extFromUrl(dataset.legendLink, '.png')
     assets.push({ url: dataset.legendLink, filename: `legend${legendExt}` })
+    hasLegend = true
+  } else if (dataset.legendLink) {
+    logger.warn('[Download] Skipping non-HTTP legend ref:', dataset.legendLink)
   }
-  if (dataset.closedCaptionLink) {
+  if (isHttpUrl(dataset.closedCaptionLink)) {
     // Caption URLs from sos.noaa.gov need to go through the proxy
     const captionUrl = dataset.closedCaptionLink.includes('sos.noaa.gov')
       ? `https://video-proxy.zyra-project.org/captions?url=${encodeURIComponent(dataset.closedCaptionLink)}`
       : dataset.closedCaptionLink
     assets.push({ url: captionUrl, filename: 'captions.srt' })
+    hasCaption = true
+  } else if (dataset.closedCaptionLink) {
+    logger.warn('[Download] Skipping non-HTTP caption ref:', dataset.closedCaptionLink)
   }
-  const ext = dataset.thumbnailLink?.match(/(\.\w+)$/)?.[1] ?? '.jpg'
-  const legendExt = dataset.legendLink?.match(/(\.\w+)$/)?.[1] ?? '.png'
+  const ext = isHttpUrl(dataset.thumbnailLink) ? extFromUrl(dataset.thumbnailLink, '.jpg') : '.jpg'
+  const legendExt = isHttpUrl(dataset.legendLink) ? extFromUrl(dataset.legendLink, '.png') : '.png'
 
   const input: DownloadInput = {
     datasetId: dataset.id,
@@ -217,9 +367,9 @@ export async function downloadDataset(dataset: Dataset): Promise<void> {
     format: dataset.format,
     kind,
     primaryFile,
-    captionFile: dataset.closedCaptionLink ? 'captions.srt' : null,
-    thumbnailFile: dataset.thumbnailLink ? `thumbnail${ext}` : null,
-    legendFile: dataset.legendLink ? `legend${legendExt}` : null,
+    captionFile: hasCaption ? 'captions.srt' : null,
+    thumbnailFile: hasThumbnail ? `thumbnail${ext}` : null,
+    legendFile: hasLegend ? `legend${legendExt}` : null,
     assets,
   }
 
@@ -299,4 +449,18 @@ export function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)} ${units[i]}`
+}
+
+/**
+ * Test-only surface. Exposes the pure helpers used by `resolveVideo
+ * Assets` / `resolveImageAssets` / `downloadDataset` so unit tests
+ * call into the real implementation rather than re-running the same
+ * logic inline (which would let production drift silently). Don't
+ * import this outside `*.test.ts`.
+ */
+export const __test__ = {
+  isHttpUrl,
+  extFromUrl,
+  pickBestVideoFile,
+  orderImageCandidates,
 }

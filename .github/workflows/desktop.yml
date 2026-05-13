@@ -101,6 +101,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Same Apple Developer ID secrets as release.yml so the
+          # main-branch macOS artifact is also notarized — otherwise
+          # downloading it for smoke-testing hits the same Gatekeeper
+          # "damaged" rejection that affected release builds before
+          # these were wired up. Distinct from the iOS App Store
+          # *Apple Distribution* cert (APPLE_CERTIFICATE_BASE64) — see
+          # release.yml for the cert-type rationale.
+          #
+          # Scoped to macOS runners via `runner.os == 'macOS'` so the
+          # certificate / password / notary credentials never appear in
+          # the Linux or Windows job environments. See release.yml for
+          # the matching rationale.
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tauriScript: npx tauri
 

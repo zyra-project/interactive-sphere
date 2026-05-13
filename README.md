@@ -10,6 +10,8 @@
 [![macOS](https://img.shields.io/badge/Download-macOS-000000?logo=apple&logoColor=white)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-aarch64.dmg)
 [![Linux](https://img.shields.io/badge/Download-Linux-FCC624?logo=linux&logoColor=black)](https://github.com/zyra-project/terraviz/releases/latest/download/Terraviz-latest-x64.AppImage)
 
+> **macOS (Apple Silicon):** the DMG isn't yet signed with an Apple Developer ID, so Gatekeeper will report it as `"Terraviz is damaged and can't be opened"` on first launch. The app is fine — see [`docs/MACOS_INSTALL.md`](docs/MACOS_INSTALL.md) for the one-line `xattr` workaround (or the System Settings equivalent). Signing is in progress.
+
 A WebGL-based globe that streams environmental data from the [Science On a Sphere](https://sos.noaa.gov/) project. Available as a [web app](https://terraviz.zyra-project.org) and a native desktop application for Windows, macOS, and Linux.
 
 ![Terraviz interface showing the Earth globe with the dataset browse panel](initial-interface.jpg)
