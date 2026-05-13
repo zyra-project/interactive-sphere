@@ -94,6 +94,23 @@ jobs:
 
       - run: npm ci
 
+      # The next two `tauri-action` invocations are mutually
+      # exclusive on whether the macOS Developer ID cert is in repo
+      # secrets — see release.yml for the full rationale. The reason
+      # for this `cert_check` indirection: GitHub Actions does NOT
+      # allow the `secrets` context inside a step-level `if:`
+      # expression (it surfaces as `Unrecognized named-value:
+      # 'secrets'` and rejects the whole workflow file). The
+      # workaround is to read the secret via `env:` (which does
+      # support `secrets`), reduce it to a boolean, and emit that
+      # as a step output — step outputs ARE allowed in `if:`.
+      - name: Detect Developer ID cert presence
+        id: cert_check
+        env:
+          HAS_CERT: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' }}
+        shell: bash
+        run: echo "has_cert=$HAS_CERT" >> "$GITHUB_OUTPUT"
+
       # macOS + Developer ID cert in repo secrets → notarized build.
       # Tauri's bundler reads APPLE_CERTIFICATE via Rust's
       # `std::env::var_os`, which returns `Some("")` for an empty-
@@ -105,7 +122,7 @@ jobs:
       # crates/tauri-bundler/src/bundle/macos/sign.rs in the tauri
       # repo for the predicate.
       - name: Build desktop app (signed, macOS with Developer ID)
-        if: github.event_name != 'pull_request' && runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != ''
+        if: github.event_name != 'pull_request' && runner.os == 'macOS' && steps.cert_check.outputs.has_cert == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -132,7 +149,7 @@ jobs:
       # hit the "damaged" Gatekeeper dialog until #100 lands the
       # cert; docs/MACOS_INSTALL.md walks them through the bypass.
       - name: Build desktop app (unsigned)
-        if: github.event_name != 'pull_request' && !(runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '')
+        if: github.event_name != 'pull_request' && !(runner.os == 'macOS' && steps.cert_check.outputs.has_cert == 'true')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
