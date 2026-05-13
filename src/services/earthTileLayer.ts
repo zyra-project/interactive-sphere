@@ -458,6 +458,11 @@ const specularFragSrc = `#version 300 es
   uniform float uShininess;
   uniform float uStrength;
   uniform float uCloudAlphaGamma;
+  // 1.0 at zoom levels where the cloud pass renders clouds, fading
+  // to 0 as the cloud pass fades. Without this the cloud mask
+  // still suppresses sun glint at high zoom — clouds disappear
+  // visually but their "shadow" stays on the water surface.
+  uniform float uCloudZoomFade;
   in vec3 vNormal;
   in vec2 vUV;
   out vec4 fragColor;
@@ -478,10 +483,12 @@ const specularFragSrc = `#version 300 es
     // Mask by specular map (bright = water/shiny, dark = land/matte)
     float specMask = texture(uSpecMap, vUV).r;
 
-    // Reduce glint under clouds — sample cloud density
+    // Reduce glint under clouds — sample cloud density, gated by
+    // the same zoom-fade the cloud pass uses so the mask matches
+    // what's actually visible.
     vec4 cloudSample = texture(uCloudMask, vUV);
     float cloudLum = dot(cloudSample.rgb, vec3(0.299, 0.587, 0.114));
-    float cloudDensity = pow(cloudLum, uCloudAlphaGamma);
+    float cloudDensity = pow(cloudLum, uCloudAlphaGamma) * uCloudZoomFade;
     spec *= specMask * uStrength * (1.0 - cloudDensity);
 
     // Additive: white highlight
@@ -920,6 +927,7 @@ interface SpecularProgram extends DayNightProgram {
   shininessLoc: WebGLUniformLocation | null
   strengthLoc: WebGLUniformLocation | null
   cloudAlphaGammaLoc: WebGLUniformLocation | null
+  cloudZoomFadeLoc: WebGLUniformLocation | null
 }
 
 interface CloudsProgram extends DayNightProgram {
@@ -1219,6 +1227,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
           shininessLoc: gl2.getUniformLocation(specularProg, 'uShininess'),
           strengthLoc: gl2.getUniformLocation(specularProg, 'uStrength'),
           cloudAlphaGammaLoc: gl2.getUniformLocation(specularProg, 'uCloudAlphaGamma'),
+          cloudZoomFadeLoc: gl2.getUniformLocation(specularProg, 'uCloudZoomFade'),
         }
       }
 
@@ -1470,6 +1479,15 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
 
+      // Cloud zoom-fade: fully visible at zoom ≤3, fully gone at
+      // zoom ≥6. Both the cloud pass (pass 4) and the specular
+      // pass's cloud-mask gating (pass 3) use the same value so the
+      // glint-suppression mask vanishes alongside the clouds it
+      // models — otherwise high zoom shows cloud-shaped patches of
+      // missing glint over water.
+      const zoom = mapRef?.getZoom() ?? 0
+      const cloudZoomFade = 1.0 - Math.max(0, Math.min(1, (zoom - 3) / 3))
+
       // --- Pass 3: Additive blend — specular sun glint on water ---
       if (specular && specTexReady && mapRef) {
         gl2.blendFunc(gl2.ONE, gl2.ONE) // additive
@@ -1500,6 +1518,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
         gl2.uniform1i(specular.cloudMaskLoc, 1)
         gl2.uniform1f(specular.cloudAlphaGammaLoc, CLOUD_ALPHA_GAMMA)
+        gl2.uniform1f(specular.cloudZoomFadeLoc, cloudZoomFade)
 
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
@@ -1509,10 +1528,6 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         // Standard alpha blend: clouds over existing content
         gl2.blendFunc(gl2.SRC_ALPHA, gl2.ONE_MINUS_SRC_ALPHA)
 
-        // Fade clouds: fully visible at zoom ≤3, fully gone at zoom ≥6
-        const zoom = mapRef?.getZoom() ?? 0
-        const zoomFade = 1.0 - Math.max(0, Math.min(1, (zoom - 3) / 3))
-
         gl2.useProgram(clouds.program)
         gl2.uniformMatrix4fv(clouds.matrixLoc, false, matrix)
         gl2.uniform3f(clouds.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
@@ -1520,7 +1535,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.uniform1f(clouds.opacityLoc, CLOUD_OPACITY)
         gl2.uniform1f(clouds.alphaGammaLoc, CLOUD_ALPHA_GAMMA)
         gl2.uniform1f(clouds.nightDarkeningLoc, CLOUD_NIGHT_DARKENING)
-        gl2.uniform1f(clouds.zoomFadeLoc, zoomFade)
+        gl2.uniform1f(clouds.zoomFadeLoc, cloudZoomFade)
 
         gl2.activeTexture(gl2.TEXTURE0)
         gl2.bindTexture(gl2.TEXTURE_2D, cloudTex)
