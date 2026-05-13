@@ -41,6 +41,11 @@ import type * as THREE from 'three'
 import { getSunPosition } from '../utils/time'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { logger } from '../utils/logger'
+import {
+  ATMOSPHERE_GLSL_CONSTANTS,
+  ATMOSPHERE_GLSL_PHASE,
+  ATMOSPHERE_GLSL_TONEMAP,
+} from './atmosphereConstants'
 
 /** Default radius if `options.radius` is omitted — matches the VR view. */
 const DEFAULT_RADIUS = 0.5
@@ -468,16 +473,27 @@ export function createPhotorealEarth(
       }
     `
 
-    const atmosphereScatteringConstants = `
-      const vec3 betaR = vec3(5.5e-6, 13.0e-6, 22.4e-6);
-      const vec3 betaNorm = betaR / 22.4e-6;
+    // Inject shared constants + Rayleigh / Cornette-Shanks phase +
+    // ACES tonemap from `atmosphereConstants.ts`. The shell shaders
+    // here are still analytic (Tier 1) — Tier 2 will swap them for a
+    // bounded raymarch using the same constants.
+    //
+    // `RAYLEIGH_BETA` etc. from the shared block are per-km, so the
+    // optical-depth proxy below is computed in km too. The 4.0×
+    // scale on `ATMOSPHERE_HEIGHT` is an empirical match for how
+    // thick the original shells read; will go away once Tier 2 does
+    // a real path integration.
+    const atmosphereSharedGlsl = `
+      ${ATMOSPHERE_GLSL_CONSTANTS}
+      ${ATMOSPHERE_GLSL_PHASE}
+      ${ATMOSPHERE_GLSL_TONEMAP}
     `
 
     const atmosphereInnerFrag = `
       uniform vec3 uSunDir;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
-      ${atmosphereScatteringConstants}
+      ${atmosphereSharedGlsl}
 
       void main() {
         vec3 viewDir = normalize(cameraPosition - vWorldPosition);
@@ -489,14 +505,25 @@ export function createPhotorealEarth(
         float sunNdot = dot(N, uSunDir);
         float atmosphereLit = smoothstep(-0.15, 0.4, sunNdot);
 
-        float opticalDepth = 1.0 / max(NdotV, 0.05);
+        // Chapman-style 1/cosθ path length through the shell, capped
+        // at grazing angles. Result is in km so it pairs with the
+        // per-km extinction coefficients from the shared constants.
+        float opticalDepthKm = ATMOSPHERE_HEIGHT * 4.0 / max(NdotV, 0.05);
 
-        vec3 extinction = exp(-betaR * opticalDepth * 4e5);
-        vec3 rayleighColor = betaNorm * (1.0 - extinction);
+        // Full extinction now includes ozone — the Chappuis-band
+        // absorption is what produces the purple/blue twilight ribbon.
+        vec3 tau = (RAYLEIGH_BETA + MIE_BETA_EXT + OZONE_BETA_ABS) * opticalDepthKm;
+        vec3 extinction = exp(-tau);
+        vec3 transmittedColor = (RAYLEIGH_BETA / max(RAYLEIGH_BETA.b, 1e-9)) * (1.0 - extinction);
 
+        // Sunset tint is now derived from the extinction of light
+        // grazing the atmosphere, not a hard-coded RGB. Long path
+        // strips blue (and green via ozone), leaving a warm residual.
+        vec3 sunsetTint = exp(-(RAYLEIGH_BETA + OZONE_BETA_ABS) * (ATMOSPHERE_HEIGHT * 12.0));
         float terminator = exp(-6.0 * sunNdot * sunNdot);
-        vec3 sunsetWarm = vec3(1.0, 0.4, 0.1);
-        vec3 color = mix(rayleighColor, sunsetWarm, terminator * rim * 0.5);
+        vec3 color = mix(transmittedColor, sunsetTint, terminator * rim * 0.5);
+
+        color = acesFilm(color);
 
         float alpha = rim * atmosphereLit * 0.35;
         gl_FragColor = vec4(color, alpha);
@@ -507,7 +534,7 @@ export function createPhotorealEarth(
       uniform vec3 uSunDir;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
-      ${atmosphereScatteringConstants}
+      ${atmosphereSharedGlsl}
 
       void main() {
         vec3 viewDir = normalize(cameraPosition - vWorldPosition);
@@ -519,20 +546,23 @@ export function createPhotorealEarth(
         float sunNdot = dot(N, uSunDir);
         float atmosphereLit = smoothstep(-0.15, 0.4, sunNdot);
 
+        // Phase functions from shared GLSL — Rayleigh and
+        // Cornette-Shanks (improved HG, properly normalised over 4π).
+        // The 0.5 scale on Mie keeps the haze visible without
+        // overwhelming the rim glow; previous code's `* 0.12` on raw
+        // HG was the equivalent ad-hoc balance.
         float cosTheta = dot(viewDir, uSunDir);
-        float rayleighPhase = 0.75 * (1.0 + cosTheta * cosTheta);
+        float pR = rayleighPhase(cosTheta);
+        float pM = cornetteShanksPhase(cosTheta) * 0.5;
 
-        float g = 0.758;
-        float g2 = g * g;
-        float miePhase = (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
-        miePhase *= 0.12;
+        vec3 scatterColor = (RAYLEIGH_BETA / max(RAYLEIGH_BETA.b, 1e-9)) * pR;
+        scatterColor += vec3(1.0, 0.95, 0.85) * pM;
 
-        vec3 scatterColor = betaNorm * rayleighPhase;
-        scatterColor += vec3(1.0, 0.95, 0.85) * miePhase;
-
+        vec3 sunsetColor = exp(-(RAYLEIGH_BETA + OZONE_BETA_ABS) * (ATMOSPHERE_HEIGHT * 12.0));
         float terminator = exp(-8.0 * sunNdot * sunNdot);
-        vec3 sunsetColor = vec3(1.0, 0.4, 0.08);
         scatterColor = mix(scatterColor, sunsetColor, terminator * 0.35);
+
+        scatterColor = acesFilm(scatterColor);
 
         float alpha = rim * atmosphereLit * 0.18;
         gl_FragColor = vec4(scatterColor, alpha);
