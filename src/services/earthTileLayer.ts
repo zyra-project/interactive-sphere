@@ -54,7 +54,7 @@ const CLOUD_TEXTURE_URL = getCloudTextureUrl()
 
 // --- Rendering constants (matched to earthMaterials.ts) ---
 const NIGHT_LIGHT_STRENGTH = 0.5
-const NIGHT_DARKENING = 0.03 // how dark the night side gets (before city lights)
+const NIGHT_DARKENING = 0.01 // how dark the night side gets (before city lights)
 const CLOUD_RADIUS = 1.005   // slightly above globe surface
 const CLOUD_OPACITY = 0.65
 const CLOUD_ALPHA_GAMMA = 1.8
