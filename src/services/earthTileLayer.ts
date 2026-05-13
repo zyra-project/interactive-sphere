@@ -38,6 +38,7 @@ import {
   PLANET_RADIUS_KM,
   buildAtmosphereRaymarchGlsl,
 } from './atmosphereConstants'
+import { computeTransmittanceLut } from './atmosphereLut'
 
 // Pick step counts once at module load. The shader source is a
 // top-level constant in this file (compiled when the layer is
@@ -497,6 +498,23 @@ const atmosphereVertSrc = `#version 300 es
   }
 `
 
+// GLSL 3.00 ES sampleTransmittanceLut helper. The shared raymarch
+// declares the function; we define it ahead of the raymarch
+// injection. The photorealEarth.ts (Three.js, GLSL 1.00) path
+// defines an equivalent helper using texture2D() instead.
+const atmosphereLutSamplerHelper = /* glsl */ `
+  uniform sampler2D uTransmittanceLut;
+  vec3 sampleTransmittanceLut(vec3 samplePos, vec3 sunDir) {
+    float altitude = length(samplePos) - PLANET_RADIUS;
+    float mu = dot(normalize(samplePos), sunDir);
+    vec2 lutUV = vec2(
+      mu * 0.5 + 0.5,
+      clamp(altitude / ATMOSPHERE_HEIGHT, 0.0, 1.0)
+    );
+    return texture(uTransmittanceLut, lutUV).rgb;
+  }
+`
+
 const atmosphereFragSrc = `#version 300 es
   precision highp float;
   uniform vec3 uSunDir;
@@ -509,6 +527,7 @@ const atmosphereFragSrc = `#version 300 es
   ${ATMOSPHERE_GLSL_PHASE}
   ${ATMOSPHERE_GLSL_INTERSECT}
   ${ATMOSPHERE_GLSL_TONEMAP}
+  ${atmosphereLutSamplerHelper}
   ${buildAtmosphereRaymarchGlsl(ATMOSPHERE_STEPS)}
 
   void main() {
@@ -528,6 +547,7 @@ interface AtmosphereProgram {
   sunDirLoc: WebGLUniformLocation | null
   cameraPosKmLoc: WebGLUniformLocation | null
   intensityLoc: WebGLUniformLocation | null
+  transmittanceLutLoc: WebGLUniformLocation | null
 }
 
 // Skybox: full-screen pass that samples cubemap faces based on camera rotation
@@ -906,6 +926,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
   let datasetVideo: HTMLVideoElement | null = null
   let datasetActive = false
   let forceVideoUpdate = false
+  let transmittanceLutTex: WebGLTexture | null = null
   let skyboxProg: WebGLProgram | null = null
   let skyboxInvProjLoc: WebGLUniformLocation | null = null
   let skyboxCameraLoc: WebGLUniformLocation | null = null
@@ -1095,7 +1116,25 @@ export function createEarthTileLayer(): EarthTileLayerControl {
           sunDirLoc: gl2.getUniformLocation(atmosphereProg, 'uSunDir'),
           cameraPosKmLoc: gl2.getUniformLocation(atmosphereProg, 'uCameraPosKm'),
           intensityLoc: gl2.getUniformLocation(atmosphereProg, 'uIntensity'),
+          transmittanceLutLoc: gl2.getUniformLocation(atmosphereProg, 'uTransmittanceLut'),
         }
+      }
+
+      // --- Build the transmittance LUT and upload as a texture ---
+      // CPU-side compute keeps this independent of MapLibre's render
+      // lifecycle. Tens-of-ms one-time cost on app start.
+      {
+        const lut = computeTransmittanceLut()
+        transmittanceLutTex = gl2.createTexture()
+        gl2.bindTexture(gl2.TEXTURE_2D, transmittanceLutTex)
+        gl2.texImage2D(
+          gl2.TEXTURE_2D, 0, gl2.RGBA, lut.width, lut.height, 0,
+          gl2.RGBA, gl2.UNSIGNED_BYTE, lut.pixels,
+        )
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.CLAMP_TO_EDGE)
+        gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE)
       }
 
       // --- Generate sphere geometry ---
@@ -1382,6 +1421,10 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.uniform3f(atmosphere.cameraPosKmLoc, cx, cy, cz)
         gl2.uniform1f(atmosphere.intensityLoc, ATMOSPHERE_INTENSITY)
 
+        gl2.activeTexture(gl2.TEXTURE0)
+        gl2.bindTexture(gl2.TEXTURE_2D, transmittanceLutTex)
+        gl2.uniform1i(atmosphere.transmittanceLutLoc, 0)
+
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
 
@@ -1406,6 +1449,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       if (specTex) gl2.deleteTexture(specTex)
       if (cloudTex) gl2.deleteTexture(cloudTex)
       if (datasetTex) gl2.deleteTexture(datasetTex)
+      if (transmittanceLutTex) gl2.deleteTexture(transmittanceLutTex)
     },
   }
 
