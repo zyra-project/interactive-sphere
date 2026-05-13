@@ -41,6 +41,19 @@ function parseArgs(): { perTask: number; only: string | null; concurrency: numbe
     const c = /^--concurrency=(\d+)$/.exec(arg)
     if (c) concurrency = Number(c[1])
   }
+  // Defensive: --concurrency=0 spawns zero workers (Promise.all
+  // on a zero-length array resolves immediately), making the
+  // sweep look "successful" without inspecting a single tour.
+  // --per-task=0 caps every sample list at zero so the dump
+  // would emit no examples. Reject both explicitly.
+  if (concurrency < 1) {
+    console.error(`--concurrency must be >= 1 (got ${concurrency}).`)
+    process.exit(2)
+  }
+  if (perTask < 1) {
+    console.error(`--per-task must be >= 1 (got ${perTask}).`)
+    process.exit(2)
+  }
   return { perTask, only, concurrency }
 }
 

@@ -56,7 +56,12 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   const text = await res.text()
-  console.log(`tour.json size: ${text.length} bytes`)
+  // text.length is JS code-unit count, not byte count — non-ASCII
+  // titles / captions inflate as multi-byte UTF-8 (e.g. `El Niño`,
+  // wikipedia URLs with diacritics). Report the actual encoded
+  // byte count so the diagnostic matches what the migration pump
+  // will upload to R2.
+  console.log(`tour.json size: ${Buffer.byteLength(text, 'utf8')} bytes`)
 
   let parsed: unknown
   try {

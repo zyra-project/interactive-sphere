@@ -48,6 +48,19 @@ function parseArgs(): { concurrency: number; limit: number | null } {
     const l = /^--limit=(\d+)$/.exec(arg)
     if (l) limit = Number(l[1])
   }
+  // Defensive: --concurrency=0 would silently spawn zero workers
+  // (Promise.all on a zero-length array resolves immediately),
+  // making the sweep look "successful" without scanning a single
+  // tour. Same for --limit=0. Reject these explicitly so the
+  // operator sees a usage error instead of an empty aggregate.
+  if (concurrency < 1) {
+    console.error(`--concurrency must be >= 1 (got ${concurrency}).`)
+    process.exit(2)
+  }
+  if (limit !== null && limit < 1) {
+    console.error(`--limit must be >= 1 when provided (got ${limit}).`)
+    process.exit(2)
+  }
   return { concurrency, limit }
 }
 
