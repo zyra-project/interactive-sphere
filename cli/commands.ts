@@ -726,6 +726,23 @@ Commands:
                                       Grafana telemetry to roll back a
                                       specific subset.
 
+  migrate-r2-tours [--dry-run] [--limit=N] [--id=<id>]
+                   [--pace-ms=N]
+                                      Migrate per-row SOS tour.json files (and
+                                      their sibling overlay / audio / 360-pano
+                                      assets) from NOAA CloudFront to R2 under
+                                      tours/<id>/tour.json + sibling paths.
+                                      Per-row atomic — a row's tour.json is
+                                      only PATCHed after every sibling has
+                                      uploaded successfully. Idempotent —
+                                      rows already on r2: skip. External URLs
+                                      (YouTube embeds, Vimeo, popup web links)
+                                      are left verbatim. Requires the same R2
+                                      credentials as migrate-r2-hls /
+                                      migrate-r2-assets. See
+                                      CATALOG_BACKEND_DEVELOPMENT.md
+                                      "Migrating tour.json files to R2".
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)
