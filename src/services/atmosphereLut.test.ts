@@ -8,12 +8,19 @@
  * step count and may shift slightly if those are tuned).
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   TRANSMITTANCE_LUT_WIDTH,
   TRANSMITTANCE_LUT_HEIGHT,
   computeTransmittanceLut,
+  _resetLutCacheForTests,
 } from './atmosphereLut'
+
+beforeEach(() => {
+  // The compute memoizes by `${w}x${h}`; reset between cases so the
+  // assertions on the first call always exercise the cold path.
+  _resetLutCacheForTests()
+})
 
 describe('computeTransmittanceLut', () => {
   // Compute once and share. The full LUT takes ~10-50ms; reuse keeps
@@ -95,5 +102,21 @@ describe('computeTransmittanceLut', () => {
     expect(tiny.width).toBe(16)
     expect(tiny.height).toBe(8)
     expect(tiny.pixels).toHaveLength(16 * 8 * 4)
+  })
+
+  it('throws when width or height is < 2 (would divide by zero)', () => {
+    expect(() => computeTransmittanceLut(1, 64)).toThrow(/>= 2/)
+    expect(() => computeTransmittanceLut(256, 1)).toThrow(/>= 2/)
+    expect(() => computeTransmittanceLut(0, 0)).toThrow(/>= 2/)
+  })
+
+  it('memoizes results by size — second call returns the same object', () => {
+    const a = computeTransmittanceLut(64, 32)
+    const b = computeTransmittanceLut(64, 32)
+    expect(b).toBe(a)
+    expect(b.pixels).toBe(a.pixels)
+    // Different sizes get independent entries.
+    const c = computeTransmittanceLut(32, 16)
+    expect(c).not.toBe(a)
   })
 })

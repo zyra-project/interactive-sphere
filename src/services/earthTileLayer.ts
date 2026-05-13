@@ -147,12 +147,17 @@ const _projScratch4 = new Float32Array(3)
 
 function unprojectClip(
   invM: Float32Array, x: number, y: number, z: number, out: Float32Array,
-): void {
+): boolean {
   const w = invM[3] * x + invM[7] * y + invM[11] * z + invM[15]
+  // Near-zero w means the clip-space point sits on the projective
+  // infinity plane (camera origin under perspective). Bail rather
+  // than produce ±Inf / NaN that would propagate into uniforms.
+  if (Math.abs(w) < 1e-10) return false
   const iw = 1 / w
   out[0] = (invM[0] * x + invM[4] * y + invM[8] * z + invM[12]) * iw
   out[1] = (invM[1] * x + invM[5] * y + invM[9] * z + invM[13]) * iw
   out[2] = (invM[2] * x + invM[6] * y + invM[10] * z + invM[14]) * iw
+  return true
 }
 
 /**
@@ -172,10 +177,19 @@ function computeCameraWorldPosFromMatrix(
     out[0] = 0; out[1] = 0; out[2] = 0
     return
   }
-  unprojectClip(_invMatrixScratch, 0,   0, -1, _projScratch1)
-  unprojectClip(_invMatrixScratch, 0,   0,  1, _projScratch2)
-  unprojectClip(_invMatrixScratch, 0.5, 0, -1, _projScratch3)
-  unprojectClip(_invMatrixScratch, 0.5, 0,  1, _projScratch4)
+  // If any unprojection lands on the projective-infinity plane the
+  // intersection math below is undefined; bail with (0,0,0). In
+  // practice this never happens for a well-formed projection-view
+  // matrix from MapLibre's globe transform.
+  if (
+    !unprojectClip(_invMatrixScratch, 0,   0, -1, _projScratch1) ||
+    !unprojectClip(_invMatrixScratch, 0,   0,  1, _projScratch2) ||
+    !unprojectClip(_invMatrixScratch, 0.5, 0, -1, _projScratch3) ||
+    !unprojectClip(_invMatrixScratch, 0.5, 0,  1, _projScratch4)
+  ) {
+    out[0] = 0; out[1] = 0; out[2] = 0
+    return
+  }
 
   const d1x = _projScratch2[0] - _projScratch1[0]
   const d1y = _projScratch2[1] - _projScratch1[1]

@@ -56,6 +56,17 @@ export interface AtmosphereLutData {
   readonly pixels: Uint8Array
 }
 
+/**
+ * Module-scope memo of the compute output, keyed by `${width}x${height}`.
+ * `createPhotorealEarth()` runs on every Orbit scale-preset change
+ * (the photoreal stack rebuilds rather than mutating geometries), so
+ * without the memo we'd re-integrate the LUT every preset swap.
+ * The cached `pixels` is a `Uint8Array` view; consumers wrap it in
+ * their own `DataTexture` / `gl.texImage2D` upload, so per-renderer
+ * GPU state is still isolated.
+ */
+const lutCache = new Map<string, AtmosphereLutData>()
+
 function rayleighDensity(h: number): number {
   return Math.exp(-Math.max(h, 0) / RAYLEIGH_SCALE_HEIGHT_KM)
 }
@@ -79,6 +90,19 @@ export function computeTransmittanceLut(
   width: number = TRANSMITTANCE_LUT_WIDTH,
   height: number = TRANSMITTANCE_LUT_HEIGHT,
 ): AtmosphereLutData {
+  // The compute uses `x / (width - 1)` and `y / (height - 1)` to map
+  // pixel indices onto mu / altitude; a 1×N or N×1 LUT divides by
+  // zero. 2 is the minimum that lets bilinear filtering produce
+  // anything meaningful anyway.
+  if (width < 2 || height < 2) {
+    throw new Error(
+      `[atmosphereLut] width and height must each be >= 2 (got ${width}x${height})`,
+    )
+  }
+  const cacheKey = `${width}x${height}`
+  const cached = lutCache.get(cacheKey)
+  if (cached) return cached
+
   const pixels = new Uint8Array(width * height * 4)
   const atmRadius = PLANET_RADIUS_KM + ATMOSPHERE_HEIGHT_KM
   const atmRadiusSq = atmRadius * atmRadius
@@ -160,5 +184,18 @@ export function computeTransmittanceLut(
     }
   }
 
-  return { width, height, pixels }
+  const result: AtmosphereLutData = { width, height, pixels }
+  lutCache.set(cacheKey, result)
+  return result
+}
+
+/**
+ * Test-only: clear the LUT memo. Lets tests cover both the cold-
+ * compute path and the cache-hit path within the same test file
+ * without spawning a fresh module instance.
+ *
+ * @internal
+ */
+export function _resetLutCacheForTests(): void {
+  lutCache.clear()
 }

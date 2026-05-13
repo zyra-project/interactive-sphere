@@ -1160,10 +1160,15 @@ export function createPhotorealEarth(
       if (atmosphere) {
         atmosphere.position.copy(globe.position)
         atmosphere.scale.copy(globe.scale)
-        // The raymarch needs to know where the planet is to translate
-        // fragment world-space into planet-centred km. Keep the
-        // uniform synced whenever the globe moves.
+        // The raymarch needs to know where the planet is, and how
+        // many km each world unit currently represents, to translate
+        // fragment world-space into planet-centred km. globe.scale
+        // changes at runtime under VR pinch-zoom, so the km/world
+        // factor has to track it — fixing it at construction would
+        // make the raymarch read the wrong altitude (and therefore
+        // the wrong sky colour) at any non-unit scale.
         planetCenterUniform.value.copy(globe.position)
+        kmPerWorldUnitUniform.value = PLANET_RADIUS_KM / (radius * globe.scale.x)
       }
 
       // Refresh the subsolar point on a throttle.
