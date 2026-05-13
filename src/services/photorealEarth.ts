@@ -41,6 +41,8 @@ import type * as THREE from 'three'
 import { getSunPosition } from '../utils/time'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { logger } from '../utils/logger'
+import type { DatasetOverlayOptions } from '../types'
+import { isEarthBody } from './datasetOverlayOptions'
 
 /** Default radius if `options.radius` is omitted — matches the VR view. */
 const DEFAULT_RADIUS = 0.5
@@ -175,10 +177,27 @@ function sunDirectionFromLatLng(
  * are pre-decoded `HTMLImageElement`s, video datasets stream through
  * HLS into an `HTMLVideoElement`. Null falls back to the photoreal
  * Earth stack.
+ *
+ * `options` carries the same Phase 3d metadata
+ * (`boundingBox` / `lonOrigin` / `isFlippedInY` / `celestialBody`)
+ * that the 2D renderer uses for bbox projection + non-Earth gating.
+ * When absent (or when every field is at its default), the VR
+ * renderer takes the legacy path: dataset texture wraps the full
+ * sphere equirectangularly, all Earth decoration hides. Phase 3h
+ * uses these to clip the texture to a bbox and reveal an Earth
+ * base diffuse outside.
  */
 export type VrDatasetTexture =
-  | { readonly kind: 'video'; readonly element: HTMLVideoElement }
-  | { readonly kind: 'image'; readonly element: HTMLImageElement }
+  | {
+      readonly kind: 'video'
+      readonly element: HTMLVideoElement
+      readonly options?: DatasetOverlayOptions
+    }
+  | {
+      readonly kind: 'image'
+      readonly element: HTMLImageElement
+      readonly options?: DatasetOverlayOptions
+    }
 
 export interface PhotorealEarthOptions {
   /** Globe radius in world units. Default 0.5 (VR view default). */

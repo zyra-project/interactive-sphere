@@ -62,6 +62,7 @@ import {
 import { initVrButton } from './ui/vrButton'
 import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
+import { overlayOptionsFromDataset } from './services/datasetOverlayOptions'
 import { bootstrapI18n } from './i18n/bootstrap'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
@@ -1418,11 +1419,18 @@ class InteractiveSphere {
     const getPanelTexture = (slot: number): VrDatasetTexture | null => {
       const panel = this.panelStates[slot]
       if (!panel?.dataset) return null
+      // Phase 3h: forward the same overlay options the 2D renderer
+      // consumes (bbox / lonOrigin / flipY / celestialBody) so the
+      // VR Phong material can clip regional datasets to their bbox
+      // and reveal an Earth base diffuse outside. `undefined` for
+      // datasets at all defaults — keeps legacy globals on the fast
+      // path through the shader.
+      const options = overlayOptionsFromDataset(panel.dataset)
       if (dataService.isImageDataset(panel.dataset)) {
-        return panel.image ? { kind: 'image', element: panel.image } : null
+        return panel.image ? { kind: 'image', element: panel.image, options } : null
       }
       const video = panel.hlsService?.getVideo()
-      return video ? { kind: 'video', element: video } : null
+      return video ? { kind: 'video', element: video, options } : null
     }
 
     await initVrButton({
