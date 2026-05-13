@@ -167,7 +167,105 @@ used; same `R2_PUBLIC_BASE` custom domain.
 
 ---
 
+## Phase 3d — Non-global metadata foundation
+
+**Branch:** `claude/non-global-metadata-phase-3d`
+**Commits:** 3d/A through 3d/B — two logical changes (schema +
+serializer surface, then docs).
+
+Restores another piece of catalog data Phase 1d dropped on the
+floor, and corrects a Phase 3b mislabel along the way.
+
+**Strict back-end scope.** This phase only persists the metadata
++ surfaces it on the wire. The SPA-side rendering — wrapping
+non-global data onto the correct portion of the globe, and
+swapping the base texture for non-Earth bodies — is Phase 3e in
+a separate PR, where the visual scrutiny + screenshot review
+belongs.
+
+**3d/A — Migration `0010` + typed metadata.**
+
+- Promotes the legacy `bounding_variables` column from a JSON
+  text blob to four typed REAL columns `bbox_n` / `bbox_s` /
+  `bbox_w` / `bbox_e`. The 3b migration described the column as
+  "per-variable data ranges"; production inspection showed every
+  populated row actually held a geographic NSWE bounding box
+  (`{n: "90", s: "-90", w: "-180", e: "180"}`). The mislabel
+  made the column inert — no consumer parsed it. Typed columns
+  let the publisher API validate lat/lon ranges, the wire surface
+  a typed `boundingBox: { n, s, w, e }` object, and Phase 3e's
+  shader project data to the correct sub-region of the sphere.
+  In-line UPDATE backfills the typed columns from the existing
+  JSON; the legacy column drops at the end of the migration.
+
+- Adds four columns for SOS metadata previously deferred:
+  `celestial_body` (20 rows ship a non-Earth value — Mars, Moon,
+  Sun, Jupiter, Saturn, Mercury, Venus, Pluto, Neptune, Uranus,
+  Io, Europa, Ganymede, Callisto, Enceladus, Titan, 67p, aurora,
+  Trappist-1d, Kepler-10b), `radius_mi` (paired with
+  `celestial_body`), `lon_origin` (12 rows use ±180 for
+  dateline-centered datasets), `is_flipped_in_y` (image
+  orientation flag; zero rows use it today but persisted for
+  future publishers whose imagery uses inverted-Y conventions).
+
+- Publisher API gains typed validation: `validateBoundingBox`
+  (lat/lon ranges, `n >= s`, antimeridian-crossing `w > e`
+  permitted); `validateRadiusMi` (positive finite, bounded
+  loosely at 1e9); `validateLonOrigin` ([-180, 180]); plus
+  inline type-checks on `celestial_body` /
+  `is_flipped_in_y`. Each violation pinpoints the offending
+  sub-field (e.g. `bounding_box.n` / `invalid_value`) so a
+  publisher-portal client can highlight the wrong corner
+  specifically.
+
+- The importer's `--update-existing` backfill grows from 3
+  columns to 7. Existing rows imported under 3b that already
+  have `bounding_variables` populated get their bbox migrated
+  automatically by the in-line UPDATE in migration 0010; rows
+  without populated metadata stay clean.
+
+**3d/B — Docs.** This CHANGELOG entry. No runbook section —
+3d is schema-and-types only; operators don't run anything new
+(the `import-snapshot --update-existing` flow from 3b is the
+same flow with a wider column set).
+
+**Operator notes.**
+
+- The migration is additive (8 ADD COLUMN + 1 DROP COLUMN);
+  the DROP COLUMN needs SQLite ≥ 3.35.0, which D1 satisfies.
+- No new env vars, no new bindings.
+- After deploy, re-run `terraviz import-snapshot --update-existing`
+  to backfill the four new SOS fields onto existing rows.
+  Idempotent — already-populated rows skip.
+
+**Non-goals (deferred / out-of-scope).**
+
+- **SPA rendering against the new fields** — Phase 3e. The
+  bbox-bounded shader change, `lon_origin` / `is_flipped_in_y`
+  plumbed into the UV math, and non-Earth base textures
+  (Mars / Moon / Sun / …) all live there.
+- **Spatial filtering in browse.** "Datasets in this region"
+  would benefit from an R-tree index; the current row count
+  makes a table scan over `WHERE bbox_n IS NOT NULL`
+  essentially free, so the index is punted to a federation-era
+  concern.
+- **The other ~10 dropped SOS fields** — SOS-desktop UI flags
+  (`assetBundleFilename`, `autoLoadFirstLayer`, …), VR-search
+  filter (`isHiddenFromVRSearch`), KML overlay features
+  (`kmlIconScaleFactor`, …). Still no web SPA equivalent.
+
+---
+
 ## Phase 3b — Auxiliary asset migration + catalog data completeness
+
+> **Phase 3d correction (2026-05):** the `bounding_variables`
+> column described below was *not* "per-variable data ranges" —
+> the actual content is the geographic NSWE bounding box
+> `{ n, s, w, e }`. Phase 3d (above) promoted it to typed
+> columns (`bbox_n` / `bbox_s` / `bbox_w` / `bbox_e`) and
+> dropped the legacy column. The bbox data itself survives in
+> the typed columns; only the wire surface (and the misleading
+> name) changed.
 
 **Branch:** `claude/auxiliary-asset-migration-phase-3b`
 **Commits:** 3b/A through 3b/K — eleven logical changes.
