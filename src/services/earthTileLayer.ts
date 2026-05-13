@@ -26,6 +26,11 @@ import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { reportError } from '../analytics'
+import {
+  ATMOSPHERE_GLSL_CONSTANTS,
+  ATMOSPHERE_GLSL_PHASE,
+  ATMOSPHERE_GLSL_TONEMAP,
+} from './atmosphereConstants'
 
 // --- Texture URLs ---
 const SPECULAR_MAP_URL = '/assets/Earth_Specular_2K.jpg'
@@ -41,6 +46,19 @@ const CLOUD_NIGHT_DARKENING = 0.08
 const SPECULAR_SHININESS = 40.0
 const SPECULAR_STRENGTH = 0.6
 const STAR_BRIGHTNESS = 0.2
+/**
+ * Atmosphere shell radius as a multiplier of the globe's unit-sphere
+ * radius. 1.012 matches `ATMOSPHERE_OUTER_FACTOR` in
+ * `photorealEarth.ts` so the boot Earth and the VR Earth have a
+ * consistent halo thickness.
+ */
+const ATMOSPHERE_RADIUS_FACTOR = 1.012
+/**
+ * Maximum per-pixel contribution of the atmosphere shell to the
+ * framebuffer (under additive blend). Tuned so the limb halo is
+ * visible without washing out city lights at the silhouette.
+ */
+const ATMOSPHERE_OPACITY = 0.5
 const SKYBOX_FACES = ['px', 'nx', 'py', 'ny', 'pz', 'nz'] as const
 const SKYBOX_URL_BASE = '/assets/skybox/'
 
@@ -366,6 +384,90 @@ const specularFragSrc = `#version 300 es
     fragColor = vec4(vec3(spec), 1.0);
   }
 `
+
+// Pass 5: additive blend — atmospheric scattering halo around the globe.
+// Renders a slightly-larger sphere with a fragment shader that derives
+// limb glow, Rayleigh transmittance, ozone-tinted sunset bands, and a
+// Cornette-Shanks Mie haze around the sun. Tier-1 analytic shell with
+// the same approximations as the inner shell in `photorealEarth.ts`;
+// Tier 2 will replace with a bounded raymarch.
+const atmosphereVertSrc = `#version 300 es
+  layout(location = 0) in vec3 aPosition;
+  layout(location = 1) in vec3 aNormal;
+  uniform mat4 uMatrix;
+  uniform float uRadiusScale;
+  out vec3 vNormal;
+
+  void main() {
+    vNormal = aNormal;
+    gl_Position = uMatrix * vec4(aPosition * uRadiusScale, 1.0);
+  }
+`
+
+const atmosphereFragSrc = `#version 300 es
+  precision highp float;
+  uniform vec3 uSunDir;
+  uniform vec3 uViewDir;
+  uniform float uOpacity;
+  in vec3 vNormal;
+  out vec4 fragColor;
+  ${ATMOSPHERE_GLSL_CONSTANTS}
+  ${ATMOSPHERE_GLSL_PHASE}
+  ${ATMOSPHERE_GLSL_TONEMAP}
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(uViewDir);
+
+    float NdotV = dot(N, V);
+    // Limb glow peaks where the surface normal is perpendicular to the
+    // view direction. exp(-8 NdotV^2) gives a soft ring at NdotV ≈ 0
+    // that falls off rapidly toward the sub-camera point.
+    float rim = exp(-8.0 * NdotV * NdotV);
+
+    float NdotL = dot(N, uSunDir);
+    float atmosphereLit = smoothstep(-0.15, 0.4, NdotL);
+
+    // Chapman-style 1/cosθ path length through the shell, in km so the
+    // per-km extinction coefficients pair cleanly. Empirical 4× scale
+    // matches the shell thickness used by photorealEarth.ts; Tier 2's
+    // raymarch will derive this from real geometry.
+    float opticalDepthKm = ATMOSPHERE_HEIGHT * 4.0 / max(NdotV, 0.05);
+    vec3 tau = (RAYLEIGH_BETA + MIE_BETA_EXT + OZONE_BETA_ABS) * opticalDepthKm;
+    vec3 extinction = exp(-tau);
+    vec3 transmittedColor = (RAYLEIGH_BETA / max(RAYLEIGH_BETA.b, 1e-9))
+      * (1.0 - extinction);
+
+    // Mie haze around the sun direction — Cornette-Shanks phase.
+    float cosTheta = dot(V, uSunDir);
+    float pM = cornetteShanksPhase(cosTheta) * 0.5;
+    vec3 mieHaze = vec3(1.0, 0.95, 0.85) * pM;
+
+    // Sunset/twilight tint derived from extinction along a long
+    // grazing path: Rayleigh strips blue, ozone strips green/yellow,
+    // residual is warm to purple.
+    vec3 sunsetTint = exp(-(RAYLEIGH_BETA + OZONE_BETA_ABS) * (ATMOSPHERE_HEIGHT * 12.0));
+    float terminator = exp(-6.0 * NdotL * NdotL);
+    vec3 color = mix(transmittedColor + mieHaze, sunsetTint,
+      terminator * rim * 0.5);
+
+    color = acesFilm(color);
+
+    // Limb-weighted alpha; additive-blend output is premultiplied so
+    // the centre of the planet's disk contributes nothing.
+    float alpha = rim * atmosphereLit * uOpacity;
+    fragColor = vec4(color * alpha, 1.0);
+  }
+`
+
+interface AtmosphereProgram {
+  program: WebGLProgram
+  matrixLoc: WebGLUniformLocation | null
+  radiusScaleLoc: WebGLUniformLocation | null
+  sunDirLoc: WebGLUniformLocation | null
+  viewDirLoc: WebGLUniformLocation | null
+  opacityLoc: WebGLUniformLocation | null
+}
 
 // Skybox: full-screen pass that samples cubemap faces based on camera rotation
 const skyboxVertSrc = `#version 300 es
@@ -728,6 +830,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
   let lights: LightsProgram | null = null
   let specular: SpecularProgram | null = null
   let clouds: CloudsProgram | null = null
+  let atmosphere: AtmosphereProgram | null = null
   let vao: WebGLVertexArrayObject | null = null
   let indexCount = 0
   let captureTex: WebGLTexture | null = null
@@ -914,6 +1017,18 @@ export function createEarthTileLayer(): EarthTileLayerControl {
           shininessLoc: gl2.getUniformLocation(specularProg, 'uShininess'),
           strengthLoc: gl2.getUniformLocation(specularProg, 'uStrength'),
           cloudAlphaGammaLoc: gl2.getUniformLocation(specularProg, 'uCloudAlphaGamma'),
+        }
+      }
+
+      const atmosphereProg = compileProgram(gl2, atmosphereVertSrc, atmosphereFragSrc, 'atmosphere')
+      if (atmosphereProg) {
+        atmosphere = {
+          program: atmosphereProg,
+          matrixLoc: gl2.getUniformLocation(atmosphereProg, 'uMatrix'),
+          radiusScaleLoc: gl2.getUniformLocation(atmosphereProg, 'uRadiusScale'),
+          sunDirLoc: gl2.getUniformLocation(atmosphereProg, 'uSunDir'),
+          viewDirLoc: gl2.getUniformLocation(atmosphereProg, 'uViewDir'),
+          opacityLoc: gl2.getUniformLocation(atmosphereProg, 'uOpacity'),
         }
       }
 
@@ -1173,6 +1288,36 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
 
+      // --- Pass 5: Additive blend — atmospheric scattering halo ---
+      // Rendered last so the limb glow sits in front of clouds, matching
+      // the article's "atmosphere above troposphere" intuition and
+      // photorealEarth.ts's render order. View direction is the same
+      // far-camera approximation used by the specular pass — adequate
+      // for the analytic shell here, replaced by a proper ray origin
+      // in Tier 2's raymarch.
+      if (atmosphere && mapRef) {
+        gl2.blendFunc(gl2.ONE, gl2.ONE) // additive — fragment shader
+                                        // pre-multiplies colour by alpha.
+
+        const center = mapRef.getCenter()
+        const aLatR = center.lat * Math.PI / 180
+        const aLngR = center.lng * Math.PI / 180
+        const viewDir: [number, number, number] = [
+          Math.cos(aLatR) * Math.sin(aLngR),
+          Math.sin(aLatR),
+          Math.cos(aLatR) * Math.cos(aLngR),
+        ]
+
+        gl2.useProgram(atmosphere.program)
+        gl2.uniformMatrix4fv(atmosphere.matrixLoc, false, matrix)
+        gl2.uniform1f(atmosphere.radiusScaleLoc, terrainRadiusScale * ATMOSPHERE_RADIUS_FACTOR)
+        gl2.uniform3f(atmosphere.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
+        gl2.uniform3f(atmosphere.viewDirLoc, viewDir[0], viewDir[1], viewDir[2])
+        gl2.uniform1f(atmosphere.opacityLoc, ATMOSPHERE_OPACITY)
+
+        gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
+      }
+
       // Restore MapLibre's expected GL state
       gl2.bindVertexArray(null)
       gl2.disable(gl2.BLEND)
@@ -1188,6 +1333,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       if (lights) gl2.deleteProgram(lights.program)
       if (specular) gl2.deleteProgram(specular.program)
       if (clouds) gl2.deleteProgram(clouds.program)
+      if (atmosphere) gl2.deleteProgram(atmosphere.program)
       if (vao) gl2.deleteVertexArray(vao)
       if (captureTex) gl2.deleteTexture(captureTex)
       if (specTex) gl2.deleteTexture(specTex)

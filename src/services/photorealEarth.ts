@@ -549,8 +549,8 @@ export function createPhotorealEarth(
         // Phase functions from shared GLSL — Rayleigh and
         // Cornette-Shanks (improved HG, properly normalised over 4π).
         // The 0.5 scale on Mie keeps the haze visible without
-        // overwhelming the rim glow; previous code's `* 0.12` on raw
-        // HG was the equivalent ad-hoc balance.
+        // overwhelming the rim glow; previous code used a 0.12 scale
+        // on raw HG for the equivalent ad-hoc balance.
         float cosTheta = dot(viewDir, uSunDir);
         float pR = rayleighPhase(cosTheta);
         float pM = cornetteShanksPhase(cosTheta) * 0.5;
