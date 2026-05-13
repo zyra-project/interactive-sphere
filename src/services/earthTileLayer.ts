@@ -26,6 +26,7 @@ import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { reportError } from '../analytics'
+import type { DatasetOverlayOptions } from '../types'
 
 // --- Texture URLs ---
 const SPECULAR_MAP_URL = '/assets/Earth_Specular_2K.jpg'
@@ -709,10 +710,16 @@ export interface EarthTileLayerControl {
   setVisible(visible: boolean): void
   /** Inflate effects sphere to cover exaggerated terrain. 0 = no terrain. */
   setTerrainExaggeration(exaggeration: number): void
-  /** Display an equirectangular image as a dataset overlay on the globe. */
-  setDatasetTexture(image: HTMLCanvasElement | HTMLImageElement): void
+  /** Display an equirectangular image as a dataset overlay on the globe.
+   * `options` carries Phase 3d metadata (bbox / lonOrigin / isFlippedInY)
+   * that the dataset-overlay shader applies in 3e/B; until then the
+   * options are stored but the rendering is unchanged. */
+  setDatasetTexture(
+    image: HTMLCanvasElement | HTMLImageElement,
+    options?: DatasetOverlayOptions,
+  ): void
   /** Display an equirectangular video as a dataset overlay on the globe. */
-  setDatasetVideo(video: HTMLVideoElement): void
+  setDatasetVideo(video: HTMLVideoElement, options?: DatasetOverlayOptions): void
   /** Force a one-shot video texture re-upload (e.g. after scrubbing while paused). */
   requestVideoUpdate(): void
   /** Remove the current dataset overlay (image or video). */
@@ -741,6 +748,12 @@ export function createEarthTileLayer(): EarthTileLayerControl {
   let datasetTex: WebGLTexture | null = null
   let datasetVideo: HTMLVideoElement | null = null
   let datasetActive = false
+  // Phase 3e: per-dataset overlay options. Stored verbatim from the
+  // caller; the dataset-overlay fragment shader will read them in
+  // 3e/B to clip to bbox / shift U by lonOrigin / flip V when
+  // isFlippedInY is set. Until 3e/B lands, the options are
+  // captured but the rendering ignores them — pure plumbing.
+  let datasetOptions: DatasetOverlayOptions | null = null
   let forceVideoUpdate = false
   let skyboxProg: WebGLProgram | null = null
   let skyboxInvProjLoc: WebGLUniformLocation | null = null
@@ -1365,7 +1378,10 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       terrainRadiusScale = 1.0 + (MAX_ELEVATION_M * exaggeration / GLOBE_RADIUS) * 1.05
       mapRef?.triggerRepaint()
     },
-    setDatasetTexture(image: HTMLCanvasElement | HTMLImageElement) {
+    setDatasetTexture(
+      image: HTMLCanvasElement | HTMLImageElement,
+      options?: DatasetOverlayOptions,
+    ) {
       if (!glRef) return
       datasetVideo = null // clear any previous video
       if (!datasetTex) {
@@ -1380,9 +1396,10 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_S, glRef.REPEAT)
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_T, glRef.CLAMP_TO_EDGE)
       datasetActive = true
+      datasetOptions = options ?? null
       mapRef?.triggerRepaint()
     },
-    setDatasetVideo(video: HTMLVideoElement) {
+    setDatasetVideo(video: HTMLVideoElement, options?: DatasetOverlayOptions) {
       if (!glRef) return
       datasetVideo = video
       if (!datasetTex) {
@@ -1397,6 +1414,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_S, glRef.REPEAT)
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_T, glRef.CLAMP_TO_EDGE)
       datasetActive = true
+      datasetOptions = options ?? null
       mapRef?.triggerRepaint()
     },
     requestVideoUpdate() {
@@ -1408,6 +1426,7 @@ export function createEarthTileLayer(): EarthTileLayerControl {
     clearDatasetTexture() {
       datasetActive = false
       datasetVideo = null
+      datasetOptions = null
       mapRef?.triggerRepaint()
     },
   }

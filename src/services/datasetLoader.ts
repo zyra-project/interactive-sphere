@@ -8,7 +8,13 @@ import { HLSService, type VideoProxyResponse } from './hlsService'
 import { dataService } from './dataService'
 import { apiFetch, isManifestUrl } from './catalogSource'
 import { getDownload, getDownloadPath } from './downloadService'
-import type { Dataset, AppState, GlobeRenderer, VideoTextureHandle } from '../types'
+import type {
+  Dataset,
+  AppState,
+  DatasetOverlayOptions,
+  GlobeRenderer,
+  VideoTextureHandle,
+} from '../types'
 import { formatDate, isSubDailyPeriod, inferDisplayInterval } from '../utils/time'
 import { logger } from '../utils/logger'
 import { escapeHtml, escapeAttr } from '../ui/domUtils'
@@ -64,6 +70,31 @@ export interface DatasetLoaderOptions {
 
 // --- Image loading ---
 
+/**
+ * Build the DatasetOverlayOptions handed to the renderer from a
+ * Dataset's Phase 3d metadata. Returns undefined when nothing is
+ * set, so the renderer's option-aware path is only entered for
+ * datasets that actually carry hints. The 3e/B shader work will
+ * read the resulting uniforms; until then this just plumbs the
+ * data through.
+ */
+function overlayOptionsFromDataset(dataset: Dataset): DatasetOverlayOptions | undefined {
+  if (
+    !dataset.boundingBox &&
+    dataset.lonOrigin === undefined &&
+    !dataset.isFlippedInY &&
+    !dataset.celestialBody
+  ) {
+    return undefined
+  }
+  return {
+    boundingBox: dataset.boundingBox,
+    lonOrigin: dataset.lonOrigin,
+    isFlippedInY: dataset.isFlippedInY,
+    celestialBody: dataset.celestialBody,
+  }
+}
+
 /** Load an image dataset onto the globe, trying progressively lower resolutions on mobile. */
 export async function loadImageDataset(
   dataset: Dataset,
@@ -90,7 +121,7 @@ export async function loadImageDataset(
     img = await loadImageFromNetwork(dataset, isMobile)
   }
 
-  renderer.updateTexture(img)
+  renderer.updateTexture(img, overlayOptionsFromDataset(dataset))
 
   // Only the primary drives the singular time label and playback UI.
   if (isPrimary) {
@@ -296,7 +327,7 @@ export async function loadVideoDataset(
     }
   }
 
-  const videoTexture = renderer.setVideoTexture(video)
+  const videoTexture = renderer.setVideoTexture(video, overlayOptionsFromDataset(dataset))
   videoTexture.needsUpdate = true
 
   // Scrubber + playback transport are singular — primary only.
