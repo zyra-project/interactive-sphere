@@ -53,6 +53,7 @@ import {
   PLANET_RADIUS_KM,
   buildAtmosphereRaymarchGlsl,
 } from './atmosphereConstants'
+import { computeTransmittanceLut } from './atmosphereLut'
 
 /** Default radius if `options.radius` is omitted — matches the VR view. */
 const DEFAULT_RADIUS = 0.5
@@ -475,9 +476,25 @@ export function createPhotorealEarth(
   let atmosphere: THREE.Mesh | null = null
   let atmosphereGeometry: THREE.SphereGeometry | null = null
   let atmosphereMaterial: THREE.ShaderMaterial | null = null
+  let transmittanceLutTexture: THREE.DataTexture | null = null
   const planetCenterUniform = { value: new THREE_.Vector3(position.x, position.y, position.z) }
   const kmPerWorldUnitUniform = { value: PLANET_RADIUS_KM / radius }
   if (includeAtmosphere) {
+    // Tier-3 transmittance LUT — precomputed on the CPU once, then
+    // uploaded as a DataTexture. The raymarch's per-sample inner
+    // light-march collapses into a single texture lookup. ~10× cost
+    // reduction vs the Tier-2 8-step inner loop on desktop; far more
+    // on mobile (the inner loop scaled with sample count).
+    const lut = computeTransmittanceLut()
+    transmittanceLutTexture = new THREE_.DataTexture(
+      lut.pixels, lut.width, lut.height, THREE_.RGBAFormat, THREE_.UnsignedByteType,
+    )
+    transmittanceLutTexture.minFilter = THREE_.LinearFilter
+    transmittanceLutTexture.magFilter = THREE_.LinearFilter
+    transmittanceLutTexture.wrapS = THREE_.ClampToEdgeWrapping
+    transmittanceLutTexture.wrapT = THREE_.ClampToEdgeWrapping
+    transmittanceLutTexture.needsUpdate = true
+
     const atmosphereVertexShader = `
       varying vec3 vWorldPosition;
       void main() {
@@ -493,6 +510,24 @@ export function createPhotorealEarth(
     // the codebase.
     const atmosphereSteps = isMobile() ? ATMOSPHERE_STEPS_MOBILE : ATMOSPHERE_STEPS_HIGH
 
+    // GLSL 1.00 (Three.js default) — sampleTransmittanceLut helper.
+    // The shared raymarch declares the function; we provide the
+    // implementation ahead of the raymarch injection. The
+    // MapLibre path (earthTileLayer.ts) provides the same logic
+    // with `texture()` instead of `texture2D()`.
+    const lutSamplerHelper = `
+      uniform sampler2D uTransmittanceLut;
+      vec3 sampleTransmittanceLut(vec3 samplePos, vec3 sunDir) {
+        float altitude = length(samplePos) - PLANET_RADIUS;
+        float mu = dot(normalize(samplePos), sunDir);
+        vec2 lutUV = vec2(
+          mu * 0.5 + 0.5,
+          clamp(altitude / ATMOSPHERE_HEIGHT, 0.0, 1.0)
+        );
+        return texture2D(uTransmittanceLut, lutUV).rgb;
+      }
+    `
+
     const atmosphereFragShader = `
       uniform vec3 uSunDir;
       uniform vec3 uPlanetCenter;
@@ -503,6 +538,7 @@ export function createPhotorealEarth(
       ${ATMOSPHERE_GLSL_PHASE}
       ${ATMOSPHERE_GLSL_INTERSECT}
       ${ATMOSPHERE_GLSL_TONEMAP}
+      ${lutSamplerHelper}
       ${buildAtmosphereRaymarchGlsl(atmosphereSteps)}
 
       void main() {
@@ -527,6 +563,7 @@ export function createPhotorealEarth(
         uSunDir: sunDirUniform,
         uPlanetCenter: planetCenterUniform,
         uKmPerWorldUnit: kmPerWorldUnitUniform,
+        uTransmittanceLut: { value: transmittanceLutTexture },
       },
       transparent: true,
       // FrontSide + depthTest false: the shell front face is the
@@ -1185,6 +1222,7 @@ export function createPhotorealEarth(
       }
       atmosphereGeometry?.dispose()
       atmosphereMaterial?.dispose()
+      transmittanceLutTexture?.dispose()
       if (sunCoreSprite) {
         const mat = sunCoreSprite.material as THREE.SpriteMaterial
         mat.map?.dispose()
