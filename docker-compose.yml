@@ -14,5 +14,7 @@ services:
       - ./tsconfig.json:/app/tsconfig.json
     environment:
       - CHOKIDAR_USEPOLLING=true  # Reliable file watching in Docker
-    # Regenerate tokens/locales on start so output lands in bind-mounted src/
-    command: sh -c "npm run tokens && npm run locales && npm run dev -- --host 0.0.0.0"
+    # Regenerate tokens on start so output lands in bind-mounted src/.
+    # Locales (and privacy-page) are handled by the `predev` script hook
+    # in package.json, so we don't re-run them here.
+    command: sh -c "npm run tokens && npm run dev -- --host 0.0.0.0"
