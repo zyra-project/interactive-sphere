@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 8,
+  "version": 9,
   "refresh": "5m",
   "time": {
     "from": "now-7d",
@@ -935,6 +935,165 @@
               "text": "asset_type",
               "type": "string"
             },
+            {
+              "selector": "outcome",
+              "text": "outcome",
+              "type": "string"
+            },
+            {
+              "selector": "rows",
+              "text": "rows",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Migration tours — events per day by outcome",
+      "description": "Phase 3c (catalog 3c/F): per-day count of migration_r2_tours events split by outcome (ok / dead_source / fetch_failed / parse_failed / sibling_fetch_failed / upload_failed / patch_failed). One event per row (tour.json + every sibling are atomic per row — distinct from migration_r2_assets's per-asset events). Mostly empty in steady state — non-zero values during the migration window, then quiet afterwards. AE positional layout: blob1=event_type, blob7=outcome (alphabetical sort of {dataset_id, legacy_id, outcome, r2_key, source_url}).",
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT toStartOfDay(timestamp) AS day, blob7 AS outcome, count() AS rows FROM terraviz_events WHERE blob1 = 'migration_r2_tours' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY day, outcome ORDER BY day, outcome",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "day",
+              "text": "day",
+              "type": "timestamp"
+            },
+            {
+              "selector": "outcome",
+              "text": "outcome",
+              "type": "string"
+            },
+            {
+              "selector": "rows",
+              "text": "rows",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Migration tours — cumulative ok rows",
+      "description": "Phase 3c (catalog 3c/F): total count of migration_r2_tours events with outcome='ok' in the time range. After a complete Phase 3c migration this should approach the eligible-row count from the planner's dry-run summary (~198 at cut-over; 1 row — INTERNAL_SOS_726_ONLINE — has a dead NOAA source and stays on dead_source rather than ok). dead_source rows are not counted as failures and don't show here; check the per-outcome timeseries panel.",
+      "gridPos": {
+        "x": 12,
+        "y": 50,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT count() AS ok_rows FROM terraviz_events WHERE blob1 = 'migration_r2_tours' AND blob7 = 'ok' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000))",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "ok_rows",
+              "text": "ok_rows",
+              "type": "number"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Migration tours — non-ok outcome breakdown",
+      "description": "Phase 3c (catalog 3c/F): count of migration_r2_tours events by non-ok outcome. dead_source (NOAA 404) is informational — the row was already broken pre-migration; rerunning won't change it. fetch_failed / parse_failed / sibling_fetch_failed / upload_failed are retryable (re-run `terraviz migrate-r2-tours` — idempotent; rows already on r2: skip). patch_failed rows leave R2 orphans (the bytes uploaded, the D1 PATCH didn't); the next migrate-r2-tours run is the cheapest recovery because the uploads are idempotent — re-PUTting the same bytes to the same keys is a no-op. Alternatively `terraviz rollback-r2-tours <id>` cleans up the orphan and leaves the row on the NOAA URL.",
+      "gridPos": {
+        "x": 18,
+        "y": 50,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "${DS_INFINITY}"
+          },
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/sql",
+          "url_options": {
+            "method": "POST",
+            "data": "SELECT blob7 AS outcome, count() AS rows FROM terraviz_events WHERE blob1 = 'migration_r2_tours' AND blob7 != 'ok' AND blob2 = '$environment' AND blob4 = '$internal' AND timestamp > toDateTime(intDiv($__from, 1000)) GROUP BY outcome ORDER BY rows DESC",
+            "headers": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ]
+          },
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
             {
               "selector": "outcome",
               "text": "outcome",

@@ -726,6 +726,45 @@ Commands:
                                       Grafana telemetry to roll back a
                                       specific subset.
 
+  migrate-r2-tours [--dry-run] [--limit=N] [--id=<id>]
+                   [--pace-ms=N]
+                                      Migrate per-row SOS tour.json files (and
+                                      their sibling overlay / audio / 360-pano
+                                      assets) from NOAA CloudFront to R2 under
+                                      tours/<id>/tour.json + sibling paths.
+                                      Per-row atomic — a row's tour.json is
+                                      only PATCHed after every sibling has
+                                      uploaded successfully. Idempotent —
+                                      rows already on r2: skip. External URLs
+                                      (YouTube embeds, Vimeo, popup web links)
+                                      are left verbatim. Requires the same R2
+                                      credentials as migrate-r2-hls /
+                                      migrate-r2-assets. See
+                                      CATALOG_BACKEND_DEVELOPMENT.md
+                                      "Migrating tour.json files to R2".
+
+  rollback-r2-tours <id> [--to-url=<url>] [--dry-run]
+                                      Roll a row's run_tour_on_load back from
+                                      r2: to the original NOAA URL. Original
+                                      URL recovered from the SOS snapshot by
+                                      legacy_id; --to-url=<url> overrides for
+                                      non-SOS catalogs. PATCHes the column
+                                      first (commit point), then deletes the
+                                      R2 prefix tours/<id>/ (every uploaded
+                                      tour.json + sibling at once;
+                                      non-fatal — leaves orphans on failure
+                                      with the catalog still correct).
+
+  rollback-r2-tours --from-stdin [--dry-run]
+                                      Bulk rollback. Reads NDJSON from stdin
+                                      (one { "dataset_id" } per line) and
+                                      runs the per-row pipeline sequentially.
+                                      Continues past failures and prints an
+                                      aggregate summary. Pipe a filtered
+                                      slice of the migration's Grafana
+                                      telemetry to roll back a specific
+                                      subset.
+
 Global flags:
   --server <url>                      Server base URL (default https://terraviz.app)
   --insecure-local                    Skip Access auth (use for localhost dev)

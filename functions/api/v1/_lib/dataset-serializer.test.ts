@@ -287,6 +287,51 @@ describe('serializeDataset — asset-ref resolution (3b/N)', () => {
     expect(wire.thumbnailLink).toBeUndefined()
   })
 
+  it('resolves r2: runTourOnLoad refs (Phase 3c)', () => {
+    // Phase 3c/B migrates run_tour_on_load from NOAA CloudFront
+    // to `r2:tours/<id>/tour.json`. The serializer must flip
+    // that to a fetchable URL — same resolver, same contract as
+    // the *_ref columns from 3b/N.
+    const wire = serializeDataset(
+      fakeRow({ run_tour_on_load: 'r2:tours/DS_TEST/tour.json' }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      r2Resolver,
+    )
+    expect(wire.runTourOnLoad).toBe('https://video.example.com/tours/DS_TEST/tour.json')
+  })
+
+  it('passes bare https runTourOnLoad through unchanged (pre-3c rows)', () => {
+    const wire = serializeDataset(
+      fakeRow({
+        run_tour_on_load: 'https://d3sik7mbbzunjo.cloudfront.net/extras/foo/tour.json',
+      }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      r2Resolver,
+    )
+    expect(wire.runTourOnLoad).toBe(
+      'https://d3sik7mbbzunjo.cloudfront.net/extras/foo/tour.json',
+    )
+  })
+
+  it('omits runTourOnLoad when the resolver returns null', () => {
+    // Same fail-soft posture as the *_ref columns: an r2: ref
+    // with no R2_PUBLIC_BASE produces null; we drop the field
+    // rather than send an unfetchable string to the SPA.
+    const nullingResolver = () => null
+    const wire = serializeDataset(
+      fakeRow({ run_tour_on_load: 'r2:tours/DS_TEST/tour.json' }),
+      emptyDecoration,
+      fakeIdentity,
+      undefined,
+      nullingResolver,
+    )
+    expect(wire.runTourOnLoad).toBeUndefined()
+  })
+
   it('falls back to verbatim passthrough when no resolver is given (test convenience)', () => {
     // Existing tests don't pass a resolver. Behavior must stay
     // unchanged (verbatim r2: string) so we don't have to pipe a

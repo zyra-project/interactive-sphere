@@ -1184,6 +1184,106 @@ export interface MigrationR2AssetsEvent extends TelemetryEventBase {
   outcome: MigrationR2AssetsOutcome
 }
 
+/** Outcome of a single tour migration in
+ * `terraviz migrate-r2-tours` (Phase 3c commit B). Mirrors the
+ * `TourOutcome` string-union exported from
+ * `cli/migrate-r2-tours.ts`; keep these in sync.
+ *
+ *   ok                   — tour.json + every sibling uploaded,
+ *                          row PATCHed.
+ *   dead_source          — upstream tour.json returned 404. The
+ *                          row was already broken pre-migration;
+ *                          NOT counted as a failure. (One known
+ *                          case at the Phase 3c cut-over:
+ *                          INTERNAL_SOS_726_ONLINE.)
+ *   fetch_failed         — upstream tour.json fetch failed for
+ *                          any reason other than 404.
+ *   parse_failed         — tour.json bytes didn't decode as JSON.
+ *   sibling_fetch_failed — at least one relative sibling asset
+ *                          (audio/overlay/360-pano) failed to
+ *                          fetch. The row's tour.json is NOT
+ *                          uploaded in this case — atomic per
+ *                          row.
+ *   upload_failed        — an R2 PUT failed mid-row (tour.json
+ *                          or sibling). Partial uploads are R2
+ *                          orphans; the row still points at NOAA.
+ *   patch_failed         — every R2 PUT succeeded but the D1
+ *                          PATCH on `run_tour_on_load` failed.
+ *                          Worst case: all R2 objects are
+ *                          orphans AND the row still points at
+ *                          NOAA. Recovery: re-run (idempotent —
+ *                          same bytes, same keys). */
+export type MigrationR2ToursOutcome =
+  | 'ok'
+  | 'dead_source'
+  | 'fetch_failed'
+  | 'parse_failed'
+  | 'sibling_fetch_failed'
+  | 'upload_failed'
+  | 'patch_failed'
+
+/**
+ * Operator-facing tour-migration progress event. Emitted once
+ * per row by `terraviz migrate-r2-tours` (Phase 3c commit B) —
+ * one event per dataset whose `run_tour_on_load` was migrated
+ * (or attempted). Distinct from `migration_r2_assets` (3b):
+ * that one fires per (row, asset_type) pair because auxiliary
+ * assets are independently consumable; a tour is a single
+ * atomic resource (tour.json + sibling assets must all migrate
+ * together to keep playback working), so the event roll-up is
+ * per-row.
+ *
+ * Consumed by a Grafana tour-migration row (Phase 3c commit F).
+ *
+ * No free-text fields — `dataset_id` / `legacy_id` / `r2_key` /
+ * `source_url` are public catalog references; `outcome` is an
+ * enum. Sibling counts are integers. No hashing required.
+ */
+export interface MigrationR2ToursEvent extends TelemetryEventBase {
+  event_type: 'migration_r2_tours'
+  /** Catalog dataset id (`DS<ulid>`) the migration targeted. */
+  dataset_id: string
+  /** Idempotency key from the original SOS import (e.g.
+   * `INTERNAL_SOS_MARIA_360`); empty string when the row has
+   * no legacy_id. */
+  legacy_id: string
+  /** Upstream tour.json URL the migration fetched from (the
+   * value of the row's `run_tour_on_load` column at run time).
+   * Public catalog data — same URLs the SPA loads today. */
+  source_url: string
+  /** Resulting R2 key for tour.json (e.g.
+   * `tours/<id>/tour.json`). Empty string when the migration
+   * didn't reach the PUT step. */
+  r2_key: string
+  /** Bytes received from the upstream fetches — tour.json plus
+   * every sibling actually fetched (including any fetched
+   * before a partial-row failure). */
+  source_bytes: number
+  /** Count of `relative` siblings the parser discovered in this
+   * tour.json. The migration target — these get fetched +
+   * uploaded. */
+  siblings_relative: number
+  /** Count of `absolute_external` siblings (YouTube embeds,
+   * Vimeo URLs, popup web links) the parser surfaced. Left
+   * verbatim per Phase 3c policy 1; counted here so dashboards
+   * can size the residual external-CDN dependency. */
+  siblings_external: number
+  /** Count of `absolute_sos_cdn` siblings (NOAA CloudFront /
+   * s3.amazonaws.com URLs that bypassed the sibling-relative
+   * convention). Left verbatim; counted as a residual noaa.gov
+   * dependency signal. */
+  siblings_sos_cdn: number
+  /** Count of unique sibling-keys actually uploaded to R2 this
+   * row. Equal to the dedupe'd count of `siblings_relative`
+   * for an `ok` row; less on partial / failed rows. */
+  siblings_migrated: number
+  /** Per-row wall-clock duration in ms (tour.json fetch + every
+   * sibling fetch + every R2 PUT + the row's D1 PATCH). */
+  duration_ms: number
+  /** Per-row outcome. See `MigrationR2ToursOutcome`. */
+  outcome: MigrationR2ToursOutcome
+}
+
 // --- Tier B events ---
 
 export interface DwellEvent extends TelemetryEventBase {
@@ -1318,6 +1418,7 @@ export type TelemetryEvent =
   | ErrorEvent
   | MigrationR2HlsEvent
   | MigrationR2AssetsEvent
+  | MigrationR2ToursEvent
   // Tier B
   | DwellEvent
   | OrbitInteractionEvent

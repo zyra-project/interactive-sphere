@@ -146,14 +146,17 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       'the emergency lever) but does not stop ingest.',
   },
 
-  // ── R2 public-bucket serving (Phase 3 r2-hls + Phase 3b assets) ─
+  // ── R2 public-bucket serving (Phase 3 r2-hls + Phase 3b assets + Phase 3c tours) ─
   // Required for the manifest endpoint to construct playable HLS
-  // URLs for r2:videos/<id>/master.m3u8 data_refs (Phase 3) AND
-  // for the publisher API + SPA to resolve r2:datasets/<id>/<asset>
+  // URLs for r2:videos/<id>/master.m3u8 data_refs (Phase 3), the
+  // publisher API + SPA to resolve r2:datasets/<id>/<asset>
   // references on thumbnail / legend / caption / color_table
-  // columns (Phase 3b). Phase 3 migrates ~136 video rows;
-  // Phase 3b migrates up to ~370 auxiliary asset URLs. Missing
-  // on either env → /api/v1/datasets/<id>/manifest returns 503
+  // columns (Phase 3b), AND the SPA tour engine to fetch
+  // r2:tours/<id>/tour.json + sibling assets after the Phase 3c
+  // tour migration. Phase 3 migrates ~136 video rows; Phase 3b
+  // migrates up to ~370 auxiliary asset URLs; Phase 3c migrates
+  // ~198 tour.json files + 71 sibling assets. Missing on either
+  // env → /api/v1/datasets/<id>/manifest returns 503
   // r2_unconfigured for the HLS branch specifically (the
   // R2_S3_ENDPOINT fallback is intentionally skipped there — see
   // `functions/api/v1/_lib/r2-public-url.ts:resolveR2HlsPublicUrl`).
@@ -166,21 +169,23 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
       '(e.g. https://video.zyra-project.org). Bind the domain in ' +
       'Cloudflare dashboard → R2 → bucket → Settings → Connect Domain ' +
       'first. The manifest endpoint uses this base to construct HLS ' +
-      'master playlist URLs for Phase 3 r2:videos/ data_refs, and the ' +
+      'master playlist URLs for Phase 3 r2:videos/ data_refs, the ' +
       'publisher API + SPA use it for Phase 3b r2:datasets/<id>/<asset> ' +
-      'auxiliary-asset references. Note: R2_S3_ENDPOINT is NOT a ' +
-      'fallback for the HLS branch — that endpoint is for signed ' +
-      'S3-API access, not public reads, and falling through to it ' +
-      'would yield an hls URL that 403s at play time on a typical ' +
-      '(non-public-bucket) production setup.',
+      'auxiliary-asset references, and the SPA tour engine uses it ' +
+      'for Phase 3c r2:tours/<id>/tour.json + sibling references. ' +
+      'Note: R2_S3_ENDPOINT is NOT a fallback for the HLS branch — ' +
+      'that endpoint is for signed S3-API access, not public reads, ' +
+      'and falling through to it would yield an hls URL that 403s at ' +
+      'play time on a typical (non-public-bucket) production setup.',
   },
 
-  // ── R2 S3-API credentials (Phase 3 + 3b operator-side migrations) ─
-  // The migrate-r2-hls (Phase 3) and migrate-r2-assets (Phase 3b)
-  // CLIs talk to R2 via the S3 API (no native R2 binding outside
-  // the Worker runtime). Same three env vars cover both CLIs.
-  // The audit lists these here so the operator sees them as
-  // MISSING before the migration attempt errors out at
+  // ── R2 S3-API credentials (Phase 3 + 3b + 3c operator-side migrations) ─
+  // The migrate-r2-hls (Phase 3), migrate-r2-assets (Phase 3b),
+  // and migrate-r2-tours (Phase 3c) CLIs talk to R2 via the S3
+  // API (no native R2 binding outside the Worker runtime). One
+  // set of three env vars covers all three CLIs. The audit
+  // lists these here so the operator sees them as MISSING
+  // before the migration attempt errors out at
   // credential-validation.
   {
     name: 'R2_S3_ENDPOINT',
@@ -189,9 +194,10 @@ export const EXPECTED_BINDINGS: ExpectedBinding[] = [
     hint:
       'R2 S3-API endpoint URL (e.g. https://<acct>.r2.cloudflarestorage.com). ' +
       'Shown alongside the access key when the R2 API token is minted. ' +
-      'Read by the migrate-r2-hls / rollback-r2-hls (Phase 3) and ' +
-      'migrate-r2-assets / rollback-r2-assets (Phase 3b) CLIs from ' +
-      "the operator's shell as well — same value goes in both places.",
+      'Read by the migrate-r2-hls / rollback-r2-hls (Phase 3), ' +
+      'migrate-r2-assets / rollback-r2-assets (Phase 3b), and ' +
+      'migrate-r2-tours / rollback-r2-tours (Phase 3c) CLIs from ' +
+      "the operator's shell as well — same value goes in all three places.",
   },
   {
     name: 'R2_ACCESS_KEY_ID',

@@ -204,11 +204,13 @@ export function serializeDataset(
   // Auxiliary asset URLs may be either:
   //   - bare https:// (pre-Phase-3b: NOAA CloudFront), or
   //   - `r2:<key>` (post-Phase-3b migration: R2-hosted under
-  //     datasets/<id>/<asset>.<ext>).
+  //     datasets/<id>/<asset>.<ext> — and post-Phase-3c, also
+  //     `r2:tours/<id>/tour.json` for migrated tour files).
   // The SPA renders these as <img src=...> / <track src=...>
-  // and can't fetch a `r2:` scheme; the resolver flips r2: to a
-  // publicly-readable URL via R2_PUBLIC_BASE. Bare URLs pass
-  // through unchanged. See r2-public-url.ts:resolveAssetRef.
+  // and fetches `runTourOnLoad` as JSON; neither can resolve a
+  // `r2:` scheme. The resolver flips r2: to a publicly-readable
+  // URL via R2_PUBLIC_BASE. Bare URLs pass through unchanged.
+  // See r2-public-url.ts:resolveAssetRef.
   const wire: WireDataset = {
     id: row.id,
     slug: row.slug,
@@ -227,7 +229,7 @@ export function serializeDataset(
     period: nonNull(row.period),
     weight: row.weight,
     isHidden: row.is_hidden === 1 ? true : undefined,
-    runTourOnLoad: nonNull(row.run_tour_on_load),
+    runTourOnLoad: resolveAsset(row.run_tour_on_load, resolveAssetRef),
     tags: decoration.tags.length ? decoration.tags : undefined,
 
     originNode: row.origin_node,
