@@ -1198,7 +1198,16 @@ export function createPhotorealEarth(
       } else if (spec.kind === 'video') {
         const video = spec.element
         activeKey = video
-        applyOverlayOptions(spec.options)
+        // Overlay options (bbox / lonOrigin / flipY) are deliberately
+        // NOT applied here. The video may not be ready, in which
+        // case the branch below points `material.map` at
+        // `baseEarthTexture` (the monochrome specular fallback) as
+        // a placeholder. Applying a bbox UV remap to that
+        // placeholder would briefly show a warped Earth patch in
+        // the bbox shape until the first video frame lands. Apply
+        // overlay options at the moment the dataset texture
+        // actually replaces the placeholder — both readiness paths
+        // below set them right before `material.map = tex`.
 
         // Dataset loaded — hide Earth-specific decoration so the
         // data isn't obscured:
@@ -1239,7 +1248,9 @@ export function createPhotorealEarth(
         activeDatasetTexture = tex
 
         if (video.readyState >= 2) {
-          // Frame already decoded — swap immediately and signal ready.
+          // Frame already decoded — apply overlay options and swap
+          // in the dataset texture in one go, no placeholder phase.
+          applyOverlayOptions(spec.options)
           material.map = tex
           onReady?.()
         } else {
@@ -1263,11 +1274,20 @@ export function createPhotorealEarth(
           // blocked — we swallow the error and rely on the listener
           // fallback. `video.muted = true` (set by hlsService) makes
           // this silent-autoplay-friendly per the browser policies.
+          //
+          // Overlay options reset to passthrough during this
+          // placeholder window so the monochrome Earth fallback
+          // renders un-warped; the onFrame listener below pushes
+          // the real options just before swapping in the video
+          // texture, so the user sees the bbox/lonOrigin behavior
+          // appear in the same frame the video data does.
+          applyOverlayOptions(undefined)
           material.map = baseEarthTexture
           const onFrame = () => {
             cancelPendingVideoListeners?.()
             cancelPendingVideoListeners = null
             if (activeKey !== video) return
+            applyOverlayOptions(spec.options)
             material.map = tex
             material.needsUpdate = true
             onReady?.()
