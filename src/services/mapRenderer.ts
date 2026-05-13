@@ -10,7 +10,14 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { Map as MaplibreMap, StyleSpecification, CustomLayerInterface } from 'maplibre-gl'
 import { createEarthTileLayer, computeSunLightPosition, type EarthTileLayerControl } from './earthTileLayer'
-import type { Dataset, GlobeRenderer, MapViewContext, VideoTextureHandle } from '../types'
+import { isEarthBody } from './datasetOverlayOptions'
+import type {
+  Dataset,
+  DatasetOverlayOptions,
+  GlobeRenderer,
+  MapViewContext,
+  VideoTextureHandle,
+} from '../types'
 import { setDatasetCreditsSource } from '../ui/creditsPanel'
 import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
@@ -315,6 +322,11 @@ export class MapRenderer implements GlobeRenderer {
   private earthLayer: EarthTileLayerControl | null = null
   private pendingTexture: HTMLCanvasElement | HTMLImageElement | null = null
   private pendingVideo: HTMLVideoElement | null = null
+  /** Phase 3e: dataset overlay options buffered alongside the pending
+   * texture/video so the eventual setDatasetTexture / setDatasetVideo
+   * call gets the same per-dataset hints (bbox / lonOrigin /
+   * isFlippedInY / celestialBody) the caller passed at request time. */
+  private pendingDatasetOptions: DatasetOverlayOptions | null = null
   /** 0-based slot index for this renderer within its ViewportManager.
    * Reported on `camera_settled` / `map_click` so downstream queries
    * can separate primary vs secondary-panel activity. Defaults to 0
@@ -504,15 +516,17 @@ export class MapRenderer implements GlobeRenderer {
 
       // Apply any dataset texture/video that was buffered before the layer was ready
       if (this.pendingTexture) {
-        this.earthLayer.setDatasetTexture(this.pendingTexture)
+        const opts = this.pendingDatasetOptions ?? undefined
+        this.earthLayer.setDatasetTexture(this.pendingTexture, opts)
         this.pendingTexture = null
-        try { this.map!.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-        try { this.map!.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+        this.pendingDatasetOptions = null
+        this.applyBaseLayerVisibility(opts)
       } else if (this.pendingVideo) {
-        this.earthLayer.setDatasetVideo(this.pendingVideo)
+        const opts = this.pendingDatasetOptions ?? undefined
+        this.earthLayer.setDatasetVideo(this.pendingVideo, opts)
         this.pendingVideo = null
-        try { this.map!.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-        try { this.map!.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+        this.pendingDatasetOptions = null
+        this.applyBaseLayerVisibility(opts)
       }
 
       logger.info('[MapRenderer] Earth tile + capture + skybox layers added, labels moved above')
@@ -857,17 +871,43 @@ export class MapRenderer implements GlobeRenderer {
    * Uses proper equirectangular UV mapping — no Mercator distortion, full
    * pole coverage.
    */
-  updateTexture(texture: HTMLCanvasElement | HTMLImageElement): void {
+  /**
+   * Phase 3e: hide vs keep the base raster layers based on the
+   * dataset's overlay options.
+   *
+   *   Earth + no bbox       hide (the dataset's full-equirectangular
+   *                              projection covers every pixel)
+   *   Earth + bbox          show (shader discards outside the box;
+   *                              base tiles fill the rest of the globe)
+   *   non-Earth (any case)  hide (Earth's blue/black marble are the
+   *                              wrong textures for Mars / Moon / Sun /
+   *                              etc.; we render the dataset on a
+   *                              clean sphere until 3f bundles
+   *                              per-body surface textures)
+   *
+   * Returns void; callers use it as a single source of truth for
+   * "what should the base look like behind this dataset?". */
+  private applyBaseLayerVisibility(options: DatasetOverlayOptions | undefined): void {
+    const earth = isEarthBody(options?.celestialBody)
+    const showBase = earth && Boolean(options?.boundingBox)
+    const visibility = showBase ? 'visible' : 'none'
+    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', visibility) } catch { /* noop */ }
+    try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', visibility) } catch { /* noop */ }
+  }
+
+  updateTexture(
+    texture: HTMLCanvasElement | HTMLImageElement,
+    options?: DatasetOverlayOptions,
+  ): void {
     if (!this.earthLayer) {
       // Buffer until the earth layer is created on map 'load'
       this.pendingTexture = texture
       this.pendingVideo = null
+      this.pendingDatasetOptions = options ?? null
       return
     }
-    this.earthLayer.setDatasetTexture(texture)
-    // Hide the tile base layers when a dataset is active
-    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-    try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+    this.earthLayer.setDatasetTexture(texture, options)
+    this.applyBaseLayerVisibility(options)
     logger.info('[MapRenderer] Dataset overlay set via custom layer sphere')
   }
 
@@ -876,16 +916,16 @@ export class MapRenderer implements GlobeRenderer {
    * The render loop updates the texture from the video element each frame.
    * Returns a lightweight handle for playback controller compatibility.
    */
-  setVideoTexture(video: HTMLVideoElement): VideoTextureHandle {
+  setVideoTexture(video: HTMLVideoElement, options?: DatasetOverlayOptions): VideoTextureHandle {
     if (this.earthLayer) {
-      this.earthLayer.setDatasetVideo(video)
-      try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-      try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+      this.earthLayer.setDatasetVideo(video, options)
+      this.applyBaseLayerVisibility(options)
       logger.info('[MapRenderer] Video dataset set via custom layer sphere')
     } else {
       // Buffer until the earth layer is created on map 'load'
       this.pendingVideo = video
       this.pendingTexture = null
+      this.pendingDatasetOptions = options ?? null
     }
     const earthLayer = this.earthLayer
     let pending = false

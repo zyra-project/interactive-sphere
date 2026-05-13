@@ -233,12 +233,52 @@ export interface VideoTextureHandle {
 }
 
 /**
+ * Per-dataset hints for the renderer's dataset-overlay pass. Phase
+ * 3e plumbs these through from `Dataset` (which sources them from
+ * the catalog row's Phase 3d metadata) into the WebGL shader so
+ * regional / non-Earth / dateline-centered datasets project
+ * correctly rather than stretching equirectangularly across the
+ * whole sphere.
+ *
+ *   boundingBox    — when all four corners are present, the shader
+ *                    clips the texture to this region and lets
+ *                    base tiles show outside it. Omitted → full
+ *                    equirectangular projection (legacy behavior).
+ *   lonOrigin      — degrees offset for the U axis (default 0 →
+ *                    prime-meridian centered; ±180 = dateline
+ *                    centered). Applies to the full-globe path
+ *                    only — see note below.
+ *   isFlippedInY   — if true, the shader samples the texture with
+ *                    a flipped V axis (datasets authored with
+ *                    inverted-Y conventions).
+ *   celestialBody  — non-Earth bodies cue the MapRenderer to swap
+ *                    the base raster source and skip the Earth
+ *                    4-pass effects (day/night terminator etc.,
+ *                    which assume Earth's sun model).
+ *
+ * Every field is optional. Combinations honored: `bbox` alone,
+ * `lonOrigin` alone, `isFlippedInY` with either, `celestialBody`
+ * with any of the above. Combinations NOT honored: `bbox` +
+ * non-zero `lonOrigin` — the shader's bbox path ignores
+ * `uLonOrigin` because the texture is already remapped to the
+ * bbox extent. No catalog row combines the two today; if a
+ * future publisher needs both, the shader has to be extended
+ * (apply `uLonOrigin` to `lon` before the bbox clip/remap)
+ * rather than relying on this type to permit it. */
+export interface DatasetOverlayOptions {
+  boundingBox?: { n: number; s: number; w: number; e: number }
+  lonOrigin?: number
+  isFlippedInY?: boolean
+  celestialBody?: string
+}
+
+/**
  * Globe renderer interface used by modules like datasetLoader that interact
  * with the MapLibre-based globe.
  */
 export interface GlobeRenderer {
-  updateTexture(texture: HTMLCanvasElement | HTMLImageElement): void
-  setVideoTexture(video: HTMLVideoElement): VideoTextureHandle
+  updateTexture(texture: HTMLCanvasElement | HTMLImageElement, options?: DatasetOverlayOptions): void
+  setVideoTexture(video: HTMLVideoElement, options?: DatasetOverlayOptions): VideoTextureHandle
   flyTo(lat: number, lon: number, altitude?: number): void | Promise<void>
   toggleAutoRotate(): boolean
   setLatLngCallbacks(
