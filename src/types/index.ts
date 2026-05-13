@@ -86,9 +86,14 @@ export interface Dataset {
 
   /** Geographic bounding box (NSWE in degrees) for the dataset's
    * spatial extent. Phase 3d promoted from `bounding_variables`
-   * JSON to typed columns. Omitted for global datasets; when
-   * present, the SPA's Phase 3e regional-projection feature
-   * wraps the dataset texture to this box rather than stretching
+   * JSON to typed columns. Omitted when the catalog row's bbox
+   * columns aren't populated — NOT a signal of "regional vs
+   * global" extent. A row with all four corners set to
+   * `{n:90, s:-90, w:-180, e:180}` is still emitted (~26 of the
+   * 27 populated SOS rows do exactly that). The SPA's Phase 3e
+   * regional-projection feature can short-circuit at render
+   * time when it sees a worldwide box; otherwise it wraps the
+   * dataset texture to the named region rather than stretching
    * it across the entire globe. */
   boundingBox?: { n: number; s: number; w: number; e: number }
 

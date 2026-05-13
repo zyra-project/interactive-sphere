@@ -93,9 +93,13 @@ export interface WireDataset {
   /** Geographic bounding box (NSWE in degrees) for the dataset's
    * spatial extent. Phase 3d promoted from the legacy
    * `bounding_variables` JSON column to typed columns. Omitted
-   * for global datasets. The SPA's Phase 3e regional-projection
-   * feature uses this to wrap the dataset texture to the correct
-   * portion of the globe. */
+   * when any `bbox_*` column is NULL (a partial bbox can't drive
+   * the SPA's regional projection — better to drop than to emit
+   * half a box). Note: a row with all four corners populated to
+   * `{n:90, s:-90, w:-180, e:180}` is still emitted — the
+   * presence of `boundingBox` doesn't encode "regional vs
+   * global"; the SPA can short-circuit at render time if it
+   * sees a worldwide box. */
   boundingBox?: { n: number; s: number; w: number; e: number }
   /** Celestial body the dataset visualises. Omitted (== Earth)
    * for the common case. Non-Earth values cue the SPA's Phase 3e
