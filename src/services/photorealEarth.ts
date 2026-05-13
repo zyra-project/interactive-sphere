@@ -43,8 +43,13 @@ import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { logger } from '../utils/logger'
 import {
   ATMOSPHERE_GLSL_CONSTANTS,
+  ATMOSPHERE_GLSL_DENSITY,
   ATMOSPHERE_GLSL_PHASE,
+  ATMOSPHERE_GLSL_INTERSECT,
   ATMOSPHERE_GLSL_TONEMAP,
+  ATMOSPHERE_GLSL_RAYMARCH,
+  ATMOSPHERE_RADIUS_FACTOR,
+  PLANET_RADIUS_KM,
 } from './atmosphereConstants'
 
 /** Default radius if `options.radius` is omitted — matches the VR view. */
@@ -108,13 +113,11 @@ const EARTH_SHININESS = 40
 const NIGHT_LIGHT_STRENGTH = 0.5
 
 /**
- * Atmosphere shell radii as multipliers of the globe radius. Two
- * concentric spheres render additively over the globe to fake
- * Rayleigh + Mie scattering; the multipliers preserve the look at
- * any globe size.
+ * Atmosphere shell tessellation. Single shell at
+ * `ATMOSPHERE_RADIUS_FACTOR` (≈ 1.0157) — matches the geometric
+ * atmosphere ceiling so the shell's silhouette is the limb of the
+ * atmosphere proper.
  */
-const ATMOSPHERE_INNER_FACTOR = 1.003
-const ATMOSPHERE_OUTER_FACTOR = 1.012
 const ATMOSPHERE_SEGMENTS = 64
 
 /**
@@ -440,166 +443,98 @@ export function createPhotorealEarth(
   globe.position.set(position.x, position.y, position.z)
   objects.push(globe)
 
-  // ── Atmosphere shells (optional) ──────────────────────────────────
-  // Direct port of earthMaterials.ts's Rayleigh scattering shader.
-  // Two concentric transparent shells, additive over Earth surface:
-  //   Inner (FrontSide)  — rim-glow on the day side, warm sunset
-  //     near the terminator. Simulates in-scattering of sunlight
-  //     through the daytime atmosphere.
-  //   Outer (BackSide)   — wider halo extending beyond the planet's
-  //     silhouette, sampled with a fresnel-weighted Rayleigh+Mie
-  //     phase mix. Makes the planet look hazy-edged rather than
-  //     hard-sphere.
-  // Both share `uSunDir` with the Earth material so day/night
-  // terminator and atmosphere glow move together. Position+scale
-  // sync to the globe each frame in update() — they're NOT children
-  // of the globe so they don't inherit user rotation input
-  // (atmosphere doesn't rotate with the surface in reality).
-  let atmosphereInner: THREE.Mesh | null = null
-  let atmosphereOuter: THREE.Mesh | null = null
-  let atmosphereInnerGeometry: THREE.SphereGeometry | null = null
-  let atmosphereOuterGeometry: THREE.SphereGeometry | null = null
-  let atmosphereInnerMaterial: THREE.ShaderMaterial | null = null
-  let atmosphereOuterMaterial: THREE.ShaderMaterial | null = null
+  // ── Atmosphere shell (optional) ───────────────────────────────────
+  // Single transparent shell at ATMOSPHERE_RADIUS_FACTOR (≈ 1.0157),
+  // so the shell's silhouette IS the atmosphere boundary the
+  // raymarch integrates against. Front-faces render (default cull)
+  // — each front-facing fragment is the camera-side atmosphere
+  // entry point for that pixel; the fragment shader raymarches
+  // inward, terminating at either the back of the atmosphere or
+  // the planet surface (whichever comes first).
+  //
+  // Additive blending after `acesFilm` keeps the planet's surface
+  // appearance underneath visible. Earth's atmosphere is thin
+  // enough that ignoring view-transmittance composition (no
+  // background dimming) reads correctly at every viewing angle
+  // we ship.
+  //
+  // The shell is NOT a child of the globe — atmosphere doesn't
+  // spin with the planet surface. `update()` syncs its position
+  // and uniform scale (km-per-world-unit) each frame.
+  //
+  // Two new uniforms beyond the Tier-1 sun direction:
+  //   uPlanetCenter    — globe world position (refreshed in
+  //                      update() so the raymarch's "origin"
+  //                      always matches the rendered globe).
+  //   uKmPerWorldUnit  — PLANET_RADIUS_KM divided by the globe
+  //                      radius parameter, so the shader can
+  //                      convert world units to the km that the
+  //                      atmospheric constants expect.
+  let atmosphere: THREE.Mesh | null = null
+  let atmosphereGeometry: THREE.SphereGeometry | null = null
+  let atmosphereMaterial: THREE.ShaderMaterial | null = null
+  const planetCenterUniform = { value: new THREE_.Vector3(position.x, position.y, position.z) }
+  const kmPerWorldUnitUniform = { value: PLANET_RADIUS_KM / radius }
   if (includeAtmosphere) {
     const atmosphereVertexShader = `
-      varying vec3 vWorldNormal;
       varying vec3 vWorldPosition;
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vWorldPosition = worldPos.xyz;
-        vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `
 
-    // Inject shared constants + Rayleigh / Cornette-Shanks phase +
-    // ACES tonemap from `atmosphereConstants.ts`. The shell shaders
-    // here are still analytic (Tier 1) — Tier 2 will swap them for a
-    // bounded raymarch using the same constants.
-    //
-    // `RAYLEIGH_BETA` etc. from the shared block are per-km, so the
-    // optical-depth proxy below is computed in km too. The 4.0×
-    // scale on `ATMOSPHERE_HEIGHT` is an empirical match for how
-    // thick the original shells read; will go away once Tier 2 does
-    // a real path integration.
-    const atmosphereSharedGlsl = `
+    const atmosphereFragShader = `
+      uniform vec3 uSunDir;
+      uniform vec3 uPlanetCenter;
+      uniform float uKmPerWorldUnit;
+      varying vec3 vWorldPosition;
       ${ATMOSPHERE_GLSL_CONSTANTS}
+      ${ATMOSPHERE_GLSL_DENSITY}
       ${ATMOSPHERE_GLSL_PHASE}
+      ${ATMOSPHERE_GLSL_INTERSECT}
       ${ATMOSPHERE_GLSL_TONEMAP}
-    `
-
-    const atmosphereInnerFrag = `
-      uniform vec3 uSunDir;
-      varying vec3 vWorldNormal;
-      varying vec3 vWorldPosition;
-      ${atmosphereSharedGlsl}
+      ${ATMOSPHERE_GLSL_RAYMARCH}
 
       void main() {
-        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-        vec3 N = normalize(vWorldNormal);
+        // Translate world coords into planet-centred km, which is
+        // what the raymarch and atmospheric constants operate in.
+        vec3 fragKm = (vWorldPosition - uPlanetCenter) * uKmPerWorldUnit;
+        vec3 camKm  = (cameraPosition - uPlanetCenter) * uKmPerWorldUnit;
+        vec3 rayDir = normalize(fragKm - camKm);
 
-        float NdotV = dot(viewDir, N);
-        float rim = exp(-8.0 * NdotV * NdotV);
-
-        float sunNdot = dot(N, uSunDir);
-        float atmosphereLit = smoothstep(-0.15, 0.4, sunNdot);
-
-        // Chapman-style 1/cosθ path length through the shell, capped
-        // at grazing angles. Result is in km so it pairs with the
-        // per-km extinction coefficients from the shared constants.
-        float opticalDepthKm = ATMOSPHERE_HEIGHT * 4.0 / max(NdotV, 0.05);
-
-        // Full extinction now includes ozone — the Chappuis-band
-        // absorption is what produces the purple/blue twilight ribbon.
-        vec3 tau = (RAYLEIGH_BETA + MIE_BETA_EXT + OZONE_BETA_ABS) * opticalDepthKm;
-        vec3 extinction = exp(-tau);
-        vec3 transmittedColor = (RAYLEIGH_BETA / max(RAYLEIGH_BETA.b, 1e-9)) * (1.0 - extinction);
-
-        // Sunset tint is now derived from the extinction of light
-        // grazing the atmosphere, not a hard-coded RGB. Long path
-        // strips blue (and green via ozone), leaving a warm residual.
-        vec3 sunsetTint = exp(-(RAYLEIGH_BETA + OZONE_BETA_ABS) * (ATMOSPHERE_HEIGHT * 12.0));
-        float terminator = exp(-6.0 * sunNdot * sunNdot);
-        vec3 color = mix(transmittedColor, sunsetTint, terminator * rim * 0.5);
-
-        color = acesFilm(color);
-
-        float alpha = rim * atmosphereLit * 0.35;
-        gl_FragColor = vec4(color, alpha);
+        vec3 scattered = computeAtmosphereScattering(camKm, rayDir, uSunDir);
+        gl_FragColor = vec4(acesFilm(scattered), 1.0);
       }
     `
 
-    const atmosphereOuterFrag = `
-      uniform vec3 uSunDir;
-      varying vec3 vWorldNormal;
-      varying vec3 vWorldPosition;
-      ${atmosphereSharedGlsl}
-
-      void main() {
-        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-        vec3 N = normalize(vWorldNormal);
-
-        float fresnel = 1.0 - dot(viewDir, N);
-        float rim = pow(fresnel, 1.5);
-
-        float sunNdot = dot(N, uSunDir);
-        float atmosphereLit = smoothstep(-0.15, 0.4, sunNdot);
-
-        // Phase functions from shared GLSL — Rayleigh and
-        // Cornette-Shanks (improved HG, properly normalised over 4π).
-        // The 0.5 scale on Mie keeps the haze visible without
-        // overwhelming the rim glow; previous code used a 0.12 scale
-        // on raw HG for the equivalent ad-hoc balance.
-        float cosTheta = dot(viewDir, uSunDir);
-        float pR = rayleighPhase(cosTheta);
-        float pM = cornetteShanksPhase(cosTheta) * 0.5;
-
-        vec3 scatterColor = (RAYLEIGH_BETA / max(RAYLEIGH_BETA.b, 1e-9)) * pR;
-        scatterColor += vec3(1.0, 0.95, 0.85) * pM;
-
-        vec3 sunsetColor = exp(-(RAYLEIGH_BETA + OZONE_BETA_ABS) * (ATMOSPHERE_HEIGHT * 12.0));
-        float terminator = exp(-8.0 * sunNdot * sunNdot);
-        scatterColor = mix(scatterColor, sunsetColor, terminator * 0.35);
-
-        scatterColor = acesFilm(scatterColor);
-
-        float alpha = rim * atmosphereLit * 0.18;
-        gl_FragColor = vec4(scatterColor, alpha);
-      }
-    `
-
-    atmosphereInnerGeometry = new THREE_.SphereGeometry(
-      radius * ATMOSPHERE_INNER_FACTOR, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS,
+    atmosphereGeometry = new THREE_.SphereGeometry(
+      radius * ATMOSPHERE_RADIUS_FACTOR, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS,
     )
-    atmosphereInnerMaterial = new THREE_.ShaderMaterial({
+    atmosphereMaterial = new THREE_.ShaderMaterial({
       vertexShader: atmosphereVertexShader,
-      fragmentShader: atmosphereInnerFrag,
-      uniforms: { uSunDir: sunDirUniform },
+      fragmentShader: atmosphereFragShader,
+      uniforms: {
+        uSunDir: sunDirUniform,
+        uPlanetCenter: planetCenterUniform,
+        uKmPerWorldUnit: kmPerWorldUnitUniform,
+      },
       transparent: true,
+      // FrontSide + depthTest false: the shell front face is the
+      // camera-side entry point, and we want it visible everywhere
+      // it draws (over planet face AND beyond planet silhouette).
       side: THREE_.FrontSide,
+      depthTest: false,
       depthWrite: false,
       blending: THREE_.AdditiveBlending,
     })
-    atmosphereInner = new THREE_.Mesh(atmosphereInnerGeometry, atmosphereInnerMaterial)
-    atmosphereInner.position.copy(globe.position)
-    objects.push(atmosphereInner)
-
-    atmosphereOuterGeometry = new THREE_.SphereGeometry(
-      radius * ATMOSPHERE_OUTER_FACTOR, ATMOSPHERE_SEGMENTS, ATMOSPHERE_SEGMENTS,
-    )
-    atmosphereOuterMaterial = new THREE_.ShaderMaterial({
-      vertexShader: atmosphereVertexShader,
-      fragmentShader: atmosphereOuterFrag,
-      uniforms: { uSunDir: sunDirUniform },
-      transparent: true,
-      side: THREE_.BackSide,
-      depthWrite: false,
-      blending: THREE_.AdditiveBlending,
-    })
-    atmosphereOuter = new THREE_.Mesh(atmosphereOuterGeometry, atmosphereOuterMaterial)
-    atmosphereOuter.position.copy(globe.position)
-    objects.push(atmosphereOuter)
+    atmosphere = new THREE_.Mesh(atmosphereGeometry, atmosphereMaterial)
+    atmosphere.position.copy(globe.position)
+    // renderOrder above the globe so the shell draws after the
+    // opaque globe pass; with depthTest off this is the sort key.
+    atmosphere.renderOrder = 1
+    objects.push(atmosphere)
   }
 
   // ── Sun sprite (optional) ─────────────────────────────────────────
@@ -1013,8 +948,7 @@ export function createPhotorealEarth(
         material.specular.setHex(0xaaaaaa)
         cloudsShouldBeVisible = true
         if (cloudMesh) cloudMesh.visible = true
-        if (atmosphereInner) atmosphereInner.visible = true
-        if (atmosphereOuter) atmosphereOuter.visible = true
+        if (atmosphere) atmosphere.visible = true
         if (sunCoreSprite) sunCoreSprite.visible = true
         if (sunGlowSprite) sunGlowSprite.visible = true
         // Planet mode: directional sun on, dataset-fill off.
@@ -1044,8 +978,7 @@ export function createPhotorealEarth(
         material.specular.setHex(0x000000)
         cloudsShouldBeVisible = false
         if (cloudMesh) cloudMesh.visible = false
-        if (atmosphereInner) atmosphereInner.visible = false
-        if (atmosphereOuter) atmosphereOuter.visible = false
+        if (atmosphere) atmosphere.visible = false
         if (sunCoreSprite) sunCoreSprite.visible = false
         if (sunGlowSprite) sunGlowSprite.visible = false
         // Dataset mode: directional sun off so scientific-viz colors
@@ -1132,8 +1065,7 @@ export function createPhotorealEarth(
         material.specular.setHex(0x000000)
         cloudsShouldBeVisible = false
         if (cloudMesh) cloudMesh.visible = false
-        if (atmosphereInner) atmosphereInner.visible = false
-        if (atmosphereOuter) atmosphereOuter.visible = false
+        if (atmosphere) atmosphere.visible = false
         if (sunCoreSprite) sunCoreSprite.visible = false
         if (sunGlowSprite) sunGlowSprite.visible = false
         // Dataset mode lighting — see video branch.
@@ -1164,13 +1096,13 @@ export function createPhotorealEarth(
       // doesn't spin with the planet's surface (the user's grab
       // rotation is an abstraction of Earth rotating under a
       // fixed sun, not of the sky rotating with the ground).
-      if (atmosphereInner) {
-        atmosphereInner.position.copy(globe.position)
-        atmosphereInner.scale.copy(globe.scale)
-      }
-      if (atmosphereOuter) {
-        atmosphereOuter.position.copy(globe.position)
-        atmosphereOuter.scale.copy(globe.scale)
+      if (atmosphere) {
+        atmosphere.position.copy(globe.position)
+        atmosphere.scale.copy(globe.scale)
+        // The raymarch needs to know where the planet is to translate
+        // fragment world-space into planet-centred km. Keep the
+        // uniform synced whenever the globe moves.
+        planetCenterUniform.value.copy(globe.position)
       }
 
       // Refresh the subsolar point on a throttle.
@@ -1243,10 +1175,8 @@ export function createPhotorealEarth(
         globe.remove(cloudMesh)
         cloudMesh = null
       }
-      atmosphereInnerGeometry?.dispose()
-      atmosphereInnerMaterial?.dispose()
-      atmosphereOuterGeometry?.dispose()
-      atmosphereOuterMaterial?.dispose()
+      atmosphereGeometry?.dispose()
+      atmosphereMaterial?.dispose()
       if (sunCoreSprite) {
         const mat = sunCoreSprite.material as THREE.SpriteMaterial
         mat.map?.dispose()
