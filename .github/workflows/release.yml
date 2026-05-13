@@ -168,45 +168,56 @@ jobs:
 
       - run: npm ci
 
-      - name: Build and release
+      # macOS + Developer ID cert in repo secrets → notarized build.
+      # Tauri's bundler reads APPLE_CERTIFICATE via Rust's
+      # `std::env::var_os`, which returns `Some("")` for an empty-
+      # string env var — so passing `APPLE_CERTIFICATE: ''` still
+      # engages `security import` and fails with `SecKeychainItem
+      # Import: One or more parameters passed to a function were
+      # not valid`. The only way to get the bundler to skip signing
+      # is to *not pass* the env var at all, which means splitting
+      # into two mutually exclusive steps rather than gating values
+      # inside one. See crates/tauri-bundler/src/bundle/macos/sign.rs
+      # in the tauri repo for the predicate.
+      #
+      # Note: this is a *Developer ID Application* certificate — a
+      # different cert type from the *Apple Distribution* cert used
+      # for the iOS App Store build (APPLE_CERTIFICATE_BASE64,
+      # see docs/MOBILE_APP_PLAN.md §Distribution). The team ID and
+      # Apple ID are shared across both; the certs and their
+      # passwords are not.
+      - name: Build and release (signed, macOS with Developer ID)
+        if: runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != ''
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple Developer ID signing + notarization for the macOS .dmg.
-          # When all six secrets are set, tauri-action imports the .p12
-          # into a temporary keychain on the macOS runner, signs the
-          # .app/.dmg with the Developer ID identity, and submits the
-          # bundle to Apple's notary service via notarytool. Without
-          # them, the aarch64 .dmg is only ad-hoc signed and macOS
-          # Gatekeeper rejects it on download with "Terraviz is damaged
-          # and can't be opened." (See docs/DESKTOP_APP_PLAN.md
-          # §Setup steps.)
-          #
-          # Note: this is a *Developer ID Application* certificate — a
-          # different cert type from the *Apple Distribution* cert used
-          # for the iOS App Store build (APPLE_CERTIFICATE_BASE64,
-          # see docs/MOBILE_APP_PLAN.md §Distribution). The team ID and
-          # Apple ID are shared across both; the certs and their
-          # passwords are not.
-          #
-          # Gating: all six env vars short-circuit to '' unless we're
-          # on a macOS runner AND APPLE_DEVELOPER_ID_CERTIFICATE_BASE64
-          # is populated. Gating on a single sentinel (the cert) is
-          # deliberate — when only some of the secrets are set (e.g.
-          # APPLE_SIGNING_IDENTITY from an earlier experiment but no
-          # cert), tauri-action's `security import` step still engages
-          # and fails with `SecKeychainItemImport: One or more
-          # parameters passed to a function were not valid` because
-          # the cert blob is empty. All-or-nothing keeps the unsigned
-          # fallback path intact until #100 lands.
-          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tauriScript: npx tauri
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+
+      # Linux, Windows, and macOS-without-cert: no APPLE_* env vars
+      # passed, so tauri-bundler's signing path stays dormant. macOS
+      # users still hit Gatekeeper's "damaged" dialog until #100
+      # lands the cert; docs/MACOS_INSTALL.md walks them through the
+      # bypass.
+      - name: Build and release (unsigned)
+        if: "!(runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '')"
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: npx tauri
           releaseId: ${{ needs.create-release.outputs.release_id }}
