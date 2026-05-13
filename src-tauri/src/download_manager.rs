@@ -184,9 +184,16 @@ impl DownloadManager {
         // time-limited URLs whose query strings contain access
         // tokens. Strip the query + fragment before formatting so
         // we never bake credentials into UI tooltips or analytics
-        // error_detail payloads. The full URL is still available in
-        // the Rust log (the caller logs it) for offline diagnosis.
+        // error_detail payloads.
+        //
+        // The redacted URL is also written to the Rust log at debug
+        // level (below) so operators can correlate the user-facing
+        // error with the in-process attempt without grepping for
+        // tokens. We deliberately do NOT log the full URL: debug
+        // logs end up in CI artifacts, support bundles, and screen
+        // shares, so the same redaction story applies there.
         let redacted = redact_url_query(url);
+        log::debug!("download_file: GET {redacted} -> {dest:?}");
         let response = self
             .client
             .get(url)
