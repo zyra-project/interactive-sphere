@@ -472,14 +472,92 @@ const datasetVertSrc = `#version 300 es
   }
 `
 
+// Dataset overlay fragment shader. Phase 3e/B extends the simple
+// `texture(uDatasetTex, vUV)` passthrough with three modes driven
+// by per-dataset options the loader passes in (sourced from the
+// Phase 3d catalog metadata):
+//
+//   - `uHasBbox`: when true, the dataset is treated as a regional
+//     overlay clipped to `uBbox = (n, s, w, e)` in degrees.
+//     Fragments outside the box are discarded so the base raster
+//     layer shows through; fragments inside are remapped so the
+//     texture STRETCHES to the bbox extent. Antimeridian-crossing
+//     boxes (w > e) are handled — e.g. a Pacific window from
+//     w=170 to e=-170.
+//
+//   - `uLonOrigin` (non-bbox path only): shifts the U coordinate
+//     so a globally-equirectangular texture centered on the
+//     dateline (lonOrigin=±180) wraps correctly. lonOrigin=0
+//     reduces to vUV.x passthrough so legacy datasets render
+//     identically to before 3e/B.
+//
+//   - `uFlipY`: applied last in both paths, flips the V axis for
+//     datasets authored with inverted-Y conventions. Zero SOS
+//     rows use this today but the field is wired for future
+//     publishers.
 const datasetFragSrc = `#version 300 es
   precision highp float;
   uniform sampler2D uDatasetTex;
+  uniform bool uHasBbox;
+  uniform vec4 uBbox;        // (n, s, w, e) degrees
+  uniform float uLonOrigin;  // degrees
+  uniform bool uFlipY;
   in vec2 vUV;
   out vec4 fragColor;
 
   void main() {
-    fragColor = texture(uDatasetTex, vUV);
+    // vUV.y == 0 at north pole, == 1 at south pole (sphere geometry
+    // convention). Derive geographic lat/lon so the bbox math
+    // doesn't have to reason in texture space.
+    float lat = (0.5 - vUV.y) * 180.0;
+    float lon = (vUV.x - 0.5) * 360.0;
+
+    vec2 sampleUV;
+    if (uHasBbox) {
+      float n = uBbox.x;
+      float s = uBbox.y;
+      float w = uBbox.z;
+      float e = uBbox.w;
+
+      // Latitude clip: outside [s, n] → base layer shows through.
+      if (lat > n || lat < s) {
+        discard;
+      }
+
+      float u;
+      if (w <= e) {
+        // Normal (non-wrapping) box.
+        if (lon < w || lon > e) {
+          discard;
+        }
+        u = (lon - w) / (e - w);
+      } else {
+        // Antimeridian-crossing box: a fragment is inside if its
+        // longitude is east of w OR west of e.
+        float span = (360.0 - w) + e;
+        if (lon >= w) {
+          u = (lon - w) / span;
+        } else if (lon <= e) {
+          u = (lon + 360.0 - w) / span;
+        } else {
+          discard;
+        }
+      }
+
+      // Latitude → V with image convention (n on top → V=0).
+      float v = (n - lat) / (n - s);
+      if (uFlipY) v = 1.0 - v;
+      sampleUV = vec2(u, v);
+    } else {
+      // Full-globe path. lonOrigin shifts the U axis; fract()
+      // wraps so a sample at lon < lonOrigin pulls from the
+      // texture's right edge (and vice versa).
+      float u = fract((lon - uLonOrigin) / 360.0 + 0.5);
+      float v = uFlipY ? (1.0 - vUV.y) : vUV.y;
+      sampleUV = vec2(u, v);
+    }
+
+    fragColor = texture(uDatasetTex, sampleUV);
   }
 `
 
@@ -617,6 +695,11 @@ interface DatasetProgram {
   matrixLoc: WebGLUniformLocation | null
   texLoc: WebGLUniformLocation | null
   radiusScaleLoc: WebGLUniformLocation | null
+  /** Phase 3e/B per-dataset overlay uniforms. */
+  hasBboxLoc: WebGLUniformLocation | null
+  bboxLoc: WebGLUniformLocation | null
+  lonOriginLoc: WebGLUniformLocation | null
+  flipYLoc: WebGLUniformLocation | null
 }
 
 interface DayNightProgram {
@@ -871,6 +954,10 @@ export function createEarthTileLayer(): EarthTileLayerControl {
           matrixLoc: gl2.getUniformLocation(datasetProg, 'uMatrix'),
           texLoc: gl2.getUniformLocation(datasetProg, 'uDatasetTex'),
           radiusScaleLoc: gl2.getUniformLocation(datasetProg, 'uRadiusScale'),
+          hasBboxLoc: gl2.getUniformLocation(datasetProg, 'uHasBbox'),
+          bboxLoc: gl2.getUniformLocation(datasetProg, 'uBbox'),
+          lonOriginLoc: gl2.getUniformLocation(datasetProg, 'uLonOrigin'),
+          flipYLoc: gl2.getUniformLocation(datasetProg, 'uFlipY'),
         }
       }
 
@@ -1080,9 +1167,27 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.useProgram(dataset.program)
         gl2.uniformMatrix4fv(dataset.matrixLoc, false, matrix)
         gl2.uniform1f(dataset.radiusScaleLoc, terrainRadiusScale)
+        // Phase 3e/B: bbox / lonOrigin / flipY uniforms. Defaults
+        // (no bbox, lonOrigin 0, no flip) reduce the shader to the
+        // pre-3e equirectangular passthrough, so any dataset
+        // without 3d metadata renders bit-identically.
+        const bbox = datasetOptions?.boundingBox
+        if (bbox) {
+          gl2.uniform1i(dataset.hasBboxLoc, 1)
+          gl2.uniform4f(dataset.bboxLoc, bbox.n, bbox.s, bbox.w, bbox.e)
+        } else {
+          gl2.uniform1i(dataset.hasBboxLoc, 0)
+          gl2.uniform4f(dataset.bboxLoc, 0, 0, 0, 0)
+        }
+        gl2.uniform1f(dataset.lonOriginLoc, datasetOptions?.lonOrigin ?? 0)
+        gl2.uniform1i(dataset.flipYLoc, datasetOptions?.isFlippedInY ? 1 : 0)
         gl2.activeTexture(gl2.TEXTURE0)
         gl2.bindTexture(gl2.TEXTURE_2D, datasetTex)
         gl2.uniform1i(dataset.texLoc, 0)
+        // bbox-bounded overlays render translucently over the base
+        // tile layers (which 3e/C keeps visible for these datasets)
+        // — `discard` in the fragment shader handles "outside bbox
+        // → show base."
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
 
         // Restore GL state and return — no earth effects when dataset is active

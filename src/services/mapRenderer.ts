@@ -515,17 +515,17 @@ export class MapRenderer implements GlobeRenderer {
 
       // Apply any dataset texture/video that was buffered before the layer was ready
       if (this.pendingTexture) {
-        this.earthLayer.setDatasetTexture(this.pendingTexture, this.pendingDatasetOptions ?? undefined)
+        const opts = this.pendingDatasetOptions ?? undefined
+        this.earthLayer.setDatasetTexture(this.pendingTexture, opts)
         this.pendingTexture = null
         this.pendingDatasetOptions = null
-        try { this.map!.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-        try { this.map!.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+        this.applyBaseLayerVisibility(opts)
       } else if (this.pendingVideo) {
-        this.earthLayer.setDatasetVideo(this.pendingVideo, this.pendingDatasetOptions ?? undefined)
+        const opts = this.pendingDatasetOptions ?? undefined
+        this.earthLayer.setDatasetVideo(this.pendingVideo, opts)
         this.pendingVideo = null
         this.pendingDatasetOptions = null
-        try { this.map!.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-        try { this.map!.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+        this.applyBaseLayerVisibility(opts)
       }
 
       logger.info('[MapRenderer] Earth tile + capture + skybox layers added, labels moved above')
@@ -870,6 +870,29 @@ export class MapRenderer implements GlobeRenderer {
    * Uses proper equirectangular UV mapping — no Mercator distortion, full
    * pole coverage.
    */
+  /**
+   * Phase 3e/C: hide vs keep the base raster layers based on the
+   * dataset's overlay options. Legacy behavior (no options) hides
+   * blue-marble + black-marble entirely — the dataset's
+   * equirectangular projection covers every pixel of the sphere
+   * so the base would never be visible.
+   *
+   * Bbox-bounded datasets are different: the shader discards
+   * fragments outside the bbox so the base layer is what the user
+   * sees over the rest of the globe. Keep it visible.
+   *
+   * Non-Earth bodies (3e/C) will further customize which base
+   * layer is shown; the celestial-body routing dispatches to a
+   * different base raster source rather than blue/black marble.
+   */
+  private applyBaseLayerVisibility(options: DatasetOverlayOptions | undefined): void {
+    const showBase = Boolean(options?.boundingBox)
+    const blueVis = showBase ? 'visible' : 'none'
+    const blackVis = showBase ? 'visible' : 'none'
+    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', blueVis) } catch { /* noop */ }
+    try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', blackVis) } catch { /* noop */ }
+  }
+
   updateTexture(
     texture: HTMLCanvasElement | HTMLImageElement,
     options?: DatasetOverlayOptions,
@@ -882,9 +905,7 @@ export class MapRenderer implements GlobeRenderer {
       return
     }
     this.earthLayer.setDatasetTexture(texture, options)
-    // Hide the tile base layers when a dataset is active
-    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-    try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+    this.applyBaseLayerVisibility(options)
     logger.info('[MapRenderer] Dataset overlay set via custom layer sphere')
   }
 
@@ -896,8 +917,7 @@ export class MapRenderer implements GlobeRenderer {
   setVideoTexture(video: HTMLVideoElement, options?: DatasetOverlayOptions): VideoTextureHandle {
     if (this.earthLayer) {
       this.earthLayer.setDatasetVideo(video, options)
-      try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', 'none') } catch { /* noop */ }
-      try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', 'none') } catch { /* noop */ }
+      this.applyBaseLayerVisibility(options)
       logger.info('[MapRenderer] Video dataset set via custom layer sphere')
     } else {
       // Buffer until the earth layer is created on map 'load'
