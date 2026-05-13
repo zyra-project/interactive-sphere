@@ -298,6 +298,25 @@ function createGlobeStyle(): StyleSpecification {
 let activeRenderer: MapRenderer | null = null
 
 /** Get the currently active (primary) MapRenderer, if any. */
+/**
+ * Phase 3e: is a `celestialBody` string the SOS convention for
+ * "Earth"? Empty / unset / case-insensitive "earth" all qualify
+ * — the SOS snapshot ships some rows with `celestialBody: ""`
+ * which is the documented Earth-implicit case. Everything else
+ * is treated as non-Earth and triggers the base-layer hide path.
+ *
+ * Note "aurora" lands in the non-Earth bucket even though the
+ * phenomenon is observed from Earth — the SOS importer persists
+ * that string verbatim and the renderer trusts the catalog row.
+ * If the row is wrong the operator fixes it on the publisher
+ * side; the renderer doesn't second-guess.
+ */
+function isEarthBody(name: string | null | undefined): boolean {
+  if (name == null) return true
+  const normalized = name.trim().toLowerCase()
+  return normalized === '' || normalized === 'earth'
+}
+
 export function getActiveMapRenderer(): MapRenderer | null {
   return activeRenderer
 }
@@ -871,26 +890,27 @@ export class MapRenderer implements GlobeRenderer {
    * pole coverage.
    */
   /**
-   * Phase 3e/C: hide vs keep the base raster layers based on the
-   * dataset's overlay options. Legacy behavior (no options) hides
-   * blue-marble + black-marble entirely — the dataset's
-   * equirectangular projection covers every pixel of the sphere
-   * so the base would never be visible.
+   * Phase 3e: hide vs keep the base raster layers based on the
+   * dataset's overlay options.
    *
-   * Bbox-bounded datasets are different: the shader discards
-   * fragments outside the bbox so the base layer is what the user
-   * sees over the rest of the globe. Keep it visible.
+   *   Earth + no bbox       hide (the dataset's full-equirectangular
+   *                              projection covers every pixel)
+   *   Earth + bbox          show (shader discards outside the box;
+   *                              base tiles fill the rest of the globe)
+   *   non-Earth (any case)  hide (Earth's blue/black marble are the
+   *                              wrong textures for Mars / Moon / Sun /
+   *                              etc.; we render the dataset on a
+   *                              clean sphere until 3f bundles
+   *                              per-body surface textures)
    *
-   * Non-Earth bodies (3e/C) will further customize which base
-   * layer is shown; the celestial-body routing dispatches to a
-   * different base raster source rather than blue/black marble.
-   */
+   * Returns void; callers use it as a single source of truth for
+   * "what should the base look like behind this dataset?". */
   private applyBaseLayerVisibility(options: DatasetOverlayOptions | undefined): void {
-    const showBase = Boolean(options?.boundingBox)
-    const blueVis = showBase ? 'visible' : 'none'
-    const blackVis = showBase ? 'visible' : 'none'
-    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', blueVis) } catch { /* noop */ }
-    try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', blackVis) } catch { /* noop */ }
+    const earth = isEarthBody(options?.celestialBody)
+    const showBase = earth && Boolean(options?.boundingBox)
+    const visibility = showBase ? 'visible' : 'none'
+    try { this.map?.setLayoutProperty('blue-marble-layer', 'visibility', visibility) } catch { /* noop */ }
+    try { this.map?.setLayoutProperty('black-marble-layer', 'visibility', visibility) } catch { /* noop */ }
   }
 
   updateTexture(
