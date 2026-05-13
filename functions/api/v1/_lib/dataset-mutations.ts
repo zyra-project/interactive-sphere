@@ -135,6 +135,20 @@ function publisherScope(publisher: PublisherRow): { sql: string; binds: unknown[
   return { sql: 'publisher_id = ?', binds: [publisher.id] }
 }
 
+/**
+ * Collapse undefined / null / empty / whitespace-only strings to
+ * NULL on the way to D1. Used by Phase 3d's `celestial_body`
+ * column so a publisher posting `""` is treated the same as
+ * omission (the "Earth implicit" convention) — defense in depth
+ * for both the SOS importer (which already strips empties) and
+ * the future publisher-portal client.
+ */
+function normalizeOptionalString(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const trimmed = value.trim()
+  return trimmed.length === 0 ? null : trimmed
+}
+
 export interface ListOptions {
   status?: 'draft' | 'published' | 'retracted'
   limit?: number
@@ -403,10 +417,18 @@ export async function createDataset(
       body.bounding_box?.s ?? null,
       body.bounding_box?.w ?? null,
       body.bounding_box?.e ?? null,
-      body.celestial_body ?? null,
+      // celestial_body: blank/whitespace collapses to NULL so the
+      // "Earth implicit" convention is preserved on the read side.
+      // (The SOS importer already strips empties, but a publisher-
+      // portal caller could still post `""` and we want defense in
+      // depth.)
+      normalizeOptionalString(body.celestial_body),
       body.radius_mi ?? null,
       body.lon_origin ?? null,
-      body.is_flipped_in_y === undefined ? null : body.is_flipped_in_y ? 1 : 0,
+      // is_flipped_in_y: both undefined and explicit null map to
+      // NULL (the column's default state); booleans round-trip
+      // through 0/1.
+      body.is_flipped_in_y == null ? null : body.is_flipped_in_y ? 1 : 0,
       1,
       now,
       now,
@@ -469,7 +491,9 @@ export async function updateDataset(
     set('bbox_w', body.bounding_box?.w ?? null)
     set('bbox_e', body.bounding_box?.e ?? null)
   }
-  if (body.celestial_body !== undefined) set('celestial_body', body.celestial_body)
+  if (body.celestial_body !== undefined) {
+    set('celestial_body', normalizeOptionalString(body.celestial_body))
+  }
   if (body.radius_mi !== undefined) set('radius_mi', body.radius_mi)
   if (body.lon_origin !== undefined) set('lon_origin', body.lon_origin)
   if (body.is_flipped_in_y !== undefined) {

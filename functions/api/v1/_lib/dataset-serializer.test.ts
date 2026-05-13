@@ -251,6 +251,19 @@ describe('serializeDataset — Phase 3d columns (non-global metadata)', () => {
     expect(wire.radiusMi).toBeUndefined()
   })
 
+  it('omits celestialBody when the column is an empty / whitespace string (legacy data)', () => {
+    // Defense in depth — the importer strips empties on the write
+    // side, but if a row sneaked through with `celestial_body = ''`
+    // we don't want to surface `celestialBody: ""` on the wire and
+    // confuse the SPA's "omitted == Earth" convention.
+    expect(
+      serializeDataset(fakeRow({ celestial_body: '' }), emptyDecoration, fakeIdentity).celestialBody,
+    ).toBeUndefined()
+    expect(
+      serializeDataset(fakeRow({ celestial_body: '   ' }), emptyDecoration, fakeIdentity).celestialBody,
+    ).toBeUndefined()
+  })
+
   it('surfaces lonOrigin when non-null (dateline-centered datasets)', () => {
     const wire = serializeDataset(
       fakeRow({ lon_origin: 180 }),

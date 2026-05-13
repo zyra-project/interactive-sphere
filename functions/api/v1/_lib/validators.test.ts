@@ -338,6 +338,15 @@ describe('validateDraftCreate', () => {
         is_flipped_in_y: 'yes' as unknown as boolean,
       }).some(e => e.field === 'is_flipped_in_y' && e.code === 'invalid_type'),
     ).toBe(true)
+
+    // is_flipped_in_y null is accepted (clears the column on UPDATE)
+    expect(
+      validateDraftCreate({
+        title: 'Clear flip',
+        format: 'image/png',
+        is_flipped_in_y: null,
+      }),
+    ).toEqual([])
   })
 })
 

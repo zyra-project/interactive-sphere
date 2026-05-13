@@ -17,7 +17,7 @@
 --       lat/lon ranges and let the SPA project regional data onto
 --       the correct portion of the globe in 3e.
 --
---   (b) Adds five new columns for SOS metadata still on the
+--   (b) Adds four new columns for SOS metadata still on the
 --       "dropped 12" non-goal list from 3b:
 --
 --         celestial_body  TEXT — Earth / Mars / Moon / Sun / etc.

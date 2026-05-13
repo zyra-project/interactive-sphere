@@ -329,7 +329,20 @@ function parseBoundingBox(
   const v = value as Record<string, unknown>
   const coerce = (raw: unknown, min: number, max: number): number | undefined => {
     if (raw == null) return undefined
-    const n = typeof raw === 'number' ? raw : Number(raw)
+    // Strictly accept only number or string. Without this guard,
+    // `Number(true) === 1` would silently pass — a malformed
+    // upstream row `{ n: true, … }` would persist as a real-valued
+    // bbox corner and slip through the range check.
+    let n: number
+    if (typeof raw === 'number') {
+      n = raw
+    } else if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (trimmed.length === 0) return undefined
+      n = Number(trimmed)
+    } else {
+      return undefined
+    }
     if (!Number.isFinite(n)) return undefined
     if (n < min || n > max) return undefined
     return n

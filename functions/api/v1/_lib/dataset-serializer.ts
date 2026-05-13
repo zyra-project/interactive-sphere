@@ -154,6 +154,16 @@ function nonNull<T>(v: T | null | undefined): T | undefined {
   return v == null ? undefined : v
 }
 
+/** Like `nonNull` but also drops empty / whitespace-only strings.
+ * Used by Phase 3d's `celestial_body` so a legacy row with
+ * `celestial_body = ''` doesn't surface as `celestialBody: ""`
+ * on the wire — preserves the "omitted == Earth" convention. */
+function nonBlank(v: string | null | undefined): string | undefined {
+  if (v == null) return undefined
+  const trimmed = v.trim()
+  return trimmed.length === 0 ? undefined : trimmed
+}
+
 /** Apply an optional asset-ref resolver, falling back to
  * verbatim passthrough when none is provided. */
 function resolveAsset(
@@ -296,7 +306,12 @@ export function serializeDataset(
     // values are dropped so the wire stays terse for the common
     // (Earth, global, prime-meridian, no-flip) case.
     boundingBox: assembleBoundingBox(row),
-    celestialBody: nonNull(row.celestial_body),
+    // celestial_body: empty / whitespace-only strings collapse
+    // to undefined alongside true NULLs, so a legacy row that
+    // sneaked through with `celestial_body = ''` doesn't surface
+    // as `celestialBody: ""` (which would conflict with the
+    // "omitted == Earth" convention the SPA expects).
+    celestialBody: nonBlank(row.celestial_body),
     radiusMi: row.radius_mi != null ? row.radius_mi : undefined,
     lonOrigin: row.lon_origin != null ? row.lon_origin : undefined,
     isFlippedInY: row.is_flipped_in_y === 1 ? true : undefined,

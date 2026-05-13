@@ -473,6 +473,30 @@ describe('mapSnapshotEntry — Phase 3b auxiliary fields', () => {
     expect(outOfRange.row.draft.bounding_box).toBeUndefined()
   })
 
+  it('refuses non-string / non-number corners (e.g. true → 1) so a malformed upstream row drops cleanly', () => {
+    // Without the explicit type guard, `Number(true) === 1` would
+    // pass the range check and persist as a real-valued bbox corner.
+    // Booleans, arrays, objects, etc. all bail the whole bbox.
+    const truthy = mapSnapshotEntry(
+      {
+        ...sample,
+        boundingVariables: { n: true as unknown as string, s: '0', w: '0', e: '0' },
+      },
+      undefined,
+    )
+    expect(truthy.kind).toBe('ok')
+    if (truthy.kind !== 'ok') return
+    expect(truthy.row.draft.bounding_box).toBeUndefined()
+
+    const empties = mapSnapshotEntry(
+      { ...sample, boundingVariables: { n: '', s: '0', w: '0', e: '0' } },
+      undefined,
+    )
+    expect(empties.kind).toBe('ok')
+    if (empties.kind !== 'ok') return
+    expect(empties.row.draft.bounding_box).toBeUndefined()
+  })
+
   it('drops an oversized probingInfo silently (4096-char cap)', () => {
     // The validator caps JSON-text columns at 4096 chars. The
     // importer pre-filters so an oversize blob doesn't trigger
