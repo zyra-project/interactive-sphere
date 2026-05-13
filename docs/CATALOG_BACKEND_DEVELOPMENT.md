@@ -1256,6 +1256,196 @@ there's no hard deadline to flip the `*_ref` columns — but
 the federation work (peer mirroring) and `/publish` endpoint's
 single-origin guarantee depend on this being done.
 
+### Migrating tour.json files to R2
+
+Phase 3c migrates the per-row `run_tour_on_load` column and the
+sibling overlay / audio / 360-pano assets each tour.json
+references. Each row's `run_tour_on_load` flips from a NOAA
+CloudFront URL to an R2 reference (`r2:tours/<id>/tour.json`);
+the siblings the parser surfaces as `relative` get fetched from
+NOAA and uploaded to `tours/<id>/<sibling-path>` under the same
+prefix. External URLs in the tour file (YouTube embeds, Vimeo,
+popup web links) are left verbatim — the operator can't legally
+re-host them and they're not migratable assets anyway.
+
+The runbook mirrors the Phase 3b shape with one key shift: the
+3c pipeline is **per-row atomic**, not per-asset. A row's
+tour.json is only PATCHed onto R2 after every sibling has
+uploaded successfully — so a partial 3c run never leaves a tour
+playing 404s at runtime.
+
+#### Prerequisites
+
+Same R2 credentials as Phase 3 / 3b (`R2_S3_ENDPOINT` /
+`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` in the operator's
+shell), same `R2_PUBLIC_BASE` on Pages — used by the dataset
+serializer (`functions/api/v1/_lib/dataset-serializer.ts`,
+through `resolveAssetRefStrict`) to flip `r2:tours/<id>/tour.json`
+into the public HTTPS form the SPA's tour engine actually
+fetches. No new env vars, no new Cloudflare configuration.
+
+One optional prerequisite: run the parser sweep against
+production tour.json files first to catch any task-type
+blind spots that a future SOS authoring change might have
+introduced since 3c shipped. The sweep is read-only and only
+takes ~30 s:
+
+```sh
+npx tsx scripts/sweep-tour-parser.ts
+```
+
+Expected output: "No unknown task types across the sweep —
+parser covers every task name seen." If a new unknown task
+shows up, file an issue before running the migration — the
+sweep is the canary for SOS author-side changes that would
+silently drop URLs.
+
+#### Pre-flight dry-run
+
+```sh
+npm run terraviz -- migrate-r2-tours --dry-run
+```
+
+Sample output:
+
+```
+Tour migration plan:
+  rows scanned:                          195
+  rows with run_tour_on_load:            193
+  already on r2: (will skip):            0
+  eligible (NOAA / external URLs):       193
+  will migrate this run:                 193
+  • 01KQG610X12B1DMN7YEYDRM9WS  Drought Risk - 2015-2020
+      https://d3sik7mbbzunjo.cloudfront.net/land/drought_2015-2020/tour.json
+  • …
+```
+
+The migration is idempotent: re-running picks up only rows whose
+`run_tour_on_load` is still on a NOAA URL. Rows already on
+`r2:` skip from the eligible set.
+
+#### Live migration
+
+```sh
+# Sanity batch — migrate 5 rows, verify in Grafana / SPA.
+npm run terraviz -- migrate-r2-tours --limit=5
+
+# Full run — sequential, paced 200 ms between rows.
+npm run terraviz -- migrate-r2-tours
+
+# Single-row mode for surgical migration / re-try:
+npm run terraviz -- migrate-r2-tours --id=<dataset_id>
+```
+
+Per-row stdout shows `[<dataset_id>] ok (tour.json + N siblings,
+<bytes>, <ms>) → tours/<id>/tour.json`. Failures go to stderr
+with the outcome:
+
+  - **`dead_source`** — NOAA returned 404 on the tour.json URL
+    itself. The row was already broken pre-migration; migration
+    leaves it untouched and exits 0 for this row. Operator
+    decides whether to delete the catalog row or replace the
+    tour.
+  - **`fetch_failed`** — transient network failure on the
+    tour.json fetch. Re-run; idempotent.
+  - **`parse_failed`** — tour.json bytes didn't decode as JSON.
+    Investigate the source manually; rare.
+  - **`sibling_fetch_failed`** — at least one relative sibling
+    failed to fetch. The row's tour.json is NOT uploaded
+    (atomic per row), so the row stays on NOAA. Re-run after
+    investigating the failing sibling URL in the error message.
+  - **`upload_failed`** — an R2 PUT failed. Partial uploads
+    are R2 orphans; the row still works via NOAA because the
+    PATCH never ran. Re-run is the cheapest recovery (R2 PUTs
+    are overwrite-on-key, so the same bytes clobber cleanly).
+  - **`patch_failed`** — every R2 PUT succeeded but the D1
+    PATCH on `run_tour_on_load` failed. Worst case: every R2
+    object from this row is an orphan AND the row still points
+    at NOAA. Recovery: re-run the migration (idempotent — the
+    same bytes hash to the same keys, so the next PATCH attempt
+    just retries against an already-correct R2 state).
+    Alternatively `rollback-r2-tours <id>` cleans up the orphan
+    and leaves the row on NOAA.
+
+The telemetry session id printed at the start of each run lets
+you correlate per-row events on the Grafana tour-migration row
+(3c/F — three panels alongside the 3b asset-migration row at
+y=50).
+
+#### What the commit point is
+
+The per-row PATCH (step 6 of `migrateOne`) is the migration's
+commit point. Failures before the PATCH leave the row's
+`run_tour_on_load` unchanged (the SPA keeps fetching the tour
+from NOAA). The atomic per-row design is deliberate: a tour is
+a single addressable resource, so a "tour.json on R2 but
+siblings still on NOAA" intermediate state would 404 in the
+browser. By only PATCHing after every upload succeeds, the
+operator's worst case is "row still on NOAA + a few R2 orphans"
+— never "row on R2 + missing siblings."
+
+Re-running `migrate-r2-tours` after any failure is the
+recovery path. Already-migrated rows skip (idempotency on the
+`r2:` prefix). The R2 PUT is overwrite-on-key, so a partial
+upload from a previous run is safely clobbered.
+
+#### Rollback
+
+Per-row rollback (single dataset):
+
+```sh
+npm run terraviz -- rollback-r2-tours <dataset_id> --dry-run
+npm run terraviz -- rollback-r2-tours <dataset_id>
+```
+
+The tool recovers the original NOAA URL by indexing the row's
+`legacy_id` against the SOS snapshot's `runTourOnLoad` field.
+If the row has no `legacy_id` (publisher-portal row, not
+SOS-imported), pass `--to-url=<url>` to name the target
+explicitly:
+
+```sh
+npm run terraviz -- rollback-r2-tours <dataset_id> \
+  --to-url=https://example.org/my-tour.json
+```
+
+For bulk rollback (e.g. backing out a botched window after a
+Grafana review), pipe NDJSON in via `--from-stdin`. Each line
+is `{ "dataset_id": "..." }` — simpler than 3b's per-asset
+shape because tours are atomic per row:
+
+```sh
+# Roll back every patch_failed row in this hour. The Grafana
+# datasource → "view data" → "Export CSV" path lets you derive
+# the NDJSON for the failed subset.
+cat patch-failed.ndjson \
+  | npm run terraviz -- rollback-r2-tours --from-stdin --dry-run
+cat patch-failed.ndjson \
+  | npm run terraviz -- rollback-r2-tours --from-stdin
+```
+
+Per-row pipeline: PATCH `run_tour_on_load` back to the
+recovered URL (commit point), then DELETE the entire
+`tours/<id>/` R2 prefix in one list+parallel-DELETE pass.
+The DELETE step is non-fatal — a `delete_failed` outcome means
+the catalog is correct (row back on NOAA) but the R2 prefix is
+orphaned; clean up via the Cloudflare dashboard if needed.
+Bulk-summary output surfaces this as "ok (orphan R2 prefix)".
+
+#### Observation window
+
+The Phase 3c Grafana row (commit 3c/F) shows "cumulative ok
+rows" — after a complete run this should approach the
+planner's dry-run eligible count (~198 at cut-over; 1 row
+stays `dead_source` so ok caps just below the total).
+A clean migration is signalled by the non-ok outcome
+breakdown table going empty.
+
+NOAA CloudFront URLs serve indefinitely so there's no hard
+deadline to flip `run_tour_on_load` — but the federation work
+(peer mirroring) depends on this being done, just like 3b's
+auxiliary asset migration.
+
 ## Stack
 
 - **Wrangler** (`wrangler pages dev`) is the runner. It loads the

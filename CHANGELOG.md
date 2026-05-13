@@ -16,6 +16,157 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3c — Tour JSON migration
+
+**Branch:** `claude/tour-migration-phase-3c`
+**Commits:** 3c/A through 3c/G — seven logical changes plus
+three operator-side probe scripts (3c/A-probe / 3c/A-sweep /
+3c/A-dump) and a parser extension (3c/A-extend).
+
+Phase 3b finished migrating the auxiliary asset URLs onto R2;
+this phase migrates the *tour.json* files (and their sibling
+overlay images / narrated audio / 360-pano JPGs) the SOS catalog
+references via the `run_tour_on_load` column. After 3c ships
+the noaa.gov dependency for tour playback is gone — federation
+peers can mirror tours without reaching back to NOAA's
+CloudFront.
+
+**Strict-relative policy.** Tour task fields that hold *relative*
+references (sibling-of-tour.json filenames like `audio/intro.mp3`)
+get migrated. *External* URLs (YouTube embeds, Vimeo, popup web
+links) are left verbatim — the operator can't legally re-host
+them and they're not migratable assets anyway. The parser
+classifies every URL-bearing task field as relative /
+absolute_external / absolute_sos_cdn so the dashboard can size
+the residual external-CDN dependency.
+
+**3c/A — `cli/lib/tour-json-parser.ts`.** Pure / deterministic /
+no-I/O library that walks a parsed SOS tour file and produces a
+catalog of `(rawValue, source, kind)` entries plus a list of
+unknown task names. Covers playAudio / playVideo / showVideo /
+showImage / showImg / question / showPopupHtml / addPlacemark
+out of the gate; iteratively extended (3c/A-extend) to cover
+addBubble / showInfoBtn / hideInfoBtn / loadTour / showLegend /
+worldBorders after a full-catalog sweep flagged them in real
+tour.json files. Final parser surface: zero unknown task types
+across all 198 fetchable production tours.
+
+Companion operator scripts (in `scripts/`):
+  - `probe-tour-parser.ts` — fetch one tour.json + run the parser
+  - `sweep-tour-parser.ts` — fetch all 199 + aggregate counts
+  - `dump-unknown-tour-tasks.ts` — print the verbatim JSON of
+    every blind-spot task so the parser extension is single-pass
+
+**3c/B — `terraviz migrate-r2-tours`.** Per-row atomic pump.
+Pipeline: GET row → fetch tour.json → parse → resolve every
+relative sibling URL against the tour.json URL → fetch each
+sibling (deduped by sibling-key) → upload tour.json + every
+sibling to `tours/<id>/...` → PATCH `run_tour_on_load` to
+`r2:tours/<id>/tour.json`. Any failure pre-PATCH leaves the row
+on NOAA (no broken-tour hazard); a PATCH failure after uploads
+succeeded leaves R2 orphans that the next migration run
+clobbers on the re-PUT or that `rollback-r2-tours` cleans up.
+Outcomes: `ok` / `dead_source` (NOAA 404 — intentionally not
+counted as a failure) / `fetch_failed` / `parse_failed` /
+`sibling_fetch_failed` / `upload_failed` / `patch_failed`. Flags
+mirror 3b's: `--dry-run`, `--limit=N`, `--id=<dataset>`,
+`--pace-ms=N`. Idempotent on `r2:`-prefixed rows.
+
+**3c/C — `migration_r2_tours` Tier A event + ingest
+registration.** Per-row event (vs 3b's per-asset) carrying
+dataset_id, legacy_id, source_url, r2_key, source_bytes,
+siblings_relative / _external / _sos_cdn / _migrated,
+duration_ms, outcome. Added to `KNOWN_EVENT_TYPES` so AE
+persists the events; same generic blob/double mapping the other
+migration events use.
+
+**3c/D — `terraviz rollback-r2-tours`.** Symmetric inverse —
+single-row and bulk `--from-stdin` modes, same per-row pipeline:
+verify `r2:`, recover original URL from SOS snapshot (or
+`--to-url=<url>`), PATCH back, delete the `tours/<id>/` R2
+prefix in one list+parallel-DELETE pass. Catalog-correct
+exit-0 even if the R2 cleanup orphans, surfaced as
+`delete_failed` in the summary. Defensive: refuses to roll
+back a malformed `r2:no-slash-key` that could otherwise risk
+deleting a wider prefix than intended.
+
+**3c/E — Serializer wires `r2:` `run_tour_on_load` to a public
+URL.** `serializeDataset` already passed thumbnail / legend /
+caption / color_table through the `AssetRefResolver`; this
+commit applies the same resolver to `runTourOnLoad` so a row
+whose `run_tour_on_load` is `r2:tours/<id>/tour.json` resolves
+to the `R2_PUBLIC_BASE`-rooted URL the SPA can actually fetch.
+Bare https URLs (pre-3c rows still on NOAA) pass through
+unchanged.
+
+**3c/F — Tour-migration row on Product Health dashboard.** Three
+panels at y=50 (just below 3b's asset row at y=42): events-per-
+day-by-outcome timeseries, cumulative-ok stat, non-ok outcome
+breakdown table. Pinned blob position: `blob7 AS outcome`
+(distinct from migration_r2_assets's `blob8 AS outcome` — the
+tour event has no `asset_type` field, so outcome lands one
+position earlier). Dashboard version bump 8 → 9.
+
+**3c/G — Docs.** This entry plus the new "Migrating tour.json
+files to R2" runbook section in
+`docs/CATALOG_BACKEND_DEVELOPMENT.md` (parallel to 3b's auxiliary
+asset migration runbook).
+
+**Operator quick-start.**
+
+```sh
+set -a; . ~/.terraviz/prod.env; set +a
+
+npm run terraviz -- migrate-r2-tours --dry-run
+npm run terraviz -- migrate-r2-tours --limit=5
+npm run terraviz -- migrate-r2-tours
+
+# Roll back one row:
+npm run terraviz -- rollback-r2-tours <dataset_id>
+
+# Bulk rollback from telemetry-filtered NDJSON:
+... | npm run terraviz -- rollback-r2-tours --from-stdin
+```
+
+No new env vars, no new bindings. Same R2 token Phase 3 and 3b
+used; same `R2_PUBLIC_BASE` custom domain.
+
+**Migration size at 3c cut-over.**
+
+  - **198 tour.json files** fetchable on NOAA's CDN (1 dead
+    source: `INTERNAL_SOS_726_ONLINE` — already broken
+    pre-migration; stays `dead_source` and the operator
+    handles via row deletion / replacement separately).
+  - **71 relative sibling assets** across ~30 rows. Most rows
+    are pure-navigation tours with zero siblings; the
+    sibling-bearing tours concentrate in a few rich ones
+    (`ID_INTERNAL_pandemic` ×12, `ID_LJCOFJCSGH` ×9,
+    `INTERNAL_SOS_687` ×9, `INTERNAL_SOS_HRRR_Smoke_Tour_Mobile`
+    ×7).
+  - **44 external URLs** (YouTube embeds, Vimeo, popup web
+    links) — left verbatim per the strict-relative policy.
+  - **0 absolute_sos_cdn** URLs — tour task fields don't
+    reference noaa.gov absolutes; the SOS authoring convention
+    uses sibling-relative paths consistently.
+
+**Non-goals (deferred / out-of-scope).**
+
+  - **Rewriting external links to local mirrors.** Policy 1 is
+    relative-only. A future "policy 2" pass could mirror
+    YouTube / Vimeo content to a local video store, but that's
+    a separate licensing + storage decision.
+  - **`absolute_sos_cdn` rewriting.** Zero rows hit this case at
+    3c cut-over, so the parser surfaces the count but the pump
+    doesn't act on it.
+  - **Per-task-type SPA enhancements.** The parser surfaced six
+    task names the SPA's tour engine silently ignores
+    (addBubble / showInfoBtn / hideInfoBtn / loadTour /
+    showLegend / worldBorders). Wiring them up is a separate
+    SPA feature; this phase just makes sure the bytes migrate
+    cleanly when they're referenced.
+
+---
+
 ## Phase 3b — Auxiliary asset migration + catalog data completeness
 
 **Branch:** `claude/auxiliary-asset-migration-phase-3b`
