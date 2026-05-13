@@ -167,6 +167,139 @@ used; same `R2_PUBLIC_BASE` custom domain.
 
 ---
 
+## Phase 3e — Non-global rendering (bbox projection + non-Earth gating)
+
+**Branch:** `claude/non-global-rendering-phase-3e`
+**Commits:** 3e/A through 3e/E — five logical changes that take
+Phase 3d's persisted-but-inert metadata and finally do something
+visible with it.
+
+Phase 3d landed `boundingBox` / `celestialBody` / `radiusMi` /
+`lonOrigin` / `isFlippedInY` on the wire; nothing in the SPA
+consumed them. This phase consumes four of the five (everything
+except `radiusMi`, which pairs with a future Phase 3f's per-body
+proportional sizing). The rendering changes are end-to-end visible:
+
+- Regional datasets (today: `INTERNAL_HRRR_SMOKE_SEPTEMBER_2017_VIDEO`
+  over CONUS; future: any publisher-portal upload with a bbox)
+  wrap their texture to the bbox extent instead of being stretched
+  equirectangularly across the whole sphere. The rest of the
+  globe shows the GIBS blue/black marble base.
+- Dateline-centered datasets (12 SOS rows with `lonOrigin: ±180`)
+  rotate the texture so the Pacific reads as the visible center.
+- Non-Earth datasets (20 SOS rows: Mars / Moon / Sun / Jupiter /
+  Saturn / …) no longer drape themselves over Earth's blue
+  marble; the Earth base hides and the dataset renders against a
+  clean sphere.
+
+Real per-body surface textures (Mars Viking mosaic, LRO Moon,
+etc.) are intentionally deferred to Phase 3f — that's a separate
+asset-sourcing question and would inflate the SPA bundle by
+several MB.
+
+**3e/A — Plumb 3d metadata into the renderer.** New
+`DatasetOverlayOptions` type in `src/types/index.ts`;
+`GlobeRenderer.updateTexture` / `setVideoTexture` signatures
+gain an optional `options` parameter. Two pure helpers in
+`src/services/datasetOverlayOptions.ts`:
+
+- `isEarthBody(name)` — SOS-convention "is this Earth?" check
+  (null / "" / case-insensitive "earth" all qualify; everything
+  else falls in the non-Earth bucket including "aurora" — the
+  renderer trusts the catalog row, not the phenomenon's
+  geography).
+- `overlayOptionsFromDataset(dataset)` — builds the option
+  bundle from a loaded `Dataset`, returning `undefined` when
+  every field is at its default so legacy datasets stay on the
+  pre-3e renderer fast path.
+
+`datasetLoader.ts` calls the helper before handing the texture
+to the renderer. `mapRenderer.ts` buffers options alongside the
+pending texture/video for the race where dataset load fires
+before MapLibre's `load` event; `earthTileLayer.ts` captures
+them into module-scope state. No rendering change yet at this
+commit — pure plumbing.
+
+**3e/B — Dataset overlay shader.** The `datasetFragSrc` GLSL
+grows from a one-line `texture(uDatasetTex, vUV)` passthrough
+into a per-fragment bbox-aware projection:
+
+- Computes geographic `lat`, `lon` from `vUV`.
+- `uHasBbox` mode: clips fragments outside `[s, n]` lat or
+  `[w, e]` lon (handling antimeridian-crossing boxes where
+  `w > e` correctly). Inside, remaps UVs so the texture
+  STRETCHES to the bbox extent.
+- `!uHasBbox` mode: full-globe path with `uLonOrigin`
+  shifting the U axis; `lonOrigin = 0` reduces to
+  `vUV.x` passthrough so legacy datasets are bit-identical.
+- `uFlipY` applies last in both paths.
+
+Four new uniforms on the `DatasetProgram`. The render pass
+sets them from `datasetOptions` per draw; defaults restore
+pre-3e behavior.
+
+**3e/C — Base raster reveal.** A new
+`applyBaseLayerVisibility()` private helper on `MapRenderer`
+replaces the previous "always hide blue + black marble on
+dataset load" behavior. Rule table:
+
+  | Earth + no bbox      | hide (dataset covers full sphere)         |
+  | Earth + bbox         | show (base fills outside the bbox)        |
+  | non-Earth (any bbox) | hide (Earth tiles wrong for Mars / Moon / …) |
+
+The dataset overlay shader's `discard` outside the bbox is
+what lets the base layer show through underneath; without
+3e/C the discarded fragments would have shown nothing.
+
+**3e/D — Non-Earth gating.** Same `applyBaseLayerVisibility()`
+helper factors in `celestialBody`. The Earth 4-pass effects
+shader (day/night terminator, lights, specular, clouds) was
+already skipped for any dataset-active render via the existing
+early return; nothing additional needed there. Non-Earth
+datasets simply lose the Earth raster bases.
+
+**3e/E — Tests + docs.** 14 new tests on the helper module
+(`datasetOverlayOptions.test.ts`) covering the SOS-convention
+Earth aliases, the "all defaults → undefined" fast path,
+populated-bundle round-trips, and defensive coverage of
+non-finite `lonOrigin` values. Plus this CHANGELOG entry.
+WebGL is integration-only — unit tests cover plumbing
+(`overlayOptionsFromDataset` returns the right bundle, the
+renderer accepts it) but the shader output itself is browser
+/ headset confirmed.
+
+**Operator notes.**
+
+- No new env vars, no new bindings, no schema changes —
+  builds entirely on the 3d wire surface.
+- After deploy, smoke-check with:
+  - `INTERNAL_HRRR_SMOKE_SEPTEMBER_2017_VIDEO` — regional CONUS
+    box, should render only over CONUS with blue marble
+    everywhere else.
+  - Any dateline-centered ocean dataset — Pacific should be
+    the visible center.
+  - `INTERNAL_SOS_MARIA_360` (Hurricane Maria 360-pano tour) —
+    treated as Earth, base layers hidden as before.
+  - A non-Earth row (e.g. `INTERNAL_SOS_215_ONLINE` Venus,
+    `INTERNAL_SOS_220_ONLINE` Moon) — should render the
+    dataset over a clean sphere with no Earth base.
+
+**Non-goals (deferred / out-of-scope).**
+
+- **Per-body surface textures** (Mars Viking mosaic, LRO Moon,
+  Sun SDO mosaic, etc.) — Phase 3f. Asset-sourcing decision
+  separate from the rendering pipeline.
+- **VR / Three.js parity** — Phase 3g. `photorealEarth.ts`
+  has its own diffuse / night-lights / atmosphere stack; the
+  non-Earth + bbox work needs porting separately.
+- **Camera fly-to-bbox on dataset load** — would be a nice UX
+  affordance but the existing camera-position behavior is
+  fine; defer until publisher feedback says otherwise.
+- **R-tree spatial index for browse "datasets in this region"**
+  — federation-era concern.
+
+---
+
 ## Phase 3d — Non-global metadata foundation
 
 **Branch:** `claude/non-global-metadata-phase-3d`

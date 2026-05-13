@@ -10,6 +10,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { Map as MaplibreMap, StyleSpecification, CustomLayerInterface } from 'maplibre-gl'
 import { createEarthTileLayer, computeSunLightPosition, type EarthTileLayerControl } from './earthTileLayer'
+import { isEarthBody } from './datasetOverlayOptions'
 import type {
   Dataset,
   DatasetOverlayOptions,
@@ -298,25 +299,6 @@ function createGlobeStyle(): StyleSpecification {
 let activeRenderer: MapRenderer | null = null
 
 /** Get the currently active (primary) MapRenderer, if any. */
-/**
- * Phase 3e: is a `celestialBody` string the SOS convention for
- * "Earth"? Empty / unset / case-insensitive "earth" all qualify
- * — the SOS snapshot ships some rows with `celestialBody: ""`
- * which is the documented Earth-implicit case. Everything else
- * is treated as non-Earth and triggers the base-layer hide path.
- *
- * Note "aurora" lands in the non-Earth bucket even though the
- * phenomenon is observed from Earth — the SOS importer persists
- * that string verbatim and the renderer trusts the catalog row.
- * If the row is wrong the operator fixes it on the publisher
- * side; the renderer doesn't second-guess.
- */
-function isEarthBody(name: string | null | undefined): boolean {
-  if (name == null) return true
-  const normalized = name.trim().toLowerCase()
-  return normalized === '' || normalized === 'earth'
-}
-
 export function getActiveMapRenderer(): MapRenderer | null {
   return activeRenderer
 }
