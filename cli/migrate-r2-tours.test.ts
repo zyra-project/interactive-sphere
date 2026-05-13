@@ -457,6 +457,58 @@ describe('runMigrateR2Tours — failure modes', () => {
     expect(events.events[0]).toMatchObject({ outcome: 'fetch_failed' })
   })
 
+  it('tour.json without a tourTasks array → outcome=parse_failed', async () => {
+    // Bytes parse as JSON but the file isn't a valid SOS tour file
+    // (no tourTasks). The migration must NOT upload + PATCH — the
+    // row was effectively broken pre-migration; relocating the
+    // bytes wouldn't fix it and would waste R2 storage.
+    const row = makeRow({ id: 'DS_NOTASKS' })
+    const { client, handles } = fakeClient({ rows: [row] })
+    const fetchAsset = fakeFetchAsset({
+      tourJsons: new Map([[TOUR_URL, { foo: 'bar' /* no tourTasks */ }]]),
+    })
+    const upload = fakeUploadR2Object()
+    const events = recorder()
+    const { ctx, err } = makeCtx(client)
+    const exit = await runMigrateR2Tours(ctx, {
+      skipPace: true,
+      r2Config: R2_CONFIG,
+      fetchAsset,
+      uploadR2Object: upload.fn,
+      emitTelemetry: events.emit,
+    })
+    expect(exit).toBe(1)
+    expect(upload.calls).toEqual([])
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(events.events[0]).toMatchObject({ outcome: 'parse_failed' })
+    expect(err.text()).toMatch(/no `tourTasks` array/)
+  })
+
+  it('tour.json with non-array tourTasks → outcome=parse_failed', async () => {
+    // Defensive: tourTasks present but wrong type. parseTourFile
+    // would silently return empty assets; the pump explicitly
+    // refuses so the operator sees the malformed file.
+    const row = makeRow({ id: 'DS_BADTASKS' })
+    const { client, handles } = fakeClient({ rows: [row] })
+    const fetchAsset = fakeFetchAsset({
+      tourJsons: new Map([[TOUR_URL, { tourTasks: 'oops not an array' }]]),
+    })
+    const upload = fakeUploadR2Object()
+    const events = recorder()
+    const { ctx } = makeCtx(client)
+    const exit = await runMigrateR2Tours(ctx, {
+      skipPace: true,
+      r2Config: R2_CONFIG,
+      fetchAsset,
+      uploadR2Object: upload.fn,
+      emitTelemetry: events.emit,
+    })
+    expect(exit).toBe(1)
+    expect(upload.calls).toEqual([])
+    expect(handles.updateDataset).not.toHaveBeenCalled()
+    expect(events.events[0]).toMatchObject({ outcome: 'parse_failed' })
+  })
+
   it('tour.json bytes that aren\'t valid JSON → outcome=parse_failed', async () => {
     const row = makeRow({ id: 'DS_BAD' })
     const { client, handles } = fakeClient({ rows: [row] })

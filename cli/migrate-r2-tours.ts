@@ -337,16 +337,27 @@ async function migrateOne(
     deps.stderr.write(`[${row.id}] tour.json parse_failed: ${result.errorMessage}\n`)
     return result
   }
+  // Shape check: the bytes parsed as JSON but if there's no
+  // `tourTasks` array the file isn't a valid SOS tour file —
+  // migrating it would just relocate broken bytes (the SPA's
+  // tour engine bails on this same shape). Treat like
+  // `dead_source`: the row was effectively broken pre-migration;
+  // we don't make it worse, but we don't waste R2 bytes on it
+  // either. Same outcome enum as a JSON-decode failure since
+  // both are "bytes don't represent a usable tour."
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    !Array.isArray((parsed as { tourTasks?: unknown }).tourTasks)
+  ) {
+    result.outcome = 'parse_failed'
+    result.errorMessage =
+      'tour.json has no `tourTasks` array — not a valid SOS tour file.'
+    result.durationMs = deps.now() - start
+    deps.stderr.write(`[${row.id}] tour.json parse_failed: ${result.errorMessage}\n`)
+    return result
+  }
   const parseResult = parseTourFile(parsed)
-  // Defence: the migration only ever ran in 3c/A against tour
-  // files we'd already audited as having tourTasks via the
-  // probe / sweep scripts. But a third-party catalog's
-  // `run_tour_on_load` could in theory point at something else;
-  // if `parseTourFile` returned an empty assets list AND zero
-  // unknownTasks for a non-object response, the SPA wouldn't be
-  // able to play this tour anyway. We migrate it as-is — the
-  // bytes go to R2, the row PATCHes — and let the SPA fail the
-  // same way it would have against NOAA.
 
   // Tally classification counts (used for telemetry).
   for (const a of parseResult.assets) {
