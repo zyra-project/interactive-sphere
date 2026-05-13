@@ -39,7 +39,7 @@
 
 import type * as THREE from 'three'
 import { getSunPosition } from '../utils/time'
-import { getCloudTextureUrl } from '../utils/deviceCapability'
+import { getCloudTextureUrl, isMobile } from '../utils/deviceCapability'
 import { logger } from '../utils/logger'
 import {
   ATMOSPHERE_GLSL_CONSTANTS,
@@ -47,9 +47,11 @@ import {
   ATMOSPHERE_GLSL_PHASE,
   ATMOSPHERE_GLSL_INTERSECT,
   ATMOSPHERE_GLSL_TONEMAP,
-  ATMOSPHERE_GLSL_RAYMARCH,
+  ATMOSPHERE_STEPS_HIGH,
+  ATMOSPHERE_STEPS_MOBILE,
   ATMOSPHERE_RADIUS_FACTOR,
   PLANET_RADIUS_KM,
+  buildAtmosphereRaymarchGlsl,
 } from './atmosphereConstants'
 
 /** Default radius if `options.radius` is omitted — matches the VR view. */
@@ -485,6 +487,12 @@ export function createPhotorealEarth(
       }
     `
 
+    // Mobile / touch devices (including Quest) get a lower step
+    // count to fit their fragment-shader budget. `isMobile()`
+    // matches the texture-resolution decisions made elsewhere in
+    // the codebase.
+    const atmosphereSteps = isMobile() ? ATMOSPHERE_STEPS_MOBILE : ATMOSPHERE_STEPS_HIGH
+
     const atmosphereFragShader = `
       uniform vec3 uSunDir;
       uniform vec3 uPlanetCenter;
@@ -495,7 +503,7 @@ export function createPhotorealEarth(
       ${ATMOSPHERE_GLSL_PHASE}
       ${ATMOSPHERE_GLSL_INTERSECT}
       ${ATMOSPHERE_GLSL_TONEMAP}
-      ${ATMOSPHERE_GLSL_RAYMARCH}
+      ${buildAtmosphereRaymarchGlsl(atmosphereSteps)}
 
       void main() {
         // Translate world coords into planet-centred km, which is

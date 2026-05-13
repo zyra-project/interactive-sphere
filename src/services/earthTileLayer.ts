@@ -24,7 +24,7 @@ import type { CustomLayerInterface } from 'maplibre-gl'
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { getSunPosition } from '../utils/time'
 import { logger } from '../utils/logger'
-import { getCloudTextureUrl } from '../utils/deviceCapability'
+import { getCloudTextureUrl, isMobile } from '../utils/deviceCapability'
 import { reportError } from '../analytics'
 import {
   ATMOSPHERE_GLSL_CONSTANTS,
@@ -32,10 +32,19 @@ import {
   ATMOSPHERE_GLSL_PHASE,
   ATMOSPHERE_GLSL_INTERSECT,
   ATMOSPHERE_GLSL_TONEMAP,
-  ATMOSPHERE_GLSL_RAYMARCH,
+  ATMOSPHERE_STEPS_HIGH,
+  ATMOSPHERE_STEPS_MOBILE,
   ATMOSPHERE_RADIUS_FACTOR,
   PLANET_RADIUS_KM,
+  buildAtmosphereRaymarchGlsl,
 } from './atmosphereConstants'
+
+// Pick step counts once at module load. The shader source is a
+// top-level constant in this file (compiled when the layer is
+// first added to a map), so this matches the lifetime of the
+// program. If the user resizes a desktop browser to phone width
+// the shader doesn't re-compile — fine for this build's audience.
+const ATMOSPHERE_STEPS = isMobile() ? ATMOSPHERE_STEPS_MOBILE : ATMOSPHERE_STEPS_HIGH
 
 // --- Texture URLs ---
 const SPECULAR_MAP_URL = '/assets/Earth_Specular_2K.jpg'
@@ -500,7 +509,7 @@ const atmosphereFragSrc = `#version 300 es
   ${ATMOSPHERE_GLSL_PHASE}
   ${ATMOSPHERE_GLSL_INTERSECT}
   ${ATMOSPHERE_GLSL_TONEMAP}
-  ${ATMOSPHERE_GLSL_RAYMARCH}
+  ${buildAtmosphereRaymarchGlsl(ATMOSPHERE_STEPS)}
 
   void main() {
     vec3 rayDir = normalize(vWorldPositionKm - uCameraPosKm);
