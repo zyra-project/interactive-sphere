@@ -31,13 +31,20 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 RUN npm install -g @tauri-apps/cli@latest && tauri --version
 
 # Install Node dependencies (cached layer)
+# --ignore-scripts skips postinstall; we run tokens/locales after source is copied
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Copy source and config
 COPY tsconfig.json vite.config.ts ./
+COPY tokens/ ./tokens/
+COPY locales/ ./locales/
+COPY scripts/ ./scripts/
 COPY src/ ./src/
 COPY public/ ./public/
+
+# Run the build steps that were previously in postinstall
+RUN npm run tokens && npm run locales
 
 EXPOSE 5173
 
