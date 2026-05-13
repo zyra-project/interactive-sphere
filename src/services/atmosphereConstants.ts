@@ -36,6 +36,19 @@ export const ATMOSPHERE_HEIGHT_KM = 100.0
 
 export const ATMOSPHERE_RADIUS_KM = PLANET_RADIUS_KM + ATMOSPHERE_HEIGHT_KM
 
+/**
+ * Atmosphere shell radius as a multiple of the planet's geometric
+ * radius. Derived from `ATMOSPHERE_HEIGHT_KM / PLANET_RADIUS_KM` so
+ * the shell mesh exactly bounds the atmosphere the raymarch
+ * integrates over — no gap between the visible shell edge and the
+ * ray-sphere `ATMOSPHERE_RADIUS` used inside the shader.
+ *
+ * Tier-1 used 1.012 for cosmetic reasons; Tier-2 needs the geometric
+ * shell and the analytic atmosphere boundary to agree so the
+ * front-face fragment IS the camera-side atmosphere entry point.
+ */
+export const ATMOSPHERE_RADIUS_FACTOR = ATMOSPHERE_RADIUS_KM / PLANET_RADIUS_KM
+
 // ── Rayleigh ───────────────────────────────────────────────────────
 
 /**
@@ -222,6 +235,107 @@ export const ATMOSPHERE_GLSL_TONEMAP = /* glsl */ `
 `
 
 /**
+ * Bounded raymarch for atmospheric scattering. The camera-outside-
+ * atmosphere "rendering planets" case from the article. All inputs
+ * are in kilometres; the planet is assumed centred at the origin.
+ *
+ *   - Intersects the ray with the atmosphere sphere and the planet
+ *     sphere to bound the segment; bails early if the ray misses
+ *     the atmosphere.
+ *   - PRIMARY_STEPS samples along the segment; each accumulates
+ *     Rayleigh, Mie and ozone optical depths.
+ *   - LIGHTMARCH_STEPS samples from each primary sample toward the
+ *     sun, accumulating the sun-side optical depth; a sample whose
+ *     light ray dips below the planet surface gets a huge optical
+ *     depth, effectively shadowing it.
+ *   - In-scattering at each sample is weighted by combined
+ *     transmittance from camera-to-sample-to-sun.
+ *   - Ozone contributes to extinction only (no scattering term).
+ *
+ * Returns the HDR scattered colour. Caller is responsible for
+ * tonemapping and blending. With additive blending, just write
+ * `colour * alpha` where `alpha` is your fragment's coverage.
+ *
+ * Depends on the other GLSL chunks (CONSTANTS, DENSITY, PHASE,
+ * INTERSECT) being injected ahead of this one.
+ */
+export const ATMOSPHERE_GLSL_RAYMARCH = /* glsl */ `
+  vec3 computeAtmosphereScattering(vec3 rayOriginKm, vec3 rayDirKm, vec3 sunDir) {
+    vec2 atmHit = raySphereIntersect(rayOriginKm, rayDirKm, vec3(0.0), ATMOSPHERE_RADIUS);
+    if (atmHit.y <= 0.0) return vec3(0.0);
+
+    vec2 planetHit = raySphereIntersect(rayOriginKm, rayDirKm, vec3(0.0), PLANET_RADIUS);
+
+    float tNear = max(atmHit.x, 0.0);
+    float tFar = atmHit.y;
+    if (planetHit.x > 0.0) tFar = min(tFar, planetHit.x);
+    if (tFar <= tNear) return vec3(0.0);
+
+    float segmentLen = tFar - tNear;
+    float stepSize = segmentLen / float(${PRIMARY_STEPS});
+
+    vec3 sumR = vec3(0.0);
+    vec3 sumM = vec3(0.0);
+    float viewOdR = 0.0;
+    float viewOdM = 0.0;
+    float viewOdO = 0.0;
+
+    for (int i = 0; i < ${PRIMARY_STEPS}; i++) {
+      float t = tNear + (float(i) + 0.5) * stepSize;
+      vec3 samplePos = rayOriginKm + rayDirKm * t;
+      float h = length(samplePos) - PLANET_RADIUS;
+      if (h < 0.0 || h > ATMOSPHERE_HEIGHT) continue;
+
+      float dR = rayleighDensity(h);
+      float dM = mieDensity(h);
+      float dO = ozoneDensity(h);
+
+      viewOdR += dR * stepSize;
+      viewOdM += dM * stepSize;
+      viewOdO += dO * stepSize;
+
+      // Light march from this sample toward the sun. If the ray
+      // dips through the planet, the sample is in geometric shadow.
+      vec2 sunHit = raySphereIntersect(samplePos, sunDir, vec3(0.0), ATMOSPHERE_RADIUS);
+      float sunStep = max(sunHit.y, 0.0) / float(${LIGHTMARCH_STEPS});
+      float sunOdR = 0.0;
+      float sunOdM = 0.0;
+      float sunOdO = 0.0;
+      bool shadowed = false;
+      for (int j = 0; j < ${LIGHTMARCH_STEPS}; j++) {
+        float st = (float(j) + 0.5) * sunStep;
+        vec3 sunPos = samplePos + sunDir * st;
+        float sh = length(sunPos) - PLANET_RADIUS;
+        if (sh < 0.0) { shadowed = true; break; }
+        if (sh > ATMOSPHERE_HEIGHT) break;
+        sunOdR += rayleighDensity(sh) * sunStep;
+        sunOdM += mieDensity(sh) * sunStep;
+        sunOdO += ozoneDensity(sh) * sunStep;
+      }
+      if (shadowed) continue;
+
+      vec3 tau =
+        RAYLEIGH_BETA   * (viewOdR + sunOdR) +
+        MIE_BETA_EXT    * (viewOdM + sunOdM) +
+        OZONE_BETA_ABS  * (viewOdO + sunOdO);
+      vec3 transmittance = exp(-tau);
+
+      sumR += dR * transmittance * stepSize;
+      sumM += dM * transmittance * stepSize;
+    }
+
+    float mu = dot(rayDirKm, sunDir);
+    float pR = rayleighPhase(mu);
+    float pM = cornetteShanksPhase(mu);
+
+    return SUN_INTENSITY * (
+      pR * RAYLEIGH_BETA      * sumR +
+      pM * MIE_BETA_SCATTER   * sumM
+    );
+  }
+`
+
+/**
  * Everything in one block. Convenience export for consumers that
  * want all helpers; consumers that only need a subset can import the
  * individual exports above.
@@ -232,4 +346,5 @@ export const ATMOSPHERE_GLSL_ALL = [
   ATMOSPHERE_GLSL_PHASE,
   ATMOSPHERE_GLSL_INTERSECT,
   ATMOSPHERE_GLSL_TONEMAP,
+  ATMOSPHERE_GLSL_RAYMARCH,
 ].join('\n')
