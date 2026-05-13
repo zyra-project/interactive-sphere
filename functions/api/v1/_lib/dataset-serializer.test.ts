@@ -57,7 +57,14 @@ function fakeRow(overrides: Partial<DatasetRow> = {}): DatasetRow {
     legacy_id: null,
     color_table_ref: null,
     probing_info: null,
-    bounding_variables: null,
+    bbox_n: null,
+    bbox_s: null,
+    bbox_w: null,
+    bbox_e: null,
+    celestial_body: null,
+    radius_mi: null,
+    lon_origin: null,
+    is_flipped_in_y: null,
     ...overrides,
   }
 }
@@ -170,17 +177,7 @@ describe('serializeDataset — Phase 3b columns', () => {
     expect(wire.probingInfo).toEqual(probing)
   })
 
-  it('parses bounding_variables JSON text on read', () => {
-    const bounding = { ranges: [[0, 100]] }
-    const wire = serializeDataset(
-      fakeRow({ bounding_variables: JSON.stringify(bounding) }),
-      emptyDecoration,
-      fakeIdentity,
-    )
-    expect(wire.boundingVariables).toEqual(bounding)
-  })
-
-  it('returns undefined for malformed JSON rather than 500-ing', () => {
+  it('returns undefined for malformed probing_info JSON rather than 500-ing', () => {
     // The validator gates write-side shape, so the only way a row
     // ends up with malformed JSON here is an out-of-band DB edit.
     // We surface that as a missing field rather than a hard
@@ -193,10 +190,120 @@ describe('serializeDataset — Phase 3b columns', () => {
     expect(wire.probingInfo).toBeUndefined()
   })
 
-  it('omits the fields entirely when both are null (default state)', () => {
+  it('omits probing_info when the column is null (default state)', () => {
     const wire = serializeDataset(fakeRow({}), emptyDecoration, fakeIdentity)
     expect(wire.probingInfo).toBeUndefined()
-    expect(wire.boundingVariables).toBeUndefined()
+  })
+})
+
+describe('serializeDataset — Phase 3d columns (non-global metadata)', () => {
+  // Migration 0010 promoted bounding_variables (JSON text) to four
+  // typed columns and added celestialBody / radiusMi / lonOrigin /
+  // isFlippedInY for non-Earth + dateline-centered + flipped
+  // datasets. Serializer surfaces them when populated, omits when
+  // NULL so the common (Earth, global, prime-meridian, no-flip)
+  // case stays terse on the wire.
+
+  it('assembles boundingBox from all four bbox_* columns', () => {
+    const wire = serializeDataset(
+      fakeRow({ bbox_n: 52.621, bbox_s: 21.1381, bbox_w: -134.099, bbox_e: -60.9016 }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.boundingBox).toEqual({
+      n: 52.621,
+      s: 21.1381,
+      w: -134.099,
+      e: -60.9016,
+    })
+  })
+
+  it('omits boundingBox if any corner is null (defensive — a partial bbox is useless)', () => {
+    // A row with bbox_n / bbox_s / bbox_w populated but bbox_e
+    // missing can't drive the SPA's regional projection — better
+    // to drop the field than emit a half-box.
+    const wire = serializeDataset(
+      fakeRow({ bbox_n: 90, bbox_s: -90, bbox_w: -180, bbox_e: null }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.boundingBox).toBeUndefined()
+  })
+
+  it('omits boundingBox when all four corners are null (global dataset)', () => {
+    const wire = serializeDataset(fakeRow({}), emptyDecoration, fakeIdentity)
+    expect(wire.boundingBox).toBeUndefined()
+  })
+
+  it('surfaces celestialBody / radiusMi when populated (non-Earth row)', () => {
+    const wire = serializeDataset(
+      fakeRow({ celestial_body: 'Mars', radius_mi: 2106.1 }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.celestialBody).toBe('Mars')
+    expect(wire.radiusMi).toBe(2106.1)
+  })
+
+  it('omits celestialBody / radiusMi when null (Earth default)', () => {
+    const wire = serializeDataset(fakeRow({}), emptyDecoration, fakeIdentity)
+    expect(wire.celestialBody).toBeUndefined()
+    expect(wire.radiusMi).toBeUndefined()
+  })
+
+  it('omits celestialBody when the column is an empty / whitespace string (legacy data)', () => {
+    // Defense in depth — the importer strips empties on the write
+    // side, but if a row sneaked through with `celestial_body = ''`
+    // we don't want to surface `celestialBody: ""` on the wire and
+    // confuse the SPA's "omitted == Earth" convention.
+    expect(
+      serializeDataset(fakeRow({ celestial_body: '' }), emptyDecoration, fakeIdentity).celestialBody,
+    ).toBeUndefined()
+    expect(
+      serializeDataset(fakeRow({ celestial_body: '   ' }), emptyDecoration, fakeIdentity).celestialBody,
+    ).toBeUndefined()
+  })
+
+  it('surfaces lonOrigin when non-null (dateline-centered datasets)', () => {
+    const wire = serializeDataset(
+      fakeRow({ lon_origin: 180 }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.lonOrigin).toBe(180)
+  })
+
+  it('preserves lonOrigin = 0 explicitly (caller asked for prime meridian)', () => {
+    // A row with lon_origin = 0 (vs NULL) means the publisher
+    // explicitly set prime-meridian; we round-trip it rather than
+    // collapsing 0 → undefined which would lose the publisher's
+    // intent on the next read.
+    const wire = serializeDataset(
+      fakeRow({ lon_origin: 0 }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.lonOrigin).toBe(0)
+  })
+
+  it('surfaces isFlippedInY as true only when the column == 1', () => {
+    const wire = serializeDataset(
+      fakeRow({ is_flipped_in_y: 1 }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(wire.isFlippedInY).toBe(true)
+  })
+
+  it('omits isFlippedInY when the column == 0 or null (no flip is the default)', () => {
+    const zero = serializeDataset(
+      fakeRow({ is_flipped_in_y: 0 }),
+      emptyDecoration,
+      fakeIdentity,
+    )
+    expect(zero.isFlippedInY).toBeUndefined()
+    const nullCase = serializeDataset(fakeRow({}), emptyDecoration, fakeIdentity)
+    expect(nullCase.isFlippedInY).toBeUndefined()
   })
 })
 
