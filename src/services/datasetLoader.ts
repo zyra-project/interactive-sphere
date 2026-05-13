@@ -9,6 +9,7 @@ import { dataService } from './dataService'
 import { apiFetch, isManifestUrl } from './catalogSource'
 import { getDownload, getDownloadPath } from './downloadService'
 import type { Dataset, AppState, GlobeRenderer, VideoTextureHandle } from '../types'
+import { overlayOptionsFromDataset } from './datasetOverlayOptions'
 import { formatDate, isSubDailyPeriod, inferDisplayInterval } from '../utils/time'
 import { logger } from '../utils/logger'
 import { escapeHtml, escapeAttr } from '../ui/domUtils'
@@ -90,7 +91,7 @@ export async function loadImageDataset(
     img = await loadImageFromNetwork(dataset, isMobile)
   }
 
-  renderer.updateTexture(img)
+  renderer.updateTexture(img, overlayOptionsFromDataset(dataset))
 
   // Only the primary drives the singular time label and playback UI.
   if (isPrimary) {
@@ -296,7 +297,7 @@ export async function loadVideoDataset(
     }
   }
 
-  const videoTexture = renderer.setVideoTexture(video)
+  const videoTexture = renderer.setVideoTexture(video, overlayOptionsFromDataset(dataset))
   videoTexture.needsUpdate = true
 
   // Scrubber + playback transport are singular — primary only.

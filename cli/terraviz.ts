@@ -44,6 +44,8 @@ import { runMigrateR2Hls } from './migrate-r2-hls'
 import { runRollbackR2Hls } from './rollback-r2-hls'
 import { runListRealtimeR2 } from './list-realtime-r2'
 import { runMigrateR2Assets } from './migrate-r2-assets'
+import { runMigrateR2Tours } from './migrate-r2-tours'
+import { runRollbackR2Tours } from './rollback-r2-tours'
 import { runRollbackR2Assets } from './rollback-r2-assets'
 
 async function main(argv: string[]): Promise<number> {
@@ -116,6 +118,10 @@ async function main(argv: string[]): Promise<number> {
       return runMigrateR2Assets(ctx)
     case 'rollback-r2-assets':
       return runRollbackR2Assets(ctx)
+    case 'migrate-r2-tours':
+      return runMigrateR2Tours(ctx)
+    case 'rollback-r2-tours':
+      return runRollbackR2Tours(ctx)
     default:
       process.stderr.write(`Unknown command: ${command}\n\nRun \`terraviz help\` for usage.\n`)
       return 2

@@ -67,10 +67,40 @@ export interface DatasetRow {
    * the SOS snapshot. The SPA-side probe tooltip is a separate
    * downstream change; this column just persists the data. */
   probing_info: string | null
-  /** JSON-stringified per-variable data ranges from the SOS
-   * `boundingVariables` field. Persisted verbatim; consumers can
-   * surface or ignore. */
-  bounding_variables: string | null
+  /** Geographic bounding box (NSWE in degrees) for the dataset's
+   * spatial extent. Phase 3d promoted these from the legacy
+   * `bounding_variables` JSON column to typed REALs; consumers
+   * MUST read the typed fields. NULL on rows with global extent.
+   * Validation: n/s in [-90, 90], w/e in [-180, 180], n >= s.
+   * The SPA's regional projection feature (Phase 3e) wraps the
+   * dataset texture to this bbox; rows with all four NULL get
+   * the legacy global-equirectangular treatment. */
+  bbox_n: number | null
+  bbox_s: number | null
+  bbox_w: number | null
+  bbox_e: number | null
+  /** Celestial body the dataset visualises. NULL means Earth (the
+   * common case). Non-Earth values surface as a SPA hint to swap
+   * the base globe texture (Phase 3e). Verbatim SOS strings —
+   * the snapshot includes Mars / Moon / Sun / Jupiter / Saturn /
+   * Mercury / Venus / Pluto / Neptune / Uranus / Io / Europa /
+   * Ganymede / Callisto / Enceladus / Titan / 67p / aurora /
+   * Trappist-1d / Kepler-10b. */
+  celestial_body: string | null
+  /** Radius of the celestial body in miles, when non-Earth.
+   * Paired with `celestial_body` for proportional sizing. NULL
+   * when celestial_body is NULL (Earth's default radius is
+   * implicit). */
+  radius_mi: number | null
+  /** Globe longitude rotation reference in degrees. NULL means 0
+   * (prime-meridian-centered). 12 SOS rows use ±180 for
+   * Pacific-focused datasets where the dateline reads better as
+   * the visual center. */
+  lon_origin: number | null
+  /** Boolean (0/1) image-orientation flag. NULL means 0 (no flip).
+   * Zero rows use this in the current SOS snapshot; persisted for
+   * future publishers whose imagery uses inverted Y conventions. */
+  is_flipped_in_y: number | null
 }
 
 export interface DecorationRows {

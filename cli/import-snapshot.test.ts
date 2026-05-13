@@ -101,7 +101,13 @@ const AUX_SNAPSHOT_FIXTURE = {
         minPos: { x: 45, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
         maxPos: { x: 277, y: 99, XUnits: 'Pixels', YUnits: 'Pixels' },
       },
-      boundingVariables: { ranges: [[20, 38]] },
+      // Phase 3d: typed NSWE bounding box. SOS publishers store
+      // the corners as strings; the importer coerces to numerics.
+      boundingVariables: { n: '52.621', s: '21.1381', w: '-134.099', e: '-60.9016' },
+      celestialBody: 'Mars',
+      radiusMi: 2106.1,
+      lonOrigin: 180,
+      isFlippedInY: false,
     },
     {
       // No new auxiliary fields on this row — exercises the
@@ -511,7 +517,7 @@ describe('runImportSnapshot --update-existing (3b/C)', () => {
     expect(out.text()).not.toContain('backfilled:')
   })
 
-  it('--update-existing PATCHes the three new columns on the existing row', async () => {
+  it('--update-existing PATCHes the backfill columns on the existing row', async () => {
     const { client, handles } = fakeClient({
       existing: [{ id: 'DS_SALINITY', legacy_id: 'INTERNAL_SOS_811' }],
     })
@@ -522,22 +528,45 @@ describe('runImportSnapshot --update-existing (3b/C)', () => {
     )
     const code = await runImportSnapshot(ctx)
     expect(code).toBe(0)
-    // One PATCH call, scoped to the three auxiliary columns.
+    // One PATCH call scoped to the Phase 3b color_table_ref +
+    // probing_info plus the Phase 3d bounding_box + non-Earth
+    // metadata (celestial_body, radius_mi, lon_origin). The
+    // is_flipped_in_y field stays out of the PATCH body because
+    // the snapshot row's isFlippedInY=false collapses to "omit"
+    // (the default state).
     expect(handles.updateDataset).toHaveBeenCalledTimes(1)
     const [calledId, calledBody] = handles.updateDataset.mock.calls[0] as [string, Record<string, unknown>]
     expect(calledId).toBe('DS_SALINITY')
     expect(Object.keys(calledBody).sort()).toEqual(
-      ['bounding_variables', 'color_table_ref', 'probing_info'].sort(),
+      [
+        'bounding_box',
+        'celestial_body',
+        'color_table_ref',
+        'lon_origin',
+        'probing_info',
+        'radius_mi',
+      ].sort(),
     )
     expect(calledBody.color_table_ref).toBe('https://example.org/salinity-color.png')
-    // The JSON columns arrive as stringified blobs (the validator's
-    // wire contract); round-trip parse confirms.
+    // 3d typed values surface as-is — bbox as a numeric object,
+    // celestial_body / radius_mi / lon_origin as their primitive
+    // types (no JSON-stringify dance).
+    expect(calledBody.bounding_box).toEqual({
+      n: 52.621,
+      s: 21.1381,
+      w: -134.099,
+      e: -60.9016,
+    })
+    expect(calledBody.celestial_body).toBe('Mars')
+    expect(calledBody.radius_mi).toBe(2106.1)
+    expect(calledBody.lon_origin).toBe(180)
+    // The JSON column (probing_info) still arrives stringified —
+    // unchanged from 3b's contract.
     expect(JSON.parse(calledBody.probing_info as string)).toMatchObject({
       units: 'psu',
       minVal: 20,
       maxVal: 38,
     })
-    expect(JSON.parse(calledBody.bounding_variables as string)).toEqual({ ranges: [[20, 38]] })
     // No publisher-edited fields (title / abstract / etc.) on the body.
     expect(calledBody.title).toBeUndefined()
     expect(calledBody.abstract).toBeUndefined()
@@ -613,7 +642,13 @@ describe('runImportSnapshot --update-existing (3b/C)', () => {
     expect(code).toBe(0)
     expect(handles.updateDataset).not.toHaveBeenCalled()
     expect(out.text()).toContain('rows to backfill:      1')
-    expect(out.text()).toContain('--update-existing on color_table_ref / probing_info / bounding_variables')
+    // The dry-run banner spells out every column in BACKFILL_FIELDS.
+    // After 3d/A the list grew from 3 columns to 7 — assert on the
+    // leading prefix + a couple of representative entries (both 3b
+    // and 3d additions) rather than freezing the exact string.
+    expect(out.text()).toContain('--update-existing on color_table_ref / probing_info')
+    expect(out.text()).toContain('bounding_box')
+    expect(out.text()).toContain('celestial_body')
     expect(out.text()).toContain('Dry run')
   })
 })

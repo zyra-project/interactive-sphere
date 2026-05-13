@@ -163,7 +163,15 @@ interface PlanCounts {
  * Listed here so a future column addition decides explicitly
  * whether the backfill flag covers it.
  */
-const BACKFILL_FIELDS = ['color_table_ref', 'probing_info', 'bounding_variables'] as const
+const BACKFILL_FIELDS = [
+  'color_table_ref',
+  'probing_info',
+  'bounding_box',
+  'celestial_body',
+  'radius_mi',
+  'lon_origin',
+  'is_flipped_in_y',
+] as const
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))

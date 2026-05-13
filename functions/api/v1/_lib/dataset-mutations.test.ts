@@ -220,6 +220,21 @@ describe('getDatasetForPublisher', () => {
     expect(await getDatasetForPublisher(env.CATALOG_DB!, STAFF, id)).not.toBeNull()
     expect(await getDatasetForPublisher(env.CATALOG_DB!, COMMUNITY, id)).toBeNull()
   })
+
+  it('normalizes empty / whitespace celestial_body to NULL on INSERT (3d/A defense in depth)', async () => {
+    const { env, sqlite } = setupEnv()
+    const created = await createDataset(env, COMMUNITY, {
+      title: 'Earth implicit',
+      format: 'video/mp4',
+      celestial_body: '   ',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const row = sqlite
+      .prepare(`SELECT celestial_body FROM datasets WHERE id = ?`)
+      .get(created.dataset.id) as { celestial_body: string | null }
+    expect(row.celestial_body).toBeNull()
+  })
 })
 
 describe('updateDataset', () => {

@@ -16,7 +16,431 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3c — Tour JSON migration
+
+**Branch:** `claude/tour-migration-phase-3c`
+**Commits:** 3c/A through 3c/G — seven logical changes plus
+three operator-side probe scripts (3c/A-probe / 3c/A-sweep /
+3c/A-dump) and a parser extension (3c/A-extend).
+
+Phase 3b finished migrating the auxiliary asset URLs onto R2;
+this phase migrates the *tour.json* files (and their sibling
+overlay images / narrated audio / 360-pano JPGs) the SOS catalog
+references via the `run_tour_on_load` column. After 3c ships
+the noaa.gov dependency for tour playback is gone — federation
+peers can mirror tours without reaching back to NOAA's
+CloudFront.
+
+**Strict-relative policy.** Tour task fields that hold *relative*
+references (sibling-of-tour.json filenames like `audio/intro.mp3`)
+get migrated. *External* URLs (YouTube embeds, Vimeo, popup web
+links) are left verbatim — the operator can't legally re-host
+them and they're not migratable assets anyway. The parser
+classifies every URL-bearing task field as relative /
+absolute_external / absolute_sos_cdn so the dashboard can size
+the residual external-CDN dependency.
+
+**3c/A — `cli/lib/tour-json-parser.ts`.** Pure / deterministic /
+no-I/O library that walks a parsed SOS tour file and produces a
+catalog of `(rawValue, source, kind)` entries plus a list of
+unknown task names. Covers playAudio / playVideo / showVideo /
+showImage / showImg / question / showPopupHtml / addPlacemark
+out of the gate; iteratively extended (3c/A-extend) to cover
+addBubble / showInfoBtn / hideInfoBtn / loadTour / showLegend /
+worldBorders after a full-catalog sweep flagged them in real
+tour.json files. Final parser surface: zero unknown task types
+across all 198 fetchable production tours.
+
+Companion operator scripts (in `scripts/`):
+  - `probe-tour-parser.ts` — fetch one tour.json + run the parser
+  - `sweep-tour-parser.ts` — fetch all 199 + aggregate counts
+  - `dump-unknown-tour-tasks.ts` — print the verbatim JSON of
+    every blind-spot task so the parser extension is single-pass
+
+**3c/B — `terraviz migrate-r2-tours`.** Per-row atomic pump.
+Pipeline: GET row → fetch tour.json → parse → resolve every
+relative sibling URL against the tour.json URL → fetch each
+sibling (deduped by sibling-key) → upload tour.json + every
+sibling to `tours/<id>/...` → PATCH `run_tour_on_load` to
+`r2:tours/<id>/tour.json`. Any failure pre-PATCH leaves the row
+on NOAA (no broken-tour hazard); a PATCH failure after uploads
+succeeded leaves R2 orphans that the next migration run
+clobbers on the re-PUT or that `rollback-r2-tours` cleans up.
+Outcomes: `ok` / `dead_source` (NOAA 404 — intentionally not
+counted as a failure) / `fetch_failed` / `parse_failed` /
+`sibling_fetch_failed` / `upload_failed` / `patch_failed`. Flags
+mirror 3b's: `--dry-run`, `--limit=N`, `--id=<dataset>`,
+`--pace-ms=N`. Idempotent on `r2:`-prefixed rows.
+
+**3c/C — `migration_r2_tours` Tier A event + ingest
+registration.** Per-row event (vs 3b's per-asset) carrying
+dataset_id, legacy_id, source_url, r2_key, source_bytes,
+siblings_relative / _external / _sos_cdn / _migrated,
+duration_ms, outcome. Added to `KNOWN_EVENT_TYPES` so AE
+persists the events; same generic blob/double mapping the other
+migration events use.
+
+**3c/D — `terraviz rollback-r2-tours`.** Symmetric inverse —
+single-row and bulk `--from-stdin` modes, same per-row pipeline:
+verify `r2:`, recover original URL from SOS snapshot (or
+`--to-url=<url>`), PATCH back, delete the `tours/<id>/` R2
+prefix in one list+parallel-DELETE pass. Catalog-correct
+exit-0 even if the R2 cleanup orphans, surfaced as
+`delete_failed` in the summary. Defensive: refuses to roll
+back a malformed `r2:no-slash-key` that could otherwise risk
+deleting a wider prefix than intended.
+
+**3c/E — Serializer wires `r2:` `run_tour_on_load` to a public
+URL.** `serializeDataset` already passed thumbnail / legend /
+caption / color_table through the `AssetRefResolver`; this
+commit applies the same resolver to `runTourOnLoad` so a row
+whose `run_tour_on_load` is `r2:tours/<id>/tour.json` resolves
+to the `R2_PUBLIC_BASE`-rooted URL the SPA can actually fetch.
+Bare https URLs (pre-3c rows still on NOAA) pass through
+unchanged.
+
+**3c/F — Tour-migration row on Product Health dashboard.** Three
+panels at y=50 (just below 3b's asset row at y=42): events-per-
+day-by-outcome timeseries, cumulative-ok stat, non-ok outcome
+breakdown table. Pinned blob position: `blob7 AS outcome`
+(distinct from migration_r2_assets's `blob8 AS outcome` — the
+tour event has no `asset_type` field, so outcome lands one
+position earlier). Dashboard version bump 8 → 9.
+
+**3c/G — Docs.** This entry plus the new "Migrating tour.json
+files to R2" runbook section in
+`docs/CATALOG_BACKEND_DEVELOPMENT.md` (parallel to 3b's auxiliary
+asset migration runbook).
+
+**Operator quick-start.**
+
+```sh
+set -a; . ~/.terraviz/prod.env; set +a
+
+npm run terraviz -- migrate-r2-tours --dry-run
+npm run terraviz -- migrate-r2-tours --limit=5
+npm run terraviz -- migrate-r2-tours
+
+# Roll back one row:
+npm run terraviz -- rollback-r2-tours <dataset_id>
+
+# Bulk rollback from telemetry-filtered NDJSON:
+... | npm run terraviz -- rollback-r2-tours --from-stdin
+```
+
+No new env vars, no new bindings. Same R2 token Phase 3 and 3b
+used; same `R2_PUBLIC_BASE` custom domain.
+
+**Migration size at 3c cut-over.**
+
+  - **198 tour.json files** fetchable on NOAA's CDN (1 dead
+    source: `INTERNAL_SOS_726_ONLINE` — already broken
+    pre-migration; stays `dead_source` and the operator
+    handles via row deletion / replacement separately).
+  - **71 relative sibling assets** across ~30 rows. Most rows
+    are pure-navigation tours with zero siblings; the
+    sibling-bearing tours concentrate in a few rich ones
+    (`ID_INTERNAL_pandemic` ×12, `ID_LJCOFJCSGH` ×9,
+    `INTERNAL_SOS_687` ×9, `INTERNAL_SOS_HRRR_Smoke_Tour_Mobile`
+    ×7).
+  - **44 external URLs** (YouTube embeds, Vimeo, popup web
+    links) — left verbatim per the strict-relative policy.
+  - **0 absolute_sos_cdn** URLs — tour task fields don't
+    reference noaa.gov absolutes; the SOS authoring convention
+    uses sibling-relative paths consistently.
+
+**Non-goals (deferred / out-of-scope).**
+
+  - **Rewriting external links to local mirrors.** Policy 1 is
+    relative-only. A future "policy 2" pass could mirror
+    YouTube / Vimeo content to a local video store, but that's
+    a separate licensing + storage decision.
+  - **`absolute_sos_cdn` rewriting.** Zero rows hit this case at
+    3c cut-over, so the parser surfaces the count but the pump
+    doesn't act on it.
+  - **Per-task-type SPA enhancements.** The parser surfaced six
+    task names the SPA's tour engine silently ignores
+    (addBubble / showInfoBtn / hideInfoBtn / loadTour /
+    showLegend / worldBorders). Wiring them up is a separate
+    SPA feature; this phase just makes sure the bytes migrate
+    cleanly when they're referenced.
+
+---
+
+## Phase 3f — Non-Earth body gating
+
+**Branch:** `claude/non-global-rendering-phase-3e` (shipped together
+with Phase 3e — same PR, same in-tree commit prefix `3e/D`; the
+CHANGELOG split into two phases happened after the work was
+already written, so the commit prefix and the section heading
+disagree intentionally).
+**Commits:** delivered as `3e/D` in-tree.
+
+Phase 3e (below) bbox-projects regional and dateline-centered
+datasets, but still draped Earth's blue/black marble behind any
+non-Earth dataset (Mars / Moon / Sun / Jupiter / Saturn / Venus /
+…). Phase 3f teaches the renderer to hide the Earth raster bases
+when `celestialBody` says the dataset isn't Earth, so non-Earth
+rows render over a clean sphere instead of a wrong-planet base.
+
+20 SOS rows are affected today; any future publisher-portal
+upload that sets a non-Earth `celestialBody` picks this up
+automatically.
+
+**Implementation.** The same `applyBaseLayerVisibility()` helper
+introduced in 3e/C factors in `celestialBody`. The Earth 4-pass
+effects shader (day/night terminator, lights, specular, clouds)
+was already skipped for any dataset-active render via the existing
+early return; nothing additional needed there. Non-Earth datasets
+simply lose the Earth raster bases.
+
+**Operator smoke-check.** Pick a non-Earth row (e.g.
+`INTERNAL_SOS_215_ONLINE` Venus, `INTERNAL_SOS_220_ONLINE` Moon) —
+the dataset should render over a clean sphere with no Earth base
+visible.
+
+**Non-goals (deferred / out-of-scope).**
+
+- **Per-body surface textures** (Mars Viking mosaic, LRO Moon,
+  Sun SDO mosaic, etc.) — Phase 3g. Asset-sourcing decision
+  separate from the rendering pipeline; would inflate the SPA
+  bundle by several MB.
+- **`radiusMi` consumption** — also Phase 3g; pairs with per-body
+  proportional sizing.
+- **VR / Three.js parity** — Phase 3h. `photorealEarth.ts` has
+  its own diffuse / night-lights / atmosphere stack; the non-Earth
+  + bbox work needs porting separately.
+
+---
+
+## Phase 3e — Non-global bbox projection
+
+**Branch:** `claude/non-global-rendering-phase-3e`
+**Commits:** 3e/A through 3e/E (plus 3e/F Copilot review round).
+
+Phase 3d landed `boundingBox` / `celestialBody` / `radiusMi` /
+`lonOrigin` / `isFlippedInY` on the wire; nothing in the SPA
+consumed them. This phase consumes the bbox-projection slice
+(`boundingBox` + `lonOrigin` + `isFlippedInY`); Phase 3f (above)
+consumes `celestialBody`. `radiusMi` remains unconsumed until
+Phase 3g. The rendering changes are end-to-end visible:
+
+- Regional datasets (today: `INTERNAL_HRRR_SMOKE_SEPTEMBER_2017_VIDEO`
+  over CONUS; future: any publisher-portal upload with a bbox)
+  wrap their texture to the bbox extent instead of being stretched
+  equirectangularly across the whole sphere. The rest of the
+  globe shows the GIBS blue/black marble base.
+- Dateline-centered datasets (12 SOS rows with `lonOrigin: ±180`)
+  rotate the texture so the Pacific reads as the visible center.
+
+**3e/A — Plumb 3d metadata into the renderer.** New
+`DatasetOverlayOptions` type in `src/types/index.ts`;
+`GlobeRenderer.updateTexture` / `setVideoTexture` signatures
+gain an optional `options` parameter. Two pure helpers in
+`src/services/datasetOverlayOptions.ts`:
+
+- `isEarthBody(name)` — SOS-convention "is this Earth?" check
+  (null / "" / case-insensitive "earth" all qualify; everything
+  else falls in the non-Earth bucket including "aurora" — the
+  renderer trusts the catalog row, not the phenomenon's
+  geography).
+- `overlayOptionsFromDataset(dataset)` — builds the option
+  bundle from a loaded `Dataset`, returning `undefined` when
+  every field is at its default so legacy datasets stay on the
+  pre-3e renderer fast path.
+
+`datasetLoader.ts` calls the helper before handing the texture
+to the renderer. `mapRenderer.ts` buffers options alongside the
+pending texture/video for the race where dataset load fires
+before MapLibre's `load` event; `earthTileLayer.ts` captures
+them into module-scope state. No rendering change yet at this
+commit — pure plumbing.
+
+**3e/B — Dataset overlay shader.** The `datasetFragSrc` GLSL
+grows from a one-line `texture(uDatasetTex, vUV)` passthrough
+into a per-fragment bbox-aware projection:
+
+- Computes geographic `lat`, `lon` from `vUV`.
+- `uHasBbox` mode: clips fragments outside `[s, n]` lat or
+  `[w, e]` lon (handling antimeridian-crossing boxes where
+  `w > e` correctly). Inside, remaps UVs so the texture
+  STRETCHES to the bbox extent.
+- `!uHasBbox` mode: full-globe path with `uLonOrigin`
+  shifting the U axis; `lonOrigin = 0` reduces to
+  `vUV.x` passthrough so legacy datasets are bit-identical.
+- `uFlipY` applies last in both paths.
+
+Four new uniforms on the `DatasetProgram`. The render pass
+sets them from `datasetOptions` per draw; defaults restore
+pre-3e behavior.
+
+**3e/C — Base raster reveal.** A new
+`applyBaseLayerVisibility()` private helper on `MapRenderer`
+replaces the previous "always hide blue + black marble on
+dataset load" behavior. Rule table:
+
+| Case | Base layer |
+|---|---|
+| Earth + no bbox      | hide (dataset covers full sphere) |
+| Earth + bbox         | show (base fills outside the bbox) |
+| non-Earth (any case) | hide (Earth tiles wrong for Mars / Moon / …) |
+
+The dataset overlay shader's `discard` outside the bbox is
+what lets the base layer show through underneath; without
+3e/C the discarded fragments would have shown nothing.
+
+**3e/D — Delivered as Phase 3f.** See §Phase 3f above. The work
+sits under the `3e/D` commit prefix in git because it landed
+before the CHANGELOG split, but its narrative belongs in the
+non-Earth-gating phase.
+
+**3e/E — Tests + docs.** 14 new tests on the helper module
+(`datasetOverlayOptions.test.ts`) covering the SOS-convention
+Earth aliases, the "all defaults → undefined" fast path,
+populated-bundle round-trips, and defensive coverage of
+non-finite `lonOrigin` values. Plus this CHANGELOG entry.
+WebGL is integration-only — unit tests cover plumbing
+(`overlayOptionsFromDataset` returns the right bundle, the
+renderer accepts it) but the shader output itself is browser
+/ headset confirmed.
+
+**3e/F — Copilot review fixes.** Five doc / comment-only
+adjustments from PR #108 review: Markdown table fix on the
+base-layer rule table, JSDoc clarifications around the
+unsupported bbox + non-zero `lonOrigin` combination and the
+`celestialBody: ""` fast-path return, and reworded inline
+comments on the bbox-interior opaque-not-translucent draw call
+and the `datasetOptions` state-reset in `setDatasetTexture`.
+
+**Operator notes.**
+
+- No new env vars, no new bindings, no schema changes —
+  builds entirely on the 3d wire surface.
+- After deploy, smoke-check with:
+  - `INTERNAL_HRRR_SMOKE_SEPTEMBER_2017_VIDEO` — regional CONUS
+    box, should render only over CONUS with blue marble
+    everywhere else.
+  - Any dateline-centered ocean dataset — Pacific should be
+    the visible center.
+  - `INTERNAL_SOS_MARIA_360` (Hurricane Maria 360-pano tour) —
+    treated as Earth, base layers hidden as before.
+
+**Non-goals (deferred / out-of-scope).**
+
+- **Non-Earth gating** — split out to Phase 3f (above).
+- **Per-body surface textures** (Mars Viking mosaic, LRO Moon,
+  Sun SDO mosaic, etc.) — Phase 3g. Asset-sourcing decision
+  separate from the rendering pipeline.
+- **VR / Three.js parity** — Phase 3h. `photorealEarth.ts`
+  has its own diffuse / night-lights / atmosphere stack; the
+  non-Earth + bbox work needs porting separately.
+- **Camera fly-to-bbox on dataset load** — would be a nice UX
+  affordance but the existing camera-position behavior is
+  fine; defer until publisher feedback says otherwise.
+- **R-tree spatial index for browse "datasets in this region"**
+  — federation-era concern.
+
+---
+
+## Phase 3d — Non-global metadata foundation
+
+**Branch:** `claude/non-global-metadata-phase-3d`
+**Commits:** 3d/A through 3d/B — two logical changes (schema +
+serializer surface, then docs).
+
+Restores another piece of catalog data Phase 1d dropped on the
+floor, and corrects a Phase 3b mislabel along the way.
+
+**Strict back-end scope.** This phase only persists the metadata
++ surfaces it on the wire. The SPA-side rendering — wrapping
+non-global data onto the correct portion of the globe, and
+swapping the base texture for non-Earth bodies — is Phase 3e in
+a separate PR, where the visual scrutiny + screenshot review
+belongs.
+
+**3d/A — Migration `0010` + typed metadata.**
+
+- Promotes the legacy `bounding_variables` column from a JSON
+  text blob to four typed REAL columns `bbox_n` / `bbox_s` /
+  `bbox_w` / `bbox_e`. The 3b migration described the column as
+  "per-variable data ranges"; production inspection showed every
+  populated row actually held a geographic NSWE bounding box
+  (`{n: "90", s: "-90", w: "-180", e: "180"}`). The mislabel
+  made the column inert — no consumer parsed it. Typed columns
+  let the publisher API validate lat/lon ranges, the wire surface
+  a typed `boundingBox: { n, s, w, e }` object, and Phase 3e's
+  shader project data to the correct sub-region of the sphere.
+  In-line UPDATE backfills the typed columns from the existing
+  JSON; the legacy column drops at the end of the migration.
+
+- Adds four columns for SOS metadata previously deferred:
+  `celestial_body` (20 rows ship a non-Earth value — Mars, Moon,
+  Sun, Jupiter, Saturn, Mercury, Venus, Pluto, Neptune, Uranus,
+  Io, Europa, Ganymede, Callisto, Enceladus, Titan, 67p, aurora,
+  Trappist-1d, Kepler-10b), `radius_mi` (paired with
+  `celestial_body`), `lon_origin` (12 rows use ±180 for
+  dateline-centered datasets), `is_flipped_in_y` (image
+  orientation flag; zero rows use it today but persisted for
+  future publishers whose imagery uses inverted-Y conventions).
+
+- Publisher API gains typed validation: `validateBoundingBox`
+  (lat/lon ranges, `n >= s`, antimeridian-crossing `w > e`
+  permitted); `validateRadiusMi` (positive finite, bounded
+  loosely at 1e9); `validateLonOrigin` ([-180, 180]); plus
+  inline type-checks on `celestial_body` /
+  `is_flipped_in_y`. Each violation pinpoints the offending
+  sub-field (e.g. `bounding_box.n` / `invalid_value`) so a
+  publisher-portal client can highlight the wrong corner
+  specifically.
+
+- The importer's `--update-existing` backfill grows from 3
+  columns to 7. Existing rows imported under 3b that already
+  have `bounding_variables` populated get their bbox migrated
+  automatically by the in-line UPDATE in migration 0010; rows
+  without populated metadata stay clean.
+
+**3d/B — Docs.** This CHANGELOG entry. No runbook section —
+3d is schema-and-types only; operators don't run anything new
+(the `import-snapshot --update-existing` flow from 3b is the
+same flow with a wider column set).
+
+**Operator notes.**
+
+- The migration is additive (8 ADD COLUMN + 1 DROP COLUMN);
+  the DROP COLUMN needs SQLite ≥ 3.35.0, which D1 satisfies.
+- No new env vars, no new bindings.
+- After deploy, re-run `terraviz import-snapshot --update-existing`
+  to backfill the four new SOS fields onto existing rows.
+  Idempotent — already-populated rows skip.
+
+**Non-goals (deferred / out-of-scope).**
+
+- **SPA rendering against the new fields** — Phase 3e. The
+  bbox-bounded shader change, `lon_origin` / `is_flipped_in_y`
+  plumbed into the UV math, and non-Earth base textures
+  (Mars / Moon / Sun / …) all live there.
+- **Spatial filtering in browse.** "Datasets in this region"
+  would benefit from an R-tree index; the current row count
+  makes a table scan over `WHERE bbox_n IS NOT NULL`
+  essentially free, so the index is punted to a federation-era
+  concern.
+- **The other ~10 dropped SOS fields** — SOS-desktop UI flags
+  (`assetBundleFilename`, `autoLoadFirstLayer`, …), VR-search
+  filter (`isHiddenFromVRSearch`), KML overlay features
+  (`kmlIconScaleFactor`, …). Still no web SPA equivalent.
+
+---
+
 ## Phase 3b — Auxiliary asset migration + catalog data completeness
+
+> **Phase 3d correction (2026-05):** the `bounding_variables`
+> column described below was *not* "per-variable data ranges" —
+> the actual content is the geographic NSWE bounding box
+> `{ n, s, w, e }`. Phase 3d (above) promoted it to typed
+> columns (`bbox_n` / `bbox_s` / `bbox_w` / `bbox_e`) and
+> dropped the legacy column. The bbox data itself survives in
+> the typed columns; only the wire surface (and the misleading
+> name) changed.
 
 **Branch:** `claude/auxiliary-asset-migration-phase-3b`
 **Commits:** 3b/A through 3b/K — eleven logical changes.

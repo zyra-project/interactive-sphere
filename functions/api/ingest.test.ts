@@ -5,6 +5,7 @@ import type {
   LayerLoadedEvent,
   MigrationR2HlsEvent,
   MigrationR2AssetsEvent,
+  MigrationR2ToursEvent,
 } from '../../src/types'
 import {
   onRequestPost,
@@ -164,6 +165,26 @@ function migrationR2Assets(
     r2_key: 'datasets/DS00001AAAAAAAAAAAAAAAAAAAAA/thumbnail.jpg',
     source_bytes: 240_000,
     duration_ms: 700,
+    outcome: 'ok',
+    ...overrides,
+  }
+}
+
+function migrationR2Tours(
+  overrides: Partial<MigrationR2ToursEvent> = {},
+): MigrationR2ToursEvent {
+  return {
+    event_type: 'migration_r2_tours',
+    dataset_id: 'DS00001AAAAAAAAAAAAAAAAAAAAA',
+    legacy_id: 'INTERNAL_SOS_MARIA_360',
+    source_url: 'https://d3sik7mbbzunjo.cloudfront.net/terraviz/maria/tour.json',
+    r2_key: 'tours/DS00001AAAAAAAAAAAAAAAAAAAAA/tour.json',
+    source_bytes: 1_276,
+    siblings_relative: 1,
+    siblings_external: 1,
+    siblings_sos_cdn: 0,
+    siblings_migrated: 1,
+    duration_ms: 4_200,
     outcome: 'ok',
     ...overrides,
   }
@@ -569,6 +590,48 @@ describe('onRequestPost — happy path', () => {
     expect(ae.datapoints).toHaveLength(2)
     expect(ae.datapoints[0].blobs![0]).toBe('migration_r2_hls')
     expect(ae.datapoints[1].blobs![0]).toBe('migration_r2_hls')
+  })
+
+  it('accepts migration_r2_tours events (Phase 3c commit C)', async () => {
+    // One event per row (NOT per sibling) — atomic. The 3c/B pump
+    // emits a single event covering tour.json + every sibling for
+    // a given dataset. All seven outcome enum values pass
+    // validation; partial-failure outcomes (sibling_fetch_failed
+    // etc.) propagate to AE alongside the ok ones.
+    const ae = makeAE()
+    const ctx = makeCtx({
+      body: body([
+        migrationR2Tours(),
+        migrationR2Tours({
+          dataset_id: 'DS00002BBBBBBBBBBBBBBBBBBBBB',
+          legacy_id: 'INTERNAL_SOS_726_ONLINE',
+          outcome: 'dead_source',
+          r2_key: '',
+          siblings_relative: 0,
+          siblings_migrated: 0,
+        }),
+        migrationR2Tours({
+          dataset_id: 'DS00003CCCCCCCCCCCCCCCCCCCCC',
+          legacy_id: 'INTERNAL_SOS_HRRR_Smoke_Tour_Mobile',
+          outcome: 'sibling_fetch_failed',
+          r2_key: '',
+          siblings_relative: 7,
+          siblings_migrated: 3,
+        }),
+        migrationR2Tours({
+          outcome: 'patch_failed',
+          r2_key: 'tours/orphan/tour.json',
+        }),
+      ]),
+      ip: '10.0.0.22',
+      env: { ANALYTICS: ae as unknown as AnalyticsEngineDataset },
+    })
+    const res = await onRequestPost(ctx)
+    expect(res.status).toBe(204)
+    expect(ae.datapoints).toHaveLength(4)
+    for (const dp of ae.datapoints) {
+      expect(dp.blobs![0]).toBe('migration_r2_tours')
+    }
   })
 
   it('accepts migration_r2_assets events (Phase 3b commit H)', async () => {

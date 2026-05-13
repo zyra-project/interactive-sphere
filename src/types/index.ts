@@ -84,10 +84,36 @@ export interface Dataset {
    * SPA consumption is deferred to a later phase. */
   probingInfo?: ProbingInfo
 
-  /** Variable-by-variable min/max ranges from the SOS
-   * `boundingVariables` field. Persisted as JSON in
-   * `bounding_variables` and surfaced verbatim. ~27 rows. */
-  boundingVariables?: unknown
+  /** Geographic bounding box (NSWE in degrees) for the dataset's
+   * spatial extent. Phase 3d promoted from `bounding_variables`
+   * JSON to typed columns. Omitted when the catalog row's bbox
+   * columns aren't populated — NOT a signal of "regional vs
+   * global" extent. A row with all four corners set to
+   * `{n:90, s:-90, w:-180, e:180}` is still emitted (~26 of the
+   * 27 populated SOS rows do exactly that). The SPA's Phase 3e
+   * regional-projection feature can short-circuit at render
+   * time when it sees a worldwide box; otherwise it wraps the
+   * dataset texture to the named region rather than stretching
+   * it across the entire globe. */
+  boundingBox?: { n: number; s: number; w: number; e: number }
+
+  /** Celestial body the dataset visualises. Omitted == Earth.
+   * Non-Earth values (Mars / Moon / Sun / Jupiter / …) cue the
+   * SPA's Phase 3e base-texture swap. */
+  celestialBody?: string
+
+  /** Radius of the celestial body in miles, when non-Earth. */
+  radiusMi?: number
+
+  /** Globe longitude rotation reference in degrees. Omitted == 0
+   * (prime-meridian-centered). Non-zero values (±180 in the SOS
+   * snapshot) are dateline-centered, useful for Pacific-focused
+   * datasets. */
+  lonOrigin?: number
+
+  /** Image Y-axis flip flag for datasets whose imagery uses
+   * inverted Y conventions. Omitted == false. */
+  isFlippedInY?: boolean
 
   // Enriched metadata (from sos_dataset_metadata.json cross-reference)
   enriched?: EnrichedMetadata
@@ -207,12 +233,52 @@ export interface VideoTextureHandle {
 }
 
 /**
+ * Per-dataset hints for the renderer's dataset-overlay pass. Phase
+ * 3e plumbs these through from `Dataset` (which sources them from
+ * the catalog row's Phase 3d metadata) into the WebGL shader so
+ * regional / non-Earth / dateline-centered datasets project
+ * correctly rather than stretching equirectangularly across the
+ * whole sphere.
+ *
+ *   boundingBox    — when all four corners are present, the shader
+ *                    clips the texture to this region and lets
+ *                    base tiles show outside it. Omitted → full
+ *                    equirectangular projection (legacy behavior).
+ *   lonOrigin      — degrees offset for the U axis (default 0 →
+ *                    prime-meridian centered; ±180 = dateline
+ *                    centered). Applies to the full-globe path
+ *                    only — see note below.
+ *   isFlippedInY   — if true, the shader samples the texture with
+ *                    a flipped V axis (datasets authored with
+ *                    inverted-Y conventions).
+ *   celestialBody  — non-Earth bodies cue the MapRenderer to swap
+ *                    the base raster source and skip the Earth
+ *                    4-pass effects (day/night terminator etc.,
+ *                    which assume Earth's sun model).
+ *
+ * Every field is optional. Combinations honored: `bbox` alone,
+ * `lonOrigin` alone, `isFlippedInY` with either, `celestialBody`
+ * with any of the above. Combinations NOT honored: `bbox` +
+ * non-zero `lonOrigin` — the shader's bbox path ignores
+ * `uLonOrigin` because the texture is already remapped to the
+ * bbox extent. No catalog row combines the two today; if a
+ * future publisher needs both, the shader has to be extended
+ * (apply `uLonOrigin` to `lon` before the bbox clip/remap)
+ * rather than relying on this type to permit it. */
+export interface DatasetOverlayOptions {
+  boundingBox?: { n: number; s: number; w: number; e: number }
+  lonOrigin?: number
+  isFlippedInY?: boolean
+  celestialBody?: string
+}
+
+/**
  * Globe renderer interface used by modules like datasetLoader that interact
  * with the MapLibre-based globe.
  */
 export interface GlobeRenderer {
-  updateTexture(texture: HTMLCanvasElement | HTMLImageElement): void
-  setVideoTexture(video: HTMLVideoElement): VideoTextureHandle
+  updateTexture(texture: HTMLCanvasElement | HTMLImageElement, options?: DatasetOverlayOptions): void
+  setVideoTexture(video: HTMLVideoElement, options?: DatasetOverlayOptions): VideoTextureHandle
   flyTo(lat: number, lon: number, altitude?: number): void | Promise<void>
   toggleAutoRotate(): boolean
   setLatLngCallbacks(
@@ -1184,6 +1250,106 @@ export interface MigrationR2AssetsEvent extends TelemetryEventBase {
   outcome: MigrationR2AssetsOutcome
 }
 
+/** Outcome of a single tour migration in
+ * `terraviz migrate-r2-tours` (Phase 3c commit B). Mirrors the
+ * `TourOutcome` string-union exported from
+ * `cli/migrate-r2-tours.ts`; keep these in sync.
+ *
+ *   ok                   — tour.json + every sibling uploaded,
+ *                          row PATCHed.
+ *   dead_source          — upstream tour.json returned 404. The
+ *                          row was already broken pre-migration;
+ *                          NOT counted as a failure. (One known
+ *                          case at the Phase 3c cut-over:
+ *                          INTERNAL_SOS_726_ONLINE.)
+ *   fetch_failed         — upstream tour.json fetch failed for
+ *                          any reason other than 404.
+ *   parse_failed         — tour.json bytes didn't decode as JSON.
+ *   sibling_fetch_failed — at least one relative sibling asset
+ *                          (audio/overlay/360-pano) failed to
+ *                          fetch. The row's tour.json is NOT
+ *                          uploaded in this case — atomic per
+ *                          row.
+ *   upload_failed        — an R2 PUT failed mid-row (tour.json
+ *                          or sibling). Partial uploads are R2
+ *                          orphans; the row still points at NOAA.
+ *   patch_failed         — every R2 PUT succeeded but the D1
+ *                          PATCH on `run_tour_on_load` failed.
+ *                          Worst case: all R2 objects are
+ *                          orphans AND the row still points at
+ *                          NOAA. Recovery: re-run (idempotent —
+ *                          same bytes, same keys). */
+export type MigrationR2ToursOutcome =
+  | 'ok'
+  | 'dead_source'
+  | 'fetch_failed'
+  | 'parse_failed'
+  | 'sibling_fetch_failed'
+  | 'upload_failed'
+  | 'patch_failed'
+
+/**
+ * Operator-facing tour-migration progress event. Emitted once
+ * per row by `terraviz migrate-r2-tours` (Phase 3c commit B) —
+ * one event per dataset whose `run_tour_on_load` was migrated
+ * (or attempted). Distinct from `migration_r2_assets` (3b):
+ * that one fires per (row, asset_type) pair because auxiliary
+ * assets are independently consumable; a tour is a single
+ * atomic resource (tour.json + sibling assets must all migrate
+ * together to keep playback working), so the event roll-up is
+ * per-row.
+ *
+ * Consumed by a Grafana tour-migration row (Phase 3c commit F).
+ *
+ * No free-text fields — `dataset_id` / `legacy_id` / `r2_key` /
+ * `source_url` are public catalog references; `outcome` is an
+ * enum. Sibling counts are integers. No hashing required.
+ */
+export interface MigrationR2ToursEvent extends TelemetryEventBase {
+  event_type: 'migration_r2_tours'
+  /** Catalog dataset id (`DS<ulid>`) the migration targeted. */
+  dataset_id: string
+  /** Idempotency key from the original SOS import (e.g.
+   * `INTERNAL_SOS_MARIA_360`); empty string when the row has
+   * no legacy_id. */
+  legacy_id: string
+  /** Upstream tour.json URL the migration fetched from (the
+   * value of the row's `run_tour_on_load` column at run time).
+   * Public catalog data — same URLs the SPA loads today. */
+  source_url: string
+  /** Resulting R2 key for tour.json (e.g.
+   * `tours/<id>/tour.json`). Empty string when the migration
+   * didn't reach the PUT step. */
+  r2_key: string
+  /** Bytes received from the upstream fetches — tour.json plus
+   * every sibling actually fetched (including any fetched
+   * before a partial-row failure). */
+  source_bytes: number
+  /** Count of `relative` siblings the parser discovered in this
+   * tour.json. The migration target — these get fetched +
+   * uploaded. */
+  siblings_relative: number
+  /** Count of `absolute_external` siblings (YouTube embeds,
+   * Vimeo URLs, popup web links) the parser surfaced. Left
+   * verbatim per Phase 3c policy 1; counted here so dashboards
+   * can size the residual external-CDN dependency. */
+  siblings_external: number
+  /** Count of `absolute_sos_cdn` siblings (NOAA CloudFront /
+   * s3.amazonaws.com URLs that bypassed the sibling-relative
+   * convention). Left verbatim; counted as a residual noaa.gov
+   * dependency signal. */
+  siblings_sos_cdn: number
+  /** Count of unique sibling-keys actually uploaded to R2 this
+   * row. Equal to the dedupe'd count of `siblings_relative`
+   * for an `ok` row; less on partial / failed rows. */
+  siblings_migrated: number
+  /** Per-row wall-clock duration in ms (tour.json fetch + every
+   * sibling fetch + every R2 PUT + the row's D1 PATCH). */
+  duration_ms: number
+  /** Per-row outcome. See `MigrationR2ToursOutcome`. */
+  outcome: MigrationR2ToursOutcome
+}
+
 // --- Tier B events ---
 
 export interface DwellEvent extends TelemetryEventBase {
@@ -1318,6 +1484,7 @@ export type TelemetryEvent =
   | ErrorEvent
   | MigrationR2HlsEvent
   | MigrationR2AssetsEvent
+  | MigrationR2ToursEvent
   // Tier B
   | DwellEvent
   | OrbitInteractionEvent

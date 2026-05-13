@@ -223,7 +223,78 @@ describe('product-health dashboard — Phase 3b asset migration row', () => {
     expect(sql).toMatch(/AS\s+ok_rows/)
   })
 
-  it('dashboard version bumps to 8 so operators re-import on upgrade', () => {
-    expect(dashboard.version).toBe(8)
+  it('dashboard version bumps so operators re-import on upgrade', () => {
+    // Bumped in 3c/F to surface the new tour-migration row to
+    // anyone already running an earlier version of this dashboard.
+    expect(dashboard.version).toBe(9)
+  })
+})
+
+describe('product-health dashboard — Phase 3c tour migration row', () => {
+  const dashboard = load()
+  const tourPanels = dashboard.panels.filter(p =>
+    p.title.toLowerCase().includes('migration tours'),
+  )
+
+  it('exposes three tour-migration panels (commit 3c/F)', () => {
+    expect(tourPanels).toHaveLength(3)
+    const titles = tourPanels.map(p => p.title).sort()
+    expect(titles).toEqual([
+      'Migration tours — cumulative ok rows',
+      'Migration tours — events per day by outcome',
+      'Migration tours — non-ok outcome breakdown',
+    ])
+  })
+
+  it('places the tour-migration row on its own grid y (distinct from the asset row)', () => {
+    const ys = new Set(tourPanels.map(p => p.gridPos.y))
+    expect(ys.size).toBe(1)
+    const [y] = [...ys]
+    // The 3b asset migration row sits at y=42 (8 tall); this row
+    // lands at y=50 so the rows don't overlap.
+    expect(y).toBe(50)
+  })
+
+  it('pins blob1 = migration_r2_tours on every query', () => {
+    for (const panel of tourPanels) {
+      for (const target of panel.targets) {
+        const sql = target.url_options?.data ?? ''
+        expect(sql).toMatch(/blob1\s*=\s*'migration_r2_tours'/)
+      }
+    }
+  })
+
+  it('uses blob7 for outcome (no asset_type to shift positions)', () => {
+    // Walking MigrationR2ToursEvent's fields alphabetically (after
+    // event_type, environment, country, internal — the four
+    // server-stamped blobs):
+    //   dataset_id        (str) → blob5
+    //   duration_ms       (num) → double1
+    //   legacy_id         (str) → blob6
+    //   outcome           (str) → blob7   ← pinned here
+    //   r2_key            (str) → blob8
+    //   siblings_external (num) → double2
+    //   siblings_migrated (num) → double3
+    //   siblings_relative (num) → double4
+    //   siblings_sos_cdn  (num) → double5
+    //   source_bytes      (num) → double6
+    //   source_url        (str) → blob9
+    // Note: without an `asset_type` column the outcome lands one
+    // position earlier than migration_r2_assets — operators
+    // copy-pasting an asset-row query must remember to bump
+    // blob8 → blob7 for the tour-row equivalent.
+    const breakdown = tourPanels.find(p => p.title.includes('breakdown'))
+    expect(breakdown).toBeDefined()
+    const sql = breakdown!.targets[0].url_options!.data!
+    expect(sql).toMatch(/blob7\s+AS\s+outcome/)
+    expect(sql).toMatch(/blob7\s*!=\s*'ok'/)
+  })
+
+  it('cumulative ok query filters blob7 = ok and counts rows', () => {
+    const cumulative = tourPanels.find(p => p.title.includes('cumulative'))
+    expect(cumulative).toBeDefined()
+    const sql = cumulative!.targets[0].url_options!.data!
+    expect(sql).toMatch(/blob7\s*=\s*'ok'/)
+    expect(sql).toMatch(/AS\s+ok_rows/)
   })
 })
