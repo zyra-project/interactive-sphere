@@ -167,18 +167,63 @@ used; same `R2_PUBLIC_BASE` custom domain.
 
 ---
 
-## Phase 3e — Non-global rendering (bbox projection + non-Earth gating)
+## Phase 3f — Non-Earth body gating
+
+**Branch:** `claude/non-global-rendering-phase-3e` (shipped together
+with Phase 3e — same PR, same in-tree commit prefix `3e/D`; the
+CHANGELOG split into two phases happened after the work was
+already written, so the commit prefix and the section heading
+disagree intentionally).
+**Commits:** delivered as `3e/D` in-tree.
+
+Phase 3e (below) bbox-projects regional and dateline-centered
+datasets, but still draped Earth's blue/black marble behind any
+non-Earth dataset (Mars / Moon / Sun / Jupiter / Saturn / Venus /
+…). Phase 3f teaches the renderer to hide the Earth raster bases
+when `celestialBody` says the dataset isn't Earth, so non-Earth
+rows render over a clean sphere instead of a wrong-planet base.
+
+20 SOS rows are affected today; any future publisher-portal
+upload that sets a non-Earth `celestialBody` picks this up
+automatically.
+
+**Implementation.** The same `applyBaseLayerVisibility()` helper
+introduced in 3e/C factors in `celestialBody`. The Earth 4-pass
+effects shader (day/night terminator, lights, specular, clouds)
+was already skipped for any dataset-active render via the existing
+early return; nothing additional needed there. Non-Earth datasets
+simply lose the Earth raster bases.
+
+**Operator smoke-check.** Pick a non-Earth row (e.g.
+`INTERNAL_SOS_215_ONLINE` Venus, `INTERNAL_SOS_220_ONLINE` Moon) —
+the dataset should render over a clean sphere with no Earth base
+visible.
+
+**Non-goals (deferred / out-of-scope).**
+
+- **Per-body surface textures** (Mars Viking mosaic, LRO Moon,
+  Sun SDO mosaic, etc.) — Phase 3g. Asset-sourcing decision
+  separate from the rendering pipeline; would inflate the SPA
+  bundle by several MB.
+- **`radiusMi` consumption** — also Phase 3g; pairs with per-body
+  proportional sizing.
+- **VR / Three.js parity** — Phase 3h. `photorealEarth.ts` has
+  its own diffuse / night-lights / atmosphere stack; the non-Earth
+  + bbox work needs porting separately.
+
+---
+
+## Phase 3e — Non-global bbox projection
 
 **Branch:** `claude/non-global-rendering-phase-3e`
-**Commits:** 3e/A through 3e/E — five logical changes that take
-Phase 3d's persisted-but-inert metadata and finally do something
-visible with it.
+**Commits:** 3e/A through 3e/E (plus 3e/F Copilot review round).
 
 Phase 3d landed `boundingBox` / `celestialBody` / `radiusMi` /
 `lonOrigin` / `isFlippedInY` on the wire; nothing in the SPA
-consumed them. This phase consumes four of the five (everything
-except `radiusMi`, which pairs with a future Phase 3f's per-body
-proportional sizing). The rendering changes are end-to-end visible:
+consumed them. This phase consumes the bbox-projection slice
+(`boundingBox` + `lonOrigin` + `isFlippedInY`); Phase 3f (above)
+consumes `celestialBody`. `radiusMi` remains unconsumed until
+Phase 3g. The rendering changes are end-to-end visible:
 
 - Regional datasets (today: `INTERNAL_HRRR_SMOKE_SEPTEMBER_2017_VIDEO`
   over CONUS; future: any publisher-portal upload with a bbox)
@@ -187,15 +232,6 @@ proportional sizing). The rendering changes are end-to-end visible:
   globe shows the GIBS blue/black marble base.
 - Dateline-centered datasets (12 SOS rows with `lonOrigin: ±180`)
   rotate the texture so the Pacific reads as the visible center.
-- Non-Earth datasets (20 SOS rows: Mars / Moon / Sun / Jupiter /
-  Saturn / …) no longer drape themselves over Earth's blue
-  marble; the Earth base hides and the dataset renders against a
-  clean sphere.
-
-Real per-body surface textures (Mars Viking mosaic, LRO Moon,
-etc.) are intentionally deferred to Phase 3f — that's a separate
-asset-sourcing question and would inflate the SPA bundle by
-several MB.
 
 **3e/A — Plumb 3d metadata into the renderer.** New
 `DatasetOverlayOptions` type in `src/types/index.ts`;
@@ -253,12 +289,10 @@ The dataset overlay shader's `discard` outside the bbox is
 what lets the base layer show through underneath; without
 3e/C the discarded fragments would have shown nothing.
 
-**3e/D — Non-Earth gating.** Same `applyBaseLayerVisibility()`
-helper factors in `celestialBody`. The Earth 4-pass effects
-shader (day/night terminator, lights, specular, clouds) was
-already skipped for any dataset-active render via the existing
-early return; nothing additional needed there. Non-Earth
-datasets simply lose the Earth raster bases.
+**3e/D — Delivered as Phase 3f.** See §Phase 3f above. The work
+sits under the `3e/D` commit prefix in git because it landed
+before the CHANGELOG split, but its narrative belongs in the
+non-Earth-gating phase.
 
 **3e/E — Tests + docs.** 14 new tests on the helper module
 (`datasetOverlayOptions.test.ts`) covering the SOS-convention
@@ -269,6 +303,14 @@ WebGL is integration-only — unit tests cover plumbing
 (`overlayOptionsFromDataset` returns the right bundle, the
 renderer accepts it) but the shader output itself is browser
 / headset confirmed.
+
+**3e/F — Copilot review fixes.** Five doc / comment-only
+adjustments from PR #108 review: Markdown table fix on the
+base-layer rule table, JSDoc clarifications around the
+unsupported bbox + non-zero `lonOrigin` combination and the
+`celestialBody: ""` fast-path return, and reworded inline
+comments on the bbox-interior opaque-not-translucent draw call
+and the `datasetOptions` state-reset in `setDatasetTexture`.
 
 **Operator notes.**
 
@@ -282,16 +324,14 @@ renderer accepts it) but the shader output itself is browser
     the visible center.
   - `INTERNAL_SOS_MARIA_360` (Hurricane Maria 360-pano tour) —
     treated as Earth, base layers hidden as before.
-  - A non-Earth row (e.g. `INTERNAL_SOS_215_ONLINE` Venus,
-    `INTERNAL_SOS_220_ONLINE` Moon) — should render the
-    dataset over a clean sphere with no Earth base.
 
 **Non-goals (deferred / out-of-scope).**
 
+- **Non-Earth gating** — split out to Phase 3f (above).
 - **Per-body surface textures** (Mars Viking mosaic, LRO Moon,
-  Sun SDO mosaic, etc.) — Phase 3f. Asset-sourcing decision
+  Sun SDO mosaic, etc.) — Phase 3g. Asset-sourcing decision
   separate from the rendering pipeline.
-- **VR / Three.js parity** — Phase 3g. `photorealEarth.ts`
+- **VR / Three.js parity** — Phase 3h. `photorealEarth.ts`
   has its own diffuse / night-lights / atmosphere stack; the
   non-Earth + bbox work needs porting separately.
 - **Camera fly-to-bbox on dataset load** — would be a nice UX
