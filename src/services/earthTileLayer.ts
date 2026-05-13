@@ -28,8 +28,13 @@ import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { reportError } from '../analytics'
 import {
   ATMOSPHERE_GLSL_CONSTANTS,
+  ATMOSPHERE_GLSL_DENSITY,
   ATMOSPHERE_GLSL_PHASE,
+  ATMOSPHERE_GLSL_INTERSECT,
   ATMOSPHERE_GLSL_TONEMAP,
+  ATMOSPHERE_GLSL_RAYMARCH,
+  ATMOSPHERE_RADIUS_FACTOR,
+  PLANET_RADIUS_KM,
 } from './atmosphereConstants'
 
 // --- Texture URLs ---
@@ -47,18 +52,12 @@ const SPECULAR_SHININESS = 40.0
 const SPECULAR_STRENGTH = 0.6
 const STAR_BRIGHTNESS = 0.2
 /**
- * Atmosphere shell radius as a multiplier of the globe's unit-sphere
- * radius. 1.012 matches `ATMOSPHERE_OUTER_FACTOR` in
- * `photorealEarth.ts` so the boot Earth and the VR Earth have a
- * consistent halo thickness.
+ * Multiplier on the raymarched scattering colour before additive
+ * blend. The raymarch produces HDR values that ACES compresses to
+ * [0,1]; this knob lets us dial down the limb glow without changing
+ * the physical model. 1.0 = full strength.
  */
-const ATMOSPHERE_RADIUS_FACTOR = 1.012
-/**
- * Maximum per-pixel contribution of the atmosphere shell to the
- * framebuffer (under additive blend). Tuned so the limb halo is
- * visible without washing out city lights at the silhouette.
- */
-const ATMOSPHERE_OPACITY = 0.5
+const ATMOSPHERE_INTENSITY = 1.0
 const SKYBOX_FACES = ['px', 'nx', 'py', 'ny', 'pz', 'nz'] as const
 const SKYBOX_URL_BASE = '/assets/skybox/'
 
@@ -114,6 +113,86 @@ function invertMat4(out: Float32Array, m: ArrayLike<number>): boolean {
   out[12]=(a11*b07-a10*b09-a12*b06)*det;out[13]=(a00*b09-a01*b07+a02*b06)*det
   out[14]=(a31*b01-a30*b03-a32*b00)*det;out[15]=(a20*b03-a21*b01+a22*b00)*det
   return true
+}
+
+// --- Camera position extraction ---
+//
+// MapLibre exposes the projection-view matrix (`uMatrix`) but no
+// direct camera position. For Tier-2 raymarching we need the camera
+// position in the same ECEF unit-sphere coordinate frame as the
+// rendered globe so the ray geometry is correct at any zoom level.
+//
+// Method: two view rays through clip space (one centred, one
+// off-axis) meet at the camera for a perspective projection. We
+// invert `uMatrix`, project two pairs of clip-space points through
+// it to get four world-space points, then find the closest point on
+// the two world-space lines — that point is the camera.
+
+const _invMatrixScratch = new Float32Array(16)
+const _projScratch1 = new Float32Array(3)
+const _projScratch2 = new Float32Array(3)
+const _projScratch3 = new Float32Array(3)
+const _projScratch4 = new Float32Array(3)
+
+function unprojectClip(
+  invM: Float32Array, x: number, y: number, z: number, out: Float32Array,
+): void {
+  const w = invM[3] * x + invM[7] * y + invM[11] * z + invM[15]
+  const iw = 1 / w
+  out[0] = (invM[0] * x + invM[4] * y + invM[8] * z + invM[12]) * iw
+  out[1] = (invM[1] * x + invM[5] * y + invM[9] * z + invM[13]) * iw
+  out[2] = (invM[2] * x + invM[6] * y + invM[10] * z + invM[14]) * iw
+}
+
+/**
+ * Camera position in the world-space coord frame `matrix` projects
+ * from. For MapLibre's globe view that's ECEF unit-sphere coords
+ * (planet radius = 1). Caller scales to km if needed.
+ *
+ * Writes into `out`. If the matrix is singular or the projection
+ * is orthographic (parallel rays), falls back to the first ray's
+ * near-plane intersection, which is "in front of" the camera —
+ * close enough for a raymarch's ray-direction calculation.
+ */
+function computeCameraWorldPosFromMatrix(
+  matrix: ArrayLike<number>, out: [number, number, number],
+): void {
+  if (!invertMat4(_invMatrixScratch, matrix)) {
+    out[0] = 0; out[1] = 0; out[2] = 0
+    return
+  }
+  unprojectClip(_invMatrixScratch, 0,   0, -1, _projScratch1)
+  unprojectClip(_invMatrixScratch, 0,   0,  1, _projScratch2)
+  unprojectClip(_invMatrixScratch, 0.5, 0, -1, _projScratch3)
+  unprojectClip(_invMatrixScratch, 0.5, 0,  1, _projScratch4)
+
+  const d1x = _projScratch2[0] - _projScratch1[0]
+  const d1y = _projScratch2[1] - _projScratch1[1]
+  const d1z = _projScratch2[2] - _projScratch1[2]
+  const d2x = _projScratch4[0] - _projScratch3[0]
+  const d2y = _projScratch4[1] - _projScratch3[1]
+  const d2z = _projScratch4[2] - _projScratch3[2]
+  const ex = _projScratch3[0] - _projScratch1[0]
+  const ey = _projScratch3[1] - _projScratch1[1]
+  const ez = _projScratch3[2] - _projScratch1[2]
+
+  const d1d1 = d1x * d1x + d1y * d1y + d1z * d1z
+  const d1d2 = d1x * d2x + d1y * d2y + d1z * d2z
+  const d2d2 = d2x * d2x + d2y * d2y + d2z * d2z
+  const ed1 = ex * d1x + ey * d1y + ez * d1z
+  const ed2 = ex * d2x + ey * d2y + ez * d2z
+  const denom = d1d1 * d2d2 - d1d2 * d1d2
+
+  if (Math.abs(denom) < 1e-10) {
+    out[0] = _projScratch1[0]
+    out[1] = _projScratch1[1]
+    out[2] = _projScratch1[2]
+    return
+  }
+  const t = (ed1 * d2d2 - ed2 * d1d2) / denom
+  out[0] = _projScratch1[0] + t * d1x
+  out[1] = _projScratch1[1] + t * d1y
+  out[2] = _projScratch1[2] + t * d1z
 }
 
 // --- Sphere geometry ---
@@ -386,77 +465,50 @@ const specularFragSrc = `#version 300 es
 `
 
 // Pass 5: additive blend — atmospheric scattering halo around the globe.
-// Renders a slightly-larger sphere with a fragment shader that derives
-// limb glow, Rayleigh transmittance, ozone-tinted sunset bands, and a
-// Cornette-Shanks Mie haze around the sun. Tier-1 analytic shell with
-// the same approximations as the inner shell in `photorealEarth.ts`;
-// Tier 2 will replace with a bounded raymarch.
+// Tier-2 bounded raymarch matching `photorealEarth.ts` and the article's
+// "rendering planets" case. The shell mesh sits at exactly the
+// atmosphere boundary (`ATMOSPHERE_RADIUS_FACTOR ≈ 1.0157` from the
+// shared constants) so every front-face fragment is the camera-side
+// entry point for that pixel's ray, and the raymarch in the fragment
+// shader integrates inward.
 const atmosphereVertSrc = `#version 300 es
   layout(location = 0) in vec3 aPosition;
-  layout(location = 1) in vec3 aNormal;
   uniform mat4 uMatrix;
   uniform float uRadiusScale;
-  out vec3 vNormal;
+  // Fragment world position in km (planet at origin, radius 6371).
+  // aPosition * uRadiusScale is in ECEF unit-sphere units; scaling
+  // to km lines up with the constants in the shared GLSL block so
+  // density / extinction math is dimensionally clean.
+  out vec3 vWorldPositionKm;
 
   void main() {
-    vNormal = aNormal;
-    gl_Position = uMatrix * vec4(aPosition * uRadiusScale, 1.0);
+    vec3 unit = aPosition * uRadiusScale;
+    vWorldPositionKm = unit * ${PLANET_RADIUS_KM.toFixed(1)};
+    gl_Position = uMatrix * vec4(unit, 1.0);
   }
 `
 
 const atmosphereFragSrc = `#version 300 es
   precision highp float;
   uniform vec3 uSunDir;
-  uniform vec3 uViewDir;
-  uniform float uOpacity;
-  in vec3 vNormal;
+  uniform vec3 uCameraPosKm;
+  uniform float uIntensity;
+  in vec3 vWorldPositionKm;
   out vec4 fragColor;
   ${ATMOSPHERE_GLSL_CONSTANTS}
+  ${ATMOSPHERE_GLSL_DENSITY}
   ${ATMOSPHERE_GLSL_PHASE}
+  ${ATMOSPHERE_GLSL_INTERSECT}
   ${ATMOSPHERE_GLSL_TONEMAP}
+  ${ATMOSPHERE_GLSL_RAYMARCH}
 
   void main() {
-    vec3 N = normalize(vNormal);
-    vec3 V = normalize(uViewDir);
-
-    float NdotV = dot(N, V);
-    // Limb glow peaks where the surface normal is perpendicular to the
-    // view direction. exp(-8 NdotV^2) gives a soft ring at NdotV ≈ 0
-    // that falls off rapidly toward the sub-camera point.
-    float rim = exp(-8.0 * NdotV * NdotV);
-
-    float NdotL = dot(N, uSunDir);
-    float atmosphereLit = smoothstep(-0.15, 0.4, NdotL);
-
-    // Chapman-style 1/cosθ path length through the shell, in km so the
-    // per-km extinction coefficients pair cleanly. Empirical 4× scale
-    // matches the shell thickness used by photorealEarth.ts; Tier 2's
-    // raymarch will derive this from real geometry.
-    float opticalDepthKm = ATMOSPHERE_HEIGHT * 4.0 / max(NdotV, 0.05);
-    vec3 tau = (RAYLEIGH_BETA + MIE_BETA_EXT + OZONE_BETA_ABS) * opticalDepthKm;
-    vec3 extinction = exp(-tau);
-    vec3 transmittedColor = (RAYLEIGH_BETA / max(RAYLEIGH_BETA.b, 1e-9))
-      * (1.0 - extinction);
-
-    // Mie haze around the sun direction — Cornette-Shanks phase.
-    float cosTheta = dot(V, uSunDir);
-    float pM = cornetteShanksPhase(cosTheta) * 0.5;
-    vec3 mieHaze = vec3(1.0, 0.95, 0.85) * pM;
-
-    // Sunset/twilight tint derived from extinction along a long
-    // grazing path: Rayleigh strips blue, ozone strips green/yellow,
-    // residual is warm to purple.
-    vec3 sunsetTint = exp(-(RAYLEIGH_BETA + OZONE_BETA_ABS) * (ATMOSPHERE_HEIGHT * 12.0));
-    float terminator = exp(-6.0 * NdotL * NdotL);
-    vec3 color = mix(transmittedColor + mieHaze, sunsetTint,
-      terminator * rim * 0.5);
-
-    color = acesFilm(color);
-
-    // Limb-weighted alpha; additive-blend output is premultiplied so
-    // the centre of the planet's disk contributes nothing.
-    float alpha = rim * atmosphereLit * uOpacity;
-    fragColor = vec4(color * alpha, 1.0);
+    vec3 rayDir = normalize(vWorldPositionKm - uCameraPosKm);
+    vec3 scattered = computeAtmosphereScattering(uCameraPosKm, rayDir, uSunDir);
+    // ACES then scale; additive blend means we just write the colour
+    // and the framebuffer accumulates. No need to premultiply alpha
+    // here since blendFunc(ONE, ONE) ignores src.a.
+    fragColor = vec4(acesFilm(scattered) * uIntensity, 1.0);
   }
 `
 
@@ -465,8 +517,8 @@ interface AtmosphereProgram {
   matrixLoc: WebGLUniformLocation | null
   radiusScaleLoc: WebGLUniformLocation | null
   sunDirLoc: WebGLUniformLocation | null
-  viewDirLoc: WebGLUniformLocation | null
-  opacityLoc: WebGLUniformLocation | null
+  cameraPosKmLoc: WebGLUniformLocation | null
+  intensityLoc: WebGLUniformLocation | null
 }
 
 // Skybox: full-screen pass that samples cubemap faces based on camera rotation
@@ -862,6 +914,11 @@ export function createEarthTileLayer(): EarthTileLayerControl {
   let sunOverride: { lat: number; lng: number } | null = null
   let visible = true
 
+  // Scratch buffer reused each frame by the atmosphere pass to derive
+  // the camera position in ECEF unit-sphere coords. Lives in closure
+  // scope so per-frame work doesn't allocate.
+  const cameraEcefScratch: [number, number, number] = [0, 0, 0]
+
   // Terrain-aware radius scale — inflates effects sphere to cover exaggerated terrain.
   // Max Earth elevation ~8848m / 6371km radius ≈ 0.00139 normalized.
   // Scale = 1.0 + 0.002 * exaggeration (with safety margin).
@@ -1027,8 +1084,8 @@ export function createEarthTileLayer(): EarthTileLayerControl {
           matrixLoc: gl2.getUniformLocation(atmosphereProg, 'uMatrix'),
           radiusScaleLoc: gl2.getUniformLocation(atmosphereProg, 'uRadiusScale'),
           sunDirLoc: gl2.getUniformLocation(atmosphereProg, 'uSunDir'),
-          viewDirLoc: gl2.getUniformLocation(atmosphereProg, 'uViewDir'),
-          opacityLoc: gl2.getUniformLocation(atmosphereProg, 'uOpacity'),
+          cameraPosKmLoc: gl2.getUniformLocation(atmosphereProg, 'uCameraPosKm'),
+          intensityLoc: gl2.getUniformLocation(atmosphereProg, 'uIntensity'),
         }
       }
 
@@ -1289,31 +1346,32 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       }
 
       // --- Pass 5: Additive blend — atmospheric scattering halo ---
-      // Rendered last so the limb glow sits in front of clouds, matching
-      // the article's "atmosphere above troposphere" intuition and
-      // photorealEarth.ts's render order. View direction is the same
-      // far-camera approximation used by the specular pass — adequate
-      // for the analytic shell here, replaced by a proper ray origin
-      // in Tier 2's raymarch.
+      // Rendered last so the limb glow sits in front of clouds,
+      // matching the article's render order and photorealEarth.ts.
+      // Tier-2 bounded raymarch: the shell mesh is the atmosphere
+      // ceiling; each front-face fragment is the camera-side entry
+      // point of that pixel's ray, and the shader integrates inward
+      // through Rayleigh + Mie + ozone densities.
       if (atmosphere && mapRef) {
-        gl2.blendFunc(gl2.ONE, gl2.ONE) // additive — fragment shader
-                                        // pre-multiplies colour by alpha.
+        gl2.blendFunc(gl2.ONE, gl2.ONE) // straight additive — the
+                                        // fragment writes ACES'd
+                                        // scattered RGB, framebuffer
+                                        // accumulates it.
 
-        const center = mapRef.getCenter()
-        const aLatR = center.lat * Math.PI / 180
-        const aLngR = center.lng * Math.PI / 180
-        const viewDir: [number, number, number] = [
-          Math.cos(aLatR) * Math.sin(aLngR),
-          Math.sin(aLatR),
-          Math.cos(aLatR) * Math.cos(aLngR),
-        ]
+        // Camera position derived from the projection matrix so the
+        // raymarch ray geometry is correct at any zoom level. ECEF
+        // unit-sphere coords scaled to km for the shader.
+        computeCameraWorldPosFromMatrix(matrix, cameraEcefScratch)
+        const cx = cameraEcefScratch[0] * PLANET_RADIUS_KM
+        const cy = cameraEcefScratch[1] * PLANET_RADIUS_KM
+        const cz = cameraEcefScratch[2] * PLANET_RADIUS_KM
 
         gl2.useProgram(atmosphere.program)
         gl2.uniformMatrix4fv(atmosphere.matrixLoc, false, matrix)
         gl2.uniform1f(atmosphere.radiusScaleLoc, terrainRadiusScale * ATMOSPHERE_RADIUS_FACTOR)
         gl2.uniform3f(atmosphere.sunDirLoc, sunDir[0], sunDir[1], sunDir[2])
-        gl2.uniform3f(atmosphere.viewDirLoc, viewDir[0], viewDir[1], viewDir[2])
-        gl2.uniform1f(atmosphere.opacityLoc, ATMOSPHERE_OPACITY)
+        gl2.uniform3f(atmosphere.cameraPosKmLoc, cx, cy, cz)
+        gl2.uniform1f(atmosphere.intensityLoc, ATMOSPHERE_INTENSITY)
 
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
       }
