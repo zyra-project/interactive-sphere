@@ -86,9 +86,23 @@ export interface RawSosEntry {
    * JSON-stringified blob (the catalog stores it verbatim; the
    * SPA-side renderer is deferred to a later phase). */
   probingInfo?: ProbingInfo
-  /** Per-variable data ranges. Mapped to `bounding_variables`
-   * as a JSON-stringified blob. */
-  boundingVariables?: unknown
+  /** Geographic bounding box (NSWE strings or numbers — SOS
+   * snapshots use strings). Phase 3d maps this into typed
+   * `bounding_box: { n, s, w, e }` numerics on the catalog side.
+   * Rows with global extent (`n: 90, s: -90, w: -180, e: 180`)
+   * still serialize the box; the SPA can short-circuit at render
+   * time if it sees a worldwide bbox. */
+  boundingVariables?: { n?: string | number; s?: string | number; w?: string | number; e?: string | number }
+  /** Celestial body for non-Earth datasets. SOS snapshot uses
+   * the body's display name verbatim (Mars / Moon / Sun / 67p /
+   * etc.). Empty string in the snapshot is treated as Earth. */
+  celestialBody?: string
+  /** Radius of the celestial body in miles for non-Earth datasets. */
+  radiusMi?: number
+  /** Globe longitude rotation reference in degrees (default 0). */
+  lonOrigin?: number
+  /** Image Y-axis flip flag. */
+  isFlippedInY?: boolean
   tags?: string[]
   weight?: number
   isHidden?: boolean
@@ -295,6 +309,40 @@ function stringifyJsonField(value: unknown): string | undefined {
   return json
 }
 
+/**
+ * Coerce a SOS `boundingVariables` value into a typed
+ * `{ n, s, w, e }` numeric object suitable for the catalog's
+ * Phase 3d bbox columns. Returns undefined if any corner is
+ * missing or non-finite (a half-bbox is unusable downstream).
+ *
+ * SOS publishers store the corners as strings ("90", "-180").
+ * We accept either strings or numbers and let Number() do the
+ * conversion. Any value that doesn't parse to a finite number
+ * (or that's out of range for lat/lon) bails the whole bbox —
+ * better to drop than to persist a malformed one and trigger
+ * the publisher API validator on the next update PATCH.
+ */
+function parseBoundingBox(
+  value: unknown,
+): { n: number; s: number; w: number; e: number } | undefined {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const v = value as Record<string, unknown>
+  const coerce = (raw: unknown, min: number, max: number): number | undefined => {
+    if (raw == null) return undefined
+    const n = typeof raw === 'number' ? raw : Number(raw)
+    if (!Number.isFinite(n)) return undefined
+    if (n < min || n > max) return undefined
+    return n
+  }
+  const n = coerce(v.n, -90, 90)
+  const s = coerce(v.s, -90, 90)
+  const w = coerce(v.w, -180, 180)
+  const e = coerce(v.e, -180, 180)
+  if (n === undefined || s === undefined || w === undefined || e === undefined) return undefined
+  if (n < s) return undefined
+  return { n, s, w, e }
+}
+
 /** Trim + size-clip; returns undefined if the result would be empty or non-string. */
 function clipString(value: unknown, max: number): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -413,16 +461,39 @@ export function mapSnapshotEntry(
   const colorTable = clipString(sos.colorTableLink, 1024)
   if (colorTable) draft.color_table_ref = colorTable
 
-  // Phase 3b: persist the structured probing + bounding metadata
-  // verbatim. Stored as a JSON-stringified blob; the validator
+  // Phase 3b: persist the structured probing metadata verbatim.
+  // Stored as a JSON-stringified blob; the validator
   // (validateJsonStringField) confirms it parses and bounds the
   // length. Skipped entirely if the source row has no value or
   // the value isn't an object — guards against publishers
   // somehow handing us a primitive.
   const probingJson = stringifyJsonField(sos.probingInfo)
   if (probingJson) draft.probing_info = probingJson
-  const boundingJson = stringifyJsonField(sos.boundingVariables)
-  if (boundingJson) draft.bounding_variables = boundingJson
+
+  // Phase 3d: typed bounding box. SOS stores corners as strings
+  // ({n: "90", s: "-90", …}) so we coerce via Number; non-finite
+  // results drop the box entirely (a half-bbox is worse than no
+  // bbox — the publisher API validator would reject it anyway).
+  const bbox = parseBoundingBox(sos.boundingVariables)
+  if (bbox) draft.bounding_box = bbox
+
+  // Phase 3d: non-Earth body metadata. Empty / whitespace
+  // celestialBody is treated as Earth (snapshot reality — some
+  // rows ship `"celestialBody": ""` which is just the default).
+  const celestial = clipString(sos.celestialBody, 64)
+  if (celestial) draft.celestial_body = celestial
+  if (typeof sos.radiusMi === 'number' && Number.isFinite(sos.radiusMi) && sos.radiusMi > 0) {
+    draft.radius_mi = sos.radiusMi
+  }
+  if (typeof sos.lonOrigin === 'number' && Number.isFinite(sos.lonOrigin)) {
+    draft.lon_origin = sos.lonOrigin
+  }
+  if (typeof sos.isFlippedInY === 'boolean' && sos.isFlippedInY) {
+    // Only persist `true` — the SOS snapshot uses `false` as the
+    // documented default and we collapse defaults to NULL on D1
+    // so the row stays terse.
+    draft.is_flipped_in_y = true
+  }
 
   const start = toIsoZ(sos.startTime)
   if (start) draft.start_time = start

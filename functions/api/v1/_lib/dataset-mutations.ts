@@ -352,9 +352,11 @@ export async function createDataset(
          start_time, end_time, period, weight, visibility, is_hidden, run_tour_on_load,
          license_spdx, license_url, license_statement, attribution_text,
          rights_holder, doi, citation_text, legacy_id,
-         probing_info, bounding_variables,
+         probing_info,
+         bbox_n, bbox_s, bbox_w, bbox_e,
+         celestial_body, radius_mi, lon_origin, is_flipped_in_y,
          schema_version, created_at, updated_at, published_at, publisher_id
-       ) VALUES (?,?,(SELECT node_id FROM node_identity LIMIT 1),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       ) VALUES (?,?,(SELECT node_id FROM node_identity LIMIT 1),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       id,
@@ -389,12 +391,22 @@ export async function createDataset(
       body.doi ?? null,
       body.citation_text ?? null,
       body.legacy_id ?? null,
-      // Phase 3b restored these from the SOS snapshot. Validated
-      // upstream as plain JSON-stringified blobs; D1 stores them
-      // verbatim and the serializer hands them back to callers
-      // unchanged. Empty / null on rows that don't carry the data.
+      // Phase 3b restored probing_info from the SOS snapshot.
+      // Validated upstream as a plain JSON-stringified blob; D1
+      // stores it verbatim and the serializer hands it back to
+      // callers unchanged. NULL on rows that don't carry it.
       body.probing_info ?? null,
-      body.bounding_variables ?? null,
+      // Phase 3d typed bbox + non-Earth metadata. NULL when
+      // omitted; the serializer surfaces them only on populated
+      // rows so the wire stays terse for the common case.
+      body.bounding_box?.n ?? null,
+      body.bounding_box?.s ?? null,
+      body.bounding_box?.w ?? null,
+      body.bounding_box?.e ?? null,
+      body.celestial_body ?? null,
+      body.radius_mi ?? null,
+      body.lon_origin ?? null,
+      body.is_flipped_in_y === undefined ? null : body.is_flipped_in_y ? 1 : 0,
       1,
       now,
       now,
@@ -449,7 +461,20 @@ export async function updateDataset(
   if (body.caption_ref !== undefined) set('caption_ref', body.caption_ref)
   if (body.color_table_ref !== undefined) set('color_table_ref', body.color_table_ref)
   if (body.probing_info !== undefined) set('probing_info', body.probing_info)
-  if (body.bounding_variables !== undefined) set('bounding_variables', body.bounding_variables)
+  // Phase 3d bbox + non-Earth fields. An explicit `null` body
+  // value clears the column; omission leaves it untouched.
+  if (body.bounding_box !== undefined) {
+    set('bbox_n', body.bounding_box?.n ?? null)
+    set('bbox_s', body.bounding_box?.s ?? null)
+    set('bbox_w', body.bounding_box?.w ?? null)
+    set('bbox_e', body.bounding_box?.e ?? null)
+  }
+  if (body.celestial_body !== undefined) set('celestial_body', body.celestial_body)
+  if (body.radius_mi !== undefined) set('radius_mi', body.radius_mi)
+  if (body.lon_origin !== undefined) set('lon_origin', body.lon_origin)
+  if (body.is_flipped_in_y !== undefined) {
+    set('is_flipped_in_y', body.is_flipped_in_y === null ? null : body.is_flipped_in_y ? 1 : 0)
+  }
   if (body.website_link !== undefined) set('website_link', body.website_link)
   if (body.start_time !== undefined) set('start_time', body.start_time)
   if (body.end_time !== undefined) set('end_time', body.end_time)

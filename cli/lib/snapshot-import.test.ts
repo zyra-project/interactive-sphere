@@ -418,28 +418,108 @@ describe('mapSnapshotEntry — Phase 3b auxiliary fields', () => {
     expect(JSON.parse(outcome.row.draft.probing_info!)).toEqual(probing)
   })
 
-  it('JSON-stringifies boundingVariables and persists it on bounding_variables', () => {
-    const bounding = { ranges: [[0, 100]] }
-    const outcome = mapSnapshotEntry({ ...sample, boundingVariables: bounding }, undefined)
+  it('coerces SOS boundingVariables (string corners) into typed bounding_box numerics (3d/A)', () => {
+    // SOS publishers store the corners as strings ("90", "-180").
+    // The Phase 3d importer mapper coerces via Number() — typed
+    // bbox numerics land on D1 via the publisher API, replacing
+    // the legacy `bounding_variables` JSON-string column.
+    const outcome = mapSnapshotEntry(
+      { ...sample, boundingVariables: { n: '52.621', s: '21.1381', w: '-134.099', e: '-60.9016' } },
+      undefined,
+    )
     expect(outcome.kind).toBe('ok')
     if (outcome.kind !== 'ok') return
-    expect(JSON.parse(outcome.row.draft.bounding_variables!)).toEqual(bounding)
+    expect(outcome.row.draft.bounding_box).toEqual({
+      n: 52.621,
+      s: 21.1381,
+      w: -134.099,
+      e: -60.9016,
+    })
   })
 
-  it('drops a probingInfo / boundingVariables value that exceeds the 4096-char cap', () => {
+  it('accepts boundingVariables with numeric corners (publisher-portal future case)', () => {
+    const outcome = mapSnapshotEntry(
+      { ...sample, boundingVariables: { n: 90, s: -90, w: -180, e: 180 } },
+      undefined,
+    )
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.bounding_box).toEqual({ n: 90, s: -90, w: -180, e: 180 })
+  })
+
+  it('drops a partial / malformed boundingVariables silently (a half-bbox is worse than none)', () => {
+    const missingCorner = mapSnapshotEntry(
+      { ...sample, boundingVariables: { n: '90', s: '-90', w: '-180' } },
+      undefined,
+    )
+    expect(missingCorner.kind).toBe('ok')
+    if (missingCorner.kind !== 'ok') return
+    expect(missingCorner.row.draft.bounding_box).toBeUndefined()
+
+    const nonNumeric = mapSnapshotEntry(
+      { ...sample, boundingVariables: { n: 'oops', s: '0', w: '0', e: '0' } },
+      undefined,
+    )
+    expect(nonNumeric.kind).toBe('ok')
+    if (nonNumeric.kind !== 'ok') return
+    expect(nonNumeric.row.draft.bounding_box).toBeUndefined()
+
+    const outOfRange = mapSnapshotEntry(
+      { ...sample, boundingVariables: { n: '100', s: '0', w: '0', e: '0' } },
+      undefined,
+    )
+    expect(outOfRange.kind).toBe('ok')
+    if (outOfRange.kind !== 'ok') return
+    expect(outOfRange.row.draft.bounding_box).toBeUndefined()
+  })
+
+  it('drops an oversized probingInfo silently (4096-char cap)', () => {
     // The validator caps JSON-text columns at 4096 chars. The
     // importer pre-filters so an oversize blob doesn't trigger
     // `invalid_after_mapping` — keeps the SOS import idempotent
     // even on rows the validator would otherwise reject.
     const huge = { blob: 'x'.repeat(5000) }
     const outcome = mapSnapshotEntry(
-      { ...sample, probingInfo: huge as unknown as never, boundingVariables: huge },
+      { ...sample, probingInfo: huge as unknown as never },
       undefined,
     )
     expect(outcome.kind).toBe('ok')
     if (outcome.kind !== 'ok') return
     expect(outcome.row.draft.probing_info).toBeUndefined()
-    expect(outcome.row.draft.bounding_variables).toBeUndefined()
+  })
+
+  it('persists 3d non-Earth metadata (celestialBody / radiusMi / lonOrigin / isFlippedInY)', () => {
+    const outcome = mapSnapshotEntry(
+      {
+        ...sample,
+        celestialBody: 'Mars',
+        radiusMi: 2106.1,
+        lonOrigin: 180,
+        isFlippedInY: true,
+      },
+      undefined,
+    )
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.celestial_body).toBe('Mars')
+    expect(outcome.row.draft.radius_mi).toBe(2106.1)
+    expect(outcome.row.draft.lon_origin).toBe(180)
+    expect(outcome.row.draft.is_flipped_in_y).toBe(true)
+  })
+
+  it('collapses empty / false defaults so the row stays terse on D1', () => {
+    // SOS publishers sometimes ship `celestialBody: ""` (the
+    // default Earth) and `isFlippedInY: false` (the default no-flip).
+    // We treat those as "field omitted" so the wire / D1 row
+    // stays clean — the serializer wouldn't emit them anyway.
+    const outcome = mapSnapshotEntry(
+      { ...sample, celestialBody: '', isFlippedInY: false },
+      undefined,
+    )
+    expect(outcome.kind).toBe('ok')
+    if (outcome.kind !== 'ok') return
+    expect(outcome.row.draft.celestial_body).toBeUndefined()
+    expect(outcome.row.draft.is_flipped_in_y).toBeUndefined()
   })
 
   it('drops a non-object probingInfo value silently', () => {

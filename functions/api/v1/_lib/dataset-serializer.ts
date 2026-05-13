@@ -90,9 +90,25 @@ export interface WireDataset {
    * type is the parsed JSON object (not the raw string D1 stores).
    * Phase 3b. */
   probingInfo?: unknown
-  /** Per-variable data ranges (SOS `boundingVariables`). Wire type
-   * is the parsed JSON; D1 stores as a string. Phase 3b. */
-  boundingVariables?: unknown
+  /** Geographic bounding box (NSWE in degrees) for the dataset's
+   * spatial extent. Phase 3d promoted from the legacy
+   * `bounding_variables` JSON column to typed columns. Omitted
+   * for global datasets. The SPA's Phase 3e regional-projection
+   * feature uses this to wrap the dataset texture to the correct
+   * portion of the globe. */
+  boundingBox?: { n: number; s: number; w: number; e: number }
+  /** Celestial body the dataset visualises. Omitted (== Earth)
+   * for the common case. Non-Earth values cue the SPA's Phase 3e
+   * base-texture swap. */
+  celestialBody?: string
+  /** Radius of the celestial body in miles, when non-Earth.
+   * Paired with `celestialBody`. */
+  radiusMi?: number
+  /** Globe longitude rotation reference in degrees (0 = prime
+   * meridian centered). Omitted when 0 (the default). */
+  lonOrigin?: number
+  /** Image Y-axis flip flag. Omitted when false. */
+  isFlippedInY?: boolean
   /**
    * For `tour/json` rows: the resolved URL the SPA's tour engine
    * fetches the tour document from, bypassing the manifest endpoint
@@ -152,9 +168,8 @@ function resolveAsset(
 /**
  * Parse a JSON-stringified text column into its object form for
  * the wire. Empty / null / unparseable values become `undefined`
- * so the field is omitted from the serialized row. The columns
- * this is used for (Phase 3b's `probing_info` and
- * `bounding_variables`) are validated on write, so a parse
+ * so the field is omitted from the serialized row. Used for
+ * Phase 3b's `probing_info` — validated on write, so a parse
  * failure here only happens if the row was edited out-of-band.
  */
 function parseJsonField(v: string | null | undefined): unknown {
@@ -164,6 +179,22 @@ function parseJsonField(v: string | null | undefined): unknown {
   } catch {
     return undefined
   }
+}
+
+/**
+ * Assemble the wire-side `boundingBox` field from the four
+ * `bbox_*` columns, or return undefined if any corner is missing.
+ * A partial bbox can't drive the SPA's Phase 3e regional
+ * projection — better to omit than to send half a box.
+ */
+function assembleBoundingBox(
+  row: DatasetRow,
+): { n: number; s: number; w: number; e: number } | undefined {
+  const { bbox_n, bbox_s, bbox_w, bbox_e } = row
+  if (bbox_n == null || bbox_s == null || bbox_w == null || bbox_e == null) {
+    return undefined
+  }
+  return { n: bbox_n, s: bbox_s, w: bbox_w, e: bbox_e }
 }
 
 /**
@@ -250,17 +281,25 @@ export function serializeDataset(
     updatedAt: row.updated_at,
     publishedAt: nonNull(row.published_at),
     legacyId: nonNull(row.legacy_id),
-    // D1 stores these as JSON-stringified text. Parsing here keeps
-    // the wire-side shape friendly for consumers; a malformed
+    // `probing_info` is JSON-stringified text in D1. Parsing here
+    // keeps the wire-side shape friendly for consumers; a malformed
     // string is dropped silently (returned as undefined) rather
     // than 500-ing the read endpoint. Phase 3b's write-side
     // validator (validateJsonStringField) only checks JSON
     // parseability + the 4096-char cap — NOT the object's
-    // field-level shape. The 'returned as undefined' fallback
-    // handles the case where an out-of-band DB edit lands
-    // unparseable text on the column.
+    // field-level shape.
     probingInfo: parseJsonField(row.probing_info),
-    boundingVariables: parseJsonField(row.bounding_variables),
+    // Phase 3d typed metadata. boundingBox surfaces only when all
+    // four corners are non-null (a partial bbox is meaningless to
+    // any consumer). celestialBody / radiusMi / lonOrigin /
+    // isFlippedInY surface only when populated — empty / default
+    // values are dropped so the wire stays terse for the common
+    // (Earth, global, prime-meridian, no-flip) case.
+    boundingBox: assembleBoundingBox(row),
+    celestialBody: nonNull(row.celestial_body),
+    radiusMi: row.radius_mi != null ? row.radius_mi : undefined,
+    lonOrigin: row.lon_origin != null ? row.lon_origin : undefined,
+    isFlippedInY: row.is_flipped_in_y === 1 ? true : undefined,
   }
 
   // Tour rows carry a fetchable JSON URL alongside the manifest

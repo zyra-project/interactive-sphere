@@ -84,10 +84,31 @@ export interface Dataset {
    * SPA consumption is deferred to a later phase. */
   probingInfo?: ProbingInfo
 
-  /** Variable-by-variable min/max ranges from the SOS
-   * `boundingVariables` field. Persisted as JSON in
-   * `bounding_variables` and surfaced verbatim. ~27 rows. */
-  boundingVariables?: unknown
+  /** Geographic bounding box (NSWE in degrees) for the dataset's
+   * spatial extent. Phase 3d promoted from `bounding_variables`
+   * JSON to typed columns. Omitted for global datasets; when
+   * present, the SPA's Phase 3e regional-projection feature
+   * wraps the dataset texture to this box rather than stretching
+   * it across the entire globe. */
+  boundingBox?: { n: number; s: number; w: number; e: number }
+
+  /** Celestial body the dataset visualises. Omitted == Earth.
+   * Non-Earth values (Mars / Moon / Sun / Jupiter / …) cue the
+   * SPA's Phase 3e base-texture swap. */
+  celestialBody?: string
+
+  /** Radius of the celestial body in miles, when non-Earth. */
+  radiusMi?: number
+
+  /** Globe longitude rotation reference in degrees. Omitted == 0
+   * (prime-meridian-centered). Non-zero values (±180 in the SOS
+   * snapshot) are dateline-centered, useful for Pacific-focused
+   * datasets. */
+  lonOrigin?: number
+
+  /** Image Y-axis flip flag for datasets whose imagery uses
+   * inverted Y conventions. Omitted == false. */
+  isFlippedInY?: boolean
 
   // Enriched metadata (from sos_dataset_metadata.json cross-reference)
   enriched?: EnrichedMetadata
