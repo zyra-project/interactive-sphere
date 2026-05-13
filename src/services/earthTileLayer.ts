@@ -1184,10 +1184,13 @@ export function createEarthTileLayer(): EarthTileLayerControl {
         gl2.activeTexture(gl2.TEXTURE0)
         gl2.bindTexture(gl2.TEXTURE_2D, datasetTex)
         gl2.uniform1i(dataset.texLoc, 0)
-        // bbox-bounded overlays render translucently over the base
-        // tile layers (which 3e/C keeps visible for these datasets)
-        // — `discard` in the fragment shader handles "outside bbox
-        // → show base."
+        // BLEND is disabled above, so the bbox interior is opaque —
+        // the base tile layers (which 3e/C keeps visible for bbox
+        // datasets) are revealed solely by the fragment shader's
+        // `discard` on the outside-the-box path, never by alpha
+        // compositing inside it. Adding real alpha-blended overlays
+        // would require re-enabling BLEND here and giving the
+        // shader an alpha source.
         gl2.drawElements(gl2.TRIANGLES, indexCount, gl2.UNSIGNED_SHORT, 0)
 
         // Restore GL state and return — no earth effects when dataset is active
@@ -1501,6 +1504,11 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_S, glRef.REPEAT)
       glRef.texParameteri(glRef.TEXTURE_2D, glRef.TEXTURE_WRAP_T, glRef.CLAMP_TO_EDGE)
       datasetActive = true
+      // `?? null` (not `?? datasetOptions`) so back-to-back swaps
+      // without a `clearDatasetTexture()` in between don't leak the
+      // prior dataset's bbox / lonOrigin / flipY onto the new one.
+      // Callers should pass `options` whenever the new dataset has
+      // 3d metadata; omit only for the legacy fast-path case.
       datasetOptions = options ?? null
       mapRef?.triggerRepaint()
     },

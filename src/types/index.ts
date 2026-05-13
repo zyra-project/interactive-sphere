@@ -246,7 +246,8 @@ export interface VideoTextureHandle {
  *                    equirectangular projection (legacy behavior).
  *   lonOrigin      — degrees offset for the U axis (default 0 →
  *                    prime-meridian centered; ±180 = dateline
- *                    centered).
+ *                    centered). Applies to the full-globe path
+ *                    only — see note below.
  *   isFlippedInY   — if true, the shader samples the texture with
  *                    a flipped V axis (datasets authored with
  *                    inverted-Y conventions).
@@ -255,9 +256,15 @@ export interface VideoTextureHandle {
  *                    4-pass effects (day/night terminator etc.,
  *                    which assume Earth's sun model).
  *
- * Every field is optional; the renderer must tolerate any
- * combination (e.g. bbox without lonOrigin, lonOrigin alone on a
- * non-bbox dataset). */
+ * Every field is optional. Combinations honored: `bbox` alone,
+ * `lonOrigin` alone, `isFlippedInY` with either, `celestialBody`
+ * with any of the above. Combinations NOT honored: `bbox` +
+ * non-zero `lonOrigin` — the shader's bbox path ignores
+ * `uLonOrigin` because the texture is already remapped to the
+ * bbox extent. No catalog row combines the two today; if a
+ * future publisher needs both, the shader has to be extended
+ * (apply `uLonOrigin` to `lon` before the bbox clip/remap)
+ * rather than relying on this type to permit it. */
 export interface DatasetOverlayOptions {
   boundingBox?: { n: number; s: number; w: number; e: number }
   lonOrigin?: number

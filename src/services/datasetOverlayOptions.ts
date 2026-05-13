@@ -47,8 +47,12 @@ export function isEarthBody(name: string | null | undefined): boolean {
  * shader.
  *
  * `celestialBody: ""` from the catalog wire collapses to "Earth"
- * by `isEarthBody`; we still return it on the options bundle
- * when set so the renderer can log/diagnose if needed.
+ * by `isEarthBody`, so on its own it does NOT force a bundle —
+ * the fast-path `undefined` is returned. If another field
+ * (bbox / lonOrigin / flip / non-Earth body) triggers bundle
+ * emission, `celestialBody` is propagated verbatim regardless
+ * of value so the renderer sees what the catalog actually
+ * said.
  */
 export function overlayOptionsFromDataset(
   dataset: Dataset,

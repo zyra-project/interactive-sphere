@@ -243,9 +243,11 @@ pre-3e behavior.
 replaces the previous "always hide blue + black marble on
 dataset load" behavior. Rule table:
 
-  | Earth + no bbox      | hide (dataset covers full sphere)         |
-  | Earth + bbox         | show (base fills outside the bbox)        |
-  | non-Earth (any bbox) | hide (Earth tiles wrong for Mars / Moon / …) |
+| Case | Base layer |
+|---|---|
+| Earth + no bbox      | hide (dataset covers full sphere) |
+| Earth + bbox         | show (base fills outside the bbox) |
+| non-Earth (any case) | hide (Earth tiles wrong for Mars / Moon / …) |
 
 The dataset overlay shader's `discard` outside the bbox is
 what lets the base layer show through underneath; without
