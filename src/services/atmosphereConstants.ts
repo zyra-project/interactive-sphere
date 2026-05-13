@@ -124,15 +124,17 @@ export const SUN_INTENSITY = 20.0
 // Atmospheric density profiles are smooth exponentials, so the
 // integration is well-behaved at relatively low sample counts. We
 // expose two tiers and let each renderer pick at compile time
-// based on `isMobile()`; the chosen counts are baked into the
-// shader's loop bounds because WebGL can't take a uniform loop
-// count without unrolling. See the article's raymarch reference
-// (24/8) for a tight-budget desktop benchmark.
+// based on `isMobile()`; the chosen count is baked into the
+// shader's loop bound because WebGL can't take a uniform loop
+// count without unrolling.
+//
+// Tier 3 (transmittance LUT) replaces the per-sample inner
+// light-march with a single texture lookup, so only the primary
+// (view-ray) step count matters — there's no `lightSteps` field.
 
-/** Tier tag — primary (view-ray) and secondary (light-ray) step counts. */
+/** Tier tag — primary (view-ray) step count. */
 export interface AtmosphereSteps {
   readonly primarySteps: number
-  readonly lightSteps: number
 }
 
 /**
@@ -142,18 +144,15 @@ export interface AtmosphereSteps {
  */
 export const ATMOSPHERE_STEPS_HIGH: AtmosphereSteps = Object.freeze({
   primarySteps: 16,
-  lightSteps: 8,
 })
 
 /**
- * Mobile / Quest tier. ~60% fewer total samples than HIGH. Banding
- * stays imperceptible for stationary views; very-grazing limb under
- * fast camera motion can show a faint shimmer, accepted in trade
- * for fitting a mid-tier mobile GPU's fragment budget.
+ * Mobile / Quest tier. ~40% fewer primary samples than HIGH; with
+ * the Tier-3 LUT replacing the inner light-march, total per-pixel
+ * cost is far below either tier's Tier-2 cost.
  */
 export const ATMOSPHERE_STEPS_MOBILE: AtmosphereSteps = Object.freeze({
   primarySteps: 10,
-  lightSteps: 5,
 })
 
 // ── GLSL ───────────────────────────────────────────────────────────
@@ -272,25 +271,29 @@ export const ATMOSPHERE_GLSL_TONEMAP = /* glsl */ `
  *     sphere to bound the segment; bails early if the ray misses
  *     the atmosphere.
  *   - `steps.primarySteps` samples along the segment; each
- *     accumulates Rayleigh, Mie and ozone optical depths.
- *   - `steps.lightSteps` samples from each primary sample toward
- *     the sun, accumulating the sun-side optical depth; a sample
- *     whose light ray dips below the planet surface gets a huge
- *     optical depth, effectively shadowing it.
+ *     accumulates Rayleigh, Mie and ozone optical depths and
+ *     fetches the sun-side transmittance from a precomputed LUT.
  *   - In-scattering at each sample is weighted by combined
  *     transmittance from camera-to-sample-to-sun.
  *   - Ozone contributes to extinction only (no scattering term).
  *
  * Returns the HDR scattered colour. Caller is responsible for
- * tonemapping and blending. With additive blending, just write
- * `colour * alpha` where `alpha` is your fragment's coverage.
+ * tonemapping and blending.
  *
- * Depends on the other GLSL chunks (CONSTANTS, DENSITY, PHASE,
- * INTERSECT) being injected ahead of this one.
+ * Depends on:
+ *   - The other GLSL chunks (CONSTANTS, DENSITY, PHASE, INTERSECT)
+ *     being injected ahead of this one.
+ *   - A `vec3 sampleTransmittanceLut(vec3 samplePos, vec3 sunDir)`
+ *     function declared before this one, defined by the caller. The
+ *     function is renderer-specific because the texture-sampling
+ *     builtin differs between GLSL 1.00 (`texture2D`) and GLSL 3.00
+ *     ES (`texture`) — see photorealEarth.ts and earthTileLayer.ts
+ *     for the two implementations. This split keeps the raymarch
+ *     itself version-portable.
  *
- * Step counts are baked into the loop bounds (WebGL prefers
- * compile-time constants) — caller picks a tier via
- * `ATMOSPHERE_STEPS_HIGH` / `ATMOSPHERE_STEPS_MOBILE`.
+ * Step count is baked into the loop bound (WebGL prefers compile-
+ * time constants) — caller picks a tier via `ATMOSPHERE_STEPS_HIGH`
+ * / `ATMOSPHERE_STEPS_MOBILE`.
  */
 export function buildAtmosphereRaymarchGlsl(steps: AtmosphereSteps): string {
   return /* glsl */ `
@@ -328,31 +331,21 @@ export function buildAtmosphereRaymarchGlsl(steps: AtmosphereSteps): string {
         viewOdM += dM * stepSize;
         viewOdO += dO * stepSize;
 
-        // Light march from this sample toward the sun. If the ray
-        // dips through the planet, the sample is in geometric shadow.
-        vec2 sunHit = raySphereIntersect(samplePos, sunDir, vec3(0.0), ATMOSPHERE_RADIUS);
-        float sunStep = max(sunHit.y, 0.0) / float(${steps.lightSteps});
-        float sunOdR = 0.0;
-        float sunOdM = 0.0;
-        float sunOdO = 0.0;
-        bool shadowed = false;
-        for (int j = 0; j < ${steps.lightSteps}; j++) {
-          float st = (float(j) + 0.5) * sunStep;
-          vec3 sunPos = samplePos + sunDir * st;
-          float sh = length(sunPos) - PLANET_RADIUS;
-          if (sh < 0.0) { shadowed = true; break; }
-          if (sh > ATMOSPHERE_HEIGHT) break;
-          sunOdR += rayleighDensity(sh) * sunStep;
-          sunOdM += mieDensity(sh) * sunStep;
-          sunOdO += ozoneDensity(sh) * sunStep;
-        }
-        if (shadowed) continue;
+        // Sun-side transmittance: precomputed LUT lookup. The
+        // helper is renderer-defined (GLSL-version split) and
+        // already returns exp(-tau) for the sun path from the
+        // sample's altitude in the sun's direction. Zero values
+        // along ray paths blocked by the planet shadow the sample.
+        vec3 sunTrans = sampleTransmittanceLut(samplePos, sunDir);
 
-        vec3 tau =
-          RAYLEIGH_BETA   * (viewOdR + sunOdR) +
-          MIE_BETA_EXT    * (viewOdM + sunOdM) +
-          OZONE_BETA_ABS  * (viewOdO + sunOdO);
-        vec3 transmittance = exp(-tau);
+        // View-side transmittance from running optical depths.
+        vec3 viewTrans = exp(-(
+          RAYLEIGH_BETA  * viewOdR +
+          MIE_BETA_EXT   * viewOdM +
+          OZONE_BETA_ABS * viewOdO
+        ));
+
+        vec3 transmittance = viewTrans * sunTrans;
 
         sumR += dR * transmittance * stepSize;
         sumM += dM * transmittance * stepSize;
