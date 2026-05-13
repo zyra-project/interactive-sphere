@@ -533,11 +533,12 @@ const atmosphereFragSrc = `#version 300 es
 
   void main() {
     vec3 rayDir = normalize(vWorldPositionKm - uCameraPosKm);
-    vec3 scattered = computeAtmosphereScattering(uCameraPosKm, rayDir, uSunDir);
-    // ACES then scale; additive blend means we just write the colour
-    // and the framebuffer accumulates. No need to premultiply alpha
-    // here since blendFunc(ONE, ONE) ignores src.a.
-    fragColor = vec4(acesFilm(scattered) * uIntensity, 1.0);
+    // result.rgb = HDR in-scattered light; result.a = view
+    // transmittance scalar. Composition is article-style:
+    // framebuffer becomes  scattered + bg × viewTrans
+    // via blendFunc(ONE, SRC_ALPHA) in the render call.
+    vec4 result = computeAtmosphereScattering(uCameraPosKm, rayDir, uSunDir);
+    fragColor = vec4(acesFilm(result.rgb) * uIntensity, result.a);
   }
 `
 
@@ -1522,10 +1523,16 @@ export function createEarthTileLayer(): EarthTileLayerControl {
       // point of that pixel's ray, and the shader integrates inward
       // through Rayleigh + Mie + ozone densities.
       if (atmosphere && mapRef) {
-        gl2.blendFunc(gl2.ONE, gl2.ONE) // straight additive — the
-                                        // fragment writes ACES'd
-                                        // scattered RGB, framebuffer
-                                        // accumulates it.
+        // Article-style composition (Tier 3.5 fix):
+        //   result = src.rgb × 1 + dst.rgb × src.alpha
+        //         = scattered + bg × viewTransmittance
+        // The fragment writes ACES-tonemapped scattered light in
+        // RGB and the scalar view transmittance in alpha. With this
+        // blend func the framebuffer is BOTH brightened by the
+        // scattered light AND dimmed by the path-length-dependent
+        // viewTrans — without the dimming term the atmosphere pass
+        // washed out the planet face at noon viewing.
+        gl2.blendFunc(gl2.ONE, gl2.SRC_ALPHA)
 
         // Camera position derived from the projection matrix so the
         // raymarch ray geometry is correct at any zoom level. ECEF

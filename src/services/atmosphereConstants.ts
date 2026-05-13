@@ -277,8 +277,16 @@ export const ATMOSPHERE_GLSL_TONEMAP = /* glsl */ `
  *     transmittance from camera-to-sample-to-sun.
  *   - Ozone contributes to extinction only (no scattering term).
  *
- * Returns the HDR scattered colour. Caller is responsible for
- * tonemapping and blending.
+ * Returns `vec4(scattered, viewTransmittance)`:
+ *   - `rgb`: HDR in-scattered colour to ADD to the framebuffer.
+ *   - `a`:   scalar (perceptual-luminance) view transmittance — how
+ *           much of the planet behind survives the trip through
+ *           atmosphere to the camera. Caller blends with
+ *           `gl.blendFunc(ONE, SRC_ALPHA)` so the framebuffer ends
+ *           up as `scattered + bg × viewTransmittance` per the
+ *           article's composition formula. Without this dimming
+ *           term the atmosphere is purely additive and washes out
+ *           the planet face at noon viewing.
  *
  * Depends on:
  *   - The other GLSL chunks (CONSTANTS, DENSITY, PHASE, INTERSECT)
@@ -297,16 +305,18 @@ export const ATMOSPHERE_GLSL_TONEMAP = /* glsl */ `
  */
 export function buildAtmosphereRaymarchGlsl(steps: AtmosphereSteps): string {
   return /* glsl */ `
-    vec3 computeAtmosphereScattering(vec3 rayOriginKm, vec3 rayDirKm, vec3 sunDir) {
+    vec4 computeAtmosphereScattering(vec3 rayOriginKm, vec3 rayDirKm, vec3 sunDir) {
       vec2 atmHit = raySphereIntersect(rayOriginKm, rayDirKm, vec3(0.0), ATMOSPHERE_RADIUS);
-      if (atmHit.y <= 0.0) return vec3(0.0);
+      // Ray miss → no scattering, full transmittance (background
+      // visible unchanged).
+      if (atmHit.y <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
 
       vec2 planetHit = raySphereIntersect(rayOriginKm, rayDirKm, vec3(0.0), PLANET_RADIUS);
 
       float tNear = max(atmHit.x, 0.0);
       float tFar = atmHit.y;
       if (planetHit.x > 0.0) tFar = min(tFar, planetHit.x);
-      if (tFar <= tNear) return vec3(0.0);
+      if (tFar <= tNear) return vec4(0.0, 0.0, 0.0, 1.0);
 
       float segmentLen = tFar - tNear;
       float stepSize = segmentLen / float(${steps.primarySteps});
@@ -355,10 +365,25 @@ export function buildAtmosphereRaymarchGlsl(steps: AtmosphereSteps): string {
       float pR = rayleighPhase(mu);
       float pM = cornetteShanksPhase(mu);
 
-      return SUN_INTENSITY * (
+      vec3 scattered = SUN_INTENSITY * (
         pR * RAYLEIGH_BETA      * sumR +
         pM * MIE_BETA_SCATTER   * sumM
       );
+
+      // Final view-transmittance for composition. Scalar via
+      // perceptual luminance — the framebuffer's blend factor
+      // only takes one channel anyway, and the wavelength-
+      // selective dimming (blue dims more than red along long
+      // grazing paths) is already encoded in the *scattered*
+      // colour through Beer's law inside the loop.
+      vec3 viewTransFinal = exp(-(
+        RAYLEIGH_BETA  * viewOdR +
+        MIE_BETA_EXT   * viewOdM +
+        OZONE_BETA_ABS * viewOdO
+      ));
+      float viewTransScalar = dot(viewTransFinal, vec3(0.299, 0.587, 0.114));
+
+      return vec4(scattered, viewTransScalar);
     }
   `
 }

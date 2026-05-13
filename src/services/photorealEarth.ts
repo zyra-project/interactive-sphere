@@ -548,8 +548,13 @@ export function createPhotorealEarth(
         vec3 camKm  = (cameraPosition - uPlanetCenter) * uKmPerWorldUnit;
         vec3 rayDir = normalize(fragKm - camKm);
 
-        vec3 scattered = computeAtmosphereScattering(camKm, rayDir, uSunDir);
-        gl_FragColor = vec4(acesFilm(scattered), 1.0);
+        // result.rgb = HDR in-scattered light; result.a = view
+        // transmittance scalar. Composition is article-style:
+        // framebuffer becomes  scattered + bg × viewTrans
+        // via the material's CustomBlending (OneFactor,
+        // SrcAlphaFactor) below.
+        vec4 result = computeAtmosphereScattering(camKm, rayDir, uSunDir);
+        gl_FragColor = vec4(acesFilm(result.rgb), result.a);
       }
     `
 
@@ -572,7 +577,18 @@ export function createPhotorealEarth(
       side: THREE_.FrontSide,
       depthTest: false,
       depthWrite: false,
-      blending: THREE_.AdditiveBlending,
+      // Article-style composition:
+      //   result = src.rgb × 1 + dst.rgb × src.alpha
+      //         = scattered + bg × viewTransmittance
+      // i.e. the atmosphere ADDS in-scattered light AND DIMS the
+      // planet behind it by the view-side transmittance. Pure
+      // AdditiveBlending (the previous Tier-2/3 setting) only did
+      // the first half; with no dimming term the noon-zenith view
+      // washed out as the limb halo overlapped the planet face.
+      blending: THREE_.CustomBlending,
+      blendEquation: THREE_.AddEquation,
+      blendSrc: THREE_.OneFactor,
+      blendDst: THREE_.SrcAlphaFactor,
     })
     atmosphere = new THREE_.Mesh(atmosphereGeometry, atmosphereMaterial)
     atmosphere.position.copy(globe.position)
