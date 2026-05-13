@@ -23,7 +23,10 @@
  *                        these too, but that needs path rewriting
  *                        inside the tour.json and isn't in 3c/A.
  *
- * URL-bearing task fields (per `TourTaskDef` in src/types/index.ts):
+ * URL-bearing task fields (per `TourTaskDef` in src/types/index.ts
+ * plus six additional task types surfaced by the 3c/A sweep of
+ * production tours — `addBubble`, `showInfoBtn`, `hideInfoBtn`,
+ * `loadTour`, `showLegend`, `worldBorders`):
  *
  *   - playAudio.filename
  *   - playVideo.filename, showVideo.filename
@@ -33,6 +36,18 @@
  *   - question.imgQuestionFilename, question.imgAnswerFilename
  *   - showPopupHtml.url (often external — popup web links)
  *   - addPlacemark.iconFilename
+ *   - addBubble.media360 (mixed: external Vimeo URL or relative
+ *     360-pano image; classified per-value)
+ *   - showInfoBtn.content (typically external — YouTube embed)
+ *   - showInfoBtn.iconFilename (relative button icon)
+ *   - hideInfoBtn (bare string — info-button id)
+ *
+ * Non-URL-bearing known task types we silently skip:
+ *
+ *   - loadTour (bare-string dataset id, looked up by the SPA via
+ *     the catalog — not a URL the migration needs to touch)
+ *   - showLegend (boolean toggle)
+ *   - worldBorders (string enum: "off"/"on"/…)
  *
  * Tour task types this parser doesn't know about are listed in
  * `unknownTasks` for diagnostics but otherwise ignored. The
@@ -70,6 +85,7 @@ const BARE_STRING_TASKS: ReadonlySet<string> = new Set([
   'stopVideo',
   'hideImage',
   'hideImg',
+  'hideInfoBtn',
 ])
 
 export type AssetKind = 'relative' | 'absolute_external' | 'absolute_sos_cdn'
@@ -209,6 +225,45 @@ export function parseTourFile(parsed: unknown): TourParseResult {
       continue
     }
 
+    if (taskName === 'addBubble' && taskValue && typeof taskValue === 'object') {
+      // 360-pano "bubble" task. `media360` is the only URL field —
+      // can be either a Vimeo embed URL (absolute_external) or a
+      // sibling .jpg pano (relative); classifyAssetUrl handles both.
+      const v = taskValue as Record<string, unknown>
+      const media360 = v.media360
+      if (typeof media360 === 'string' && media360.length > 0) {
+        result.assets.push({
+          rawValue: media360,
+          source: { taskIndex: i, taskName, field: 'media360' },
+          kind: classifyAssetUrl(media360),
+        })
+      }
+      continue
+    }
+
+    if (taskName === 'showInfoBtn' && taskValue && typeof taskValue === 'object') {
+      // Info-button overlay. Two URL fields:
+      //   - `content` is the body the button opens (usually a
+      //     YouTube embed URL — absolute_external). The SOS spec
+      //     also allows image / html types but the sweep only
+      //     surfaced YouTube embeds; we classify per-value either
+      //     way.
+      //   - `iconFilename` is the button icon (typically a sibling
+      //     image like `logo.jpg`).
+      const v = taskValue as Record<string, unknown>
+      for (const field of ['content', 'iconFilename']) {
+        const candidate = v[field]
+        if (typeof candidate === 'string' && candidate.length > 0) {
+          result.assets.push({
+            rawValue: candidate,
+            source: { taskIndex: i, taskName, field },
+            kind: classifyAssetUrl(candidate),
+          })
+        }
+      }
+      continue
+    }
+
     if (BARE_STRING_TASKS.has(taskName)) {
       // hide-* tasks reference a previously-shown asset. We don't
       // emit a separate migration entry for them — the show-* task
@@ -235,18 +290,22 @@ export function parseTourFile(parsed: unknown): TourParseResult {
 const KNOWN_TASK_NAMES: ReadonlySet<string> = new Set([
   // Asset-bearing
   'playAudio', 'playVideo', 'showVideo', 'showImage', 'showImg',
-  'question', 'showPopupHtml', 'addPlacemark',
+  'question', 'showPopupHtml', 'addPlacemark', 'addBubble', 'showInfoBtn',
   // Bare-string asset-reference (hide-*)
   'hideVideo', 'hidePlayVideo', 'stopVideo', 'hideImage', 'hideImg',
-  'hidePopupHtml', 'hidePlacemark', 'hideRect',
+  'hidePopupHtml', 'hidePlacemark', 'hideRect', 'hideInfoBtn',
   // Non-asset
   'flyTo', 'tiltRotateCamera', 'resetCameraZoomOut', 'resetCameraAndZoomOut',
   'showRect', 'pauseForInput', 'pauseSeconds', 'pauseSec', 'stopAudio',
   'loadDataset', 'unloadAllDatasets', 'unloadDataset', 'datasetAnimation',
   'envShowDayNightLighting', 'envShowClouds', 'envShowEarth',
-  'envShowWorldBorder', 'envShowStars', 'worldBorder',
+  'envShowWorldBorder', 'envShowStars', 'worldBorder', 'worldBorders',
   'setGlobeRotationRate', 'loopToBeginning', 'enableTourPlayer',
-  'tourPlayerWindow', 'setEnvView',
+  'tourPlayerWindow', 'setEnvView', 'showLegend',
+  // loadTour's value is a bare-string SOS dataset id, NOT a URL —
+  // the SPA looks it up in the catalog at execution time. So it's
+  // a known non-asset task: we don't capture anything to migrate.
+  'loadTour',
 ])
 
 function isKnownTaskName(name: string): boolean {

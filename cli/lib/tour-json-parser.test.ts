@@ -132,6 +132,106 @@ describe('parseTourFile — happy path', () => {
     expect(r.assets[1].kind).toBe('relative')
   })
 
+  it('captures addBubble.media360 (external Vimeo URL)', () => {
+    const tour = {
+      tourTasks: [
+        {
+          addBubble: {
+            bubbleID: 'bubble1',
+            title: 'Hurricane Maria',
+            lat: 25.2, lon: -62.1, alt: 500,
+            media360: 'https://vimeo.com/296736862',
+            autoFlyTo: true,
+          },
+        },
+      ],
+    }
+    const r = parseTourFile(tour)
+    expect(r.unknownTasks).toEqual([])
+    expect(r.assets).toEqual([
+      {
+        rawValue: 'https://vimeo.com/296736862',
+        source: { taskIndex: 0, taskName: 'addBubble', field: 'media360' },
+        kind: 'absolute_external',
+      },
+    ])
+  })
+
+  it('captures addBubble.media360 (relative 360-pano image)', () => {
+    const tour = {
+      tourTasks: [
+        {
+          addBubble: {
+            bubbleID: 'bubble1',
+            title: 'Christ of the Abyss',
+            lat: 25.124, lon: -80.297,
+            media360: 'pano_floridakeys.jpg',
+          },
+        },
+      ],
+    }
+    const r = parseTourFile(tour)
+    expect(r.assets).toHaveLength(1)
+    expect(r.assets[0]).toMatchObject({
+      rawValue: 'pano_floridakeys.jpg',
+      kind: 'relative',
+    })
+  })
+
+  it('captures both showInfoBtn URL fields with per-value classification', () => {
+    const tour = {
+      tourTasks: [
+        {
+          showInfoBtn: {
+            infoBtnID: 'infoBtn1',
+            type: 'video',
+            content: 'https://www.youtube.com/embed/_87Rss34-fU',
+            iconFilename: 'logo.jpg',
+            caption: 'Elephant Seals',
+          },
+        },
+      ],
+    }
+    const r = parseTourFile(tour)
+    expect(r.unknownTasks).toEqual([])
+    expect(r.assets).toHaveLength(2)
+    // Content URL is external, icon is a sibling file.
+    const byField = Object.fromEntries(r.assets.map(a => [a.source.field, a]))
+    expect(byField.content).toMatchObject({
+      rawValue: 'https://www.youtube.com/embed/_87Rss34-fU',
+      kind: 'absolute_external',
+    })
+    expect(byField.iconFilename).toMatchObject({
+      rawValue: 'logo.jpg',
+      kind: 'relative',
+    })
+  })
+
+  it('hideInfoBtn bare-string task does not produce an asset', () => {
+    const r = parseTourFile({
+      tourTasks: [{ hideInfoBtn: 'info2' }],
+    })
+    expect(r.assets).toEqual([])
+    expect(r.unknownTasks).toEqual([])
+  })
+
+  it('loadTour / showLegend / worldBorders are known non-asset tasks', () => {
+    // These were surfaced as unknown by the 3c/A sweep and audited
+    // as non-URL-bearing — loadTour's value is a SOS dataset id
+    // (catalog lookup), showLegend is a boolean, worldBorders is
+    // a setting enum. None of them produce an asset to migrate,
+    // and none should be flagged as unknown.
+    const r = parseTourFile({
+      tourTasks: [
+        { loadTour: 'ID_TB_SOSX_WELCOME' },
+        { showLegend: true },
+        { worldBorders: 'off' },
+      ],
+    })
+    expect(r.assets).toEqual([])
+    expect(r.unknownTasks).toEqual([])
+  })
+
   it('handles a full multi-task tour and preserves taskIndex ordering', () => {
     // Realistic SOS shape — narrated audio, overlay image, question,
     // YouTube clip, then a hide-* task that doesn't add an asset.
@@ -226,6 +326,8 @@ describe('parseTourFile — defensive', () => {
         { question: { id: 'q' } }, // neither question/answer image
         { addPlacemark: { placemarkID: 'm', lat: 0, lon: 0 } }, // no iconFilename
         { showPopupHtml: { popupID: 'p', html: '<p>inline</p>' } }, // no url
+        { addBubble: { bubbleID: 'b', title: 't', lat: 0, lon: 0 } }, // no media360
+        { showInfoBtn: { infoBtnID: 'i', caption: 'c' } }, // no content / iconFilename
       ],
     })
     expect(r.assets).toEqual([])
@@ -240,6 +342,7 @@ describe('parseTourFile — defensive', () => {
         { hideVideo: 'v1' },
         { hidePlayVideo: 'v2' },
         { stopVideo: 'v3' },
+        { hideInfoBtn: 'info2' },
       ],
     })
     expect(r.assets).toEqual([])
