@@ -175,13 +175,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Apple Developer ID signing + notarization for the macOS .dmg.
-          # When these are set, tauri-action imports the .p12 into a
-          # temporary keychain on the macOS runner, signs the .app/.dmg
-          # with the Developer ID identity, and submits the bundle to
-          # Apple's notary service via notarytool. Without them, the
-          # aarch64 .dmg is only ad-hoc signed and macOS Gatekeeper
-          # rejects it on download with "Terraviz is damaged and can't
-          # be opened." (See docs/DESKTOP_APP_PLAN.md §Setup steps.)
+          # When all six secrets are set, tauri-action imports the .p12
+          # into a temporary keychain on the macOS runner, signs the
+          # .app/.dmg with the Developer ID identity, and submits the
+          # bundle to Apple's notary service via notarytool. Without
+          # them, the aarch64 .dmg is only ad-hoc signed and macOS
+          # Gatekeeper rejects it on download with "Terraviz is damaged
+          # and can't be opened." (See docs/DESKTOP_APP_PLAN.md
+          # §Setup steps.)
           #
           # Note: this is a *Developer ID Application* certificate — a
           # different cert type from the *Apple Distribution* cert used
@@ -190,19 +191,22 @@ jobs:
           # Apple ID are shared across both; the certs and their
           # passwords are not.
           #
-          # Scoped to macOS runners via `runner.os == 'macOS'`: the
-          # certificate / password / notary credentials never get
-          # materialised in the Linux or Windows job environments. The
-          # team ID and Apple ID are non-sensitive identifiers and
-          # could be passed on every runner without harm, but we gate
-          # them the same way for symmetry and to keep the audit story
-          # simple ("APPLE_* only on macOS").
-          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          # Gating: all six env vars short-circuit to '' unless we're
+          # on a macOS runner AND APPLE_DEVELOPER_ID_CERTIFICATE_BASE64
+          # is populated. Gating on a single sentinel (the cert) is
+          # deliberate — when only some of the secrets are set (e.g.
+          # APPLE_SIGNING_IDENTITY from an earlier experiment but no
+          # cert), tauri-action's `security import` step still engages
+          # and fails with `SecKeychainItemImport: One or more
+          # parameters passed to a function were not valid` because
+          # the cert blob is empty. All-or-nothing keeps the unsigned
+          # fallback path intact until #100 lands.
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 != '' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tauriScript: npx tauri
           releaseId: ${{ needs.create-release.outputs.release_id }}
