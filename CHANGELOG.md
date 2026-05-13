@@ -167,6 +167,111 @@ used; same `R2_PUBLIC_BASE` custom domain.
 
 ---
 
+## Phase 3h — VR / Three.js parity for bbox projection
+
+**Branch:** `claude/vr-bbox-non-earth-phase-3h`
+**Commits:** 3h/A through 3h/C.
+
+Phase 3e (below) shipped bbox projection and dateline-centered
+rendering on the 2D `earthTileLayer.ts` WebGL custom layer, but
+the immersive VR / AR view goes through a different code path —
+`photorealEarth.ts` builds its own `THREE.MeshPhongMaterial` with
+a day/night shader patch, atmosphere shells, sun sprite, clouds,
+and progressive 2K → 4K → 8K diffuse tiers. Pre-3h, a regional
+dataset loaded in VR stretched equirectangularly across the full
+sphere; dateline-centered datasets wrapped with the prime
+meridian in the wrong place. Phase 3h ports the 3e shader work
+into the VR Phong material so the immersive view matches the 2D
+behaviour on the primary globe.
+
+**3h/A — Plumb `DatasetOverlayOptions` into `VrDatasetTexture`.**
+The texture spec the VR session polls from the host gains an
+optional `options` field carrying the same Phase 3d metadata the
+2D renderer consumes. `main.ts`'s `getPanelTexture` populates it
+from the loaded dataset via the existing
+`overlayOptionsFromDataset` helper, so the VR side reuses the
+2D's SOS-convention Earth-alias logic and "all defaults →
+undefined" fast path. Pure plumbing; no rendering change yet.
+
+**3h/B — Bbox / lonOrigin / flipY shader.** `onBeforeCompile`
+on the Phong material gains a `<map_fragment>` replacement that
+mirrors `earthTileLayer.ts`'s `datasetFragSrc` — same lat/lon
+derivation, same antimeridian-crossing-bbox handling, same
+`fract()` U-wrap for the lonOrigin path. Five new uniforms
+(`uOverlayHasBbox`, `uOverlayBbox`, `uOverlayLonOrigin`,
+`uOverlayFlipY`, `uOverlayHasBase`) plus a second sampler
+(`uOverlayBaseMap`) for the "outside the bbox shows Earth"
+case — needed because in VR there isn't a separate MapLibre
+blue-marble layer underneath, so the shader has to sample two
+textures and choose.
+
+**Rule table (matches Phase 3e/C on the 2D side):**
+
+| Case | Inside bbox | Outside bbox |
+|---|---|---|
+| Earth + no bbox     | dataset (full sphere) | n/a |
+| Earth + bbox        | dataset | `uOverlayBaseMap` (progressive diffuse tier) |
+| non-Earth + bbox    | dataset | `discard` |
+| non-Earth + no bbox | dataset (full sphere) | n/a |
+
+With every overlay uniform at its default the math collapses to
+a pass-through and the shader output is bit-identical to the
+pre-3h sample, so the planet-mode photoreal Earth and any legacy
+global dataset render unchanged.
+
+A small `applyOverlayOptions(options)` helper centralises the
+uniform writes so the change-detect no-op path can re-apply the
+uniforms if a dataset is re-loaded with new metadata (a tour
+task patching a row mid-session, for example). The
+`uOverlayBaseMap` binding tracks the progressive diffuse-tier
+upgrade callback so the bbox+Earth view sharpens 2K → 4K → 8K
+alongside planet mode.
+
+**3h/C — This CHANGELOG entry.**
+
+**Operator notes.**
+
+- No new env vars, no new bindings, no schema changes —
+  builds entirely on the 3d wire surface, same as the 2D 3e/3f
+  port.
+- After deploy, smoke-check on a WebXR device (Quest 2/3/Pro):
+  - `INTERNAL_HRRR_SMOKE_SEPTEMBER_2017_VIDEO` — regional CONUS
+    bbox, should render only over CONUS in immersive mode, with
+    the Earth diffuse filling the rest of the globe (no longer
+    stretched across the full sphere).
+  - Any dateline-centered ocean dataset — Pacific should be the
+    visible center, same as 2D.
+  - A non-Earth row (e.g. `INTERNAL_SOS_215_ONLINE` Venus,
+    `INTERNAL_SOS_220_ONLINE` Moon) — should still wrap the full
+    sphere as before; the non-Earth + bbox combination doesn't
+    appear in the catalog today but the `discard`-outside path
+    is wired for when it does.
+  - Any legacy global Earth dataset — should look bit-identical
+    to pre-3h immersive view.
+- WebGL output is browser/headset confirmed; unit tests cover
+  plumbing via the existing `datasetOverlayOptions.test.ts`
+  suite (14 tests, unchanged).
+
+**Non-goals (deferred / out-of-scope).**
+
+- **Secondary globe parity** (Phase 2.5 multi-panel layouts).
+  Secondaries use a basic `MeshPhongMaterial` without the
+  day/night shader patch; bbox treatment would mean duplicating
+  the shader injection or extracting a shared builder. The
+  primary-globe parity that ships here covers the common case
+  (a regional dataset in slot 0); slot ≥ 1 with a regional
+  dataset still stretches as today. Tracked separately as
+  follow-up if a real layout combination needs it.
+- **Per-body surface textures** — Phase 3g (issue #109). When
+  3g lands, non-Earth + bbox should reveal that body's surface
+  outside the bbox instead of `discard`-ing — the
+  `uOverlayHasBase` + `uOverlayBaseMap` plumbing already added
+  here is the hook.
+- **Camera fly-to-bbox on dataset entry into VR** — same
+  posture as the 2D non-goal in 3e.
+
+---
+
 ## Phase 3f — Non-Earth body gating
 
 **Branch:** `claude/non-global-rendering-phase-3e` (shipped together

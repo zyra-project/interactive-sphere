@@ -41,6 +41,8 @@ import type * as THREE from 'three'
 import { getSunPosition } from '../utils/time'
 import { getCloudTextureUrl } from '../utils/deviceCapability'
 import { logger } from '../utils/logger'
+import type { DatasetOverlayOptions } from '../types'
+import { isEarthBody } from './datasetOverlayOptions'
 
 /** Default radius if `options.radius` is omitted — matches the VR view. */
 const DEFAULT_RADIUS = 0.5
@@ -175,10 +177,27 @@ function sunDirectionFromLatLng(
  * are pre-decoded `HTMLImageElement`s, video datasets stream through
  * HLS into an `HTMLVideoElement`. Null falls back to the photoreal
  * Earth stack.
+ *
+ * `options` carries the same Phase 3d metadata
+ * (`boundingBox` / `lonOrigin` / `isFlippedInY` / `celestialBody`)
+ * that the 2D renderer uses for bbox projection + non-Earth gating.
+ * When absent (or when every field is at its default), the VR
+ * renderer takes the legacy path: dataset texture wraps the full
+ * sphere equirectangularly, all Earth decoration hides. Phase 3h
+ * uses these to clip the texture to a bbox and reveal an Earth
+ * base diffuse outside.
  */
 export type VrDatasetTexture =
-  | { readonly kind: 'video'; readonly element: HTMLVideoElement }
-  | { readonly kind: 'image'; readonly element: HTMLImageElement }
+  | {
+      readonly kind: 'video'
+      readonly element: HTMLVideoElement
+      readonly options?: DatasetOverlayOptions
+    }
+  | {
+      readonly kind: 'image'
+      readonly element: HTMLImageElement
+      readonly options?: DatasetOverlayOptions
+    }
 
 export interface PhotorealEarthOptions {
   /** Globe radius in world units. Default 0.5 (VR view default). */
@@ -351,6 +370,32 @@ export function createPhotorealEarth(
   // atmosphere shaders, the cloud shader patch, and the per-frame
   // update that writes the current subsolar direction.
   const sunDirUniform = { value: new THREE_.Vector3(1, 0, 0) }
+
+  // ── Phase 3h dataset-overlay uniforms ─────────────────────────────
+  // Mirror the four uniforms `earthTileLayer.ts` introduced for 3e/B
+  // on the 2D side, plus a base-diffuse slot the bbox path samples
+  // for outside-the-bbox pixels (2D gets this for free via MapLibre's
+  // blue-marble layer; in VR we have one Phong material, so the
+  // shader has to sample two textures and pick).
+  //
+  // Defaults (uHasBbox=false, uOverlayLonOrigin=0, uOverlayFlipY=false,
+  // uOverlayHasBase=false) collapse the shader to the standard
+  // equirectangular passthrough so legacy global datasets and the
+  // planet-mode photoreal Earth render bit-identically to pre-3h.
+  const overlayHasBboxUniform = { value: 0 }
+  const overlayBboxUniform = { value: new THREE_.Vector4(0, 0, 0, 0) }
+  const overlayLonOriginUniform = { value: 0 }
+  const overlayFlipYUniform = { value: 0 }
+  const overlayHasBaseUniform = { value: 0 }
+  // `uOverlayBaseMap` always points at a valid texture so the sampler
+  // binding is never null. `baseEarthTexture` is the always-loaded
+  // monochrome specular fallback (the same one `material.map` starts
+  // on); swapped to `baseDiffuseTexture` once the progressive CDN
+  // lands a real Earth diffuse, and again at setTexture time when a
+  // bbox+Earth dataset wants base reveal. The uniform value is only
+  // sampled when `uOverlayHasBase = 1`.
+  // (Initial value also serves to satisfy the GL driver that the
+  // sampler is bound to a real texture before first draw.)
   // sunLocalDirCache holds the geographic (Earth-local) sun
   // direction; refreshed at SUN_UPDATE_INTERVAL_MS cadence. Per
   // frame we copy it into a scratch, apply the globe's current
@@ -378,6 +423,15 @@ export function createPhotorealEarth(
   baseEarthTexture.colorSpace = THREE_.SRGBColorSpace
   const specularMapTexture = textureLoader.load(BASE_EARTH_TEXTURE_URL)
 
+  // Bbox-base sampler — always bound to a real texture so the GL
+  // driver never sees a null sampler binding. Initial value is the
+  // monochrome specular fallback; setTexture swaps to the progressive
+  // Earth diffuse once it lands and a bbox+Earth dataset asks for
+  // base reveal. The shader only samples this when
+  // `uOverlayHasBase = 1`, so what's bound here for the common case
+  // is functionally irrelevant — just needs to be valid.
+  const overlayBaseMapUniform: { value: THREE.Texture } = { value: baseEarthTexture }
+
   // MeshPhongMaterial — matches the pre-MapLibre earthMaterials.ts
   // shader style. Phong is simpler than StandardMaterial (no PBR)
   // and runs faster on Quest. The `emissive: white` + `emissiveMap`
@@ -393,13 +447,28 @@ export function createPhotorealEarth(
     emissive: new THREE_.Color(0xffffff),
   })
 
-  // Shader patch: gate the emissive map (night city lights) to the
-  // dark side of the globe only, using a smoothstep over the sun
-  // direction dot product. Direct port from earthMaterials.ts; we
-  // patch Three.js' standard Phong shader rather than rolling our
-  // own so lighting / shadows / etc. all still work out of the box.
+  // Shader patch: two unrelated jobs sharing one onBeforeCompile.
+  //
+  //   1. Gate the emissive map (night city lights) to the dark side
+  //      of the globe only via a smoothstep over the sun direction
+  //      dot product. Direct port from earthMaterials.ts; we patch
+  //      Three.js' standard Phong shader rather than rolling our own
+  //      so lighting / shadows / etc. all still work out of the box.
+  //
+  //   2. (Phase 3h) UV-remap dataset overlays at <map_fragment> so
+  //      `boundingBox` / `lonOrigin` / `isFlippedInY` from the
+  //      catalog row reach the GPU. With every overlay uniform at
+  //      its default, the math collapses to a pass-through and the
+  //      shader output is bit-identical to the pre-3h sample —
+  //      same fast-path discipline 3e/B brought to the 2D side.
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uSunDir = sunDirUniform
+    shader.uniforms.uOverlayHasBbox = overlayHasBboxUniform
+    shader.uniforms.uOverlayBbox = overlayBboxUniform
+    shader.uniforms.uOverlayLonOrigin = overlayLonOriginUniform
+    shader.uniforms.uOverlayFlipY = overlayFlipYUniform
+    shader.uniforms.uOverlayHasBase = overlayHasBaseUniform
+    shader.uniforms.uOverlayBaseMap = overlayBaseMapUniform
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
@@ -417,7 +486,77 @@ export function createPhotorealEarth(
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <common>',
       `#include <common>
-       varying float vNdotL;`,
+       varying float vNdotL;
+       uniform int uOverlayHasBbox;
+       uniform vec4 uOverlayBbox;       // (n, s, w, e) degrees
+       uniform float uOverlayLonOrigin; // degrees
+       uniform int uOverlayFlipY;
+       uniform int uOverlayHasBase;
+       uniform sampler2D uOverlayBaseMap;`,
+    )
+    // Replace the standard <map_fragment> chunk (which is just
+    // `sampledDiffuseColor = texture2D(map, vMapUv); diffuseColor *= …`)
+    // with our bbox-aware variant. Inside the bbox we sample `map`
+    // (the dataset texture) with UVs remapped to the bbox extent;
+    // outside the bbox we either sample `uOverlayBaseMap` (Earth +
+    // bbox case — base diffuse fills the rest of the globe, matches
+    // 2D's blue-marble-show rule) or discard the fragment (non-Earth
+    // + bbox: 2D hides the blue marble, VR can't realistically draw
+    // "a hidden raster layer" so we punch a transparent hole through
+    // the sphere instead — same user-visible intent: no Earth tiles
+    // showing through behind a Mars dataset's clipped region).
+    //
+    // No-bbox path: optionally shift U by `uOverlayLonOrigin` so a
+    // dateline-centered texture wraps correctly; otherwise this is
+    // the standard equirectangular sample.
+    //
+    // `uOverlayFlipY` applies last in either path, mirroring 2D.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `#ifdef USE_MAP
+         vec4 sampledDiffuseColor;
+         if (uOverlayHasBbox == 1) {
+           float lat = (0.5 - vMapUv.y) * 180.0;
+           float lon = (vMapUv.x - 0.5) * 360.0;
+           float bn = uOverlayBbox.x;
+           float bs = uOverlayBbox.y;
+           float bw = uOverlayBbox.z;
+           float be = uOverlayBbox.w;
+           bool insideLat = (lat <= bn) && (lat >= bs);
+           bool insideLon;
+           float bu;
+           if (bw <= be) {
+             // Normal box.
+             insideLon = (lon >= bw) && (lon <= be);
+             bu = (lon - bw) / max(be - bw, 1e-6);
+           } else {
+             // Antimeridian-crossing box: inside if east of w OR west of e.
+             bool eastSide = lon >= bw;
+             bool westSide = lon <= be;
+             insideLon = eastSide || westSide;
+             float span = (360.0 - bw) + be;
+             bu = eastSide ? (lon - bw) / span : (lon + 360.0 - bw) / span;
+           }
+           if (insideLat && insideLon) {
+             float bv = (bn - lat) / max(bn - bs, 1e-6);
+             if (uOverlayFlipY == 1) bv = 1.0 - bv;
+             sampledDiffuseColor = texture2D(map, vec2(bu, bv));
+           } else if (uOverlayHasBase == 1) {
+             sampledDiffuseColor = texture2D(uOverlayBaseMap, vMapUv);
+           } else {
+             discard;
+           }
+         } else {
+           // Full-globe path with optional lonOrigin shift. fract()
+           // wraps so a sample at lon < lonOrigin pulls from the
+           // texture's right edge (and vice versa).
+           float lon = (vMapUv.x - 0.5) * 360.0;
+           float fu = fract((lon - uOverlayLonOrigin) / 360.0 + 0.5);
+           float fv = (uOverlayFlipY == 1) ? (1.0 - vMapUv.y) : vMapUv.y;
+           sampledDiffuseColor = texture2D(map, vec2(fu, fv));
+         }
+         diffuseColor *= sampledDiffuseColor;
+       #endif`,
     )
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
@@ -836,6 +975,54 @@ export function createPhotorealEarth(
   let lightsTexture: THREE.Texture | null = null
 
   /**
+   * Push `options` into the four overlay uniforms (bbox / lonOrigin /
+   * flipY / has-base) and decide whether to expose a base Earth
+   * diffuse for the shader's bbox-outside path:
+   *
+   *   - bbox absent  → all overlay state defaults; shader's
+   *                    full-globe lonOrigin/flipY path runs.
+   *   - bbox present, Earth → has-base on; uOverlayBaseMap follows
+   *                    the current progressive diffuse tier so the
+   *                    rest of the globe shows blue marble (2D parity).
+   *   - bbox present, non-Earth → has-base off; shader `discard`s the
+   *                    outside-bbox pixels, matching 2D's "hide blue
+   *                    marble behind Mars/Moon/etc." rule.
+   *
+   * Idempotent — safe to call on every spec swap and on every
+   * progressive diffuse tier upgrade. `undefined` resets to the
+   * pre-3h passthrough.
+   */
+  function applyOverlayOptions(options: DatasetOverlayOptions | undefined): void {
+    if (!options) {
+      overlayHasBboxUniform.value = 0
+      overlayBboxUniform.value.set(0, 0, 0, 0)
+      overlayLonOriginUniform.value = 0
+      overlayFlipYUniform.value = 0
+      overlayHasBaseUniform.value = 0
+      return
+    }
+    const bbox = options.boundingBox
+    if (bbox) {
+      overlayHasBboxUniform.value = 1
+      overlayBboxUniform.value.set(bbox.n, bbox.s, bbox.w, bbox.e)
+      if (isEarthBody(options.celestialBody)) {
+        overlayHasBaseUniform.value = 1
+        overlayBaseMapUniform.value = baseDiffuseTexture ?? baseEarthTexture
+      } else {
+        overlayHasBaseUniform.value = 0
+      }
+    } else {
+      overlayHasBboxUniform.value = 0
+      overlayHasBaseUniform.value = 0
+    }
+    overlayLonOriginUniform.value =
+      typeof options.lonOrigin === 'number' && Number.isFinite(options.lonOrigin)
+        ? options.lonOrigin
+        : 0
+    overlayFlipYUniform.value = options.isFlippedInY ? 1 : 0
+  }
+
+  /**
    * Walk a list of resolution tiers in ascending order, upgrading
    * the texture as each tier lands. On a tier-404 or network error,
    * progression stops and whatever tier most recently succeeded
@@ -877,6 +1064,15 @@ export function createPhotorealEarth(
   void loadProgressive(
     EARTH_DIFFUSE_URLS,
     tex => {
+      // Phase 3h: any bbox+Earth dataset using the base-reveal path
+      // should pick up the upgrade so the area outside the bbox
+      // sharpens 2K → 4K → 8K just like a planet-mode globe does.
+      // Safe even when `uOverlayHasBase = 0` because the sampler is
+      // only read on the bbox+Earth path; mutating the binding off-
+      // the-bbox-path doesn't affect anything.
+      if (overlayHasBaseUniform.value === 1) {
+        overlayBaseMapUniform.value = tex
+      }
       // Swap only if no dataset has taken over during the fetch.
       if (activeKey !== null) {
         baseDiffuseTexture?.dispose()
@@ -951,6 +1147,11 @@ export function createPhotorealEarth(
       // fired" flag so firing on every no-op is harmless.
       const nextKey = spec?.kind === 'video' ? spec.element : spec?.kind === 'image' ? spec.element : null
       if (nextKey === activeKey) {
+        // Even on an unchanged-element no-op, the overlay options
+        // for that element may have moved (catalog patch, tour task
+        // re-loading the same dataset with new metadata). Re-apply
+        // the uniforms so a stale bbox doesn't outlive its config.
+        applyOverlayOptions(spec?.options)
         onReady?.()
         return
       }
@@ -976,6 +1177,7 @@ export function createPhotorealEarth(
         // night-lights emissive gated by the day/night shader;
         // clouds + atmosphere rim. Anything the user sees while no
         // dataset is loaded is "Earth as a planet".
+        applyOverlayOptions(undefined)
         material.map = baseDiffuseTexture ?? baseEarthTexture
         material.emissiveMap = lightsTexture
         material.emissive.setHex(0xffffff)
@@ -996,6 +1198,16 @@ export function createPhotorealEarth(
       } else if (spec.kind === 'video') {
         const video = spec.element
         activeKey = video
+        // Overlay options (bbox / lonOrigin / flipY) are deliberately
+        // NOT applied here. The video may not be ready, in which
+        // case the branch below points `material.map` at
+        // `baseEarthTexture` (the monochrome specular fallback) as
+        // a placeholder. Applying a bbox UV remap to that
+        // placeholder would briefly show a warped Earth patch in
+        // the bbox shape until the first video frame lands. Apply
+        // overlay options at the moment the dataset texture
+        // actually replaces the placeholder — both readiness paths
+        // below set them right before `material.map = tex`.
 
         // Dataset loaded — hide Earth-specific decoration so the
         // data isn't obscured:
@@ -1036,7 +1248,9 @@ export function createPhotorealEarth(
         activeDatasetTexture = tex
 
         if (video.readyState >= 2) {
-          // Frame already decoded — swap immediately and signal ready.
+          // Frame already decoded — apply overlay options and swap
+          // in the dataset texture in one go, no placeholder phase.
+          applyOverlayOptions(spec.options)
           material.map = tex
           onReady?.()
         } else {
@@ -1060,11 +1274,20 @@ export function createPhotorealEarth(
           // blocked — we swallow the error and rely on the listener
           // fallback. `video.muted = true` (set by hlsService) makes
           // this silent-autoplay-friendly per the browser policies.
+          //
+          // Overlay options reset to passthrough during this
+          // placeholder window so the monochrome Earth fallback
+          // renders un-warped; the onFrame listener below pushes
+          // the real options just before swapping in the video
+          // texture, so the user sees the bbox/lonOrigin behavior
+          // appear in the same frame the video data does.
+          applyOverlayOptions(undefined)
           material.map = baseEarthTexture
           const onFrame = () => {
             cancelPendingVideoListeners?.()
             cancelPendingVideoListeners = null
             if (activeKey !== video) return
+            applyOverlayOptions(spec.options)
             material.map = tex
             material.needsUpdate = true
             onReady?.()
@@ -1086,6 +1309,7 @@ export function createPhotorealEarth(
           video.play().catch(() => { /* autoplay blocked — fine */ })
         }
       } else if (spec.kind === 'image') {
+        applyOverlayOptions(spec.options)
         // The 2D loader already decoded this image (including the
         // resolution-fallback dance), so we wrap the live
         // HTMLImageElement directly — no re-fetch, no async.

@@ -62,6 +62,7 @@ import {
 import { initVrButton } from './ui/vrButton'
 import { flyToOnGlobe, isVrActive } from './services/vrSession'
 import type { VrDatasetTexture } from './services/vrScene'
+import { overlayOptionsFromDataset } from './services/datasetOverlayOptions'
 import { bootstrapI18n } from './i18n/bootstrap'
 
 // Phase 5: set a body class so CSS can target mobile-native adaptations
@@ -1415,14 +1416,56 @@ class InteractiveSphere {
     // dataset + HLS service + decoded image). This is the
     // multi-panel foundation; the single-panel getters below are
     // just convenience wrappers that call it for the primary slot.
+    // Per-slot memoization. `vrSession` polls `getPanelTexture` at
+    // XR frame rate (~90 Hz on Quest); recomputing the spec —
+    // including `overlayOptionsFromDataset` which allocates a fresh
+    // options object for datasets with any Phase 3d field set —
+    // would burn ~5400 allocations/min for no behavioural reason.
+    // Cache on input-reference identity: as long as the panel's
+    // dataset, image, and video references are stable, the spec is
+    // the same object. Dataset metadata mutated in place would
+    // bypass this cache; the codebase replaces dataset objects on
+    // load rather than mutating, and `photorealEarth.setTexture`
+    // re-applies overlay options on every call regardless of
+    // memoization so a stale spec is at most one frame visible.
+    const specCache: Array<{
+      dataset: Dataset | null
+      image: HTMLImageElement | null
+      video: HTMLVideoElement | null
+      spec: VrDatasetTexture | null
+    } | undefined> = []
     const getPanelTexture = (slot: number): VrDatasetTexture | null => {
       const panel = this.panelStates[slot]
-      if (!panel?.dataset) return null
-      if (dataService.isImageDataset(panel.dataset)) {
-        return panel.image ? { kind: 'image', element: panel.image } : null
+      const dataset = panel?.dataset ?? null
+      const image = dataset && dataService.isImageDataset(dataset)
+        ? (panel?.image ?? null)
+        : null
+      const video = dataset && !dataService.isImageDataset(dataset)
+        ? (panel?.hlsService?.getVideo() ?? null)
+        : null
+      const cached = specCache[slot]
+      if (
+        cached
+        && cached.dataset === dataset
+        && cached.image === image
+        && cached.video === video
+      ) {
+        return cached.spec
       }
-      const video = panel.hlsService?.getVideo()
-      return video ? { kind: 'video', element: video } : null
+      // Phase 3h: forward the same overlay options the 2D renderer
+      // consumes (bbox / lonOrigin / flipY / celestialBody) so the
+      // VR Phong material can clip regional datasets to their bbox
+      // and reveal an Earth base diffuse outside. `undefined` for
+      // datasets at all defaults — keeps legacy globals on the fast
+      // path through the shader.
+      let spec: VrDatasetTexture | null = null
+      if (dataset) {
+        const options = overlayOptionsFromDataset(dataset)
+        if (image) spec = { kind: 'image', element: image, options }
+        else if (video) spec = { kind: 'video', element: video, options }
+      }
+      specCache[slot] = { dataset, image, video, spec }
+      return spec
     }
 
     await initVrButton({
