@@ -70,7 +70,7 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'tour_paused', 'tour_resumed', 'tour_ended', 'tour_question_answered',
   'vr_session_started',
   'vr_session_ended', 'vr_placement', 'perf_sample', 'error',
-  'migration_r2_hls', 'migration_r2_assets',
+  'migration_r2_hls', 'migration_r2_assets', 'migration_r2_tours',
   'dwell', 'orbit_interaction', 'orbit_turn', 'orbit_tool_call',
   'orbit_load_followed', 'orbit_correction', 'browse_search',
   'vr_interaction', 'error_detail',
