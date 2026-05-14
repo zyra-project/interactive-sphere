@@ -110,6 +110,121 @@
   margin-inline-start: auto;
 }
 
+/* --- Lifecycle tabs (Drafts / Published / Retracted) --- */
+
+.publisher-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-block-end: 1.5rem;
+  border-block-end: 1px solid var(--white-o08, rgba(255, 255, 255, 0.08));
+}
+
+.publisher-tab {
+  color: var(--color-text-muted, #999999);
+  text-decoration: none;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.875rem;
+  border-block-end: 2px solid transparent;
+  margin-block-end: -1px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.publisher-tab:hover {
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-tab:focus-visible {
+  outline: 2px solid var(--white-o20, rgba(255, 255, 255, 0.2));
+  outline-offset: 2px;
+}
+
+.publisher-tab-active {
+  color: var(--color-text, #e8eaf0);
+  border-block-end-color: var(--white-o20, rgba(255, 255, 255, 0.2));
+}
+
+/* --- Dataset table --- */
+
+.publisher-list-count {
+  color: var(--color-text-muted, #999999);
+  font-size: 0.875rem;
+  margin: 0 0 0.5rem;
+}
+
+.publisher-table-wrap {
+  padding: 0;
+  overflow: auto;
+}
+
+.publisher-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.publisher-table th {
+  text-align: start;
+  font-weight: 600;
+  color: var(--color-text-muted, #999999);
+  padding: 0.625rem 1rem;
+  border-block-end: 1px solid var(--white-o08, rgba(255, 255, 255, 0.08));
+  white-space: nowrap;
+}
+
+.publisher-table td {
+  padding: 0.75rem 1rem;
+  border-block-end: 1px solid var(--white-o05, rgba(255, 255, 255, 0.05));
+  color: var(--color-text, #e8eaf0);
+  vertical-align: middle;
+}
+
+.publisher-table tr:last-child td {
+  border-block-end: 0;
+}
+
+.publisher-table tr:hover td {
+  background: var(--white-o05, rgba(255, 255, 255, 0.05));
+}
+
+.publisher-row-link {
+  color: var(--color-text, #e8eaf0);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.publisher-row-link:hover {
+  text-decoration: underline;
+}
+
+.publisher-cell-slug,
+.publisher-cell-format {
+  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #999999);
+}
+
+.publisher-cell-updated {
+  color: var(--color-text-muted, #999999);
+  white-space: nowrap;
+}
+
+/* --- Empty state + Load more --- */
+
+.publisher-empty {
+  display: flex;
+  justify-content: center;
+}
+
+.publisher-empty-message {
+  margin: 0;
+  color: var(--color-text-muted, #999999);
+}
+
+.publisher-load-more {
+  display: block;
+  margin: 1.5rem auto 0;
+}
+
 .publisher-shell h1 {
   font-size: 1.5rem;
   font-weight: 600;

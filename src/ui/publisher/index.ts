@@ -23,6 +23,7 @@ import { logger } from '../../utils/logger'
 import { t } from '../../i18n'
 import { PublisherRouter, type RouteHandler } from './router'
 import { renderMePage } from './pages/me'
+import { renderDatasetsPage } from './pages/datasets'
 import { renderTopbar } from './components/topbar'
 import '../../styles/publisher.css'
 
@@ -128,8 +129,11 @@ function mePage(mount: HTMLElement): RouteHandler {
   return () => renderMePage(mount)
 }
 
-function datasetsPage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, t('publisher.section.datasets'), '3pb')
+function datasetsPage(mount: HTMLElement, router: () => PublisherRouter): RouteHandler {
+  return () =>
+    renderDatasetsPage(mount, {
+      routerNavigate: path => void router().navigate(path),
+    })
 }
 
 function datasetDetailPage(mount: HTMLElement): RouteHandler {
@@ -164,11 +168,18 @@ export async function bootPublisherPortal(): Promise<void> {
   }
 
   const { root, content } = ensureMount()
+  // Page handlers that need router-driven SPA navigation receive
+  // a `() => PublisherRouter` accessor so they see the live
+  // router even though it's constructed in the same expression.
+  const getRouter = (): PublisherRouter => {
+    if (!activeRouter) throw new Error('publisher router not yet initialised')
+    return activeRouter
+  }
   activeRouter = new PublisherRouter(
     [
       { pattern: '/publish', handler: mePage(content) },
       { pattern: '/publish/me', handler: mePage(content) },
-      { pattern: '/publish/datasets', handler: datasetsPage(content) },
+      { pattern: '/publish/datasets', handler: datasetsPage(content, getRouter) },
       { pattern: '/publish/datasets/:id', handler: datasetDetailPage(content) },
       { pattern: '/publish/tours', handler: toursPage(content) },
       { pattern: '/publish/import', handler: importPage(content) },
