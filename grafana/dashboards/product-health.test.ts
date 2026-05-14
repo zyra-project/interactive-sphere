@@ -224,9 +224,11 @@ describe('product-health dashboard — Phase 3b asset migration row', () => {
   })
 
   it('dashboard version bumps so operators re-import on upgrade', () => {
-    // Bumped in 3c/F to surface the new tour-migration row to
-    // anyone already running an earlier version of this dashboard.
-    expect(dashboard.version).toBe(9)
+    // Bumped on every panel row addition so operators re-import
+    // and see the new content:
+    //   - 3c/F: version 9 (tour migration row)
+    //   - 3pa/F: version 10 (publisher portal row)
+    expect(dashboard.version).toBe(10)
   })
 })
 
@@ -296,5 +298,55 @@ describe('product-health dashboard — Phase 3c tour migration row', () => {
     const sql = cumulative!.targets[0].url_options!.data!
     expect(sql).toMatch(/blob7\s*=\s*'ok'/)
     expect(sql).toMatch(/AS\s+ok_rows/)
+  })
+})
+
+describe('product-health dashboard — Phase 3pa publisher row', () => {
+  const dashboard = load()
+  const publisherPanels = dashboard.panels.filter(p =>
+    p.title.toLowerCase().includes('publisher portal'),
+  )
+
+  it('exposes three publisher panels (commit 3pa/F)', () => {
+    expect(publisherPanels).toHaveLength(3)
+    const titles = publisherPanels.map(p => p.title).sort()
+    expect(titles).toEqual([
+      'Publisher portal — loads by route',
+      'Publisher portal — loads per day by route',
+      'Publisher portal — total loads',
+    ])
+  })
+
+  it('places the publisher row on its own grid row', () => {
+    const ys = new Set(publisherPanels.map(p => p.gridPos.y))
+    expect(ys.size).toBe(1)
+  })
+
+  it('pins blob1 = publisher_portal_loaded on every publisher query', () => {
+    for (const panel of publisherPanels) {
+      for (const target of panel.targets) {
+        const sql = target.url_options?.data ?? ''
+        expect(sql).toMatch(/blob1\s*=\s*'publisher_portal_loaded'/)
+      }
+    }
+  })
+
+  it('uses blob5 for route (alphabetical position in PublisherPortalLoadedEvent)', () => {
+    // PublisherPortalLoadedEvent's only own string field beyond
+    // `event_type` is `route`, so it sorts to the first user-blob
+    // position (blob5). If a future schema adds a string field
+    // alphabetically before `route` it shifts blob5 → blob6 and
+    // this assertion fails — keeping operators honest.
+    for (const panel of publisherPanels) {
+      for (const target of panel.targets) {
+        const sql = target.url_options?.data ?? ''
+        // Either selects blob5 AS route or filters by route via
+        // its alias — the test passes as long as blob5 is the
+        // route column on this row of panels.
+        if (sql.includes('route')) {
+          expect(sql).toMatch(/blob5\s+AS\s+route/)
+        }
+      }
+    }
   })
 })
