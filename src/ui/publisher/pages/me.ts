@@ -1,0 +1,267 @@
+/**
+ * /publish/me — the publisher's own profile page.
+ *
+ * Fetches `GET /api/v1/publish/me` (Access-protected; the
+ * middleware has already resolved a `publishers` row by the time
+ * the response arrives) and renders the result as a glass-surface
+ * card matching the SPA's chrome.
+ *
+ * Error envelopes match the rest of the publisher API:
+ *
+ *   - 401 — Access session expired; offer the user a refresh.
+ *   - 5xx — server error; transient, suggest retry.
+ *   - network — fetch threw; suggest connection check.
+ *
+ * The fetch implementation is injectable so tests can stub it
+ * without `vi.stubGlobal('fetch', …)` polluting the global scope.
+ */
+
+import { t } from '../../../i18n'
+import { logger } from '../../../utils/logger'
+
+interface PublisherMeResponse {
+  id: string
+  email: string
+  display_name: string
+  affiliation: string | null
+  role: string
+  is_admin: boolean
+  status: string
+  created_at: string
+}
+
+type ErrorKind = 'session' | 'server' | 'network'
+
+const ME_ENDPOINT = '/api/v1/publish/me'
+
+/** Render a glass-surface card with the given child nodes. */
+function card(...children: HTMLElement[]): HTMLElement {
+  const el = document.createElement('section')
+  el.className = 'publisher-card publisher-glass'
+  for (const child of children) el.appendChild(child)
+  return el
+}
+
+function heading(text: string): HTMLElement {
+  const h = document.createElement('h2')
+  h.className = 'publisher-card-heading'
+  h.textContent = text
+  return h
+}
+
+function field(label: string, value: string, extraValueClass = ''): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'publisher-field'
+
+  const labelEl = document.createElement('span')
+  labelEl.className = 'publisher-field-label'
+  labelEl.textContent = label
+
+  const valueEl = document.createElement('span')
+  valueEl.className = `publisher-field-value ${extraValueClass}`.trim()
+  valueEl.textContent = value
+
+  row.appendChild(labelEl)
+  row.appendChild(valueEl)
+  return row
+}
+
+function badge(text: string, kind: 'admin' | 'role' | 'status'): HTMLElement {
+  const el = document.createElement('span')
+  el.className = `publisher-badge publisher-badge-${kind}`
+  el.textContent = text
+  return el
+}
+
+function renderLoading(mount: HTMLElement): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+  shell.setAttribute('aria-busy', 'true')
+  const status = document.createElement('p')
+  status.className = 'publisher-loading'
+  status.setAttribute('role', 'status')
+  status.textContent = t('publisher.me.loading')
+  shell.appendChild(status)
+  mount.replaceChildren(shell)
+}
+
+function renderError(mount: HTMLElement, kind: ErrorKind): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+
+  const errorCard = document.createElement('section')
+  errorCard.className = 'publisher-card publisher-glass publisher-error'
+  errorCard.setAttribute('role', 'alert')
+
+  const msg = document.createElement('p')
+  msg.className = 'publisher-error-message'
+  const messageKey =
+    kind === 'session'
+      ? 'publisher.me.error.session'
+      : kind === 'network'
+        ? 'publisher.me.error.network'
+        : 'publisher.me.error.server'
+  msg.textContent = t(messageKey)
+  errorCard.appendChild(msg)
+
+  const refresh = document.createElement('button')
+  refresh.type = 'button'
+  refresh.className = 'publisher-button'
+  refresh.textContent = t('publisher.me.error.refresh')
+  refresh.addEventListener('click', () => {
+    window.location.reload()
+  })
+  errorCard.appendChild(refresh)
+
+  shell.appendChild(errorCard)
+  mount.replaceChildren(shell)
+}
+
+function localizedRole(role: string): string {
+  switch (role) {
+    case 'staff':
+      return t('publisher.me.role.staff')
+    case 'community':
+      return t('publisher.me.role.community')
+    case 'service':
+      return t('publisher.me.role.service')
+    case 'readonly':
+      return t('publisher.me.role.readonly')
+    default:
+      return role
+  }
+}
+
+function localizedStatus(status: string): string {
+  switch (status) {
+    case 'active':
+      return t('publisher.me.status.active')
+    case 'pending':
+      return t('publisher.me.status.pending')
+    case 'suspended':
+      return t('publisher.me.status.suspended')
+    default:
+      return status
+  }
+}
+
+/**
+ * Format an ISO 8601 timestamp using the active locale.
+ * Falls back to the raw string if `Date` can't parse it.
+ */
+function formatCreatedAt(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+function renderProfile(mount: HTMLElement, me: PublisherMeResponse): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+
+  const head = heading(t('publisher.me.heading'))
+  const fields = document.createElement('div')
+  fields.className = 'publisher-fields'
+
+  fields.appendChild(field(t('publisher.me.field.email'), me.email))
+
+  // Role + admin live on the same row visually but render as two
+  // separate badges to keep the textContent semantics simple.
+  const roleRow = document.createElement('div')
+  roleRow.className = 'publisher-field'
+  const roleLabel = document.createElement('span')
+  roleLabel.className = 'publisher-field-label'
+  roleLabel.textContent = t('publisher.me.field.role')
+  const roleValue = document.createElement('span')
+  roleValue.className = 'publisher-field-value'
+  roleValue.appendChild(badge(localizedRole(me.role), 'role'))
+  if (me.is_admin) {
+    roleValue.appendChild(badge(t('publisher.me.role.admin'), 'admin'))
+  }
+  roleRow.appendChild(roleLabel)
+  roleRow.appendChild(roleValue)
+  fields.appendChild(roleRow)
+
+  // Affiliation. Empty/null renders an explicit "not set" rather
+  // than an empty value so the publisher knows the field exists.
+  fields.appendChild(
+    field(
+      t('publisher.me.field.affiliation'),
+      me.affiliation && me.affiliation.length > 0
+        ? me.affiliation
+        : t('publisher.me.affiliation.none'),
+    ),
+  )
+
+  // Status with a coloured badge.
+  const statusRow = document.createElement('div')
+  statusRow.className = 'publisher-field'
+  const statusLabel = document.createElement('span')
+  statusLabel.className = 'publisher-field-label'
+  statusLabel.textContent = t('publisher.me.field.status')
+  const statusValue = document.createElement('span')
+  statusValue.className = 'publisher-field-value'
+  const statusBadge = badge(localizedStatus(me.status), 'status')
+  statusBadge.dataset.status = me.status
+  statusValue.appendChild(statusBadge)
+  statusRow.appendChild(statusLabel)
+  statusRow.appendChild(statusValue)
+  fields.appendChild(statusRow)
+
+  fields.appendChild(
+    field(t('publisher.me.field.memberSince'), formatCreatedAt(me.created_at)),
+  )
+
+  const profileCard = card(head, fields)
+  shell.appendChild(profileCard)
+  mount.replaceChildren(shell)
+}
+
+/**
+ * Boot the /publish/me page. Renders a loading state, kicks off
+ * the fetch, then swaps in the profile card or an error card
+ * based on the result. Idempotent — calling it again replaces the
+ * current contents in-place.
+ */
+export async function renderMePage(
+  mount: HTMLElement,
+  fetchFn: typeof fetch = fetch,
+): Promise<void> {
+  renderLoading(mount)
+
+  let res: Response
+  try {
+    res = await fetchFn(ME_ENDPOINT, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+  } catch (err) {
+    logger.warn('[publisher] /publish/me fetch threw', err)
+    renderError(mount, 'network')
+    return
+  }
+
+  if (res.status === 401) {
+    renderError(mount, 'session')
+    return
+  }
+  if (!res.ok) {
+    logger.warn('[publisher] /publish/me returned', res.status)
+    renderError(mount, 'server')
+    return
+  }
+
+  let body: PublisherMeResponse
+  try {
+    body = (await res.json()) as PublisherMeResponse
+  } catch (err) {
+    logger.warn('[publisher] /publish/me JSON parse failed', err)
+    renderError(mount, 'server')
+    return
+  }
+  renderProfile(mount, body)
+}

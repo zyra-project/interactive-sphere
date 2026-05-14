@@ -21,6 +21,7 @@
 import { logger } from '../../utils/logger'
 import { t } from '../../i18n'
 import { PublisherRouter, type RouteHandler } from './router'
+import { renderMePage } from './pages/me'
 import '../../styles/publisher.css'
 
 const PORTAL_ROOT_ID = 'publisher-root'
@@ -86,7 +87,7 @@ function renderPlaceholder(mount: HTMLElement, sectionLabel: string, subPhase: s
 }
 
 function mePage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, t('publisher.section.profile'), '3pa/C')
+  return () => renderMePage(mount)
 }
 
 function datasetsPage(mount: HTMLElement): RouteHandler {

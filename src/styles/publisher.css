@@ -40,3 +40,124 @@
   color: var(--color-text-tertiary, #6e7484);
   margin: 0;
 }
+
+/* --- Glass-surface card (SPA-matched) --- */
+
+.publisher-glass {
+  background: var(--glass-bg, rgba(13, 13, 18, 0.92));
+  backdrop-filter: var(--glass-blur, blur(12px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(12px));
+  border: 1px solid var(--white-o08, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+}
+
+.publisher-card {
+  padding: 1.5rem;
+  margin-block-end: 1rem;
+}
+
+.publisher-card-heading {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-fields {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 0.75rem 1.5rem;
+  align-items: center;
+}
+
+.publisher-field {
+  display: contents;
+}
+
+.publisher-field-label {
+  color: var(--color-text-muted, #999999);
+  font-size: 0.875rem;
+}
+
+.publisher-field-value {
+  color: var(--color-text, #e8eaf0);
+  font-size: 0.95rem;
+  word-break: break-word;
+}
+
+/* --- Badges --- */
+
+.publisher-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-inline-end: 0.375rem;
+}
+
+.publisher-badge-role {
+  background: var(--white-o10, rgba(255, 255, 255, 0.1));
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-badge-admin {
+  background: rgba(124, 179, 255, 0.18);
+  color: #cfe2ff;
+}
+
+.publisher-badge-status[data-status='active'] {
+  background: rgba(120, 200, 140, 0.18);
+  color: #c4ecc9;
+}
+
+.publisher-badge-status[data-status='pending'] {
+  background: rgba(255, 200, 120, 0.18);
+  color: #ffe1a8;
+}
+
+.publisher-badge-status[data-status='suspended'] {
+  background: rgba(255, 120, 120, 0.18);
+  color: #ffc6c6;
+}
+
+/* --- Loading + error states --- */
+
+.publisher-loading {
+  color: var(--color-text-muted, #999999);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.publisher-error {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.publisher-error-message {
+  margin: 0;
+  color: var(--color-text-secondary, #bbbbbb);
+}
+
+.publisher-button {
+  background: var(--white-o10, rgba(255, 255, 255, 0.1));
+  border: 1px solid var(--white-o15, rgba(255, 255, 255, 0.15));
+  color: var(--color-text, #e8eaf0);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.publisher-button:hover {
+  background: var(--white-o15, rgba(255, 255, 255, 0.15));
+}
+
+.publisher-button:focus-visible {
+  outline: 2px solid var(--white-o20, rgba(255, 255, 255, 0.2));
+  outline-offset: 2px;
+}
