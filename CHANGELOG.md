@@ -16,6 +16,153 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3pa — Publisher portal shell + Access browser flow
+
+**Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
+that landed Phase 3-pre)
+**Commits:** 3pa/A through 3pa/H, plus a one-line 3pa/A-fix
+addendum picked up against the live Pages preview.
+
+First code sub-phase of the publisher portal. After 3pa, a staff
+publisher visiting `/publish/me` on a deployed instance lands on
+a glass-surface profile card showing their identity from the
+already-shipped publisher API; the portal's lazy chunk, History
+API router, top nav, i18n key skeleton, analytics events,
+Grafana panel row, and Cloudflare Access walkthrough are all in
+place. No write surface yet — that's 3pc onward — but every
+foundation downstream sub-phases depend on now ships.
+
+**3pa/A — Portal lazy chunk + History API router.** New module
+tree under `src/ui/publisher/**`. The chunk loads via a single
+dynamic `import('./ui/publisher')` from `src/main.ts`, gated on
+`location.pathname.startsWith('/publish')`; non-publisher visits
+never fetch the portal bytes. The router is a ~100-line History
+API wrapper with one `:id` placeholder, popstate re-dispatch,
+and an idempotent stop, matching the "vanilla TS with a few
+focused libraries" stance documented in `CLAUDE.md`. Every route
+mounts a placeholder page showing its section name and the
+sub-phase letter that will replace it. 13 router tests cover
+pattern matching, dispatch, navigate(), and popstate handling.
+
+**3pa/A-fix — Hide the SPA loading splash on portal boot.**
+Reported visually against the Pages preview: `/publish` showed
+the SPA's rotating-globe loading screen instead of the
+placeholder because the splash is `position: fixed; z-index:
+1000; opacity: 1` and only fades out on the SPA's own boot path.
+The portal route gate `return`s before that fades. One-line fix
+in `ensureMount()` to hide the splash explicitly, mirrored in
+`teardownPublisherPortal()` for test parity.
+
+**3pa/B — i18n keys + safe DOM construction.** Replaces the
+i18n-exempt scaffolding strings with `t()` calls under a new
+`publisher.*` namespace (8 keys for placeholder + section
+labels). Each key gets a translator-context entry in
+`locales/_explanations.json`. While replacing the template-
+literal `innerHTML`, also switches `renderPlaceholder` to
+`createElement` + `textContent` + `replaceChildren` so the
+`:id` URL segment cannot inject HTML by construction.
+
+**3pa/C — /publish/me page with real profile data.** Replaces
+the Profile placeholder with a glass-surface card that fetches
+`GET /api/v1/publish/me` and renders email, role (with an Admin
+badge when `is_admin` is true), affiliation (or "Not set"),
+status (Active / Pending approval / Suspended, colour-coded via
+a `data-status` attribute), and a localized "Member since" date.
+Loading / error states (network / 401 session expired / 5xx /
+JSON-parse failure) all share the same card chrome; a Refresh
+button on every error state reloads the page so Cloudflare
+Access can re-issue an identity token mid-session.
+`renderMePage(mount, fetchFn?)` injects fetch for test
+cleanliness — 11 tests with no `globalThis.fetch` stubbing. 20
+new i18n keys under `publisher.me.*`.
+
+**3pa/D — Glass-surface top bar with section nav.** Persistent
+`position: sticky` topbar above every portal page with four
+tabs (Profile / Datasets / Tours / Import) and a back arrow to
+the SPA. Active-state tracking is decoupled from the router
+via a new `publisher:routechange` CustomEvent — the router
+fires it after every dispatch, the topbar listens and updates
+its own DOM, neither holds a reference to the other. Sub-paths
+count as active for the parent tab (so `/publish/datasets/abc`
+keeps the Datasets tab highlighted). Plain left-clicks
+short-circuit to `router.navigate()`; modified clicks
+(cmd/ctrl/shift/middle) fall through so power users can open
+sections in a new tab. 10 topbar tests + 6 new
+`publisher.nav.*` i18n keys.
+
+**3pa/E — Publisher portal analytics events.** Three new
+`TelemetryEvent` types in `src/types/index.ts`:
+`PublisherPortalLoadedEvent` (Tier A, fields: `route`),
+`PublisherActionEvent` (Tier A, fields: `action`, hashed
+`dataset_id`), and `PublisherValidationFailedEvent` (Tier B,
+fields: `field`, `code`). Only `publisher_portal_loaded` is
+emitted by 3pa code — fires once at portal boot with the
+landing route. The other two are defined now so the emit-call
+shapes are locked before 3pc / 3pd / 3pf call them. The three
+new event-type strings land in `functions/api/ingest.ts` →
+`KNOWN_EVENT_TYPES`. 13 new tests (route-mapping + emit-on-boot
+across multiple paths + idempotency).
+
+**3pa/F — Grafana "Publisher portal" row.** Three new panels
+(ids 20–22) on the existing `Terraviz — Product Health`
+dashboard at y=58: a daily-by-route timeseries, a total stat,
+and a per-route table. Every panel pins
+`blob1 = 'publisher_portal_loaded'` and uses `blob5 AS route`
+(`PublisherPortalLoadedEvent`'s only own string field sorts to
+the first user-blob slot). Dashboard version 9 → 10 so
+operators re-import on upgrade and pick up the new row;
+`product-health.test.ts` gains four new structural assertions
+to keep the contract honest.
+
+**3pa/G — SELF_HOSTING.md Access walkthrough for /publish/**.
+New 8f subsection covering the second Cloudflare Access
+application that gates the *browser* surface at `/publish/**`
+(distinct from the existing 8a-8d setup for the API at
+`/api/v1/publish/**`). Documents the path-mode subtlety
+(`/publish` + `/publish/*` as two destinations), the
+recommended 24-hour session, and the explicit safety note that
+the in-between state (browser path reachable, API still 401s)
+is safe — the API middleware is the load-bearing boundary, the
+Access app is belt-and-suspenders.
+
+**3pa/H — This file.**
+
+### Operator-visible changes
+
+- **New Pages route:** `/publish/me` (and `/publish/datasets`,
+  `/publish/tours`, `/publish/import`, plus `/publish/datasets/:id`).
+  All five render through the lazy portal chunk; only
+  `/publish/me` exposes data today. The others render
+  placeholders showing which sub-phase brings them online.
+- **New analytics events:** `publisher_portal_loaded` (Tier A,
+  emitted from 3pa onward); `publisher_action` and
+  `publisher_validation_failed` (Tier A + B, types defined,
+  emits land in 3pc–3pf).
+- **New Grafana row:** Import `grafana/dashboards/product-health.json`
+  version 10 to pick up the publisher row.
+- **New Cloudflare Access application (optional):** see
+  `docs/SELF_HOSTING.md` §8f. The portal works without it
+  (the API is still gated), but operators wanting belt-and-
+  suspenders should add the second Access app.
+
+### What this sub-phase deliberately does not do
+
+- **Write surfaces.** No edit form, no asset upload, no
+  publish/retract from the browser. Those land in 3pc onward.
+- **Tour creator.** 3pe.
+- **Bulk import UI.** 3pf.
+- **Webhook fan-out scaffolding.** 3pg.
+- **Federation peer admin.** Phase 4.
+- **OIDC / community publishers.** Phase 6.
+
+### Sub-phase status
+
+- **3pa — Portal shell + Access browser flow.** ✓ Shipped.
+- **3pb — Dataset list + detail (read-only).** Next.
+- 3pc – 3pg — Future.
+
+---
+
 ## Phase 3-pre — Publisher portal prep
 
 **Branch:** `claude/catalog-publisher-portal-phase-3`
