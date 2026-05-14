@@ -16,12 +16,8 @@
 
 import { t } from '../../../i18n'
 import { plural } from '../../../i18n'
-import {
-  buildSignInUrl,
-  clearWarmupFlag,
-  handleSessionError,
-  publisherGet,
-} from '../api'
+import { clearWarmupFlag, handleSessionError, publisherGet } from '../api'
+import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
 import type {
   DatasetLifecycle,
   ListDatasetsResponse,
@@ -81,39 +77,11 @@ function renderLoading(content: HTMLElement): void {
 function renderError(
   content: HTMLElement,
   kind: 'session' | 'server' | 'network',
+  details: ErrorCardDetails = {},
 ): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
-  const card = document.createElement('section')
-  card.className = 'publisher-card publisher-glass publisher-error'
-  card.setAttribute('role', 'alert')
-
-  const msg = document.createElement('p')
-  msg.className = 'publisher-error-message'
-  msg.textContent =
-    kind === 'session'
-      ? t('publisher.me.error.session')
-      : kind === 'network'
-        ? t('publisher.me.error.network')
-        : t('publisher.me.error.server')
-  card.appendChild(msg)
-
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.className = 'publisher-button'
-  if (kind === 'session') {
-    btn.textContent = t('publisher.me.error.signIn')
-    btn.addEventListener('click', () => {
-      window.location.href = buildSignInUrl()
-    })
-  } else {
-    btn.textContent = t('publisher.me.error.refresh')
-    btn.addEventListener('click', () => {
-      window.location.reload()
-    })
-  }
-  card.appendChild(btn)
-  shell.appendChild(card)
+  shell.appendChild(buildErrorCard(kind, details))
   content.replaceChildren(shell)
 }
 
@@ -353,10 +321,17 @@ function renderListShell(
           if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
             renderError(content, 'session')
           }
-        } else {
+        } else if (result.kind === 'server') {
+          renderError(content, 'server', {
+            status: result.status,
+            body: result.body,
+          })
+        } else if (result.kind === 'not_found') {
           // not_found can't happen on /api/v1/publish/datasets;
-          // collapse to server if it ever does.
-          renderError(content, result.kind === 'not_found' ? 'server' : result.kind)
+          // collapse to network so the user gets a Refresh option.
+          renderError(content, 'network')
+        } else {
+          renderError(content, result.kind)
         }
       }, state.isLoadingMore),
     )
@@ -389,7 +364,13 @@ export async function renderDatasetsPage(
       }
       return
     }
-    renderError(content, result.kind === 'not_found' ? 'server' : result.kind)
+    if (result.kind === 'server') {
+      renderError(content, 'server', { status: result.status, body: result.body })
+      return
+    }
+    // not_found can't happen on /api/v1/publish/datasets; collapse
+    // to network so the user gets a Refresh option.
+    renderError(content, result.kind === 'not_found' ? 'network' : result.kind)
     return
   }
   clearWarmupFlag()

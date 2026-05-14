@@ -56,6 +56,8 @@
   "publisher.datasets.col.updated": "Column heading on the publisher's dataset table — shows the dataset's last-modified date (`updated_at` server field, localized via Intl.DateTimeFormat). Single word.",
   "publisher.datasets.count.one": "Pluralised count rendered above the dataset table when exactly one row is displayed. Preserve {count}. CLDR-aware via the i18n plural() helper.",
   "publisher.datasets.count.other": "Pluralised count rendered above the dataset table for 0 or 2+ rows. Preserve {count}.",
+  "publisher.error.detailsSummary": "Label on the <details> disclosure widget the portal renders alongside a server-error message. Expanding reveals the HTTP status code and the raw server response body — the operator-debugging affordance. Keep short.",
+  "publisher.error.statusLine": "Format string for the HTTP status line inside the server-error details disclosure. Preserve {status}.",
   "publisher.datasets.empty.drafts": "Shown on the Drafts tab when there are no draft datasets. Mentions the CLI and the sub-phase tag '3pc' (the entry form). Internal context, not for end users.",
   "publisher.datasets.empty.published": "Shown on the Published tab when there are no published datasets. Brief.",
   "publisher.datasets.empty.retracted": "Shown on the Retracted tab when there are no retracted datasets. Brief.",

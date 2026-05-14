@@ -19,8 +19,8 @@ import {
   publisherGet,
   handleSessionError,
   clearWarmupFlag,
-  buildSignInUrl,
 } from '../api'
+import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
 
 interface PublisherMeResponse {
   id: string
@@ -33,7 +33,7 @@ interface PublisherMeResponse {
   created_at: string
 }
 
-type ErrorKind = 'session' | 'server' | 'network'
+type ErrorKind = 'session' | 'server' | 'network' | 'not_found'
 
 const ME_ENDPOINT = '/api/v1/publish/me'
 
@@ -94,53 +94,14 @@ function renderLoading(mount: HTMLElement): void {
   mount.replaceChildren(shell)
 }
 
-function renderError(mount: HTMLElement, kind: ErrorKind): void {
+function renderError(
+  mount: HTMLElement,
+  kind: ErrorKind,
+  details: ErrorCardDetails = {},
+): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
-
-  const errorCard = document.createElement('section')
-  errorCard.className = 'publisher-card publisher-glass publisher-error'
-  errorCard.setAttribute('role', 'alert')
-
-  const msg = document.createElement('p')
-  msg.className = 'publisher-error-message'
-  const messageKey =
-    kind === 'session'
-      ? 'publisher.me.error.session'
-      : kind === 'network'
-        ? 'publisher.me.error.network'
-        : 'publisher.me.error.server'
-  msg.textContent = t(messageKey)
-  errorCard.appendChild(msg)
-
-  const action = document.createElement('button')
-  action.type = 'button'
-  action.className = 'publisher-button'
-  if (kind === 'session') {
-    // Session errors (persistent opaqueredirect, or a 401 from
-    // the API middleware) require a top-level navigation through
-    // the redirect-back endpoint so Cloudflare Access can set the
-    // API app's cookie at the right Path scope. A plain reload
-    // doesn't help — the portal-app cookie is already set; the
-    // missing piece is the API-app cookie. `buildSignInUrl()` is
-    // exported from `../api.ts` so this manual fallback uses the
-    // same URL the auto-warmup uses.
-    action.textContent = t('publisher.me.error.signIn')
-    action.addEventListener('click', () => {
-      window.location.href = buildSignInUrl()
-    })
-  } else {
-    // Network and server errors are transient — the user's auth
-    // state is fine, the connection or backend is hiccupping. A
-    // plain reload is the right primary action.
-    action.textContent = t('publisher.me.error.refresh')
-    action.addEventListener('click', () => {
-      window.location.reload()
-    })
-  }
-  errorCard.appendChild(action)
-
-  shell.appendChild(errorCard)
+  shell.appendChild(buildErrorCard(kind, details))
   mount.replaceChildren(shell)
 }
 
@@ -280,8 +241,12 @@ export async function renderMePage(
     }
     return
   }
+  if (result.kind === 'server') {
+    renderError(mount, 'server', { status: result.status, body: result.body })
+    return
+  }
   // `not_found` is an unexpected response for /me — the route
-  // never 404s if the publisher is authenticated. Surface as a
-  // server error so the user sees a Refresh option.
-  renderError(mount, result.kind === 'not_found' ? 'server' : result.kind)
+  // never 404s if the publisher is authenticated. Treat as a
+  // generic network error so the user sees a Refresh option.
+  renderError(mount, result.kind)
 }

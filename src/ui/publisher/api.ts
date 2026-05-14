@@ -28,7 +28,8 @@ import { logger } from '../../utils/logger'
 
 export type PublisherApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; kind: 'session' | 'server' | 'network' | 'not_found' }
+  | { ok: false; kind: 'session' | 'network' | 'not_found' }
+  | { ok: false; kind: 'server'; status?: number; body?: string }
 
 export interface PublisherFetchOptions {
   /** Injected fetch implementation; defaults to `globalThis.fetch`. */
@@ -164,7 +165,17 @@ export async function publisherGet<T>(
   if (res.status === 404) return { ok: false, kind: 'not_found' }
   if (!res.ok) {
     logger.warn(`[publisher-api] ${path} returned`, res.status)
-    return { ok: false, kind: 'server' }
+    // Capture the body so the error card can disclose it.
+    // Operator debugging: a 503 identity_missing or 403 with a
+    // structured `error` field is far more useful than the
+    // generic "server returned an error" we used to render.
+    let body = ''
+    try {
+      body = await res.text()
+    } catch {
+      /* swallow — fall back to empty body */
+    }
+    return { ok: false, kind: 'server', status: res.status, body }
   }
 
   try {
@@ -242,7 +253,8 @@ export interface PublisherValidationError {
 export type PublisherSendResult<T> =
   | { ok: true; data: T }
   | { ok: false; kind: 'validation'; errors: PublisherValidationError[] }
-  | { ok: false; kind: 'session' | 'server' | 'network' | 'not_found' }
+  | { ok: false; kind: 'session' | 'network' | 'not_found' }
+  | { ok: false; kind: 'server'; status?: number; body?: string }
 
 export interface PublisherSendOptions extends PublisherFetchOptions {
   method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -317,7 +329,13 @@ export async function publisherSend<T>(
 
   if (!res.ok) {
     logger.warn(`[publisher-api] ${method} ${path} returned`, res.status)
-    return { ok: false, kind: 'server' }
+    let body = ''
+    try {
+      body = await res.text()
+    } catch {
+      /* swallow */
+    }
+    return { ok: false, kind: 'server', status: res.status, body }
   }
 
   // 201 Created (POST) and 200 OK (PUT) both carry a JSON body;

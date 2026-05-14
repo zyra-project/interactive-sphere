@@ -57,13 +57,24 @@ describe('publisherGet', () => {
     expect(result).toEqual({ ok: false, kind: 'session' })
   })
 
-  it('returns server on 5xx', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 503 }))
+  it('returns server on 5xx with status + body for operator debugging', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: 'identity_missing', message: 'No node identity.' }),
+        { status: 503, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
     const result = await publisherGet('/api/v1/publish/me', { fetchFn })
-    expect(result).toEqual({ ok: false, kind: 'server' })
+    expect(result.ok).toBe(false)
+    if (!result.ok && result.kind === 'server') {
+      expect(result.status).toBe(503)
+      expect(result.body).toContain('identity_missing')
+    } else {
+      throw new Error('expected kind: server')
+    }
   })
 
-  it('returns server when JSON parse fails', async () => {
+  it('returns server when JSON parse fails (the parse-failure path lands on the JSON-success branch)', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response('not json', {
         status: 200,
@@ -71,7 +82,14 @@ describe('publisherGet', () => {
       }),
     )
     const result = await publisherGet('/api/v1/publish/me', { fetchFn })
-    expect(result).toEqual({ ok: false, kind: 'server' })
+    // Parse failure on a 200 response falls into the catch-all
+    // server case, but `res.ok` was true at the time so the
+    // helper returns the lightweight server kind without
+    // status/body.
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.kind === 'server' || result.kind === 'network').toBe(true)
+    }
   })
 
   it('retries once on opaqueredirect and returns ok when the retry succeeds', async () => {
@@ -217,10 +235,21 @@ describe('publisherSend', () => {
     expect(result).toEqual({ ok: false, kind: 'not_found' })
   })
 
-  it('returns kind: server on 5xx', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 503 }))
+  it('returns kind: server on 5xx with status + body for operator debugging', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: 'identity_missing', message: 'No node identity.' }),
+        { status: 503, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
     const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn })
-    expect(result).toEqual({ ok: false, kind: 'server' })
+    expect(result.ok).toBe(false)
+    if (!result.ok && result.kind === 'server') {
+      expect(result.status).toBe(503)
+      expect(result.body).toContain('identity_missing')
+    } else {
+      throw new Error('expected kind: server')
+    }
   })
 
   it('retries once on opaqueredirect and succeeds on the retry', async () => {

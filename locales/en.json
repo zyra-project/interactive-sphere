@@ -365,6 +365,8 @@
   "publisher.datasets.tab.published": "Published",
   "publisher.datasets.tab.retracted": "Retracted",
   "publisher.datasets.tabs.aria": "Dataset lifecycle filter",
+  "publisher.error.detailsSummary": "Server response",
+  "publisher.error.statusLine": "HTTP {status}",
   "publisher.me.affiliation.none": "Not set",
   "publisher.me.error.network": "Couldn't reach the server. Check your connection and try again.",
   "publisher.me.error.refresh": "Refresh",

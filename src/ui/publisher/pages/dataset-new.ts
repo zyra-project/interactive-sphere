@@ -22,12 +22,12 @@
 
 import { t } from '../../../i18n'
 import {
-  buildSignInUrl,
   clearWarmupFlag,
   handleSessionError,
   publisherSend,
   type PublisherValidationError,
 } from '../api'
+import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
 
 export interface DatasetNewPageOptions {
   fetchFn?: typeof fetch
@@ -54,6 +54,9 @@ interface FormState {
   /** Non-validation top-level error (network / server / session
    *  / not_found). Rendered in an alert above the form when set. */
   topLevelError: 'server' | 'network' | 'session' | null
+  /** Status + body captured for `server`-kind errors so the error
+   *  card can disclose them. Operator-debugging affordance. */
+  topLevelErrorDetails: ErrorCardDetails
 }
 
 const FORMATS: ReadonlyArray<{ value: string; labelKey: FormatLabelKey }> = [
@@ -119,37 +122,11 @@ function backLink(): HTMLElement {
   return a
 }
 
-function renderTopLevelError(kind: 'server' | 'network' | 'session'): HTMLElement {
-  const card = document.createElement('section')
-  card.className = 'publisher-card publisher-glass publisher-error'
-  card.setAttribute('role', 'alert')
-
-  const msg = document.createElement('p')
-  msg.className = 'publisher-error-message'
-  msg.textContent =
-    kind === 'session'
-      ? t('publisher.me.error.session')
-      : kind === 'network'
-        ? t('publisher.me.error.network')
-        : t('publisher.me.error.server')
-  card.appendChild(msg)
-
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.className = 'publisher-button'
-  if (kind === 'session') {
-    btn.textContent = t('publisher.me.error.signIn')
-    btn.addEventListener('click', () => {
-      window.location.href = buildSignInUrl()
-    })
-  } else {
-    btn.textContent = t('publisher.me.error.refresh')
-    btn.addEventListener('click', () => {
-      window.location.reload()
-    })
-  }
-  card.appendChild(btn)
-  return card
+function renderTopLevelError(
+  kind: 'server' | 'network' | 'session',
+  details: ErrorCardDetails,
+): HTMLElement {
+  return buildErrorCard(kind, details)
 }
 
 function inputField(opts: {
@@ -297,7 +274,7 @@ function renderForm(
   shell.appendChild(heading)
 
   if (state.topLevelError) {
-    shell.appendChild(renderTopLevelError(state.topLevelError))
+    shell.appendChild(renderTopLevelError(state.topLevelError, state.topLevelErrorDetails))
   }
 
   const form = document.createElement('form')
@@ -478,11 +455,20 @@ function renderForm(
     if (result.kind === 'session') {
       if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
         state.topLevelError = 'session'
+        state.topLevelErrorDetails = {}
         update()
       }
       return
     }
-    state.topLevelError = result.kind === 'not_found' ? 'server' : result.kind
+    if (result.kind === 'server') {
+      state.topLevelError = 'server'
+      state.topLevelErrorDetails = { status: result.status, body: result.body }
+      update()
+      return
+    }
+    // network / not_found — surface as a transient network error.
+    state.topLevelError = 'network'
+    state.topLevelErrorDetails = {}
     update()
   }
 }
@@ -506,6 +492,7 @@ export function renderDatasetNewPage(
     isSaving: false,
     errors: [],
     topLevelError: null,
+    topLevelErrorDetails: {},
   }
   renderForm(content, state, {
     fetchFn: options.fetchFn ?? globalThis.fetch,

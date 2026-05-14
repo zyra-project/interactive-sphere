@@ -17,12 +17,8 @@
  */
 
 import { t } from '../../../i18n'
-import {
-  buildSignInUrl,
-  clearWarmupFlag,
-  handleSessionError,
-  publisherGet,
-} from '../api'
+import { clearWarmupFlag, handleSessionError, publisherGet } from '../api'
+import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
 import type {
   DatasetDetailResponse,
   PublisherDatasetDetail,
@@ -54,49 +50,12 @@ function renderLoading(content: HTMLElement): void {
 function renderError(
   content: HTMLElement,
   kind: 'session' | 'server' | 'network' | 'not_found',
+  details: ErrorCardDetails = {},
 ): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
-
   shell.appendChild(backLink())
-
-  const card = document.createElement('section')
-  card.className = 'publisher-card publisher-glass publisher-error'
-  card.setAttribute('role', 'alert')
-
-  const msg = document.createElement('p')
-  msg.className = 'publisher-error-message'
-  if (kind === 'not_found') {
-    msg.textContent = t('publisher.datasetDetail.notFound')
-  } else if (kind === 'session') {
-    msg.textContent = t('publisher.me.error.session')
-  } else if (kind === 'network') {
-    msg.textContent = t('publisher.me.error.network')
-  } else {
-    msg.textContent = t('publisher.me.error.server')
-  }
-  card.appendChild(msg)
-
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.className = 'publisher-button'
-  if (kind === 'session') {
-    btn.textContent = t('publisher.me.error.signIn')
-    btn.addEventListener('click', () => {
-      window.location.href = buildSignInUrl()
-    })
-    card.appendChild(btn)
-  } else if (kind !== 'not_found') {
-    btn.textContent = t('publisher.me.error.refresh')
-    btn.addEventListener('click', () => {
-      window.location.reload()
-    })
-    card.appendChild(btn)
-  }
-  // not_found has no retry button — the back link handles the
-  // "what now" question.
-
-  shell.appendChild(card)
+  shell.appendChild(buildErrorCard(kind, details))
   content.replaceChildren(shell)
 }
 
@@ -402,6 +361,10 @@ export async function renderDatasetDetailPage(
       if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
         renderError(content, 'session')
       }
+      return
+    }
+    if (result.kind === 'server') {
+      renderError(content, 'server', { status: result.status, body: result.body })
       return
     }
     renderError(content, result.kind)
