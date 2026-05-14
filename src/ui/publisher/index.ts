@@ -25,6 +25,7 @@ import { PublisherRouter, type RouteHandler } from './router'
 import { renderMePage } from './pages/me'
 import { renderDatasetsPage } from './pages/datasets'
 import { renderDatasetDetailPage } from './pages/dataset-detail'
+import { renderDatasetNewPage } from './pages/dataset-new'
 import { renderTopbar } from './components/topbar'
 import '../../styles/publisher.css'
 
@@ -137,6 +138,13 @@ function datasetsPage(mount: HTMLElement, router: () => PublisherRouter): RouteH
     })
 }
 
+function datasetNewPage(mount: HTMLElement, router: () => PublisherRouter): RouteHandler {
+  return () =>
+    renderDatasetNewPage(mount, {
+      routerNavigate: path => void router().navigate(path),
+    })
+}
+
 function datasetDetailPage(mount: HTMLElement): RouteHandler {
   return params => {
     const id = params.id ?? ''
@@ -185,6 +193,10 @@ export async function bootPublisherPortal(): Promise<void> {
       { pattern: '/publish', handler: mePage(content) },
       { pattern: '/publish/me', handler: mePage(content) },
       { pattern: '/publish/datasets', handler: datasetsPage(content, getRouter) },
+      // `/publish/datasets/new` must come BEFORE the `:id` pattern
+      // — otherwise the matcher captures "new" as the id and
+      // routes to the detail page.
+      { pattern: '/publish/datasets/new', handler: datasetNewPage(content, getRouter) },
       { pattern: '/publish/datasets/:id', handler: datasetDetailPage(content) },
       { pattern: '/publish/tours', handler: toursPage(content) },
       { pattern: '/publish/import', handler: importPage(content) },

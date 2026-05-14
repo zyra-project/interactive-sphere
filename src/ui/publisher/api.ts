@@ -216,3 +216,120 @@ export function handleSessionError(
 export function buildSignInUrl(): string {
   return signInUrl()
 }
+
+/**
+ * Field-level validation error envelope. The publisher API
+ * returns `{ errors: [{ field, code, message }] }` on a 400
+ * response per `CATALOG_PUBLISHING_TOOLS.md`. Surface so the
+ * caller can render per-field error messages alongside the form.
+ */
+export interface PublisherValidationError {
+  field: string
+  code: string
+  message: string
+}
+
+/**
+ * Write-side equivalent of `publisherGet`. Sends a JSON body via
+ * POST/PUT/PATCH and routes the response through the same retry +
+ * auth-handling pipeline.
+ *
+ * Distinguishes 400 (validation) from generic server errors so the
+ * caller can render per-field error UI without spelunking response
+ * bodies. The retry-on-opaqueredirect path is identical to the GET
+ * helper — Access can intercept any method, not just GETs.
+ */
+export type PublisherSendResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; kind: 'validation'; errors: PublisherValidationError[] }
+  | { ok: false; kind: 'session' | 'server' | 'network' | 'not_found' }
+
+export interface PublisherSendOptions extends PublisherFetchOptions {
+  method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+}
+
+export async function publisherSend<T>(
+  path: string,
+  body: unknown,
+  options: PublisherSendOptions = {},
+): Promise<PublisherSendResult<T>> {
+  const fetchFn = options.fetchFn ?? globalThis.fetch
+  const sleep = options.sleep ?? defaultSleep
+  const method = options.method ?? 'POST'
+
+  const doFetch = (): Promise<Response> =>
+    fetchFn(path, {
+      method,
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      redirect: 'manual',
+    })
+
+  let res: Response
+  try {
+    res = await doFetch()
+  } catch (err) {
+    logger.warn(`[publisher-api] ${method} ${path} fetch threw`, err)
+    return { ok: false, kind: 'network' }
+  }
+
+  if (isAccessRedirect(res)) {
+    logger.debug(`[publisher-api] ${method} ${path} opaqueredirect; retrying once`)
+    await sleep(COOKIE_WARMUP_DELAY_MS)
+    try {
+      res = await doFetch()
+    } catch (err) {
+      logger.warn(`[publisher-api] ${method} ${path} retry fetch threw`, err)
+      return { ok: false, kind: 'network' }
+    }
+    if (isAccessRedirect(res)) return { ok: false, kind: 'session' }
+  }
+
+  if (res.status === 401) return { ok: false, kind: 'session' }
+  if (res.status === 404) return { ok: false, kind: 'not_found' }
+
+  if (res.status === 400) {
+    // The publisher API envelope is `{ errors: [...] }` for 400.
+    // Fall back to a single synthetic error if the body is
+    // unparseable so the caller still has *something* to render.
+    try {
+      const body = (await res.json()) as { errors?: PublisherValidationError[] }
+      const errors = Array.isArray(body.errors) ? body.errors : []
+      return {
+        ok: false,
+        kind: 'validation',
+        errors:
+          errors.length > 0
+            ? errors
+            : [{ field: '_root', code: 'invalid', message: 'Validation failed.' }],
+      }
+    } catch {
+      return {
+        ok: false,
+        kind: 'validation',
+        errors: [
+          { field: '_root', code: 'invalid', message: 'The server rejected the request.' },
+        ],
+      }
+    }
+  }
+
+  if (!res.ok) {
+    logger.warn(`[publisher-api] ${method} ${path} returned`, res.status)
+    return { ok: false, kind: 'server' }
+  }
+
+  // 201 Created (POST) and 200 OK (PUT) both carry a JSON body;
+  // 204 No Content carries none. Tolerate both.
+  if (res.status === 204) {
+    return { ok: true, data: undefined as T }
+  }
+  try {
+    const data = (await res.json()) as T
+    return { ok: true, data }
+  } catch (err) {
+    logger.warn(`[publisher-api] ${method} ${path} JSON parse failed`, err)
+    return { ok: false, kind: 'server' }
+  }
+}

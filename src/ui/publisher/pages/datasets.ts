@@ -290,6 +290,25 @@ interface PageState {
   isLoadingMore: boolean
 }
 
+function renderActionBar(
+  routerNavigate: (path: string) => void,
+): HTMLElement {
+  const bar = document.createElement('div')
+  bar.className = 'publisher-list-actions'
+
+  const newButton = document.createElement('a')
+  newButton.href = '/publish/datasets/new'
+  newButton.className = 'publisher-button publisher-button-primary'
+  newButton.textContent = t('publisher.datasets.newDraft')
+  newButton.addEventListener('click', e => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    routerNavigate('/publish/datasets/new')
+  })
+  bar.appendChild(newButton)
+  return bar
+}
+
 function renderListShell(
   content: HTMLElement,
   state: PageState,
@@ -300,6 +319,7 @@ function renderListShell(
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
 
+  shell.appendChild(renderActionBar(options.routerNavigate))
   shell.appendChild(
     renderTabs(state.status, status => {
       options.routerNavigate(`/publish/datasets?status=${status}`)

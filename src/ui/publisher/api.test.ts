@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   publisherGet,
+  publisherSend,
   handleSessionError,
   clearWarmupFlag,
   warmupAlreadyAttempted,
@@ -105,6 +106,142 @@ describe('publisherGet', () => {
     const result = await publisherGet('/api/v1/publish/me', { fetchFn, sleep })
     expect(fetchFn).toHaveBeenCalledTimes(2)
     expect(result).toEqual({ ok: false, kind: 'network' })
+  })
+})
+
+describe('publisherSend', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+  })
+
+  it('POSTs the JSON body and returns the response on 201', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ dataset: { id: 'NEW' } }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const result = await publisherSend<{ dataset: { id: string } }>(
+      '/api/v1/publish/datasets',
+      { title: 'My dataset' },
+      { fetchFn },
+    )
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/publish/datasets',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'same-origin',
+        redirect: 'manual',
+        body: JSON.stringify({ title: 'My dataset' }),
+      }),
+    )
+    expect(result).toEqual({ ok: true, data: { dataset: { id: 'NEW' } } })
+  })
+
+  it('honours method: PUT for updates', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ ok: true }))
+    await publisherSend(
+      '/api/v1/publish/datasets/01ABC',
+      { title: 'Renamed' },
+      { fetchFn, method: 'PUT' },
+    )
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/publish/datasets/01ABC',
+      expect.objectContaining({ method: 'PUT' }),
+    )
+  })
+
+  it('returns kind: validation with errors on 400', async () => {
+    const errorsBody = {
+      errors: [
+        { field: 'title', code: 'too_short', message: 'Title must be at least 3 characters.' },
+        { field: 'format', code: 'required', message: 'Format is required.' },
+      ],
+    }
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(errorsBody), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn })
+    expect(result).toEqual({
+      ok: false,
+      kind: 'validation',
+      errors: errorsBody.errors,
+    })
+  })
+
+  it('synthesises a root-level validation error when 400 body is unparseable', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response('garbage', {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn })
+    expect(result.ok).toBe(false)
+    if (!result.ok && result.kind === 'validation') {
+      expect(result.errors[0].field).toBe('_root')
+    }
+  })
+
+  it('returns kind: validation with synthetic root error when 400 body has no errors array', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'bad request' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn })
+    expect(result.ok).toBe(false)
+    if (!result.ok && result.kind === 'validation') {
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].field).toBe('_root')
+    }
+  })
+
+  it('returns kind: session on 401', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 401 }))
+    const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn })
+    expect(result).toEqual({ ok: false, kind: 'session' })
+  })
+
+  it('returns kind: not_found on 404', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 404 }))
+    const result = await publisherSend(
+      '/api/v1/publish/datasets/missing',
+      {},
+      { fetchFn, method: 'PUT' },
+    )
+    expect(result).toEqual({ ok: false, kind: 'not_found' })
+  })
+
+  it('returns kind: server on 5xx', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 503 }))
+    const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn })
+    expect(result).toEqual({ ok: false, kind: 'server' })
+  })
+
+  it('retries once on opaqueredirect and succeeds on the retry', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(opaqueRedirect())
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    const result = await publisherSend('/api/v1/publish/datasets', {}, { fetchFn, sleep })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledOnce()
+    expect(result.ok).toBe(true)
+  })
+
+  it('tolerates a 204 No Content response', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const result = await publisherSend('/api/v1/publish/datasets/01ABC', {}, {
+      fetchFn,
+      method: 'DELETE',
+    })
+    expect(result).toEqual({ ok: true, data: undefined })
   })
 })
 
