@@ -801,6 +801,7 @@ export const TIER_B_EVENT_TYPES = [
   'vr_interaction',
   'error_detail',
   'tour_question_answered',
+  'publisher_validation_failed',
 ] as const
 export type TierBEventType = (typeof TIER_B_EVENT_TYPES)[number]
 
@@ -1350,6 +1351,58 @@ export interface MigrationR2ToursEvent extends TelemetryEventBase {
   outcome: MigrationR2ToursOutcome
 }
 
+/**
+ * Publisher portal mounted at a route. One emit per portal-chunk
+ * load — the publisher visits `/publish/*`, the lazy chunk
+ * resolves, the router dispatches its first route, this fires.
+ * Subsequent in-portal navigation is *not* counted as another
+ * portal load (that's what `publisher_action` and the `dwell`
+ * tracker on portal surfaces are for).
+ *
+ * Operator-facing metric: how often does anyone actually use the
+ * portal? Useful for the "is this surface worth more
+ * investment?" question once Phase 3 has shipped.
+ */
+export interface PublisherPortalLoadedEvent extends TelemetryEventBase {
+  event_type: 'publisher_portal_loaded'
+  /** Which section the publisher landed on. `unknown` covers
+   * routes the publisher portal doesn't define (typo'd URLs,
+   * stale bookmarks); the router's notFound handler still emits
+   * this event because the visit counts toward portal usage. */
+  route: 'me' | 'datasets' | 'tours' | 'import' | 'unknown'
+}
+
+/**
+ * A publisher-initiated write action completed. The
+ * server-side `audit_events` row remains the source of truth for
+ * who-did-what-when; this Tier-A event powers the operator
+ * dashboard ("how many drafts saved today?") without persisting
+ * publisher identity client-side. The `dataset_id` is hashed via
+ * `src/analytics/hash.ts` so the dashboard can count unique
+ * datasets without storing their identifiers in Analytics
+ * Engine.
+ *
+ * Most action kinds (`draft_saved`, `published`, `retracted`,
+ * `preview_minted`, `asset_uploaded`, `bulk_imported`) land in
+ * later sub-phases — 3pc through 3pf. The type is defined now so
+ * the emit-call signature is locked before downstream code
+ * starts calling it.
+ */
+export interface PublisherActionEvent extends TelemetryEventBase {
+  event_type: 'publisher_action'
+  action:
+    | 'draft_saved'
+    | 'published'
+    | 'retracted'
+    | 'preview_minted'
+    | 'asset_uploaded'
+    | 'bulk_imported'
+  /** 12-hex SHA-256 of the dataset ULID (via `analytics/hash.ts`),
+   * or `''` for actions where no specific dataset applies
+   * (`bulk_imported` operates on many rows at once). */
+  dataset_id: string
+}
+
 // --- Tier B events ---
 
 export interface DwellEvent extends TelemetryEventBase {
@@ -1453,6 +1506,29 @@ export interface ErrorDetailEvent extends TelemetryEventBase {
   count_in_batch: number
 }
 
+/**
+ * A publisher hit a server-side validation error on a write
+ * attempt. Tier B because the dashboard's question is "which
+ * validators trip publishers most often?" — that's an investigative
+ * signal, not an operator-critical one, and the free-text values
+ * we'd want to inspect (slug, title, abstract) cannot ship to AE
+ * under our privacy invariants.
+ *
+ * Wire-up lands in 3pc when the entry form first hits the
+ * server-side validators. The type is defined here so the emit
+ * shape is locked in advance.
+ */
+export interface PublisherValidationFailedEvent extends TelemetryEventBase {
+  event_type: 'publisher_validation_failed'
+  /** Dot-path of the field that failed (e.g., `slug`,
+   * `developers.0.affiliation_url`). Server returns this in its
+   * `{errors: [{field, code, message}]}` envelope. */
+  field: string
+  /** Machine-readable error code (e.g., `slug_too_short`,
+   * `mime_not_allowed`). Server returns this; no free text. */
+  code: string
+}
+
 /** The full discriminated event union. Add new events here, add them
  * to `TIER_B_EVENT_TYPES` if Tier B, and update the wiring table in
  * `docs/ANALYTICS_IMPLEMENTATION_PLAN.md`. */
@@ -1485,8 +1561,11 @@ export type TelemetryEvent =
   | MigrationR2HlsEvent
   | MigrationR2AssetsEvent
   | MigrationR2ToursEvent
+  | PublisherPortalLoadedEvent
+  | PublisherActionEvent
   // Tier B
   | DwellEvent
+  | PublisherValidationFailedEvent
   | OrbitInteractionEvent
   | OrbitTurnEvent
   | OrbitToolCallEvent

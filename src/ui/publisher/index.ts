@@ -18,6 +18,7 @@
  * `/api/v1/publish/me` immediately to fetch identity.
  */
 
+import { emit } from '../../analytics'
 import { logger } from '../../utils/logger'
 import { t } from '../../i18n'
 import { PublisherRouter, type RouteHandler } from './router'
@@ -27,6 +28,25 @@ import '../../styles/publisher.css'
 
 const PORTAL_ROOT_ID = 'publisher-root'
 const PORTAL_CONTENT_ID = 'publisher-content'
+
+/**
+ * Map the visited pathname to the `route` enum the
+ * `publisher_portal_loaded` event ships. Anything outside the
+ * known sections lands as `unknown` — including the notFound
+ * fallback, since a typo'd URL is still a portal-load visit.
+ *
+ * Exported for the corresponding test; not part of the runtime
+ * surface anyone else should import.
+ */
+export function routeForPath(
+  pathname: string,
+): 'me' | 'datasets' | 'tours' | 'import' | 'unknown' {
+  if (pathname === '/publish' || pathname.startsWith('/publish/me')) return 'me'
+  if (pathname.startsWith('/publish/datasets')) return 'datasets'
+  if (pathname.startsWith('/publish/tours')) return 'tours'
+  if (pathname.startsWith('/publish/import')) return 'import'
+  return 'unknown'
+}
 
 /**
  * Resolve (or create) the portal's mount point. The host page
@@ -157,6 +177,15 @@ export async function bootPublisherPortal(): Promise<void> {
   )
   renderTopbar(root, activeRouter)
   await activeRouter.start()
+  // One emit per portal-chunk load — the publisher visits
+  // /publish/*, the chunk resolves, the first route dispatches,
+  // we fire. Subsequent in-portal navigation is *not* counted
+  // here; the `dwell` tracker (later sub-phases) covers
+  // intra-portal time-spent, and `publisher_action` covers writes.
+  emit({
+    event_type: 'publisher_portal_loaded',
+    route: routeForPath(window.location.pathname),
+  })
   logger.info('[publisher] portal booted at', window.location.pathname)
 }
 
