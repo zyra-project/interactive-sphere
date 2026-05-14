@@ -14,6 +14,119 @@ and is lazy-loaded the same way Three.js is — the main bundle is
 unchanged for non-publisher visitors. Code lives under
 `src/ui/publisher/**`.
 
+## Phase 3 implementation conventions
+
+A short collection of decisions that apply across every page of
+the portal and are easiest to settle before the first piece of UI
+code lands. Each item closes a gap the per-feature sections below
+would otherwise leave implicit; each is inherited by every Phase 3
+sub-phase (see [`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md)
+§"Phase 3 — Publisher portal (staff)" → "Sub-phase execution
+plan").
+
+### Lazy-load shape
+
+The portal mounts at `/publish` and loads via a single dynamic
+`import('./ui/publisher')` from `src/main.ts`, gated on
+`location.pathname.startsWith('/publish')`. This mirrors the
+lazy-import pattern `src/ui/vrButton.ts` uses to keep Three.js out
+of the main bundle: non-publisher visits never fetch the portal
+chunk, and the portal chunk lands as a single Vite-named entry
+(`assets/publisher-[hash].js`) for easy identification in
+`vite build --report` output.
+
+Routing inside the portal uses the History API directly — no
+framework. The handful of pages (`/publish/me`,
+`/publish/datasets`, `/publish/datasets/{id}`, `/publish/tours`,
+`/publish/import`) is small enough that a ~50-line router built
+on `history.pushState` + `popstate` is cheaper than pulling in a
+router library, and matches the "vanilla TS with a few focused
+libraries" stance documented in `CLAUDE.md` §"Codebase Overview".
+
+### i18n discipline
+
+Every user-facing string in `src/ui/publisher/**` flows through
+`t()` in [`../src/i18n/index.ts`](../src/i18n/index.ts) — the same
+hard rule the rest of the UI follows (see `CLAUDE.md`
+§"Localization"). Phase 3 will add ~100–150 new keys to
+`locales/en.json` under a `publisher.*` namespace. Keys that need
+translator context — interpolated field names in validation error
+messages, ARIA labels, the `<<LOAD:DATASET_ID>>`-equivalent
+marker syntax in tour previews — get a one-line entry in
+`locales/_explanations.json` in the same commit.
+
+`npm run check:i18n-strings` already covers `src/ui/`; the new
+publisher tree is picked up automatically. Translators see new
+keys through the existing Weblate workflow without any pipeline
+changes.
+
+### Markdown sanitization
+
+The abstract field accepts markdown but the rendered HTML reaches
+two surfaces — the portal preview and (eventually) the public
+dataset detail page — both of which are XSS-sensitive. Phase 3c
+ships a single shared renderer in
+`src/services/markdownRenderer.ts`:
+
+1. Parse with `marked` (already a build-time dep used by
+   `scripts/build-privacy-page.ts`; Phase 3 brings it into the
+   runtime SPA at ~30 KB gzipped). The existing
+   `renderMarkdownLite` in `src/ui/chatUI.ts` stays as the
+   chat-message renderer — it's deliberately scoped to **bold**,
+   lists, and links, which is insufficient for dataset abstracts.
+2. Sanitize the result with `DOMPurify` (new runtime dependency,
+   ~25 KB gzipped) configured with a strict tag allow-list (`p`,
+   `br`, `strong`, `em`, `a`, `code`, `pre`, `ul`, `ol`, `li`,
+   `blockquote`, `h2`–`h4`) and a strict attribute allow-list
+   (`href` on `a`, with `target="_blank"` and
+   `rel="noopener noreferrer"` injected via a DOMPurify hook).
+3. Both the live preview in the portal and the eventual public
+   detail page call the same function, so the publisher's preview
+   is byte-for-byte what users will see.
+
+Both dependencies are imported through the lazy portal chunk so
+non-publisher visits don't pay the bundle cost. The threat-model
+section "XSS via publisher markdown" in
+[`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md) is the
+substrate; this section pins the implementation.
+
+### Portal analytics
+
+The portal emits the same shape of events the rest of the SPA
+emits (see [`ANALYTICS.md`](ANALYTICS.md) and
+[`ANALYTICS_CONTRIBUTING.md`](ANALYTICS_CONTRIBUTING.md)). Phase 3
+adds the following event types to `TelemetryEvent` in
+[`../src/types/index.ts`](../src/types/index.ts):
+
+| Event | Tier | Fields | Notes |
+|---|---|---|---|
+| `publisher_portal_loaded` | A | `route` (`me` \| `datasets` \| `tours` \| `import`) | One per portal-chunk load. |
+| `publisher_action` | A | `action` (`draft_saved` \| `published` \| `retracted` \| `preview_minted` \| `asset_uploaded` \| `bulk_imported`), `dataset_id` (hashed via `src/analytics/hash.ts`) | Server-side `audit_events` rows are the source of truth for *who* did *what*; this Tier-A event powers the operator dashboard without persisting publisher identity client-side. |
+| `publisher_validation_failed` | B | `field`, `code` | Research-tier so we can size which validators trip publishers most without storing the offending free-text values. |
+| `publisher_dwell` | B | `surface` (form section name), `duration_ms` | Existing multi-handle tracker in `src/analytics/dwell.ts`; standard ≤30/min throttle. |
+
+`TIER_B_EVENT_TYPES` in `src/types/index.ts` gains the two
+research-tier entries; no other change to the tier gate. Server-
+side stamping in `functions/api/ingest.ts` lists the new event
+types in `KNOWN_EVENT_TYPES`. Grafana gains a "Publisher activity"
+row on the existing `Terraviz — Product Health` dashboard in 3a.
+
+### Cloudflare Access — browser policy
+
+Phase 1a wired Access to protect `/api/v1/publish/**` for the
+service-token / API flow. Phase 3a extends the same Access
+application to cover the browser flow at `/publish/**` so the
+portal HTML and chunk respect the same auth boundary as the API.
+The policy is dashboard-managed (see
+[`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md) §"Constraints
+found during exploration" constraint 3); operator steps land in
+[`SELF_HOSTING.md`](SELF_HOSTING.md) during 3a.
+
+Local dev continues to use `DEV_BYPASS_ACCESS=true` for the API;
+the portal reads the same bypass for the browser side so a
+publisher can iterate against `wrangler pages dev` without an
+Access session.
+
 ## Dataset entry page
 
 A single-form workflow with progressive disclosure. Required fields

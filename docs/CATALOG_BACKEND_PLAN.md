@@ -2832,6 +2832,29 @@ exposed.
 new tour end-to-end through the browser without touching the CLI
 or D1 / R2 manually.
 
+#### Sub-phase execution plan
+
+Phase 3 ships as seven letter-suffixed sub-phases (3a–3g) mirroring
+the Phase 1 cadence and the existing `catalog(<phase>/<letter>):`
+commit convention. Each sub-phase ships as its own PR, is
+independently demoable, and leaves the deploy in a working state,
+so we can pause cleanly between any of them if Phase 4 federation
+pulls priority. The cross-cutting conventions each sub-phase
+inherits (lazy-load shape, i18n, markdown sanitization, portal
+analytics, Access browser policy) are pinned in
+[`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md) §"Phase 3
+implementation conventions".
+
+| Sub-phase | Scope | Why this boundary |
+|---|---|---|
+| **3a — Portal shell + Access browser flow** | Lazy-loaded `src/ui/publisher/` chunk, route shell, `/publish/me` page, top nav, i18n key skeleton, portal analytics baseline (`publisher_portal_loaded`, `publisher_action`), Cloudflare Access policy steps added to `docs/SELF_HOSTING.md`. | Smallest demoable slice. Validates routing, auth, chunking, and i18n discipline before any form work lands. |
+| **3b — Dataset list + detail (read-only)** | Drafts / published / retracted tabs against `GET /api/v1/publish/datasets`, per-dataset detail view, per-dataset audit history panel (consumes `GET .../audit`). | Tests the API surface in production without write risk. Surfaces any missing filters or response fields cheaply. |
+| **3c — Dataset entry form (metadata)** | Create / edit form wired to every validator from [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md) §"Validation rules", abstract markdown preview through the shared `marked` → `DOMPurify` renderer, save draft. No asset upload yet. | Closes the threat-model XSS gap (see §"Threat model" → "XSS via publisher markdown") with a concrete sanitizer choice and exercises the validator contract end-to-end. |
+| **3d — Asset uploader + preview pipeline** | Reusable uploader component (R2 presigned PUT for image, Stream direct-upload for video), digest verification, `data_ref` write, "Preview" button minting a token via `POST .../preview` and opening the SPA with `?preview=…`. | Heaviest single piece. Touches Stream + R2 + the SPA preview hook; isolating it makes rollback cheap. |
+| **3e — Tour creator (capture mode)** | Floating dock on SPA chrome capturing `flyTo` / `loadDataset` / `unloadDataset` / `setEnvView` / `addPlacemark` / pause-question, drag-reorder, "play from here", 30-second auto-save to `drafts/{publisher}/{tour_id}/tour.json`. | Largest subproject in [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md) §"Tour creator"; needs its own sub-phase. |
+| **3f — Bulk import UI** | Drag-drop CSV/JSON, reuses the CLI's `import-snapshot` validator and pump, surfaces per-row errors inline. | Mostly UI — the importer pipeline already shipped in Phase 1d. |
+| **3g — Webhook fan-out scaffolding + verify-deploy** | Queue infrastructure in place for Phase 4 (no peers wired), `terraviz verify-deploy` extended to probe `/publish` HTML routes, self-hosting walkthrough finalized. | Sets up Phase 4 without committing to federation; closes the operator-facing gaps Phase 1f flagged for the publisher API. |
+
 ### Phase 4 — Federation
 
 **Adds:** discovery, subscription, and merged catalog.
