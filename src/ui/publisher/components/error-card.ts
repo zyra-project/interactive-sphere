@@ -12,9 +12,10 @@
  * For `server`, additionally renders a `<details>` disclosure
  * with the HTTP status code and response body. This is the
  * operator-debugging affordance: a 503 `identity_missing`, a 403
- * with a structured error envelope, or a 5xx stack-trace dump
- * are all far more useful exposed than swallowed behind a generic
- * "the server returned an error" line.
+ * with a structured error envelope, or a 5xx
+ * `{error, message}` payload from the publish-middleware's
+ * exception wrap are all far more useful exposed than swallowed
+ * behind a generic "the server returned an error" line.
  */
 
 import { t } from '../../../i18n'

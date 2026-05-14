@@ -59,21 +59,30 @@ function jsonError(status: number, error: string, message: string): Response {
  * as a structured JSON 500 rather than Cloudflare's generic 1101
  * "worker_threw_exception" page (which swallows the error
  * detail). Only the access-gated publisher API is wrapped, so the
- * detail returned is only visible to authenticated staff
- * publishers — fine for operator debugging, no information leak.
+ * structured detail is only visible to authenticated staff
+ * publishers.
+ *
+ * The response includes the exception's `.message` (e.g.
+ * `"D1_ERROR: table datasets has no column named bbox_n:
+ * SQLITE_ERROR"`) but deliberately omits the stack trace —
+ * CodeQL flags stack frames as "Information exposure" even
+ * behind Access, and the message alone has been sufficient to
+ * diagnose every issue surfaced in 3pc development. Operators
+ * who need the stack can read it from Cloudflare Workers logs.
+ * Also log to the Worker's console so the stack reaches
+ * `wrangler tail` / the dashboard's Logs viewer regardless.
  */
 async function nextOrCaught(context: Parameters<PagesFunction<CatalogEnv>>[0]): Promise<Response> {
   try {
     return await context.next()
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error && err.stack ? err.stack : ''
+    // Side-channel the stack to Workers logs so an operator can
+    // recover it via `wrangler tail` or the dashboard's Logs
+    // viewer without us echoing it back over the wire.
+    console.error('[publish-middleware] unhandled exception', err)
     return new Response(
-      JSON.stringify({
-        error: 'unhandled_exception',
-        message,
-        stack: stack.split('\n').slice(0, 12).join('\n'),
-      }),
+      JSON.stringify({ error: 'unhandled_exception', message }),
       { status: 500, headers: { 'Content-Type': CONTENT_TYPE } },
     )
   }
