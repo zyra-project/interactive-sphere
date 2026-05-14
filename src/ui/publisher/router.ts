@@ -12,9 +12,21 @@
  * Patterns may include a single `:id` placeholder; the matched
  * value is passed to the handler as `params.id`. No nested routes,
  * no query parsing — the portal doesn't need them yet.
+ *
+ * After every successful dispatch the router fires a
+ * `publisher:routechange` CustomEvent on `window` with
+ * `detail: { path }`. The top nav (and any future cross-page
+ * surface) can subscribe to update its own state without holding
+ * a reference to the router instance.
  */
 
 import { logger } from '../../utils/logger'
+
+export const ROUTE_CHANGE_EVENT = 'publisher:routechange'
+
+export interface RouteChangeDetail {
+  path: string
+}
 
 export interface RouteParams {
   id?: string
@@ -95,6 +107,7 @@ export class PublisherRouter {
   /** Dispatch the current `location.pathname` to its route handler. */
   async dispatch(): Promise<void> {
     const path = window.location.pathname
+    let handled = false
     for (const route of this.routes) {
       const params = matchRoute(route.pattern, path)
       if (params) {
@@ -103,9 +116,17 @@ export class PublisherRouter {
         } catch (err) {
           logger.error('[publisher] route handler failed', route.pattern, err)
         }
-        return
+        handled = true
+        break
       }
     }
-    await this.notFound({})
+    if (!handled) {
+      await this.notFound({})
+    }
+    window.dispatchEvent(
+      new CustomEvent<RouteChangeDetail>(ROUTE_CHANGE_EVENT, {
+        detail: { path },
+      }),
+    )
   }
 }

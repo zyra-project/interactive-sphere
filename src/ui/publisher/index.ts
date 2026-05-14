@@ -22,9 +22,11 @@ import { logger } from '../../utils/logger'
 import { t } from '../../i18n'
 import { PublisherRouter, type RouteHandler } from './router'
 import { renderMePage } from './pages/me'
+import { renderTopbar } from './components/topbar'
 import '../../styles/publisher.css'
 
 const PORTAL_ROOT_ID = 'publisher-root'
+const PORTAL_CONTENT_ID = 'publisher-content'
 
 /**
  * Resolve (or create) the portal's mount point. The host page
@@ -35,13 +37,29 @@ const PORTAL_ROOT_ID = 'publisher-root'
  * and hides every SPA-only top-level element so the two trees
  * don't fight for the viewport.
  */
-function ensureMount(): HTMLElement {
-  let mount = document.getElementById(PORTAL_ROOT_ID)
-  if (!mount) {
-    mount = document.createElement('div')
-    mount.id = PORTAL_ROOT_ID
-    mount.className = 'publisher-portal'
-    document.body.appendChild(mount)
+interface PortalMount {
+  root: HTMLElement
+  content: HTMLElement
+}
+
+function ensureMount(): PortalMount {
+  let root = document.getElementById(PORTAL_ROOT_ID)
+  if (!root) {
+    root = document.createElement('div')
+    root.id = PORTAL_ROOT_ID
+    root.className = 'publisher-portal'
+    document.body.appendChild(root)
+  }
+  // Build (or reuse) the content slot. The topbar mounts ahead of
+  // it on each boot via `renderTopbar(root, ...)`; pages render
+  // into `content` so a route change replaces page contents
+  // without touching the topbar.
+  let content = document.getElementById(PORTAL_CONTENT_ID)
+  if (!content) {
+    content = document.createElement('main')
+    content.id = PORTAL_CONTENT_ID
+    content.className = 'publisher-content'
+    root.appendChild(content)
   }
   // Hide the SPA's loading splash. It's `position: fixed;
   // z-index: 1000; opacity: 1` and only fades out when the SPA's
@@ -52,7 +70,7 @@ function ensureMount(): HTMLElement {
   if (loading) loading.style.display = 'none'
   const spa = document.getElementById('app')
   if (spa) spa.style.display = 'none'
-  return mount
+  return { root, content }
 }
 
 /**
@@ -125,18 +143,19 @@ export async function bootPublisherPortal(): Promise<void> {
     return
   }
 
-  const mount = ensureMount()
+  const { root, content } = ensureMount()
   activeRouter = new PublisherRouter(
     [
-      { pattern: '/publish', handler: mePage(mount) },
-      { pattern: '/publish/me', handler: mePage(mount) },
-      { pattern: '/publish/datasets', handler: datasetsPage(mount) },
-      { pattern: '/publish/datasets/:id', handler: datasetDetailPage(mount) },
-      { pattern: '/publish/tours', handler: toursPage(mount) },
-      { pattern: '/publish/import', handler: importPage(mount) },
+      { pattern: '/publish', handler: mePage(content) },
+      { pattern: '/publish/me', handler: mePage(content) },
+      { pattern: '/publish/datasets', handler: datasetsPage(content) },
+      { pattern: '/publish/datasets/:id', handler: datasetDetailPage(content) },
+      { pattern: '/publish/tours', handler: toursPage(content) },
+      { pattern: '/publish/import', handler: importPage(content) },
     ],
-    notFoundPage(mount),
+    notFoundPage(content),
   )
+  renderTopbar(root, activeRouter)
   await activeRouter.start()
   logger.info('[publisher] portal booted at', window.location.pathname)
 }
@@ -147,8 +166,8 @@ export function teardownPublisherPortal(): void {
     activeRouter.stop()
     activeRouter = null
   }
-  const mount = document.getElementById(PORTAL_ROOT_ID)
-  if (mount) mount.remove()
+  const root = document.getElementById(PORTAL_ROOT_ID)
+  if (root) root.remove()
   const loading = document.getElementById('loading-screen')
   if (loading) loading.style.display = ''
   const spa = document.getElementById('app')

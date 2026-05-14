@@ -14,13 +14,93 @@
   background: var(--color-bg, #0a0d14);
   color: var(--color-text, #e6e8ec);
   font-family: var(--font-family-sans, system-ui, sans-serif);
-  padding: 2rem;
   box-sizing: border-box;
+}
+
+.publisher-content {
+  padding: 2rem;
 }
 
 .publisher-shell {
   max-width: 960px;
   margin: 0 auto;
+}
+
+/* --- Topbar (glass-surface, sticky) --- */
+
+.publisher-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0.75rem 2rem;
+  border-radius: 0;
+  border-block-start: 0;
+  border-inline-start: 0;
+  border-inline-end: 0;
+}
+
+.publisher-topbar-title-block {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.publisher-topbar-back {
+  color: var(--color-text-muted, #999999);
+  text-decoration: none;
+  font-size: 1.1rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}
+
+.publisher-topbar-back:hover {
+  background: var(--white-o08, rgba(255, 255, 255, 0.08));
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-topbar-back:focus-visible {
+  outline: 2px solid var(--white-o20, rgba(255, 255, 255, 0.2));
+  outline-offset: 2px;
+}
+
+.publisher-topbar-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.publisher-nav-link {
+  color: var(--color-text-muted, #999999);
+  text-decoration: none;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.publisher-nav-link:hover {
+  color: var(--color-text, #e8eaf0);
+  background: var(--white-o05, rgba(255, 255, 255, 0.05));
+}
+
+.publisher-nav-link:focus-visible {
+  outline: 2px solid var(--white-o20, rgba(255, 255, 255, 0.2));
+  outline-offset: 2px;
+}
+
+.publisher-nav-link-active {
+  color: var(--color-text, #e8eaf0);
+  background: var(--white-o10, rgba(255, 255, 255, 0.1));
+  border-color: var(--white-o12, rgba(255, 255, 255, 0.12));
 }
 
 .publisher-shell h1 {
