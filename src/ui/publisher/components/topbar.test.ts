@@ -33,7 +33,9 @@ describe('renderTopbar', () => {
 
   it('renders all four section tabs in order', () => {
     renderTopbar(host, router)
-    const links = host.querySelectorAll<HTMLAnchorElement>('a.publisher-nav-link')
+    const links = host.querySelectorAll<HTMLAnchorElement>(
+      'a.publisher-nav-link:not(.publisher-nav-link-signout)',
+    )
     expect(Array.from(links).map(a => a.textContent)).toEqual([
       'Profile',
       'Datasets',
@@ -131,5 +133,38 @@ describe('renderTopbar', () => {
     const back = host.querySelector<HTMLAnchorElement>('.publisher-topbar-back')
     expect(back?.getAttribute('aria-label')).toBe('Back to Terraviz')
     expect(back?.getAttribute('href')).toBe('/')
+  })
+
+  it('mounts a Sign out link pointing at /api/v1/logout', () => {
+    renderTopbar(host, router)
+    const signOut = host.querySelector<HTMLAnchorElement>(
+      '.publisher-nav-link-signout',
+    )
+    expect(signOut?.textContent).toBe('Sign out')
+    expect(signOut?.getAttribute('href')).toBe('/api/v1/logout')
+  })
+
+  it('Sign out is NOT a section tab (no SPA navigation intercept)', () => {
+    renderTopbar(host, router)
+    const signOut = host.querySelector<HTMLAnchorElement>(
+      '.publisher-nav-link-signout',
+    )!
+    // Distinct from the section tabs: no aria-current toggling,
+    // and a plain left-click should NOT be intercepted (the server
+    // endpoint at /api/v1/logout handles the redirect to Access).
+    const navSpy = vi.spyOn(router, 'navigate').mockResolvedValue()
+    const event = clickWith(signOut)
+    expect(event.defaultPrevented).toBe(false)
+    expect(navSpy).not.toHaveBeenCalled()
+  })
+
+  it('Sign out is not marked active on any route', () => {
+    window.history.replaceState(null, '', '/publish/me')
+    renderTopbar(host, router)
+    const signOut = host.querySelector<HTMLAnchorElement>(
+      '.publisher-nav-link-signout',
+    )!
+    expect(signOut.classList.contains('publisher-nav-link-active')).toBe(false)
+    expect(signOut.getAttribute('aria-current')).not.toBe('page')
   })
 })

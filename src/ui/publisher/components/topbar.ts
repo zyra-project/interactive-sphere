@@ -116,6 +116,17 @@ export function renderTopbar(host: HTMLElement, router: PublisherRouter): void {
     nav.appendChild(a)
   }
   bar.appendChild(nav)
+
+  // "Sign out" sits to the far right, visually separated from
+  // the section tabs. Plain anchor — no SPA intercept; the
+  // server endpoint at /api/v1/logout handles the cross-origin
+  // redirect to Cloudflare Access's team-level logout.
+  const signOut = document.createElement('a')
+  signOut.href = '/api/v1/logout'
+  signOut.className = 'publisher-nav-link publisher-nav-link-signout'
+  signOut.textContent = t('publisher.nav.signOut')
+  bar.appendChild(signOut)
+
   host.insertBefore(bar, host.firstChild)
 
   applyActiveState(nav, window.location.pathname)

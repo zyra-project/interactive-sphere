@@ -314,6 +314,7 @@
   "publisher.nav.datasets": "Datasets",
   "publisher.nav.import": "Import",
   "publisher.nav.profile": "Profile",
+  "publisher.nav.signOut": "Sign out",
   "publisher.nav.tours": "Tours",
   "publisher.placeholder.comingSoon": "This section ships in sub-phase {subPhase}.",
   "publisher.portal.title": "Publisher portal",

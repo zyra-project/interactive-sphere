@@ -103,6 +103,13 @@
   border-color: var(--white-o12, rgba(255, 255, 255, 0.12));
 }
 
+/* Sign out lives at the far right, visually separated from the
+ * section tabs. The `margin-inline-start: auto` shoves it across
+ * the flex row, leaving the section nav on the left. */
+.publisher-nav-link-signout {
+  margin-inline-start: auto;
+}
+
 .publisher-shell h1 {
   font-size: 1.5rem;
   font-weight: 600;
