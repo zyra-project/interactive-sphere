@@ -72,29 +72,36 @@ changes.
 
 The abstract field accepts markdown but the rendered HTML reaches
 two surfaces — the portal preview and (eventually) the public
-dataset detail page — both of which are XSS-sensitive. Phase 3c
+dataset detail page — both of which are XSS-sensitive. Phase 3pc/A
 ships a single shared renderer in
 `src/services/markdownRenderer.ts`:
 
-1. Parse with `marked` (already a build-time dep used by
-   `scripts/build-privacy-page.ts`; Phase 3 brings it into the
-   runtime SPA at ~30 KB gzipped). The existing
-   `renderMarkdownLite` in `src/ui/chatUI.ts` stays as the
-   chat-message renderer — it's deliberately scoped to **bold**,
-   lists, and links, which is insufficient for dataset abstracts.
-2. Sanitize the result with `DOMPurify` (new runtime dependency,
-   ~25 KB gzipped) configured with a strict tag allow-list (`p`,
-   `br`, `strong`, `em`, `a`, `code`, `pre`, `ul`, `ol`, `li`,
-   `blockquote`, `h2`–`h4`) and a strict attribute allow-list
-   (`href` on `a`, with `target="_blank"` and
-   `rel="noopener noreferrer"` injected via a DOMPurify hook).
+1. Parse with `marked` (already a runtime dep — used today by
+   `scripts/build-privacy-page.ts` for the privacy-page build,
+   pulled into the SPA's lazy publisher chunk for this purpose).
+   The existing `renderMarkdownLite` in `src/ui/chatUI.ts` stays
+   as the chat-message renderer — it's deliberately scoped to
+   **bold**, lists, and links, which is insufficient for dataset
+   abstracts.
+2. Sanitize the result with `sanitizeMarkdownHtml` from
+   `src/ui/sanitizeHtml.ts` (the same in-house sanitizer the
+   help-guide uses, with a `MARKDOWN_TAGS` allowlist that's a
+   strict superset of the guide's: adds `h2`, `blockquote`,
+   `pre`, `hr` alongside the existing inline tags).
+   Reverse-tabnabbing defense (`target="_blank"` anchors get
+   `rel="noopener noreferrer"` injected) already lives in the
+   walker. No new runtime dep — DOMPurify was considered but
+   `sanitizeHtml.ts` already implements the allowlist-based
+   pattern we need.
 3. Both the live preview in the portal and the eventual public
-   detail page call the same function, so the publisher's preview
-   is byte-for-byte what users will see.
+   detail page call `renderMarkdown(source)` from the same
+   module, so the publisher's preview is byte-for-byte what users
+   will see.
 
-Both dependencies are imported through the lazy portal chunk so
-non-publisher visits don't pay the bundle cost. The threat-model
-section "XSS via publisher markdown" in
+`marked` is imported by the publisher chunk (lazy-loaded for
+non-publisher visits) and by the build-time privacy-page script;
+no other runtime additions. The threat-model section "XSS via
+publisher markdown" in
 [`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md) is the
 substrate; this section pins the implementation.
 
