@@ -36,6 +36,7 @@ import { verifyAccessJwt, type AccessIdentity } from '../_lib/access-auth'
 import { isLoopbackHost } from '../_lib/loopback'
 import {
   getOrCreatePublisher,
+  parseTrustedDomains,
   type PublisherRow,
 } from '../_lib/publisher-store'
 
@@ -100,8 +101,10 @@ export const onRequest: PagesFunction<CatalogEnv> = async context => {
     }
   }
 
+  const trustedDomains = parseTrustedDomains(context.env.TRUSTED_PUBLISHER_DOMAINS)
   const publisher = await getOrCreatePublisher(context.env.CATALOG_DB, identity, {
     devBypass,
+    trustedDomains,
   })
 
   if (publisher.status === 'suspended') {

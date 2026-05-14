@@ -9,19 +9,21 @@
  *
  * Status / role assignment:
  *
- * | Origin                  | role        | is_admin | status   |
- * |-------------------------|-------------|----------|----------|
- * | DEV_BYPASS_ACCESS=true  | `staff`     | 1        | `active` |
- * | Access service token    | `service`   | 0        | `active` |
- * | Access user (cookie)    | `community` | 0        | `pending`|
+ * | Origin                                              | role        | is_admin | status   |
+ * |-----------------------------------------------------|-------------|----------|----------|
+ * | DEV_BYPASS_ACCESS=true                              | `staff`     | 1        | `active` |
+ * | Access service token                                | `service`   | 0        | `active` |
+ * | Access user, email domain in TRUSTED_PUBLISHER_DOMAINS | `staff`  | 1        | `active` |
+ * | Access user, untrusted domain                       | `community` | 0        | `pending`|
  *
  * Service tokens are pre-vouched by whoever configured them in the
- * Cloudflare dashboard, so auto-`active` is safe. User logins
- * default to `pending` so a stranger discovering the publisher API
- * cannot start authoring rows; the publisher portal (Phase 3) ships
- * the approval UI. Until then, the only practical path for local
- * development is `DEV_BYPASS_ACCESS=true`, which mints a staff +
- * admin row keyed off `DEV_PUBLISHER_EMAIL`.
+ * Cloudflare dashboard, so auto-`active` is safe. Trusted-domain
+ * users are vouched by the operator's choice to list their domain
+ * — appropriate for Phase 3 single-org deploys where the operator
+ * IS the publisher. Untrusted-domain user logins default to
+ * `pending` so a stranger discovering the publisher API cannot
+ * start authoring rows; the publisher portal (Phase 6) will ship
+ * the approval UI.
  *
  * The `role` column has no SQL CHECK constraint (see
  * `migrations/catalog/0005_publishers_audit.sql`) so adding
@@ -31,6 +33,33 @@
 
 import type { AccessIdentity } from './access-auth'
 import { newUlid } from './ulid'
+
+/**
+ * Parse `TRUSTED_PUBLISHER_DOMAINS` (comma-separated) into a
+ * lowercase Set. Empty / undefined → empty Set (no domains
+ * trusted).
+ */
+export function parseTrustedDomains(raw: string | undefined): Set<string> {
+  if (!raw) return new Set()
+  return new Set(
+    raw
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0),
+  )
+}
+
+/**
+ * Extract the lowercase email domain (everything after the last
+ * `@`). Returns `null` if the email is missing an `@` — defensive
+ * since `AccessIdentity.email` is required, but a sentinel beats
+ * a thrown error in the auth path.
+ */
+function emailDomain(email: string): string | null {
+  const at = email.lastIndexOf('@')
+  if (at < 0 || at === email.length - 1) return null
+  return email.slice(at + 1).toLowerCase()
+}
 
 export interface PublisherRow {
   id: string
@@ -52,14 +81,32 @@ export interface ProvisionOptions {
    * default.
    */
   devBypass?: boolean
+  /**
+   * Lowercase email-domain set parsed from
+   * `TRUSTED_PUBLISHER_DOMAINS` by the middleware. A user-login
+   * identity whose email domain matches is auto-promoted to
+   * staff/admin/active on JIT provisioning. Empty Set / omitted
+   * means no auto-promotion — the default for multi-org deploys.
+   */
+  trustedDomains?: Set<string>
 }
 
-function provisioningDefaults(
+export function provisioningDefaults(
   identity: AccessIdentity,
   opts: ProvisionOptions,
 ): { role: string; is_admin: number; status: string } {
   if (opts.devBypass) return { role: 'staff', is_admin: 1, status: 'active' }
   if (identity.type === 'service') return { role: 'service', is_admin: 0, status: 'active' }
+  // Trusted-domain users are auto-promoted to staff/admin/active.
+  // This is the supported path for Phase 3 single-org deploys
+  // where the operator IS the publisher — pending-by-default
+  // would lock them out of their own deploy.
+  if (opts.trustedDomains && opts.trustedDomains.size > 0) {
+    const domain = emailDomain(identity.email)
+    if (domain && opts.trustedDomains.has(domain)) {
+      return { role: 'staff', is_admin: 1, status: 'active' }
+    }
+  }
   return { role: 'community', is_admin: 0, status: 'pending' }
 }
 

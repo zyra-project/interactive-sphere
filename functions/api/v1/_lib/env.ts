@@ -53,6 +53,28 @@ export interface CatalogEnv {
    */
   ACCESS_AUD?: string
   /**
+   * Comma-separated list of email domains (e.g.
+   * `noaa.gov,zyra-project.org`) whose verified Access user logins
+   * auto-promote to `role='staff', is_admin=1, status='active'` on
+   * JIT provisioning. Empty / unset means the default
+   * community/pending classification applies — appropriate for
+   * multi-org deploys (Phase 6) where strangers signing in via
+   * SSO must wait for explicit approval.
+   *
+   * For Phase 3 single-org deploys (one organisation's Access
+   * application gating one Terraviz instance), setting this to
+   * the operator's email domain is the right default — the
+   * operator IS the publisher, and pending-by-default would lock
+   * them out of their own deploy.
+   *
+   * Domain matching is case-insensitive and exact: `noaa.gov`
+   * matches `alice@noaa.gov` but not `alice@example.noaa.gov`
+   * (subdomains require their own entry). Service-token identities
+   * are unaffected; they continue to provision as
+   * `role='service', is_admin=0, status='active'`.
+   */
+  TRUSTED_PUBLISHER_DOMAINS?: string
+  /**
    * `"true"` skips Access verification in local dev and JIT-provisions
    * a staff publisher keyed off `DEV_PUBLISHER_EMAIL`. The middleware
    * refuses to honour this flag against a non-loopback hostname so a

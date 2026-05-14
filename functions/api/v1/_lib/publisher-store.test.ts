@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { getOrCreatePublisher } from './publisher-store'
+import { getOrCreatePublisher, parseTrustedDomains } from './publisher-store'
 import { newUlid } from './ulid'
 import { asD1, seedFixtures } from './test-helpers'
 
@@ -35,6 +35,23 @@ describe('newUlid', () => {
     // Same time prefix; random suffix differs.
     expect(a.slice(0, 10)).toBe(b.slice(0, 10))
     expect(a).not.toBe(b)
+  })
+})
+
+describe('parseTrustedDomains', () => {
+  it.each<[string | undefined, string[]]>([
+    [undefined, []],
+    ['', []],
+    ['  ', []],
+    ['noaa.gov', ['noaa.gov']],
+    ['noaa.gov,zyra-project.org', ['noaa.gov', 'zyra-project.org']],
+    [' noaa.gov , zyra-project.org ', ['noaa.gov', 'zyra-project.org']],
+    ['NOAA.GOV', ['noaa.gov']],
+    ['noaa.gov,,', ['noaa.gov']],
+    ['a,b,a', ['a', 'b']],
+  ])('parses %j → %j', (input, expected) => {
+    const result = parseTrustedDomains(input)
+    expect(Array.from(result).sort()).toEqual(expected.sort())
   })
 })
 
@@ -121,6 +138,70 @@ describe('getOrCreatePublisher', () => {
     })
     expect(second.id).toBe(first.id)
     expect(second.created_at).toBe(first.created_at)
+  })
+
+  it('JIT-provisions staff/active+admin for a trusted-domain user', async () => {
+    const sqlite = seedFixtures({ count: 0 })
+    const db = asD1(sqlite)
+    const row = await getOrCreatePublisher(
+      db,
+      { email: 'eric@noaa.gov', sub: 'user-eric', type: 'user' },
+      { trustedDomains: new Set(['noaa.gov', 'zyra-project.org']) },
+    )
+    expect(row.role).toBe('staff')
+    expect(row.is_admin).toBe(1)
+    expect(row.status).toBe('active')
+    expect(row.email).toBe('eric@noaa.gov')
+  })
+
+  it('domain match on trusted-domain check is case-insensitive', async () => {
+    const sqlite = seedFixtures({ count: 0 })
+    const db = asD1(sqlite)
+    const row = await getOrCreatePublisher(
+      db,
+      { email: 'eric@NOAA.GOV', sub: 'user-eric', type: 'user' },
+      { trustedDomains: new Set(['noaa.gov']) },
+    )
+    expect(row.role).toBe('staff')
+  })
+
+  it('does NOT auto-promote a user from a subdomain that is not explicitly trusted', async () => {
+    const sqlite = seedFixtures({ count: 0 })
+    const db = asD1(sqlite)
+    const row = await getOrCreatePublisher(
+      db,
+      { email: 'eric@subteam.noaa.gov', sub: 'user-eric', type: 'user' },
+      { trustedDomains: new Set(['noaa.gov']) },
+    )
+    expect(row.role).toBe('community')
+    expect(row.status).toBe('pending')
+  })
+
+  it('falls back to community/pending when trustedDomains is empty', async () => {
+    const sqlite = seedFixtures({ count: 0 })
+    const db = asD1(sqlite)
+    const row = await getOrCreatePublisher(
+      db,
+      { email: 'eric@noaa.gov', sub: 'user-eric', type: 'user' },
+      { trustedDomains: new Set() },
+    )
+    expect(row.role).toBe('community')
+    expect(row.status).toBe('pending')
+  })
+
+  it('does not auto-promote a service-token identity even if its synthesized email is in trustedDomains', async () => {
+    // Service tokens stay at role=service regardless of email
+    // shape so a misconfigured trustedDomain entry can't elevate
+    // a machine credential to admin.
+    const sqlite = seedFixtures({ count: 0 })
+    const db = asD1(sqlite)
+    const row = await getOrCreatePublisher(
+      db,
+      { email: 'svc.access@service.local', sub: 'svc-token', type: 'service' },
+      { trustedDomains: new Set(['service.local']) },
+    )
+    expect(row.role).toBe('service')
+    expect(row.is_admin).toBe(0)
   })
 
   it('handles a concurrent first-hit without raising the UNIQUE constraint', async () => {
