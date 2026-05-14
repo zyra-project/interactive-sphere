@@ -98,6 +98,8 @@ describe('renderMePage', () => {
     expect(mount.querySelector('.publisher-error')?.getAttribute('role')).toBe('alert')
     expect(mount.textContent).toContain('session has expired')
     expect(mount.querySelector('.publisher-card')).not.toBeNull()
+    const btn = mount.querySelector<HTMLButtonElement>('.publisher-button')
+    expect(btn?.textContent).toBe('Sign in')
   })
 
   it('renders the session-expired error on opaqueredirect (Cloudflare Access redirect)', async () => {
@@ -115,6 +117,35 @@ describe('renderMePage', () => {
 
     expect(mount.querySelector('.publisher-error')?.getAttribute('role')).toBe('alert')
     expect(mount.textContent).toContain('session has expired')
+    const btn = mount.querySelector<HTMLButtonElement>('.publisher-button')
+    expect(btn?.textContent).toBe('Sign in')
+  })
+
+  it('Sign in button navigates to /api/v1/publish/redirect-back with the current path as `to`', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 401 }))
+    await renderMePage(mount, fetchFn as unknown as typeof fetch)
+
+    // location.href is read-only on the standard Location but
+    // jsdom-style runtimes let us override it for the test.
+    let navigatedTo: string | null = null
+    Object.defineProperty(window.location, 'href', {
+      configurable: true,
+      set(v: string) {
+        navigatedTo = v
+      },
+      get() {
+        return ''
+      },
+    })
+
+    const btn = mount.querySelector<HTMLButtonElement>('.publisher-button')
+    btn?.click()
+    expect(navigatedTo).toMatch(/^\/api\/v1\/publish\/redirect-back\?to=/)
+    // The current pathname is what would be encoded — at test
+    // time that's the jsdom default (often `/`). Confirm round-
+    // trip rather than literal value to keep the test robust.
+    const params = new URL('https://localhost' + navigatedTo).searchParams
+    expect(params.get('to')).toBe(window.location.pathname + window.location.search)
   })
 
   it("requests the fetch with redirect: 'manual'", async () => {
@@ -152,7 +183,7 @@ describe('renderMePage', () => {
     expect(mount.textContent).toContain('server returned an error')
   })
 
-  it('refresh button calls window.location.reload', async () => {
+  it('Refresh button (on server error) calls window.location.reload', async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 503 }))
     await renderMePage(mount, fetchFn as unknown as typeof fetch)
 
@@ -165,6 +196,7 @@ describe('renderMePage', () => {
     })
 
     const btn = mount.querySelector<HTMLButtonElement>('.publisher-button')
+    expect(btn?.textContent).toBe('Refresh')
     btn?.click()
     expect(reload).toHaveBeenCalledOnce()
   })

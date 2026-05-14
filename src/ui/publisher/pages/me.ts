@@ -92,6 +92,21 @@ function renderLoading(mount: HTMLElement): void {
   mount.replaceChildren(shell)
 }
 
+/**
+ * Build the URL the "Sign in" button navigates to. The endpoint
+ * lives under `/api/v1/publish/`, gated by the same Access app
+ * that's blocking us — the browser's top-level navigation
+ * triggers Access's transparent re-auth via the team-level
+ * session, the cookie lands at `Path=/api/v1/publish/`, and the
+ * endpoint 302s the browser back to the portal path. See
+ * `functions/api/v1/publish/redirect-back.ts` for the full
+ * explanation.
+ */
+function signInUrl(): string {
+  const here = window.location.pathname + window.location.search
+  return `/api/v1/publish/redirect-back?to=${encodeURIComponent(here)}`
+}
+
 function renderError(mount: HTMLElement, kind: ErrorKind): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
@@ -111,14 +126,30 @@ function renderError(mount: HTMLElement, kind: ErrorKind): void {
   msg.textContent = t(messageKey)
   errorCard.appendChild(msg)
 
-  const refresh = document.createElement('button')
-  refresh.type = 'button'
-  refresh.className = 'publisher-button'
-  refresh.textContent = t('publisher.me.error.refresh')
-  refresh.addEventListener('click', () => {
-    window.location.reload()
-  })
-  errorCard.appendChild(refresh)
+  const action = document.createElement('button')
+  action.type = 'button'
+  action.className = 'publisher-button'
+  if (kind === 'session') {
+    // Session errors (opaqueredirect from Access, or a 401 from
+    // the API middleware) require a top-level navigation through
+    // the redirect-back endpoint so Cloudflare Access can set the
+    // API app's cookie at the right Path scope. A plain reload
+    // doesn't help because the portal-app cookie is already set;
+    // the missing piece is the API-app cookie.
+    action.textContent = t('publisher.me.error.signIn')
+    action.addEventListener('click', () => {
+      window.location.href = signInUrl()
+    })
+  } else {
+    // Network and server errors are transient — the user's auth
+    // state is fine, the connection or backend is hiccupping. A
+    // plain reload is the right primary action.
+    action.textContent = t('publisher.me.error.refresh')
+    action.addEventListener('click', () => {
+      window.location.reload()
+    })
+  }
+  errorCard.appendChild(action)
 
   shell.appendChild(errorCard)
   mount.replaceChildren(shell)
