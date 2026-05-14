@@ -254,6 +254,98 @@ describe('renderDatasetNewPage', () => {
     expect(navigate).toHaveBeenCalledOnce()
   })
 
+  it('renders the abstract textarea in edit mode by default', () => {
+    renderDatasetNewPage(mount)
+    const textarea = mount.querySelector<HTMLTextAreaElement>('#dataset-abstract')
+    expect(textarea).not.toBeNull()
+    expect(textarea?.tagName).toBe('TEXTAREA')
+    expect(mount.querySelector('.publisher-form-markdown-preview')).toBeNull()
+  })
+
+  it('toggles to markdown preview when the Preview button is clicked', () => {
+    renderDatasetNewPage(mount)
+    setInputOnly(mount, '#dataset-abstract', '## Heading\n\nA **bold** paragraph.')
+    const toggle = Array.from(
+      mount.querySelectorAll<HTMLButtonElement>('button.publisher-form-toggle'),
+    ).find(b => b.textContent === 'Preview')!
+    toggle.click()
+
+    const preview = mount.querySelector('.publisher-form-markdown-preview')
+    expect(preview).not.toBeNull()
+    expect(preview?.innerHTML).toContain('<h2>Heading</h2>')
+    expect(preview?.innerHTML).toContain('<strong>bold</strong>')
+  })
+
+  it('toggle button text flips between Preview and Edit', () => {
+    renderDatasetNewPage(mount)
+    let toggle = mount.querySelector<HTMLButtonElement>('button.publisher-form-toggle')!
+    expect(toggle.textContent).toBe('Preview')
+    toggle.click()
+    toggle = mount.querySelector<HTMLButtonElement>('button.publisher-form-toggle')!
+    expect(toggle.textContent).toBe('Edit')
+  })
+
+  it('shows the empty-preview message when toggled to preview with no abstract', () => {
+    renderDatasetNewPage(mount)
+    const toggle = mount.querySelector<HTMLButtonElement>('button.publisher-form-toggle')!
+    toggle.click()
+    expect(mount.textContent).toContain('Nothing to preview yet')
+  })
+
+  it('preserves the abstract source across an edit ↔ preview round-trip', () => {
+    renderDatasetNewPage(mount)
+    const SOURCE = '## Hello\n\nThis is *markdown* text.'
+    setInputOnly(mount, '#dataset-abstract', SOURCE)
+
+    // Preview.
+    let toggle = mount.querySelector<HTMLButtonElement>('button.publisher-form-toggle')!
+    toggle.click()
+    expect(mount.querySelector('.publisher-form-markdown-preview')).not.toBeNull()
+
+    // Back to edit. Source should be intact.
+    toggle = mount.querySelector<HTMLButtonElement>('button.publisher-form-toggle')!
+    toggle.click()
+    const textarea = mount.querySelector<HTMLTextAreaElement>('#dataset-abstract')!
+    expect(textarea.value).toBe(SOURCE)
+  })
+
+  it('omits abstract from the body when blank', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.abstract).toBeUndefined()
+  })
+
+  it('trims and includes abstract in the body when present', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    setInputOnly(mount, '#dataset-abstract', '  Hello there  ')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.abstract).toBe('Hello there')
+  })
+
   it('Cancel link routes back to /publish/datasets via SPA navigation', () => {
     const routerNavigate = vi.fn()
     renderDatasetNewPage(mount, { routerNavigate })

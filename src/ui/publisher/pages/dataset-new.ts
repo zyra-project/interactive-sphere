@@ -28,6 +28,7 @@ import {
   type PublisherValidationError,
 } from '../api'
 import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
+import { renderMarkdown } from '../../../services/markdownRenderer'
 
 export interface DatasetNewPageOptions {
   fetchFn?: typeof fetch
@@ -49,6 +50,13 @@ interface FormState {
   slugLocked: boolean
   format: string
   visibility: string
+  abstract: string
+  /** Toggle between editing the abstract markdown source and
+   *  rendering the sanitized preview. The same `renderMarkdown`
+   *  function the public dataset detail page will use generates
+   *  the preview, so what the publisher sees is byte-for-byte
+   *  what the public will see. */
+  abstractPreviewing: boolean
   isSaving: boolean
   errors: ReadonlyArray<PublisherValidationError>
   /** Non-validation top-level error (network / server / session
@@ -127,6 +135,96 @@ function renderTopLevelError(
   details: ErrorCardDetails,
 ): HTMLElement {
   return buildErrorCard(kind, details)
+}
+
+function abstractCard(
+  state: FormState,
+  rerender: () => void,
+): HTMLElement {
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass publisher-form-card'
+
+  const heading = document.createElement('h2')
+  heading.className = 'publisher-card-heading'
+  heading.textContent = t('publisher.datasetForm.section.abstract')
+  card.appendChild(heading)
+
+  const wrap = document.createElement('div')
+  wrap.className = 'publisher-form-field'
+
+  const labelRow = document.createElement('div')
+  labelRow.className = 'publisher-form-label-row'
+
+  const label = document.createElement('label')
+  label.className = 'publisher-form-label'
+  label.htmlFor = 'dataset-abstract'
+  label.textContent = t('publisher.datasetForm.field.abstract')
+  labelRow.appendChild(label)
+
+  // Edit ↔ Preview toggle. Plain button rather than tab pattern
+  // because there are exactly two states and the textarea / preview
+  // panes don't carry conceptual identity beyond "the abstract".
+  const toggle = document.createElement('button')
+  toggle.type = 'button'
+  toggle.className = 'publisher-form-toggle'
+  toggle.textContent = state.abstractPreviewing
+    ? t('publisher.datasetForm.action.edit')
+    : t('publisher.datasetForm.action.preview')
+  toggle.addEventListener('click', () => {
+    state.abstractPreviewing = !state.abstractPreviewing
+    rerender()
+  })
+  labelRow.appendChild(toggle)
+
+  wrap.appendChild(labelRow)
+
+  if (state.abstractPreviewing) {
+    const preview = document.createElement('div')
+    preview.className = 'publisher-form-markdown-preview'
+    if (state.abstract.trim().length === 0) {
+      const empty = document.createElement('p')
+      empty.className = 'publisher-form-markdown-empty'
+      empty.textContent = t('publisher.datasetForm.preview.empty')
+      preview.appendChild(empty)
+    } else {
+      // renderMarkdown runs `marked` then sanitizeMarkdownHtml.
+      // The returned HTML is safe to set as innerHTML — XSS-tested
+      // in src/services/markdownRenderer.test.ts.
+      preview.innerHTML = renderMarkdown(state.abstract)
+    }
+    wrap.appendChild(preview)
+  } else {
+    const textarea = document.createElement('textarea')
+    textarea.id = 'dataset-abstract'
+    textarea.className = 'publisher-form-textarea'
+    textarea.rows = 8
+    textarea.placeholder = t('publisher.datasetForm.placeholder.abstract')
+    textarea.value = state.abstract
+    textarea.addEventListener('input', () => {
+      state.abstract = textarea.value
+    })
+    textarea.addEventListener('change', () => {
+      state.abstract = textarea.value
+    })
+    wrap.appendChild(textarea)
+  }
+
+  const help = document.createElement('p')
+  help.className = 'publisher-form-help'
+  help.textContent = t('publisher.datasetForm.help.abstract')
+  wrap.appendChild(help)
+
+  const error = findError(state.errors, 'abstract')
+  if (error) {
+    const err = document.createElement('p')
+    err.className = 'publisher-form-error'
+    err.setAttribute('role', 'alert')
+    err.textContent = error.message
+    wrap.appendChild(err)
+  }
+
+  card.appendChild(wrap)
+  return card
 }
 
 function inputField(opts: {
@@ -371,6 +469,7 @@ function renderForm(
   )
 
   form.appendChild(identityCard)
+  form.appendChild(abstractCard(state, update))
 
   // Submit row.
   const actions = document.createElement('div')
@@ -430,6 +529,11 @@ function renderForm(
     if (state.slugLocked && state.slug.trim()) {
       body.slug = state.slug.trim()
     }
+    // Trim — leading/trailing whitespace shouldn't survive into
+    // the persisted row. An empty post-trim abstract is omitted
+    // entirely so the column lands NULL rather than `""`.
+    const abstract = state.abstract.trim()
+    if (abstract) body.abstract = abstract
 
     const result = await publisherSend<{ dataset: { id: string } }>(
       CREATE_ENDPOINT,
@@ -489,6 +593,8 @@ export function renderDatasetNewPage(
     slugLocked: false,
     format: 'video/mp4',
     visibility: 'public',
+    abstract: '',
+    abstractPreviewing: false,
     isSaving: false,
     errors: [],
     topLevelError: null,

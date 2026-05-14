@@ -418,6 +418,131 @@
   font-size: 0.8125rem;
 }
 
+/* --- Abstract textarea + markdown preview --- */
+
+.publisher-form-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.publisher-form-toggle {
+  background: transparent;
+  border: 1px solid var(--white-o12, rgba(255, 255, 255, 0.12));
+  color: var(--color-text-secondary, #bbbbbb);
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.publisher-form-toggle:hover {
+  background: var(--white-o05, rgba(255, 255, 255, 0.05));
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-form-toggle:focus-visible {
+  outline: 2px solid var(--white-o20, rgba(255, 255, 255, 0.2));
+  outline-offset: 2px;
+}
+
+.publisher-form-textarea {
+  width: 100%;
+  background: var(--white-o05, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--white-o12, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  color: var(--color-text, #e8eaf0);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 8rem;
+  box-sizing: border-box;
+}
+
+.publisher-form-textarea:focus {
+  outline: 2px solid var(--white-o20, rgba(255, 255, 255, 0.2));
+  outline-offset: 0;
+  border-color: var(--white-o20, rgba(255, 255, 255, 0.2));
+}
+
+.publisher-form-markdown-preview {
+  background: var(--white-o05, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--white-o08, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  color: var(--color-text, #e8eaf0);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  min-height: 8rem;
+}
+
+.publisher-form-markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.publisher-form-markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.publisher-form-markdown-preview h2,
+.publisher-form-markdown-preview h3,
+.publisher-form-markdown-preview h4 {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+}
+
+.publisher-form-markdown-preview p {
+  margin: 0 0 0.75rem;
+}
+
+.publisher-form-markdown-preview ul,
+.publisher-form-markdown-preview ol {
+  margin: 0 0 0.75rem 1.25rem;
+  padding: 0;
+}
+
+.publisher-form-markdown-preview code {
+  background: var(--white-o08, rgba(255, 255, 255, 0.08));
+  padding: 0.0625rem 0.25rem;
+  border-radius: 3px;
+  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 0.875em;
+}
+
+.publisher-form-markdown-preview pre {
+  background: var(--white-o08, rgba(255, 255, 255, 0.08));
+  padding: 0.625rem 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.publisher-form-markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.publisher-form-markdown-preview blockquote {
+  margin: 0 0 0.75rem;
+  padding-inline-start: 0.875rem;
+  border-inline-start: 3px solid var(--white-o12, rgba(255, 255, 255, 0.12));
+  color: var(--color-text-secondary, #bbbbbb);
+}
+
+.publisher-form-markdown-preview a {
+  color: rgba(124, 179, 255, 0.95);
+  text-decoration: underline;
+}
+
+.publisher-form-markdown-empty {
+  margin: 0;
+  color: var(--color-text-muted, #999999);
+  font-style: italic;
+}
+
 .publisher-shell h1 {
   font-size: 1.5rem;
   font-weight: 600;
