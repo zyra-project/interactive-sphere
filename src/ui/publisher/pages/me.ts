@@ -8,7 +8,14 @@
  *
  * Error envelopes match the rest of the publisher API:
  *
- *   - 401 — Access session expired; offer the user a refresh.
+ *   - 401 — API middleware says the Access session expired.
+ *   - opaqueredirect (status 0) — Access intercepted with a 302
+ *     to its login page. Happens when the API path is gated by
+ *     Access but the browser path (`/publish/**`) is not — the
+ *     fetch gets redirected cross-origin and CORS blocks the
+ *     login HTML. Treated as a session-expired condition because
+ *     the user has the same recourse: sign in. Documented as
+ *     part of `docs/SELF_HOSTING.md` §8f.
  *   - 5xx — server error; transient, suggest retry.
  *   - network — fetch threw; suggest connection check.
  *
@@ -238,6 +245,12 @@ export async function renderMePage(
     res = await fetchFn(ME_ENDPOINT, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
+      // `manual` so we can recognise an Access redirect explicitly.
+      // The default `follow` mode silently follows the 302 to
+      // Cloudflare's login page, which is cross-origin and
+      // CORS-blocked, surfacing as an indistinguishable network
+      // error.
+      redirect: 'manual',
     })
   } catch (err) {
     logger.warn('[publisher] /publish/me fetch threw', err)
@@ -245,6 +258,14 @@ export async function renderMePage(
     return
   }
 
+  // `opaqueredirect` is what `redirect: 'manual'` produces when
+  // the server returned a 30x. `status: 0` is the same condition
+  // in some older runtimes. Either way: Access redirected us, the
+  // user needs to sign in.
+  if (res.type === 'opaqueredirect' || res.status === 0) {
+    renderError(mount, 'session')
+    return
+  }
   if (res.status === 401) {
     renderError(mount, 'session')
     return

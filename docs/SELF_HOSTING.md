@@ -546,11 +546,29 @@ iterate without going through Access for every refresh.
 
 If you're not ready for the second Access app yet, the
 intermediate state (portal HTML reachable, but every API call
-401s through the existing middleware) is safe: an unauthenticated
-visitor sees the "Your session has expired. Refresh to sign in
-again." error card and cannot exercise any write surface. The
-Access app is the right belt-and-suspenders, not a safety
-prerequisite.
+hits Access on the way) is safe: an unauthenticated visitor
+sees the "Your session has expired. Refresh to sign in again."
+error card and cannot exercise any write surface. The Access app
+is the right belt-and-suspenders, not a safety prerequisite.
+
+**Why the "session expired" card and not a real sign-in flow.**
+Cloudflare Access responds to unauthenticated requests with a
+302 to its cross-origin login page. The portal's fetch is
+configured with `redirect: 'manual'` so we can recognise this
+explicitly — but the underlying response is opaque (we can't
+read the login URL, can't auto-follow without CORS errors, can't
+embed Access's login UI in our own page). So the portal can
+*detect* the redirect and tell the user "you need to sign in,"
+but it can't *complete* the sign-in itself.
+
+The Refresh button on the error card is the working escape
+hatch: once you've wired this §8f Access app, refreshing the
+portal page triggers Access at top-level navigation time, the
+user signs in, Access redirects back to `/publish/me`, the
+portal loads with the cookie present, and the next fetch
+succeeds without ever touching the error card. Until you wire
+the app, refreshing just reproduces the same state — that's the
+operator-config gap this section closes.
 
 ---
 

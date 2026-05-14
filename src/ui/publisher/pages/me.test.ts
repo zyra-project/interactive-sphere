@@ -100,6 +100,32 @@ describe('renderMePage', () => {
     expect(mount.querySelector('.publisher-card')).not.toBeNull()
   })
 
+  it('renders the session-expired error on opaqueredirect (Cloudflare Access redirect)', async () => {
+    // `redirect: 'manual'` causes the fetch runtime to return
+    // an opaque response whose type is 'opaqueredirect' (and
+    // status 0). Cloudflare Access uses this path to redirect
+    // unauthenticated callers to its login HTML — a cross-origin
+    // page we can't read.
+    const opaque = Object.assign(new Response('', { status: 200 }), {
+      type: 'opaqueredirect' as const,
+      status: 0,
+    })
+    const fetchFn = vi.fn().mockResolvedValue(opaque)
+    await renderMePage(mount, fetchFn as unknown as typeof fetch)
+
+    expect(mount.querySelector('.publisher-error')?.getAttribute('role')).toBe('alert')
+    expect(mount.textContent).toContain('session has expired')
+  })
+
+  it("requests the fetch with redirect: 'manual'", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(SAMPLE))
+    await renderMePage(mount, fetchFn as unknown as typeof fetch)
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/publish/me',
+      expect.objectContaining({ redirect: 'manual' }),
+    )
+  })
+
   it('renders the server error on 5xx', async () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response('', { status: 503 }))
     await renderMePage(mount, fetchFn as unknown as typeof fetch)
