@@ -53,6 +53,32 @@ function jsonError(status: number, error: string, message: string): Response {
   })
 }
 
+/**
+ * Wrap the chained handler (`context.next()`) in a try / catch so
+ * an unhandled exception in any /api/v1/publish/** route surfaces
+ * as a structured JSON 500 rather than Cloudflare's generic 1101
+ * "worker_threw_exception" page (which swallows the error
+ * detail). Only the access-gated publisher API is wrapped, so the
+ * detail returned is only visible to authenticated staff
+ * publishers — fine for operator debugging, no information leak.
+ */
+async function nextOrCaught(context: Parameters<PagesFunction<CatalogEnv>>[0]): Promise<Response> {
+  try {
+    return await context.next()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error && err.stack ? err.stack : ''
+    return new Response(
+      JSON.stringify({
+        error: 'unhandled_exception',
+        message,
+        stack: stack.split('\n').slice(0, 12).join('\n'),
+      }),
+      { status: 500, headers: { 'Content-Type': CONTENT_TYPE } },
+    )
+  }
+}
+
 export const onRequest: PagesFunction<CatalogEnv> = async context => {
   if (!context.env.CATALOG_DB) {
     return jsonError(
@@ -120,5 +146,5 @@ export const onRequest: PagesFunction<CatalogEnv> = async context => {
 
   // Stash the row so route handlers can authorise without re-querying D1.
   ;(context.data as unknown as PublisherData).publisher = publisher
-  return context.next()
+  return nextOrCaught(context)
 }
