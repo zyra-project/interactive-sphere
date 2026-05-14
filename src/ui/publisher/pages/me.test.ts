@@ -102,23 +102,64 @@ describe('renderMePage', () => {
     expect(btn?.textContent).toBe('Sign in')
   })
 
-  it('renders the session-expired error on opaqueredirect (Cloudflare Access redirect)', async () => {
-    // `redirect: 'manual'` causes the fetch runtime to return
-    // an opaque response whose type is 'opaqueredirect' (and
-    // status 0). Cloudflare Access uses this path to redirect
-    // unauthenticated callers to its login HTML — a cross-origin
-    // page we can't read.
+  it('retries once on opaqueredirect and renders the profile when the retry succeeds', async () => {
+    // First fetch returns opaqueredirect — Cloudflare Access has
+    // 302'd to its cross-origin login HTML. The 302 response
+    // carries Set-Cookie for the API-app CF_Authorization cookie
+    // (cookie handling lives below the fetch API, so the browser
+    // sets it even though fetch can't read the body). An
+    // immediate retry then succeeds with the cookie present.
+    const opaque = Object.assign(new Response('', { status: 200 }), {
+      type: 'opaqueredirect' as const,
+      status: 0,
+    })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(opaque)
+      .mockResolvedValueOnce(jsonResponse(SAMPLE))
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    await renderMePage(mount, fetchFn as unknown as typeof fetch, sleep)
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledOnce()
+    expect(mount.querySelector('.publisher-card')).not.toBeNull()
+    expect(mount.textContent).toContain('jane@example.org')
+    expect(mount.querySelector('.publisher-error')).toBeNull()
+  })
+
+  it('renders the session-expired error when both attempts are opaqueredirect', async () => {
+    // Second consecutive opaqueredirect is a real auth gap —
+    // the cookie warmup didn't help, so the user genuinely needs
+    // to sign in.
     const opaque = Object.assign(new Response('', { status: 200 }), {
       type: 'opaqueredirect' as const,
       status: 0,
     })
     const fetchFn = vi.fn().mockResolvedValue(opaque)
-    await renderMePage(mount, fetchFn as unknown as typeof fetch)
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    await renderMePage(mount, fetchFn as unknown as typeof fetch, sleep)
 
+    expect(fetchFn).toHaveBeenCalledTimes(2)
     expect(mount.querySelector('.publisher-error')?.getAttribute('role')).toBe('alert')
     expect(mount.textContent).toContain('session has expired')
     const btn = mount.querySelector<HTMLButtonElement>('.publisher-button')
     expect(btn?.textContent).toBe('Sign in')
+  })
+
+  it('renders the network error when the retry fetch throws', async () => {
+    const opaque = Object.assign(new Response('', { status: 200 }), {
+      type: 'opaqueredirect' as const,
+      status: 0,
+    })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(opaque)
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    await renderMePage(mount, fetchFn as unknown as typeof fetch, sleep)
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(mount.textContent).toContain("Couldn't reach the server")
   })
 
   it('Sign in button navigates to /api/v1/publish/redirect-back with the current path as `to`', async () => {

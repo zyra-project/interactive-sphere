@@ -260,43 +260,99 @@ function renderProfile(mount: HTMLElement, me: PublisherMeResponse): void {
 }
 
 /**
+ * Wait `ms` milliseconds. Pure async sleep; injectable so tests
+ * don't burn real wall-clock time.
+ */
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Why we need this: when an unauthenticated portal session
+ * fetches /api/v1/publish/me, Cloudflare Access intercepts with
+ * a 302 to its cross-origin login flow. With `redirect: 'manual'`
+ * the fetch surfaces this as an opaqueredirect response. The
+ * 302 response, however, *also* carries `Set-Cookie` headers
+ * that propagate the API-app `CF_Authorization` cookie to the
+ * browser — cookie handling lives at the network layer, below
+ * the fetch API, so the browser processes it even though fetch
+ * cannot read the response body.
+ *
+ * The upshot: the first opaqueredirect fails BUT primes the
+ * cookie. An immediate retry usually succeeds because the
+ * cookie is now present and the next fetch sails through
+ * Access.
+ *
+ * Cap at one retry — anything beyond that points at a genuine
+ * auth gap (no team-level session, policy doesn't match the
+ * user, etc.) where retrying is futile and the session-error
+ * card is the right surface.
+ */
+const COOKIE_WARMUP_DELAY_MS = 100
+
+function isAccessRedirect(res: Response): boolean {
+  return res.type === 'opaqueredirect' || res.status === 0
+}
+
+async function fetchMe(fetchFn: typeof fetch): Promise<Response> {
+  return fetchFn(ME_ENDPOINT, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+    // `manual` so we can recognise an Access redirect explicitly.
+    // The default `follow` mode silently follows the 302 to
+    // Cloudflare's login page, which is cross-origin and
+    // CORS-blocked, surfacing as an indistinguishable network
+    // error.
+    redirect: 'manual',
+  })
+}
+
+/**
  * Boot the /publish/me page. Renders a loading state, kicks off
  * the fetch, then swaps in the profile card or an error card
  * based on the result. Idempotent — calling it again replaces the
  * current contents in-place.
+ *
+ * `sleep` is injectable so unit tests can advance time without
+ * burning wall-clock on the cookie-warmup delay.
  */
 export async function renderMePage(
   mount: HTMLElement,
   fetchFn: typeof fetch = fetch,
+  sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Promise<void> {
   renderLoading(mount)
 
   let res: Response
   try {
-    res = await fetchFn(ME_ENDPOINT, {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-      // `manual` so we can recognise an Access redirect explicitly.
-      // The default `follow` mode silently follows the 302 to
-      // Cloudflare's login page, which is cross-origin and
-      // CORS-blocked, surfacing as an indistinguishable network
-      // error.
-      redirect: 'manual',
-    })
+    res = await fetchMe(fetchFn)
   } catch (err) {
     logger.warn('[publisher] /publish/me fetch threw', err)
     renderError(mount, 'network')
     return
   }
 
-  // `opaqueredirect` is what `redirect: 'manual'` produces when
-  // the server returned a 30x. `status: 0` is the same condition
-  // in some older runtimes. Either way: Access redirected us, the
-  // user needs to sign in.
-  if (res.type === 'opaqueredirect' || res.status === 0) {
-    renderError(mount, 'session')
-    return
+  // First-attempt opaqueredirect is usually the "cookie just got
+  // primed via Set-Cookie on the redirect response" pattern.
+  // Wait a beat for the browser to register the cookie, then
+  // retry once. Persistent opaqueredirect on the second attempt
+  // is a real auth gap.
+  if (isAccessRedirect(res)) {
+    logger.debug('[publisher] /publish/me opaqueredirect; retrying once after cookie warmup')
+    await sleep(COOKIE_WARMUP_DELAY_MS)
+    try {
+      res = await fetchMe(fetchFn)
+    } catch (err) {
+      logger.warn('[publisher] /publish/me retry fetch threw', err)
+      renderError(mount, 'network')
+      return
+    }
+    if (isAccessRedirect(res)) {
+      renderError(mount, 'session')
+      return
+    }
   }
+
   if (res.status === 401) {
     renderError(mount, 'session')
     return
