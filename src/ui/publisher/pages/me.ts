@@ -1,30 +1,26 @@
 /**
  * /publish/me — the publisher's own profile page.
  *
- * Fetches `GET /api/v1/publish/me` (Access-protected; the
- * middleware has already resolved a `publishers` row by the time
- * the response arrives) and renders the result as a glass-surface
- * card matching the SPA's chrome.
+ * Fetches `GET /api/v1/publish/me` via the shared `publisherGet`
+ * helper in `../api.ts`, which handles the auth-retry +
+ * opaqueredirect detection logic uniformly across the portal.
+ * On a session-error result the page delegates to
+ * `handleSessionError`, which either auto-navigates through the
+ * redirect-back endpoint (typical) or surfaces the error card
+ * when the warmup loop guard fires (genuine auth gap).
  *
- * Error envelopes match the rest of the publisher API:
- *
- *   - 401 — API middleware says the Access session expired.
- *   - opaqueredirect (status 0) — Access intercepted with a 302
- *     to its login page. Happens when the API path is gated by
- *     Access but the browser path (`/publish/**`) is not — the
- *     fetch gets redirected cross-origin and CORS blocks the
- *     login HTML. Treated as a session-expired condition because
- *     the user has the same recourse: sign in. Documented as
- *     part of `docs/SELF_HOSTING.md` §8f.
- *   - 5xx — server error; transient, suggest retry.
- *   - network — fetch threw; suggest connection check.
- *
- * The fetch implementation is injectable so tests can stub it
- * without `vi.stubGlobal('fetch', …)` polluting the global scope.
+ * Other error kinds (network / server) render the local error
+ * card with a Refresh button — the user's auth state is fine,
+ * only the connection or backend is hiccupping.
  */
 
 import { t } from '../../../i18n'
-import { logger } from '../../../utils/logger'
+import {
+  publisherGet,
+  handleSessionError,
+  clearWarmupFlag,
+  buildSignInUrl,
+} from '../api'
 
 interface PublisherMeResponse {
   id: string
@@ -40,6 +36,12 @@ interface PublisherMeResponse {
 type ErrorKind = 'session' | 'server' | 'network'
 
 const ME_ENDPOINT = '/api/v1/publish/me'
+
+interface PublisherMeFetchOptions {
+  fetchFn?: typeof fetch
+  sleep?: (ms: number) => Promise<void>
+  navigate?: (url: string) => void
+}
 
 /** Render a glass-surface card with the given child nodes. */
 function card(...children: HTMLElement[]): HTMLElement {
@@ -92,62 +94,6 @@ function renderLoading(mount: HTMLElement): void {
   mount.replaceChildren(shell)
 }
 
-/**
- * Build the URL the "Sign in" button navigates to. The endpoint
- * lives under `/api/v1/publish/`, gated by the same Access app
- * that's blocking us — the browser's top-level navigation
- * triggers Access's transparent re-auth via the team-level
- * session, the cookie lands at `Path=/api/v1/publish/`, and the
- * endpoint 302s the browser back to the portal path. See
- * `functions/api/v1/publish/redirect-back.ts` for the full
- * explanation.
- */
-function signInUrl(): string {
-  const here = window.location.pathname + window.location.search
-  return `/api/v1/publish/redirect-back?to=${encodeURIComponent(here)}`
-}
-
-/**
- * sessionStorage key used to break the auto-warmup infinite loop.
- * If the user lands on /publish/me with this flag set, we've
- * already attempted the redirect-back warmup on this tab — the
- * persistent opaqueredirect after a second fetch is a real auth
- * gap, not a cookie-not-yet-set transient.
- *
- * sessionStorage is per-tab and survives the cross-origin redirect
- * chain through Cloudflare Access; it clears when the tab closes,
- * so a returning visitor starts fresh.
- */
-const WARMUP_FLAG_KEY = 'publisher_me_warmup_attempted'
-
-function warmupAlreadyAttempted(): boolean {
-  try {
-    return sessionStorage.getItem(WARMUP_FLAG_KEY) === '1'
-  } catch {
-    // sessionStorage may throw in private-browsing modes that
-    // disable storage. Conservatively treat as "already
-    // attempted" so we surface the error card rather than
-    // looping on auto-warmup against a broken storage layer.
-    return true
-  }
-}
-
-function markWarmupAttempted(): void {
-  try {
-    sessionStorage.setItem(WARMUP_FLAG_KEY, '1')
-  } catch {
-    /* swallow — see comment in warmupAlreadyAttempted */
-  }
-}
-
-function clearWarmupFlag(): void {
-  try {
-    sessionStorage.removeItem(WARMUP_FLAG_KEY)
-  } catch {
-    /* swallow */
-  }
-}
-
 function renderError(mount: HTMLElement, kind: ErrorKind): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
@@ -171,15 +117,17 @@ function renderError(mount: HTMLElement, kind: ErrorKind): void {
   action.type = 'button'
   action.className = 'publisher-button'
   if (kind === 'session') {
-    // Session errors (opaqueredirect from Access, or a 401 from
+    // Session errors (persistent opaqueredirect, or a 401 from
     // the API middleware) require a top-level navigation through
     // the redirect-back endpoint so Cloudflare Access can set the
     // API app's cookie at the right Path scope. A plain reload
-    // doesn't help because the portal-app cookie is already set;
-    // the missing piece is the API-app cookie.
+    // doesn't help — the portal-app cookie is already set; the
+    // missing piece is the API-app cookie. `buildSignInUrl()` is
+    // exported from `../api.ts` so this manual fallback uses the
+    // same URL the auto-warmup uses.
     action.textContent = t('publisher.me.error.signIn')
     action.addEventListener('click', () => {
-      window.location.href = signInUrl()
+      window.location.href = buildSignInUrl()
     })
   } else {
     // Network and server errors are transient — the user's auth
@@ -301,137 +249,36 @@ function renderProfile(mount: HTMLElement, me: PublisherMeResponse): void {
 }
 
 /**
- * Wait `ms` milliseconds. Pure async sleep; injectable so tests
- * don't burn real wall-clock time.
- */
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-/**
- * Why we need this: when an unauthenticated portal session
- * fetches /api/v1/publish/me, Cloudflare Access intercepts with
- * a 302 to its cross-origin login flow. With `redirect: 'manual'`
- * the fetch surfaces this as an opaqueredirect response. The
- * 302 response, however, *also* carries `Set-Cookie` headers
- * that propagate the API-app `CF_Authorization` cookie to the
- * browser — cookie handling lives at the network layer, below
- * the fetch API, so the browser processes it even though fetch
- * cannot read the response body.
- *
- * The upshot: the first opaqueredirect fails BUT primes the
- * cookie. An immediate retry usually succeeds because the
- * cookie is now present and the next fetch sails through
- * Access.
- *
- * Cap at one retry — anything beyond that points at a genuine
- * auth gap (no team-level session, policy doesn't match the
- * user, etc.) where retrying is futile and the session-error
- * card is the right surface.
- */
-const COOKIE_WARMUP_DELAY_MS = 100
-
-function isAccessRedirect(res: Response): boolean {
-  return res.type === 'opaqueredirect' || res.status === 0
-}
-
-async function fetchMe(fetchFn: typeof fetch): Promise<Response> {
-  return fetchFn(ME_ENDPOINT, {
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
-    // `manual` so we can recognise an Access redirect explicitly.
-    // The default `follow` mode silently follows the 302 to
-    // Cloudflare's login page, which is cross-origin and
-    // CORS-blocked, surfacing as an indistinguishable network
-    // error.
-    redirect: 'manual',
-  })
-}
-
-/**
  * Boot the /publish/me page. Renders a loading state, kicks off
- * the fetch, then swaps in the profile card or an error card
- * based on the result. Idempotent — calling it again replaces the
- * current contents in-place.
+ * the fetch via the shared `publisherGet` helper, then swaps in
+ * the profile card or an error card based on the result.
+ * Idempotent — calling it again replaces the current contents
+ * in-place.
  *
- * `sleep` and `navigate` are injectable so unit tests can advance
- * time and assert on the auto-warmup top-level navigation without
- * actually changing the test page's location.
+ * The auth-handling complexity (opaqueredirect retry + auto-
+ * warmup + sessionStorage loop guard) lives in `../api.ts`. This
+ * function just maps the helper's discriminated result onto the
+ * page's render functions. `options` is injectable for tests.
  */
 export async function renderMePage(
   mount: HTMLElement,
-  fetchFn: typeof fetch = fetch,
-  sleep: (ms: number) => Promise<void> = defaultSleep,
-  navigate: (url: string) => void = url => {
-    window.location.href = url
-  },
+  options: PublisherMeFetchOptions = {},
 ): Promise<void> {
   renderLoading(mount)
-
-  let res: Response
-  try {
-    res = await fetchMe(fetchFn)
-  } catch (err) {
-    logger.warn('[publisher] /publish/me fetch threw', err)
-    renderError(mount, 'network')
+  const result = await publisherGet<PublisherMeResponse>(ME_ENDPOINT, {
+    fetchFn: options.fetchFn,
+    sleep: options.sleep,
+  })
+  if (result.ok) {
+    clearWarmupFlag()
+    renderProfile(mount, result.data)
     return
   }
-
-  // First-attempt opaqueredirect is usually the "cookie just got
-  // primed via Set-Cookie on the redirect response" pattern.
-  // Wait a beat for the browser to register the cookie, then
-  // retry once. Persistent opaqueredirect on the second attempt
-  // means Cloudflare Access never actually set the API-app
-  // cookie (the cross-origin Set-Cookie path the retry assumed
-  // didn't fire), and the only way to land it is a top-level
-  // navigation through the redirect-back endpoint.
-  if (isAccessRedirect(res)) {
-    logger.debug('[publisher] /publish/me opaqueredirect; retrying once after cookie warmup')
-    await sleep(COOKIE_WARMUP_DELAY_MS)
-    try {
-      res = await fetchMe(fetchFn)
-    } catch (err) {
-      logger.warn('[publisher] /publish/me retry fetch threw', err)
-      renderError(mount, 'network')
-      return
+  if (result.kind === 'session') {
+    if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+      renderError(mount, 'session')
     }
-    if (isAccessRedirect(res)) {
-      // Auto-warmup: kick off the same top-level navigation the
-      // Sign in button does. Set a sessionStorage flag so we
-      // don't loop forever if Access keeps rejecting us (genuine
-      // auth gap — wrong policy, no team session, etc.). On
-      // landing back here we read the flag and surface the
-      // error card instead of looping.
-      if (warmupAlreadyAttempted()) {
-        clearWarmupFlag()
-        renderError(mount, 'session')
-        return
-      }
-      markWarmupAttempted()
-      logger.debug('[publisher] /publish/me retry still opaqueredirect; auto-navigating to redirect-back')
-      navigate(signInUrl())
-      return
-    }
-  }
-
-  if (res.status === 401) {
-    renderError(mount, 'session')
     return
   }
-  if (!res.ok) {
-    logger.warn('[publisher] /publish/me returned', res.status)
-    renderError(mount, 'server')
-    return
-  }
-
-  let body: PublisherMeResponse
-  try {
-    body = (await res.json()) as PublisherMeResponse
-  } catch (err) {
-    logger.warn('[publisher] /publish/me JSON parse failed', err)
-    renderError(mount, 'server')
-    return
-  }
-  clearWarmupFlag()
-  renderProfile(mount, body)
+  renderError(mount, result.kind)
 }
