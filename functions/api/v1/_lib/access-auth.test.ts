@@ -7,9 +7,17 @@
  * end-to-end without needing a live Cloudflare Access tenant.
  *
  * Coverage:
- *   - Healthy user JWT → identity { type: 'user' }
- *   - Service token (`type: 'app'`) → identity { type: 'service' };
- *     synthesises an email when the claim is absent.
+ *   - Healthy user JWT (sub + email) → identity { type: 'user' }
+ *   - Service token (empty sub + common_name) → identity
+ *     { type: 'service' }; email synthesized from common_name.
+ *   - User JWT carrying `type: 'app'` (3pa/J/A regression) →
+ *     identity { type: 'user' }; the `type` field is not load-
+ *     bearing for classification.
+ *   - Hybrid JWT (empty sub + common_name + email) → service-
+ *     token-shaped; email synthesized rather than trusting the
+ *     attacker-supplied `email` claim.
+ *   - Missing-email user JWT → null (reject).
+ *   - Empty sub + no common_name + no email → null (reject).
  *   - Wrong audience / wrong issuer / expired → null.
  *   - Bad signature / unknown kid / malformed token → null.
  *   - Algo other than RS256 → null (defense against alg-confusion).
@@ -141,24 +149,37 @@ describe('verifyAccessJwt', () => {
     expect(fetchStub).toHaveBeenCalledTimes(1)
   })
 
-  it('classifies type=app tokens as service identities and synthesises an email', async () => {
+  it('classifies a user JWT carrying type=app as a user (3pa/J/A regression)', async () => {
+    // Cloudflare stamps `type: 'app'` on every application-level
+    // JWT, both user logins and service tokens. The original
+    // heuristic (`claims.type === 'app'` → service) mis-classified
+    // real user logins as service-token identities. Surfaced live
+    // in 3pa when the publisher portal first rendered a user's
+    // role badge and the operator saw 'Service' instead of the
+    // expected user-tier classification.
+    //
+    // Correct disambiguator: service tokens have an empty `sub`
+    // plus a populated `common_name`; user logins have a non-
+    // empty `sub` plus an `email`. The `type` field is not load-
+    // bearing.
     const env = makeEnv()
     const fetchStub = makeFetchStub({ keys: [key.publicJwk] })
     const now = Math.floor(Date.now() / 1000)
     const token = await signJwt({
       iss: `https://${TEAM}`,
       aud: [AUD, 'unrelated-aud'],
-      sub: 'service-token-abc',
+      sub: 'user-789',
       type: 'app',
+      email: 'eric@example.com',
       iat: now,
       exp: now + 600,
     })
 
     const id = await verifyAccessJwt(token, env, { fetchImpl: fetchStub })
     expect(id).toEqual({
-      email: 'service-token-abc@service.local',
-      sub: 'service-token-abc',
-      type: 'service',
+      email: 'eric@example.com',
+      sub: 'user-789',
+      type: 'user',
     })
   })
 
@@ -191,10 +212,14 @@ describe('verifyAccessJwt', () => {
     })
   })
 
-  it('still rejects user-type JWTs with empty sub (no common_name fallback)', async () => {
-    // The fallback only kicks in for service tokens. A user-login
-    // JWT with an empty sub is malformed and should be rejected
-    // even if it carries some other identifier.
+  it('treats a hybrid JWT (empty sub + common_name + email) as service-token-shaped, ignoring the email', async () => {
+    // Defense in depth against a hypothetical attacker who has
+    // Cloudflare's signing key and crafts a hybrid JWT trying to
+    // attribute service-token actions to a real user's address.
+    // 3pa/J/A classifies on the structural signal (common_name +
+    // empty sub = service token) and synthesizes the email from
+    // the common_name regardless of what `email` claims, so the
+    // attribution path stays clean.
     const env = makeEnv()
     const fetchStub = makeFetchStub({ keys: [key.publicJwk] })
     const now = Math.floor(Date.now() / 1000)
@@ -203,7 +228,48 @@ describe('verifyAccessJwt', () => {
       aud: AUD,
       sub: '',
       email: 'alice@example.com',
-      common_name: 'should-not-be-used',
+      common_name: 'hybrid-token-id.access',
+      iat: now,
+      exp: now + 600,
+    })
+
+    const id = await verifyAccessJwt(token, env, { fetchImpl: fetchStub })
+    expect(id).toEqual({
+      email: 'hybrid-token-id.access@service.local',
+      sub: 'hybrid-token-id.access',
+      type: 'service',
+    })
+  })
+
+  it('rejects a JWT with empty sub, no common_name, and no email', async () => {
+    // Malformed: neither user-shaped (email + sub) nor service-
+    // token-shaped (common_name + empty sub). Reject.
+    const env = makeEnv()
+    const fetchStub = makeFetchStub({ keys: [key.publicJwk] })
+    const now = Math.floor(Date.now() / 1000)
+    const token = await signJwt({
+      iss: `https://${TEAM}`,
+      aud: AUD,
+      sub: '',
+      iat: now,
+      exp: now + 600,
+    })
+
+    const id = await verifyAccessJwt(token, env, { fetchImpl: fetchStub })
+    expect(id).toBeNull()
+  })
+
+  it('rejects a user-shaped JWT with no email claim', async () => {
+    // User logins MUST carry an email; without one we can't
+    // identify the publisher. Reject rather than synthesizing
+    // a placeholder.
+    const env = makeEnv()
+    const fetchStub = makeFetchStub({ keys: [key.publicJwk] })
+    const now = Math.floor(Date.now() / 1000)
+    const token = await signJwt({
+      iss: `https://${TEAM}`,
+      aud: AUD,
+      sub: 'user-123',
       iat: now,
       exp: now + 600,
     })
