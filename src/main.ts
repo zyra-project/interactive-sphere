@@ -2497,6 +2497,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // locales lazy-load here. See docs/I18N_PLAN.md.
   await bootstrapI18n()
 
+  // Publisher portal route gate. Visits to `/publish/*` boot a
+  // separate admin UI (Cloudflare Access-protected in production)
+  // and skip the SPA's globe / dataset / chat boot entirely. The
+  // portal chunk is fetched only when this branch fires, so
+  // non-publisher visitors never pay its bundle cost. See
+  // docs/CATALOG_PUBLISHING_TOOLS.md §"Phase 3 implementation
+  // conventions" → "Lazy-load shape".
+  if (location.pathname.startsWith('/publish')) {
+    const { bootPublisherPortal } = await import('./ui/publisher')
+    await bootPublisherPortal()
+    return
+  }
+
   const app = new InteractiveSphere()
   app.setupEventListeners()
   await app.initialize()

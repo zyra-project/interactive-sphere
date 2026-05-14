@@ -1,0 +1,42 @@
+/**
+ * Publisher portal styles — bundled into the lazy
+ * `src/ui/publisher/` chunk, NOT into `styles/index.css`. The main
+ * SPA build is unchanged for non-publisher visitors.
+ *
+ * Phase 3pa scaffolding: enough to make the placeholder pages
+ * legible. Full styling lands during 3pa/C–D once the portal's
+ * visual language is decided (see commit body for that
+ * discussion).
+ */
+
+.publisher-portal {
+  min-height: 100vh;
+  background: var(--color-bg, #0a0d14);
+  color: var(--color-text, #e6e8ec);
+  font-family: var(--font-family-sans, system-ui, sans-serif);
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+.publisher-shell {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.publisher-shell h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.publisher-section {
+  font-size: 1.125rem;
+  color: var(--color-text-secondary, #a8aebc);
+  margin: 0 0 0.5rem;
+}
+
+.publisher-coming-soon {
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary, #6e7484);
+  margin: 0;
+}
