@@ -280,5 +280,8 @@ export async function renderMePage(
     }
     return
   }
-  renderError(mount, result.kind)
+  // `not_found` is an unexpected response for /me — the route
+  // never 404s if the publisher is authenticated. Surface as a
+  // server error so the user sees a Refresh option.
+  renderError(mount, result.kind === 'not_found' ? 'server' : result.kind)
 }

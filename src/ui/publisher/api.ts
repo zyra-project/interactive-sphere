@@ -28,7 +28,7 @@ import { logger } from '../../utils/logger'
 
 export type PublisherApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; kind: 'session' | 'server' | 'network' }
+  | { ok: false; kind: 'session' | 'server' | 'network' | 'not_found' }
 
 export interface PublisherFetchOptions {
   /** Injected fetch implementation; defaults to `globalThis.fetch`. */
@@ -154,6 +154,14 @@ export async function publisherGet<T>(
   }
 
   if (res.status === 401) return { ok: false, kind: 'session' }
+  // 404 is distinct because portal pages typically want a
+  // different surface ("dataset not found, back to list?") than
+  // for a 5xx ("the server crashed, retry?"). The publisher API
+  // returns 404 both for missing rows and rows the caller can't
+  // see (to avoid leaking other publishers' draft IDs); the
+  // portal renders the same UI for both since it doesn't know
+  // which case applies.
+  if (res.status === 404) return { ok: false, kind: 'not_found' }
   if (!res.ok) {
     logger.warn(`[publisher-api] ${path} returned`, res.status)
     return { ok: false, kind: 'server' }

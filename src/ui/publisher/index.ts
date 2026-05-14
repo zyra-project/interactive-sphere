@@ -24,6 +24,7 @@ import { t } from '../../i18n'
 import { PublisherRouter, type RouteHandler } from './router'
 import { renderMePage } from './pages/me'
 import { renderDatasetsPage } from './pages/datasets'
+import { renderDatasetDetailPage } from './pages/dataset-detail'
 import { renderTopbar } from './components/topbar'
 import '../../styles/publisher.css'
 
@@ -139,7 +140,11 @@ function datasetsPage(mount: HTMLElement, router: () => PublisherRouter): RouteH
 function datasetDetailPage(mount: HTMLElement): RouteHandler {
   return params => {
     const id = params.id ?? ''
-    renderPlaceholder(mount, t('publisher.section.datasetDetail', { id }), '3pb')
+    if (!id) {
+      renderPlaceholder(mount, t('publisher.section.notFound'), '3pa/A')
+      return
+    }
+    void renderDatasetDetailPage(mount, id)
   }
 }
 

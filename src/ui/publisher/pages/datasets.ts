@@ -334,7 +334,9 @@ function renderListShell(
             renderError(content, 'session')
           }
         } else {
-          renderError(content, result.kind)
+          // not_found can't happen on /api/v1/publish/datasets;
+          // collapse to server if it ever does.
+          renderError(content, result.kind === 'not_found' ? 'server' : result.kind)
         }
       }, state.isLoadingMore),
     )
@@ -367,7 +369,7 @@ export async function renderDatasetsPage(
       }
       return
     }
-    renderError(content, result.kind)
+    renderError(content, result.kind === 'not_found' ? 'server' : result.kind)
     return
   }
   clearWarmupFlag()

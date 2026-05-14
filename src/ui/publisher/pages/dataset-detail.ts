@@ -1,0 +1,412 @@
+/**
+ * /publish/datasets/:id — read-only dataset detail view.
+ *
+ * Surfaces the catalog row through `GET /api/v1/publish/datasets/{id}`
+ * (returns `{ dataset: PublisherDatasetDetail }`). Read-only in
+ * 3pb; the edit form lands in 3pc. The page is intentionally
+ * dense — it's the admin "show me everything we know about this
+ * dataset" view — but groups fields into four glass-surface
+ * cards so it stays scannable.
+ *
+ * 404 is distinct from generic server errors because the API
+ * deliberately returns 404 both for "row doesn't exist" and "row
+ * exists but you can't see it" (avoiding leakage of other
+ * publishers' draft IDs). A not-found message that lets the user
+ * jump back to the list is more useful than the generic retry
+ * card.
+ */
+
+import { t } from '../../../i18n'
+import {
+  buildSignInUrl,
+  clearWarmupFlag,
+  handleSessionError,
+  publisherGet,
+} from '../api'
+import type {
+  DatasetDetailResponse,
+  PublisherDatasetDetail,
+} from '../types'
+import { lifecycleOf } from '../types'
+
+export interface DatasetDetailPageOptions {
+  fetchFn?: typeof fetch
+  sleep?: (ms: number) => Promise<void>
+  navigate?: (url: string) => void
+}
+
+function endpoint(id: string): string {
+  return `/api/v1/publish/datasets/${encodeURIComponent(id)}`
+}
+
+function renderLoading(content: HTMLElement): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+  shell.setAttribute('aria-busy', 'true')
+  const status = document.createElement('p')
+  status.className = 'publisher-loading'
+  status.setAttribute('role', 'status')
+  status.textContent = t('publisher.datasetDetail.loading')
+  shell.appendChild(status)
+  content.replaceChildren(shell)
+}
+
+function renderError(
+  content: HTMLElement,
+  kind: 'session' | 'server' | 'network' | 'not_found',
+): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+
+  shell.appendChild(backLink())
+
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass publisher-error'
+  card.setAttribute('role', 'alert')
+
+  const msg = document.createElement('p')
+  msg.className = 'publisher-error-message'
+  if (kind === 'not_found') {
+    msg.textContent = t('publisher.datasetDetail.notFound')
+  } else if (kind === 'session') {
+    msg.textContent = t('publisher.me.error.session')
+  } else if (kind === 'network') {
+    msg.textContent = t('publisher.me.error.network')
+  } else {
+    msg.textContent = t('publisher.me.error.server')
+  }
+  card.appendChild(msg)
+
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className = 'publisher-button'
+  if (kind === 'session') {
+    btn.textContent = t('publisher.me.error.signIn')
+    btn.addEventListener('click', () => {
+      window.location.href = buildSignInUrl()
+    })
+    card.appendChild(btn)
+  } else if (kind !== 'not_found') {
+    btn.textContent = t('publisher.me.error.refresh')
+    btn.addEventListener('click', () => {
+      window.location.reload()
+    })
+    card.appendChild(btn)
+  }
+  // not_found has no retry button — the back link handles the
+  // "what now" question.
+
+  shell.appendChild(card)
+  content.replaceChildren(shell)
+}
+
+function backLink(): HTMLElement {
+  const a = document.createElement('a')
+  a.href = '/publish/datasets'
+  a.className = 'publisher-back-link'
+  a.textContent = `← ${t('publisher.datasetDetail.backToList')}`
+  return a
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function renderHeader(d: PublisherDatasetDetail): HTMLElement {
+  const header = document.createElement('header')
+  header.className = 'publisher-detail-header'
+
+  const titleRow = document.createElement('div')
+  titleRow.className = 'publisher-detail-title-row'
+
+  const title = document.createElement('h1')
+  title.className = 'publisher-detail-title'
+  title.textContent = d.title
+  titleRow.appendChild(title)
+
+  const status = lifecycleOf(d)
+  const badge = document.createElement('span')
+  badge.className = 'publisher-badge publisher-badge-status'
+  badge.dataset.status =
+    status === 'draft' ? 'pending' : status === 'retracted' ? 'suspended' : 'active'
+  badge.textContent =
+    status === 'draft'
+      ? t('publisher.datasets.status.draft')
+      : status === 'published'
+        ? t('publisher.datasets.status.published')
+        : t('publisher.datasets.status.retracted')
+  titleRow.appendChild(badge)
+
+  header.appendChild(titleRow)
+
+  const slug = document.createElement('p')
+  slug.className = 'publisher-detail-slug'
+  slug.textContent = d.slug
+  header.appendChild(slug)
+
+  return header
+}
+
+interface FieldSpec {
+  labelKey: DetailFieldKey
+  value: string | null | undefined
+  /** Render the value in a monospace cell. Used for IDs, refs,
+   *  slugs — anything where character-level precision matters. */
+  mono?: boolean
+}
+
+type DetailFieldKey =
+  | 'publisher.datasetDetail.field.id'
+  | 'publisher.datasetDetail.field.legacyId'
+  | 'publisher.datasetDetail.field.format'
+  | 'publisher.datasetDetail.field.visibility'
+  | 'publisher.datasetDetail.field.organization'
+  | 'publisher.datasetDetail.field.startTime'
+  | 'publisher.datasetDetail.field.endTime'
+  | 'publisher.datasetDetail.field.period'
+  | 'publisher.datasetDetail.field.runTourOnLoad'
+  | 'publisher.datasetDetail.field.dataRef'
+  | 'publisher.datasetDetail.field.thumbnailRef'
+  | 'publisher.datasetDetail.field.legendRef'
+  | 'publisher.datasetDetail.field.captionRef'
+  | 'publisher.datasetDetail.field.websiteLink'
+  | 'publisher.datasetDetail.field.licenseSpdx'
+  | 'publisher.datasetDetail.field.licenseUrl'
+  | 'publisher.datasetDetail.field.licenseStatement'
+  | 'publisher.datasetDetail.field.attribution'
+  | 'publisher.datasetDetail.field.rightsHolder'
+  | 'publisher.datasetDetail.field.doi'
+  | 'publisher.datasetDetail.field.citation'
+  | 'publisher.datasetDetail.field.publisherId'
+  | 'publisher.datasetDetail.field.createdAt'
+  | 'publisher.datasetDetail.field.updatedAt'
+  | 'publisher.datasetDetail.field.publishedAt'
+  | 'publisher.datasetDetail.field.retractedAt'
+
+function renderFieldsCard(
+  headingKey:
+    | 'publisher.datasetDetail.section.identity'
+    | 'publisher.datasetDetail.section.lifecycle'
+    | 'publisher.datasetDetail.section.assets'
+    | 'publisher.datasetDetail.section.licensing',
+  fields: ReadonlyArray<FieldSpec>,
+): HTMLElement {
+  const visibleFields = fields.filter(f => f.value)
+  if (visibleFields.length === 0) {
+    // Don't render an empty card; the section just doesn't appear.
+    return document.createDocumentFragment() as unknown as HTMLElement
+  }
+
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass'
+
+  const h2 = document.createElement('h2')
+  h2.className = 'publisher-card-heading'
+  h2.textContent = t(headingKey)
+  card.appendChild(h2)
+
+  const grid = document.createElement('div')
+  grid.className = 'publisher-fields'
+  for (const f of visibleFields) {
+    const row = document.createElement('div')
+    row.className = 'publisher-field'
+
+    const label = document.createElement('span')
+    label.className = 'publisher-field-label'
+    label.textContent = t(f.labelKey)
+    row.appendChild(label)
+
+    const value = document.createElement('span')
+    value.className = f.mono
+      ? 'publisher-field-value publisher-field-value-mono'
+      : 'publisher-field-value'
+    value.textContent = f.value!
+    row.appendChild(value)
+
+    grid.appendChild(row)
+  }
+  card.appendChild(grid)
+  return card
+}
+
+function renderAbstract(d: PublisherDatasetDetail): HTMLElement {
+  if (!d.abstract) {
+    return document.createDocumentFragment() as unknown as HTMLElement
+  }
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass'
+
+  const h2 = document.createElement('h2')
+  h2.className = 'publisher-card-heading'
+  h2.textContent = t('publisher.datasetDetail.section.abstract')
+  card.appendChild(h2)
+
+  // 3pb renders the abstract as plain text — the markdown
+  // sanitizer lands in 3pc alongside the entry form's preview.
+  // Setting textContent (not innerHTML) keeps this XSS-safe by
+  // construction.
+  const body = document.createElement('p')
+  body.className = 'publisher-detail-abstract'
+  body.textContent = d.abstract
+  card.appendChild(body)
+  return card
+}
+
+function renderDetail(content: HTMLElement, d: PublisherDatasetDetail): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+
+  shell.appendChild(backLink())
+  shell.appendChild(renderHeader(d))
+  shell.appendChild(renderAbstract(d))
+
+  shell.appendChild(
+    renderFieldsCard('publisher.datasetDetail.section.identity', [
+      { labelKey: 'publisher.datasetDetail.field.id', value: d.id, mono: true },
+      {
+        labelKey: 'publisher.datasetDetail.field.legacyId',
+        value: d.legacy_id,
+        mono: true,
+      },
+      { labelKey: 'publisher.datasetDetail.field.format', value: d.format, mono: true },
+      {
+        labelKey: 'publisher.datasetDetail.field.visibility',
+        value: d.visibility,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.organization',
+        value: d.organization,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.publisherId',
+        value: d.publisher_id,
+        mono: true,
+      },
+    ]),
+  )
+
+  shell.appendChild(
+    renderFieldsCard('publisher.datasetDetail.section.lifecycle', [
+      {
+        labelKey: 'publisher.datasetDetail.field.createdAt',
+        value: formatDate(d.created_at),
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.updatedAt',
+        value: formatDate(d.updated_at),
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.publishedAt',
+        value: d.published_at ? formatDate(d.published_at) : null,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.retractedAt',
+        value: d.retracted_at ? formatDate(d.retracted_at) : null,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.startTime',
+        value: d.start_time,
+      },
+      { labelKey: 'publisher.datasetDetail.field.endTime', value: d.end_time },
+      { labelKey: 'publisher.datasetDetail.field.period', value: d.period },
+    ]),
+  )
+
+  shell.appendChild(
+    renderFieldsCard('publisher.datasetDetail.section.assets', [
+      {
+        labelKey: 'publisher.datasetDetail.field.dataRef',
+        value: d.data_ref,
+        mono: true,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.thumbnailRef',
+        value: d.thumbnail_ref,
+        mono: true,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.legendRef',
+        value: d.legend_ref,
+        mono: true,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.captionRef',
+        value: d.caption_ref,
+        mono: true,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.websiteLink',
+        value: d.website_link,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.runTourOnLoad',
+        value: d.run_tour_on_load,
+      },
+    ]),
+  )
+
+  shell.appendChild(
+    renderFieldsCard('publisher.datasetDetail.section.licensing', [
+      {
+        labelKey: 'publisher.datasetDetail.field.licenseSpdx',
+        value: d.license_spdx,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.licenseUrl',
+        value: d.license_url,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.licenseStatement',
+        value: d.license_statement,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.attribution',
+        value: d.attribution_text,
+      },
+      {
+        labelKey: 'publisher.datasetDetail.field.rightsHolder',
+        value: d.rights_holder,
+      },
+      { labelKey: 'publisher.datasetDetail.field.doi', value: d.doi, mono: true },
+      { labelKey: 'publisher.datasetDetail.field.citation', value: d.citation_text },
+    ]),
+  )
+
+  content.replaceChildren(shell)
+}
+
+/**
+ * Boot the /publish/datasets/:id page. The shared API helper
+ * surfaces 404 as its own result kind so we can render the
+ * not-found view directly instead of pretending it's a generic
+ * server error.
+ */
+export async function renderDatasetDetailPage(
+  content: HTMLElement,
+  id: string,
+  options: DatasetDetailPageOptions = {},
+): Promise<void> {
+  renderLoading(content)
+  const result = await publisherGet<DatasetDetailResponse>(endpoint(id), options)
+  if (!result.ok) {
+    if (result.kind === 'session') {
+      if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+        renderError(content, 'session')
+      }
+      return
+    }
+    renderError(content, result.kind)
+    return
+  }
+  clearWarmupFlag()
+  renderDetail(content, result.data.dataset)
+}

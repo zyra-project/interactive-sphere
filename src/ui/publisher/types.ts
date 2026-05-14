@@ -23,6 +23,11 @@ export type DatasetLifecycle = 'draft' | 'published' | 'retracted'
  * consume. The server returns the full row; we cast through this
  * interface to make portal call sites declare which fields they
  * read.
+ *
+ * The list-view subset is intentionally narrower than the
+ * detail-view subset (`PublisherDatasetDetail` below) — the
+ * list endpoint serializes every column, but the list page only
+ * reads the few it renders.
  */
 export interface PublisherDataset {
   id: string
@@ -40,9 +45,38 @@ export interface PublisherDataset {
   legacy_id: string | null
 }
 
+/**
+ * Full dataset shape the detail page reads. Extends the list-view
+ * subset with the auxiliary refs (thumbnail / legend / caption),
+ * licensing, attribution, and time-range fields the detail card
+ * surfaces.
+ */
+export interface PublisherDatasetDetail extends PublisherDataset {
+  data_ref: string
+  thumbnail_ref: string | null
+  legend_ref: string | null
+  caption_ref: string | null
+  website_link: string | null
+  start_time: string | null
+  end_time: string | null
+  period: string | null
+  run_tour_on_load: string | null
+  license_spdx: string | null
+  license_url: string | null
+  license_statement: string | null
+  attribution_text: string | null
+  rights_holder: string | null
+  doi: string | null
+  citation_text: string | null
+}
+
 export interface ListDatasetsResponse {
   datasets: PublisherDataset[]
   next_cursor: string | null
+}
+
+export interface DatasetDetailResponse {
+  dataset: PublisherDatasetDetail
 }
 
 /**
