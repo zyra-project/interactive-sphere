@@ -31,8 +31,8 @@ const PORTAL_ROOT_ID = 'publisher-root'
  * default — the SPA-only DOM stays untouched for the 99.9% of
  * visits that never hit `/publish`. When the portal boots it
  * either reuses an existing host node or appends one to `<body>`
- * and hides the SPA's `#app` host so the two trees don't fight
- * for the viewport.
+ * and hides every SPA-only top-level element so the two trees
+ * don't fight for the viewport.
  */
 function ensureMount(): HTMLElement {
   let mount = document.getElementById(PORTAL_ROOT_ID)
@@ -42,6 +42,13 @@ function ensureMount(): HTMLElement {
     mount.className = 'publisher-portal'
     document.body.appendChild(mount)
   }
+  // Hide the SPA's loading splash. It's `position: fixed;
+  // z-index: 1000; opacity: 1` and only fades out when the SPA's
+  // own boot path adds a `.fade-out` class. Because our route gate
+  // skips the SPA boot entirely, the splash would otherwise sit on
+  // top of the portal forever.
+  const loading = document.getElementById('loading-screen')
+  if (loading) loading.style.display = 'none'
   const spa = document.getElementById('app')
   if (spa) spa.style.display = 'none'
   return mount
@@ -141,6 +148,8 @@ export function teardownPublisherPortal(): void {
   }
   const mount = document.getElementById(PORTAL_ROOT_ID)
   if (mount) mount.remove()
+  const loading = document.getElementById('loading-screen')
+  if (loading) loading.style.display = ''
   const spa = document.getElementById('app')
   if (spa) spa.style.display = ''
 }
