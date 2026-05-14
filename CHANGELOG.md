@@ -16,6 +16,134 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3-pre — Publisher portal prep
+
+**Branch:** `claude/catalog-publisher-portal-phase-3`
+**Commits:** 3-pre/A through 3-pre/C — three doc-only changes.
+
+Sets the table for the BACKEND_PLAN's Phase 3 (publisher portal,
+staff) without touching source code. The backend has been ready
+since Phase 1f shipped — the publisher API at
+`functions/api/v1/publish/**` exposes the full metadata + asset
++ tour + featured surface, the CLI binary at `cli/terraviz.ts`
+drives it from a YAML, and the asset pipeline (R2 + HLS, R2
+auxiliary assets, R2 tour.json) is live. What hasn't existed is
+the browser-side portal under `src/ui/publisher/**`. This phase
+prep closes the planning gaps before code starts.
+
+**Why a prep phase at all.** Phase 3 in the backend plan is a
+six-bullet list. Splitting it into shippable sub-phases up
+front, and pinning the cross-cutting conventions (lazy-load
+shape, i18n discipline, markdown sanitization, portal analytics,
+Access browser policy) before the first form lands matches the
+`CLAUDE.md` §"Working in this repo" "design firms up before
+code" discipline and keeps each sub-phase PR bounded.
+
+**3-pre/A — Sub-phase breakdown + portal conventions.**
+`docs/CATALOG_BACKEND_PLAN.md` §Phase 3 gains a "Sub-phase
+execution plan" table splitting the scope into seven
+letter-suffixed sub-phases (3pa portal shell + Access browser
+flow, 3pb read-only list + detail, 3pc dataset entry form, 3pd
+asset uploader + preview pipeline, 3pe tour creator, 3pf bulk
+import, 3pg webhook scaffolding + verify-deploy). Each
+sub-phase ships as its own PR, is independently demoable, and
+leaves the deploy in a working state so Phase 4 federation can
+pull priority cleanly at any boundary.
+
+`docs/CATALOG_PUBLISHING_TOOLS.md` gains a "Phase 3
+implementation conventions" section covering the five gaps the
+per-feature sections leave implicit:
+
+- **Lazy-load shape** — single `import('./ui/publisher')` from
+  `src/main.ts` gated on a `/publish` path prefix, History API
+  routing, no framework. Mirrors the
+  `src/ui/vrButton.ts` → `import('three')` pattern that already
+  keeps Three.js out of the main bundle.
+- **i18n discipline** — every string in `src/ui/publisher/**`
+  flows through `t()`, ~100–150 new keys under a `publisher.*`
+  namespace, picked up by the existing `check:i18n-strings`
+  lint that already runs in the type-check chain.
+- **Markdown sanitization** — `marked` (already a build-time dep
+  used by `scripts/build-privacy-page.ts`) promoted to runtime
+  at ~30 KB gzipped, plus a new `DOMPurify` runtime dep at ~25
+  KB gzipped, with a strict tag/attr allow-list. Shared
+  renderer at `src/services/markdownRenderer.ts` used by both
+  the portal preview and the eventual public detail page so
+  preview is byte-for-byte the public render. Both deps load
+  through the lazy portal chunk; non-publisher visits pay
+  nothing.
+- **Portal analytics** — four new events
+  (`publisher_portal_loaded`, `publisher_action` in Tier A;
+  `publisher_validation_failed`, `publisher_dwell` in Tier B)
+  matching the existing `ANALYTICS.md` shape. Server-side
+  `audit_events` rows stay the source of truth for who-did-what;
+  the Tier-A events power the operator dashboard without
+  persisting publisher identity client-side. Grafana gains a
+  "Publisher activity" row in 3pa.
+- **Cloudflare Access browser policy** — extends the Phase 1a
+  service-token application to cover `/publish/**` HTML in 3pa.
+  `DEV_BYPASS_ACCESS=true` continues to work for local dev on
+  the browser side.
+
+The threat-model section "XSS via publisher markdown" in the
+backend plan is the substrate; the new sanitizer subsection pins
+the implementation.
+
+**3-pre/B — Retag sub-phases as 3pa–3pg.** The original 3-pre/A
+labelling used bare `3a`–`3g` sub-phase letters, which collide
+with the merged R2 + HLS video-pipeline work that already
+claimed `catalog(3a/...)` through `catalog(3h/...)` in the
+CHANGELOG and `git log`. Tooling and humans both grep on the
+commit-prefix substring, so reusing the bare letters would
+conflate two unrelated bodies of work. 3-pre/B retags the portal
+sub-phases as `3pa`–`3pg` in both docs and adds a short note in
+each explaining why the `p` qualifier exists. The BACKEND_PLAN's
+"Phase 3 — Publisher portal" designation stays intact at the
+semantic level; only commit and CHANGELOG prefixes carry the
+qualifier.
+
+**3-pre/C — This file.**
+
+### Operator-visible changes
+
+None. Doc-only. No new env vars, no new bindings, no new
+migrations.
+
+### What this phase deliberately does not do
+
+- **Ship any source code under `src/ui/publisher/**`.** That
+  starts with 3pa.
+- **Wire the Cloudflare Access browser policy.** The policy is
+  dashboard-managed (see BACKEND_PLAN §"Constraints found during
+  exploration" constraint 3); operator steps land in
+  `docs/SELF_HOSTING.md` during 3pa.
+- **Add the new dependencies (`marked` runtime, `DOMPurify`) to
+  `package.json`.** They land with the renderer in 3pc.
+- **Touch the federation phase plan.** Phase 4 is unchanged and
+  unblocked by Phase 3.
+
+### Sub-phase roadmap
+
+The seven sub-phases ship in order. Pausing between any pair is
+deliberately cheap:
+
+| Sub-phase | Topic | Demoable result |
+|---|---|---|
+| 3pa | Portal shell + Access browser flow | `/publish/me` renders behind Access |
+| 3pb | Dataset list + detail (read-only) | Browse drafts/published from the portal |
+| 3pc | Dataset entry form (metadata) | Create + edit drafts without asset upload |
+| 3pd | Asset uploader + preview pipeline | Upload a video or image and preview it on the live globe |
+| 3pe | Tour creator (capture mode) | Author and play back a tour without writing JSON |
+| 3pf | Bulk import UI | Drop a CSV and watch rows materialise |
+| 3pg | Webhook fan-out + verify-deploy | Phase 4 federation hook ready; smoke-test green |
+
+Exit criteria for Phase 3 as a whole match the existing backend
+plan: a staff user can publish a new dataset and a new tour
+end-to-end through the browser without touching the CLI or D1 /
+R2 manually.
+
+---
+
 ## Phase 3c — Tour JSON migration
 
 **Branch:** `claude/tour-migration-phase-3c`
