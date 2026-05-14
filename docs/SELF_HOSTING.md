@@ -491,6 +491,66 @@ different env vars / flags:
   setup so each publisher signs in via SSO. The publishers row
   is JIT-provisioned on first sign-in; an operator with admin
   flips `status='active'` to allow publishing.
+- Enable the publisher portal browser flow (next subsection).
+
+### 8f. Publisher portal browser flow (Phase 3pa onward)
+
+Phase 1a wired Cloudflare Access to protect the publisher *API*
+(`/api/v1/publish/**`) — that's the service-token / programmatic
+surface the `terraviz` CLI uses. Phase 3pa adds a *browser*
+surface on top of the same API: a small admin UI lazy-loaded at
+`/publish/**` that lets staff publishers manage datasets and
+tours without dropping to the CLI.
+
+The browser path is *not yet* gated by Access by default — the
+portal HTML and lazy chunk are served by the SPA fallback rule
+in `public/_redirects` and reach anyone with the URL. Until you
+add an Access application that covers `/publish/**`, treat the
+preview deploy URLs as public. The portal placeholder pages
+render with no API calls; the live `/publish/me` page is what
+exposes data, and it 401s through the API middleware regardless.
+
+To gate the browser path, add a second Access application that
+mirrors the API policy:
+
+- **Application name**: `Terraviz Publisher Portal`
+- **Destinations**:
+  - `terraviz.pages.dev/publish` (Cloudflare matches `/publish*`
+    when you tick "Include subdomains" — actually for path-mode
+    you want to list the prefix explicitly; see the Cloudflare
+    docs for "self-hosted apps with subpath destinations"). For
+    most teams the working incantation is two destinations on
+    the same app: `terraviz.pages.dev/publish` and
+    `terraviz.pages.dev/publish/*`. Add your custom domain
+    alongside.
+  - `your-custom-domain.org/publish`
+  - `your-custom-domain.org/publish/*`
+- **Policies**: same shape as the `/api/v1/publish/**` policy —
+  one Allow policy, **Include → Emails ending in →
+  `your-org.org`** for the staff cohort that should be able to
+  publish.
+- **Session duration**: 24 hours is a good default. Publishers
+  typically need an editing session that doesn't time out
+  mid-form; a daily SSO re-prompt is the right cadence.
+
+The portal reads the resulting Access JWT cookie when it calls
+`/api/v1/publish/me` — same JWT the existing API middleware
+already verifies. No code changes when you flip the policy on;
+the portal starts succeeding instead of showing the
+session-expired error card.
+
+Local dev continues to use `DEV_BYPASS_ACCESS=true` for the API,
+and the portal honours it for the browser path too — so
+`wrangler pages dev` against `.dev.vars` is the cheapest way to
+iterate without going through Access for every refresh.
+
+If you're not ready for the second Access app yet, the
+intermediate state (portal HTML reachable, but every API call
+401s through the existing middleware) is safe: an unauthenticated
+visitor sees the "Your session has expired. Refresh to sign in
+again." error card and cannot exercise any write surface. The
+Access app is the right belt-and-suspenders, not a safety
+prerequisite.
 
 ---
 
