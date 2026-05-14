@@ -19,6 +19,7 @@
  */
 
 import { logger } from '../../utils/logger'
+import { t } from '../../i18n'
 import { PublisherRouter, type RouteHandler } from './router'
 import '../../styles/publisher.css'
 
@@ -51,46 +52,57 @@ function ensureMount(): HTMLElement {
  * shipped yet. 3pa wires every route to this — the actual page
  * implementations replace it in 3pa/C onwards.
  *
- * The English text here is the bare minimum needed to make the
- * portal demoable at the end of 3pa/A. It will be replaced by
- * i18n keys in 3pa/B; the lint exemption documents the followup.
+ * DOM is constructed via createElement + textContent rather than
+ * innerHTML so route params (e.g., the `:id` segment) cannot
+ * carry HTML into the page. The fixed-shape scaffold doesn't need
+ * the convenience of template literals.
  */
-function renderPlaceholder(mount: HTMLElement, section: string, subPhase: string): void {
-  // i18n-exempt: scaffolding strings, replaced by 3pa/B i18n keys
-  mount.innerHTML = `
-    <main class="publisher-shell">
-      <h1>Publisher portal</h1>
-      <p class="publisher-section">${section}</p>
-      <p class="publisher-coming-soon">This section ships in sub-phase ${subPhase}.</p>
-    </main>
-  `
+function renderPlaceholder(mount: HTMLElement, sectionLabel: string, subPhase: string): void {
+  const shell = document.createElement('main')
+  shell.className = 'publisher-shell'
+
+  const title = document.createElement('h1')
+  title.textContent = t('publisher.portal.title')
+  shell.appendChild(title)
+
+  const section = document.createElement('p')
+  section.className = 'publisher-section'
+  section.textContent = sectionLabel
+  shell.appendChild(section)
+
+  const comingSoon = document.createElement('p')
+  comingSoon.className = 'publisher-coming-soon'
+  comingSoon.textContent = t('publisher.placeholder.comingSoon', { subPhase })
+  shell.appendChild(comingSoon)
+
+  mount.replaceChildren(shell)
 }
 
 function mePage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, 'Profile', '3pa/C')
+  return () => renderPlaceholder(mount, t('publisher.section.profile'), '3pa/C')
 }
 
 function datasetsPage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, 'Datasets', '3pb')
+  return () => renderPlaceholder(mount, t('publisher.section.datasets'), '3pb')
 }
 
 function datasetDetailPage(mount: HTMLElement): RouteHandler {
   return params => {
-    // i18n-exempt: scaffolding string, replaced by 3pa/B i18n keys
-    renderPlaceholder(mount, `Dataset ${params.id ?? '(unknown)'}`, '3pb')
+    const id = params.id ?? ''
+    renderPlaceholder(mount, t('publisher.section.datasetDetail', { id }), '3pb')
   }
 }
 
 function toursPage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, 'Tours', '3pe')
+  return () => renderPlaceholder(mount, t('publisher.section.tours'), '3pe')
 }
 
 function importPage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, 'Bulk import', '3pf')
+  return () => renderPlaceholder(mount, t('publisher.section.import'), '3pf')
 }
 
 function notFoundPage(mount: HTMLElement): RouteHandler {
-  return () => renderPlaceholder(mount, 'Not found', '3pa/A')
+  return () => renderPlaceholder(mount, t('publisher.section.notFound'), '3pa/A')
 }
 
 let activeRouter: PublisherRouter | null = null
