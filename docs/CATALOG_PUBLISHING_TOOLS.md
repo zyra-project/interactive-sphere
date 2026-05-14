@@ -24,6 +24,14 @@ sub-phase (see [`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md)
 §"Phase 3 — Publisher portal (staff)" → "Sub-phase execution
 plan").
 
+Phase 3 sub-phases are tagged `3pa`–`3pg` in commit prefixes,
+CHANGELOG entries, and the table referenced above. The
+`p`-qualified letters keep the portal work distinct from the
+unrelated R2 + HLS video-pipeline sub-phases that already claimed
+the bare `3a`–`3h` slots in `git log`. Prep work that ships
+before the first sub-phase uses `3-pre/<letter>`. See the
+backend-plan section for the full explanation.
+
 ### Lazy-load shape
 
 The portal mounts at `/publish` and loads via a single dynamic
