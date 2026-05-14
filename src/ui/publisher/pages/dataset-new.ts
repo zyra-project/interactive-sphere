@@ -28,6 +28,10 @@ import {
   type PublisherValidationError,
 } from '../api'
 import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
+import {
+  attachToolbar,
+  renderMarkdownToolbar,
+} from '../components/markdown-toolbar'
 import { renderMarkdown } from '../../../services/markdownRenderer'
 
 export interface DatasetNewPageOptions {
@@ -194,6 +198,12 @@ function abstractCard(
     }
     wrap.appendChild(preview)
   } else {
+    // Toolbar above the textarea — GitHub-issue style. Buttons
+    // mutate the textarea directly (no parent re-render), so
+    // focus + selection stay intact across button presses.
+    const toolbar = renderMarkdownToolbar()
+    wrap.appendChild(toolbar)
+
     const textarea = document.createElement('textarea')
     textarea.id = 'dataset-abstract'
     textarea.className = 'publisher-form-textarea'
@@ -207,6 +217,12 @@ function abstractCard(
       state.abstract = textarea.value
     })
     wrap.appendChild(textarea)
+
+    attachToolbar(toolbar, textarea, {
+      onChange: v => {
+        state.abstract = v
+      },
+    })
   }
 
   const help = document.createElement('p')
