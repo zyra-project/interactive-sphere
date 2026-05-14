@@ -382,6 +382,7 @@ conceptual framing and points operators at the right tools.
 | `NODE_ID_PRIVATE_KEY_PEM` | Secret | Ed25519 keypair for federation signing (Phase 4) and `/.well-known/terraviz.json` advertisement. Generated with `npm run gen:node-key`. | Publishing anything. |
 | `PREVIEW_SIGNING_KEY` | Secret | HMAC-SHA-256 secret for preview-token signing. Without it the preview endpoints fail closed. | The CLI's `terraviz preview` command. |
 | `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` | Plaintext | Cloudflare Access app credentials for `/api/v1/publish/**`. Without them the publisher middleware 503s with `access_unconfigured`. | Publisher API access. |
+| `TRUSTED_PUBLISHER_DOMAINS` | Plaintext (optional) | Comma-separated email domains whose verified Access user logins JIT-provision as `staff/active/admin=1` instead of the default `community/pending`. Required for single-org deploys where the operator IS the publisher (otherwise SSO sign-in lands the operator at `pending` and locks them out of their own deploy). Match is exact, case-insensitive, no subdomain wildcarding. Service tokens are unaffected. | Single-org publisher portal access (Phase 3pa onward). |
 
 Every binding must be wired into **both Production and Preview
 environments** in the dashboard. The most common cutover mistake
@@ -551,6 +552,41 @@ sees the "Your session has expired. Refresh to sign in again."
 error card and cannot exercise any write surface. The Access app
 is the right belt-and-suspenders, not a safety prerequisite.
 
+**Trusted-domain auto-promotion.** Once §8f's Access app is
+wired and you sign into the portal for the first time, the
+publisher middleware JIT-provisions a row for your email. The
+default classification for an Access user login is
+`role=community, status=pending` — which a Phase 6 multi-org
+review queue would later approve. For a Phase 3 single-org
+deploy where you ARE the publisher, leave the queue out of the
+picture by setting `TRUSTED_PUBLISHER_DOMAINS` to your
+operator's email-domain pattern (see the bindings table in §8a):
+
+```
+TRUSTED_PUBLISHER_DOMAINS = noaa.gov,zyra-project.org
+```
+
+Set on both Production and Preview, then redeploy. Verified
+user logins matching either domain provision as
+`role=staff, status=active, is_admin=1` — full administrative
+authority over the deploying node's catalog. Service tokens are
+unaffected (they continue to provision as `role=service`).
+
+**If you already signed in before setting this var.** Pages will
+have JIT-provisioned a `community/pending` row already; the
+`getOrCreatePublisher` path doesn't update existing rows.
+Promote it once via the D1 console:
+
+```sql
+UPDATE publishers
+SET role = 'staff', is_admin = 1, status = 'active'
+WHERE email = 'you@your-org.org';
+```
+
+Subsequent sign-ins (and any other operator from a trusted
+domain) will land at the right classification on first
+provision.
+
 **Why the "session expired" card and not a real sign-in flow.**
 Cloudflare Access responds to unauthenticated requests with a
 302 to its cross-origin login page. The portal's fetch is
@@ -667,6 +703,29 @@ Cloudflare Zero Trust → Access → Service Auth → Service Tokens,
 attach it to your Access app's policy as a Service Auth
 include, and re-run with
 `TERRAVIZ_ACCESS_CLIENT_ID=... TERRAVIZ_ACCESS_CLIENT_SECRET=...`.
+
+### Publisher portal shows `role: service` for a real user
+
+The publisher portal's profile card (or a raw `GET
+/api/v1/publish/me`) shows `role: service` even though you
+signed in interactively. This was a pre-3pa middleware bug —
+the Access-JWT classifier read `claims.type === 'app'` as the
+service-token signal, but Cloudflare stamps `type: 'app'` on
+every application-level JWT (both users and service tokens).
+Fixed in 3pa/J/A; any row JIT-provisioned before that fix
+shipped still has the wrong classification.
+
+One-shot D1 fix-up:
+
+```sql
+UPDATE publishers
+SET role = 'staff', is_admin = 1, status = 'active'
+WHERE email = 'you@your-org.org';
+```
+
+Then verify with `GET /api/v1/publish/me` — `role` should
+report `staff` (or `community` / `pending` if your email
+domain isn't in `TRUSTED_PUBLISHER_DOMAINS`; see §8f).
 
 ---
 
