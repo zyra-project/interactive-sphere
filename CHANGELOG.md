@@ -16,6 +16,146 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3pb — Read-only dataset list + detail
+
+**Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
+that landed Phase 3-pre and 3pa)
+**Commits:** 3pb/A through 3pb/D.
+
+Second code sub-phase of the publisher portal. After 3pb, a
+staff publisher can browse every dataset visible to them
+(drafts, published, retracted) and drill into a single
+dataset's full read-only detail view without leaving the
+portal. No write surfaces yet — that's 3pc onward — but every
+catalog row's data is now reachable through the browser instead
+of only via the CLI.
+
+**3pb/A — Extract publisher API client + session-error
+helper.** Hoists the fetch + retry + opaqueredirect-recovery
+logic that originated in /publish/me into a new
+`src/ui/publisher/api.ts`. Exposes three things every portal
+page now consumes:
+
+- `publisherGet<T>(path, options)` — `redirect: 'manual'` fetch
+  with the 100 ms retry-on-opaqueredirect from 3pa/L. Returns a
+  discriminated result (`ok` | `session` | `server` | `network`
+  — `not_found` added later in 3pb/C).
+- `handleSessionError({ navigate? })` — page-level recovery:
+  auto-navigates through the redirect-back endpoint on the
+  fresh path, or returns `'show-error'` when the sessionStorage
+  warmup flag is already set (genuine auth gap).
+- `buildSignInUrl()` — same URL the manual Sign in button uses,
+  so fallback and auto-recovery stay in lockstep.
+
+The sessionStorage key migrates from `publisher_me_warmup_attempted`
+to `publisher_warmup_attempted` — page-agnostic now that the
+warmup is portal-wide. `pages/me.ts` shrinks from ~140 lines of
+inlined auth machinery to a short pattern-match on the helper's
+result.
+
+**3pb/B — `/publish/datasets` list page with lifecycle tabs +
+Load more.** Replaces the placeholder at /publish/datasets
+with the read-only list:
+
+- Three tabs (Drafts / Published / Retracted) backed by the
+  `?status=` query param so the active filter is bookmarkable
+  and shareable.
+- `<table>` layout for density. Columns: Title (linked to the
+  detail page) | Slug (monospace) | Format (monospace) |
+  Updated (localized) | Status badge.
+- "Load more" button paginates via the server's
+  `next_cursor: string | null`. Appends rows in place; button
+  hidden when no further pages; disabled "Loading…" state
+  prevents double-click duplicate fetches.
+- Empty states are tab-specific. Drafts empty mentions the
+  CLI and references the 3pc sub-phase tag.
+- Tab clicks call `router.navigate()` for SPA-style transitions;
+  cmd/ctrl/middle-click falls through so power users can open
+  a tab's URL in a new browser tab.
+
+`src/ui/publisher/types.ts` declares the wire shape the portal
+consumes (`PublisherDataset`, `ListDatasetsResponse`,
+`lifecycleOf()` helper) — a narrow subset of the server's
+`DatasetRow`, kept here rather than imported from
+`functions/api/v1/_lib/catalog-store.ts` so the portal chunk
+doesn't drag in server-tree dependencies.
+
+22 new `publisher.datasets.*` i18n keys (columns, tabs, empty
+states, count plural, status badges, Load more).
+
+**3pb/C — `/publish/datasets/:id` read-only detail page.**
+Replaces the placeholder at /publish/datasets/:id with a dense
+admin view of the dataset row, grouped into four glass-surface
+section cards plus a header:
+
+- Back arrow link → /publish/datasets.
+- Header: title (h1) + lifecycle status badge + slug (mono).
+- Abstract card (rendered as plain text via `textContent` —
+  the markdown sanitizer lands in 3pc).
+- Identity card: ULID (mono), legacy SOS ID (mono), format,
+  visibility, organization, publisher ULID.
+- Lifecycle card: created/updated/published/retracted
+  timestamps plus the dataset's own start_time / end_time /
+  period.
+- Assets card: data_ref, thumbnail/legend/caption refs,
+  website link, run_tour_on_load.
+- Licensing & attribution card: SPDX, license URL, statement,
+  attribution text, rights holder, DOI, citation.
+
+`renderFieldsCard` filters out null/empty values so empty
+sections don't render empty card chrome.
+
+404 handling: the API returns 404 for both missing rows and
+rows the caller can't see (to avoid leaking other publishers'
+draft IDs). The shared API helper's result type grew a new
+`'not_found'` kind separate from `'server'`. The not-found
+card has no Refresh button — the back link to the list is the
+right recovery action. `me.ts` and `datasets.ts` collapse
+`not_found` to `server` since neither route should ever 404 in
+practice, but the union exhaustion forces an explicit decision.
+
+35 new `publisher.datasetDetail.*` i18n keys.
+
+**3pb/D — This file.**
+
+### Operator-visible changes
+
+- **New Pages routes:** /publish/datasets (with `?status=`
+  filter and cursor pagination) and /publish/datasets/:id
+  (read-only detail). The /publish/tours and /publish/import
+  placeholders are unchanged — they ship in 3pe and 3pf
+  respectively.
+- **No new analytics events** in 3pb. The existing
+  `publisher_portal_loaded` event fires for `route: 'datasets'`
+  (via the routeForPath mapping from 3pa/E) on both the list
+  and the detail page.
+- **No new env vars or bindings.** 3pb reads from API endpoints
+  Phase 1a already ships.
+
+### What this sub-phase deliberately does not do
+
+- **Write surfaces.** Drafts / publishes / retractions land in
+  3pc (entry form) and 3pd (asset uploader). 3pb is strictly a
+  reader.
+- **Audit history panel.** The plan listed an audit panel for
+  3pb, but the publisher API doesn't write to `audit_events`
+  yet (the table exists since Phase 1a migration 0005, but no
+  publish/retract handler records to it). Spinning up the
+  panel against an empty table isn't useful; an audit-writes
+  sub-phase (likely 3pb/audit or rolled into 3pc) precedes the
+  panel.
+- **Edit-from-detail.** Detail page renders every field but
+  none are editable. 3pc adds the form.
+
+### Sub-phase status
+
+- 3pa — Portal shell + Access browser flow. ✓ Shipped.
+- **3pb — Dataset list + detail (read-only).** ✓ Shipped.
+- 3pc — Dataset entry form (metadata). Next.
+- 3pd – 3pg — Future.
+
+---
+
 ## Phase 3pa — Publisher portal shell + Access browser flow
 
 **Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
