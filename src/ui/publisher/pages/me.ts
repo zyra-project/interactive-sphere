@@ -107,6 +107,47 @@ function signInUrl(): string {
   return `/api/v1/publish/redirect-back?to=${encodeURIComponent(here)}`
 }
 
+/**
+ * sessionStorage key used to break the auto-warmup infinite loop.
+ * If the user lands on /publish/me with this flag set, we've
+ * already attempted the redirect-back warmup on this tab — the
+ * persistent opaqueredirect after a second fetch is a real auth
+ * gap, not a cookie-not-yet-set transient.
+ *
+ * sessionStorage is per-tab and survives the cross-origin redirect
+ * chain through Cloudflare Access; it clears when the tab closes,
+ * so a returning visitor starts fresh.
+ */
+const WARMUP_FLAG_KEY = 'publisher_me_warmup_attempted'
+
+function warmupAlreadyAttempted(): boolean {
+  try {
+    return sessionStorage.getItem(WARMUP_FLAG_KEY) === '1'
+  } catch {
+    // sessionStorage may throw in private-browsing modes that
+    // disable storage. Conservatively treat as "already
+    // attempted" so we surface the error card rather than
+    // looping on auto-warmup against a broken storage layer.
+    return true
+  }
+}
+
+function markWarmupAttempted(): void {
+  try {
+    sessionStorage.setItem(WARMUP_FLAG_KEY, '1')
+  } catch {
+    /* swallow — see comment in warmupAlreadyAttempted */
+  }
+}
+
+function clearWarmupFlag(): void {
+  try {
+    sessionStorage.removeItem(WARMUP_FLAG_KEY)
+  } catch {
+    /* swallow */
+  }
+}
+
 function renderError(mount: HTMLElement, kind: ErrorKind): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
@@ -313,13 +354,17 @@ async function fetchMe(fetchFn: typeof fetch): Promise<Response> {
  * based on the result. Idempotent — calling it again replaces the
  * current contents in-place.
  *
- * `sleep` is injectable so unit tests can advance time without
- * burning wall-clock on the cookie-warmup delay.
+ * `sleep` and `navigate` are injectable so unit tests can advance
+ * time and assert on the auto-warmup top-level navigation without
+ * actually changing the test page's location.
  */
 export async function renderMePage(
   mount: HTMLElement,
   fetchFn: typeof fetch = fetch,
   sleep: (ms: number) => Promise<void> = defaultSleep,
+  navigate: (url: string) => void = url => {
+    window.location.href = url
+  },
 ): Promise<void> {
   renderLoading(mount)
 
@@ -336,7 +381,10 @@ export async function renderMePage(
   // primed via Set-Cookie on the redirect response" pattern.
   // Wait a beat for the browser to register the cookie, then
   // retry once. Persistent opaqueredirect on the second attempt
-  // is a real auth gap.
+  // means Cloudflare Access never actually set the API-app
+  // cookie (the cross-origin Set-Cookie path the retry assumed
+  // didn't fire), and the only way to land it is a top-level
+  // navigation through the redirect-back endpoint.
   if (isAccessRedirect(res)) {
     logger.debug('[publisher] /publish/me opaqueredirect; retrying once after cookie warmup')
     await sleep(COOKIE_WARMUP_DELAY_MS)
@@ -348,7 +396,20 @@ export async function renderMePage(
       return
     }
     if (isAccessRedirect(res)) {
-      renderError(mount, 'session')
+      // Auto-warmup: kick off the same top-level navigation the
+      // Sign in button does. Set a sessionStorage flag so we
+      // don't loop forever if Access keeps rejecting us (genuine
+      // auth gap — wrong policy, no team session, etc.). On
+      // landing back here we read the flag and surface the
+      // error card instead of looping.
+      if (warmupAlreadyAttempted()) {
+        clearWarmupFlag()
+        renderError(mount, 'session')
+        return
+      }
+      markWarmupAttempted()
+      logger.debug('[publisher] /publish/me retry still opaqueredirect; auto-navigating to redirect-back')
+      navigate(signInUrl())
       return
     }
   }
@@ -371,5 +432,6 @@ export async function renderMePage(
     renderError(mount, 'server')
     return
   }
+  clearWarmupFlag()
   renderProfile(mount, body)
 }

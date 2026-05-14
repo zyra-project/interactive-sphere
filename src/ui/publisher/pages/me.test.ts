@@ -30,6 +30,9 @@ describe('renderMePage', () => {
   beforeEach(() => {
     mount = document.createElement('div')
     document.body.appendChild(mount)
+    // The auto-warmup flag persists in sessionStorage across
+    // tests; clear it so each case starts in the same state.
+    sessionStorage.clear()
   })
 
   it('renders a loading state immediately, then swaps in the profile', async () => {
@@ -127,23 +130,73 @@ describe('renderMePage', () => {
     expect(mount.querySelector('.publisher-error')).toBeNull()
   })
 
-  it('renders the session-expired error when both attempts are opaqueredirect', async () => {
-    // Second consecutive opaqueredirect is a real auth gap —
-    // the cookie warmup didn't help, so the user genuinely needs
-    // to sign in.
+  it('auto-navigates to redirect-back when both fetch attempts are opaqueredirect (cookie warmup)', async () => {
+    // Persistent opaqueredirect after the retry means the
+    // cross-origin Set-Cookie path didn't fire. The portal
+    // automatically navigates to the redirect-back endpoint —
+    // a top-level navigation through Access that lands the
+    // API-app cookie reliably — and a sessionStorage flag is
+    // set so a second loop doesn't auto-navigate again.
+    sessionStorage.removeItem('publisher_me_warmup_attempted')
+
     const opaque = Object.assign(new Response('', { status: 200 }), {
       type: 'opaqueredirect' as const,
       status: 0,
     })
     const fetchFn = vi.fn().mockResolvedValue(opaque)
     const sleep = vi.fn().mockResolvedValue(undefined)
-    await renderMePage(mount, fetchFn as unknown as typeof fetch, sleep)
+    const navigate = vi.fn()
+    await renderMePage(
+      mount,
+      fetchFn as unknown as typeof fetch,
+      sleep,
+      navigate,
+    )
 
     expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(navigate).toHaveBeenCalledOnce()
+    expect(navigate).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/api\/v1\/publish\/redirect-back\?to=/),
+    )
+    expect(sessionStorage.getItem('publisher_me_warmup_attempted')).toBe('1')
+    // No error card rendered — the auto-navigation supersedes it.
+    expect(mount.querySelector('.publisher-error')).toBeNull()
+  })
+
+  it('renders the session-expired error when persistent opaqueredirect AFTER a warmup attempt', async () => {
+    // Loop guard: if sessionStorage already records a warmup,
+    // we know the auto-navigation already happened and Access
+    // STILL rejected us. That's a real auth gap (no team
+    // session, policy doesn't match the user, etc.) and the
+    // session error card is the right surface.
+    sessionStorage.setItem('publisher_me_warmup_attempted', '1')
+
+    const opaque = Object.assign(new Response('', { status: 200 }), {
+      type: 'opaqueredirect' as const,
+      status: 0,
+    })
+    const fetchFn = vi.fn().mockResolvedValue(opaque)
+    const sleep = vi.fn().mockResolvedValue(undefined)
+    const navigate = vi.fn()
+    await renderMePage(
+      mount,
+      fetchFn as unknown as typeof fetch,
+      sleep,
+      navigate,
+    )
+
+    expect(navigate).not.toHaveBeenCalled()
     expect(mount.querySelector('.publisher-error')?.getAttribute('role')).toBe('alert')
     expect(mount.textContent).toContain('session has expired')
-    const btn = mount.querySelector<HTMLButtonElement>('.publisher-button')
-    expect(btn?.textContent).toBe('Sign in')
+    // Flag is cleared so a refresh starts fresh.
+    expect(sessionStorage.getItem('publisher_me_warmup_attempted')).toBeNull()
+  })
+
+  it('clears the warmup flag on a successful profile render', async () => {
+    sessionStorage.setItem('publisher_me_warmup_attempted', '1')
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(SAMPLE))
+    await renderMePage(mount, fetchFn as unknown as typeof fetch)
+    expect(sessionStorage.getItem('publisher_me_warmup_attempted')).toBeNull()
   })
 
   it('renders the network error when the retry fetch throws', async () => {
