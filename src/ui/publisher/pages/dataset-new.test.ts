@@ -346,6 +346,114 @@ describe('renderDatasetNewPage', () => {
     expect(body.abstract).toBe('Hello there')
   })
 
+  it('renders the organization field inside the identity card', () => {
+    renderDatasetNewPage(mount)
+    expect(mount.querySelector('#dataset-organization')).not.toBeNull()
+  })
+
+  it('renders the licensing card with all seven licensing/attribution fields', () => {
+    renderDatasetNewPage(mount)
+    expect(mount.querySelector('#dataset-license-spdx')).not.toBeNull()
+    expect(mount.querySelector('#dataset-license-url')).not.toBeNull()
+    expect(mount.querySelector('#dataset-license-statement')).not.toBeNull()
+    expect(mount.querySelector('#dataset-attribution-text')).not.toBeNull()
+    expect(mount.querySelector('#dataset-rights-holder')).not.toBeNull()
+    expect(mount.querySelector('#dataset-doi')).not.toBeNull()
+    expect(mount.querySelector('#dataset-citation')).not.toBeNull()
+  })
+
+  it('omits blank organization + licensing fields from the body', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'My dataset')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.organization).toBeUndefined()
+    expect(body.license_spdx).toBeUndefined()
+    expect(body.license_url).toBeUndefined()
+    expect(body.license_statement).toBeUndefined()
+    expect(body.attribution_text).toBeUndefined()
+    expect(body.rights_holder).toBeUndefined()
+    expect(body.doi).toBeUndefined()
+    expect(body.citation_text).toBeUndefined()
+  })
+
+  it('includes trimmed organization + licensing fields in the body when set', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    setInput(mount, '#dataset-organization', '  NOAA/PMEL  ')
+    setInput(mount, '#dataset-license-spdx', 'CC0-1.0')
+    setInput(mount, '#dataset-license-url', 'https://creativecommons.org/publicdomain/zero/1.0/')
+    setInputOnly(mount, '#dataset-license-statement', '  Public domain  ')
+    setInput(mount, '#dataset-attribution-text', 'Visualization by NOAA/PMEL')
+    setInput(mount, '#dataset-rights-holder', 'U.S. Government')
+    setInput(mount, '#dataset-doi', '10.5066/F7M906QJ')
+    setInputOnly(mount, '#dataset-citation', 'NOAA PMEL, 2026.')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.organization).toBe('NOAA/PMEL')
+    expect(body.license_spdx).toBe('CC0-1.0')
+    expect(body.license_url).toBe(
+      'https://creativecommons.org/publicdomain/zero/1.0/',
+    )
+    expect(body.license_statement).toBe('Public domain')
+    expect(body.attribution_text).toBe('Visualization by NOAA/PMEL')
+    expect(body.rights_holder).toBe('U.S. Government')
+    expect(body.doi).toBe('10.5066/F7M906QJ')
+    expect(body.citation_text).toBe('NOAA PMEL, 2026.')
+  })
+
+  it('renders per-field validation error on the licensing fields', async () => {
+    const errors = {
+      errors: [
+        {
+          field: 'license_url',
+          code: 'invalid_url',
+          message: 'License URL must be a valid URL.',
+        },
+      ],
+    }
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(errors), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    setInput(mount, '#dataset-license-url', 'not-a-url')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+    await new Promise(r => setTimeout(r, 0))
+
+    const urlInput = mount.querySelector<HTMLInputElement>('#dataset-license-url')
+    expect(urlInput?.getAttribute('aria-invalid')).toBe('true')
+    expect(mount.textContent).toContain('License URL must be a valid URL')
+  })
+
   it('Cancel link routes back to /publish/datasets via SPA navigation', () => {
     const routerNavigate = vi.fn()
     renderDatasetNewPage(mount, { routerNavigate })

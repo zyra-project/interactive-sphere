@@ -20,7 +20,7 @@
  * field; non-validation errors render a top-level alert.
  */
 
-import { t } from '../../../i18n'
+import { t, type MessageKey } from '../../../i18n'
 import {
   clearWarmupFlag,
   handleSessionError,
@@ -54,6 +54,7 @@ interface FormState {
   slugLocked: boolean
   format: string
   visibility: string
+  organization: string
   abstract: string
   /** Toggle between editing the abstract markdown source and
    *  rendering the sanitized preview. The same `renderMarkdown`
@@ -61,6 +62,16 @@ interface FormState {
    *  the preview, so what the publisher sees is byte-for-byte
    *  what the public will see. */
   abstractPreviewing: boolean
+  // Licensing & attribution fields (3pc/C2). One of license_spdx
+  // or license_statement is required before publish; both can be
+  // blank during draft authoring.
+  licenseSpdx: string
+  licenseUrl: string
+  licenseStatement: string
+  attributionText: string
+  rightsHolder: string
+  doi: string
+  citationText: string
   isSaving: boolean
   errors: ReadonlyArray<PublisherValidationError>
   /** Non-validation top-level error (network / server / session
@@ -245,14 +256,12 @@ function abstractCard(
 
 function inputField(opts: {
   id: string
-  labelKey:
-    | 'publisher.datasetForm.field.title'
-    | 'publisher.datasetForm.field.slug'
+  labelKey: MessageKey
   required: boolean
   value: string
   placeholder?: string
   error: PublisherValidationError | null
-  helpKey?: 'publisher.datasetForm.help.slug'
+  helpKey?: MessageKey
   onChange: (v: string) => void
   onInput?: (v: string) => void
 }): HTMLElement {
@@ -310,9 +319,7 @@ function inputField(opts: {
 }
 
 function radioGroup(opts: {
-  legendKey:
-    | 'publisher.datasetForm.field.format'
-    | 'publisher.datasetForm.field.visibility'
+  legendKey: MessageKey
   name: string
   options: ReadonlyArray<{ value: string; label: string }>
   value: string
@@ -368,6 +375,164 @@ function radioGroup(opts: {
   }
 
   return fieldset
+}
+
+function textareaField(opts: {
+  id: string
+  labelKey: MessageKey
+  value: string
+  placeholder?: string
+  rows?: number
+  error: PublisherValidationError | null
+  onChange: (v: string) => void
+}): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'publisher-form-field'
+
+  const label = document.createElement('label')
+  label.className = 'publisher-form-label'
+  label.htmlFor = opts.id
+  label.textContent = t(opts.labelKey)
+  wrap.appendChild(label)
+
+  const textarea = document.createElement('textarea')
+  textarea.id = opts.id
+  textarea.className = 'publisher-form-textarea'
+  textarea.rows = opts.rows ?? 4
+  if (opts.placeholder) textarea.placeholder = opts.placeholder
+  textarea.value = opts.value
+  if (opts.error) {
+    textarea.setAttribute('aria-invalid', 'true')
+    textarea.setAttribute('aria-describedby', `${opts.id}-err`)
+  }
+  textarea.addEventListener('input', () => opts.onChange(textarea.value))
+  textarea.addEventListener('change', () => opts.onChange(textarea.value))
+  wrap.appendChild(textarea)
+
+  if (opts.error) {
+    const err = document.createElement('p')
+    err.id = `${opts.id}-err`
+    err.className = 'publisher-form-error'
+    err.setAttribute('role', 'alert')
+    err.textContent = opts.error.message
+    wrap.appendChild(err)
+  }
+  return wrap
+}
+
+function licensingCard(state: FormState, update: () => void): HTMLElement {
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass publisher-form-card'
+
+  const heading = document.createElement('h2')
+  heading.className = 'publisher-card-heading'
+  heading.textContent = t('publisher.datasetForm.section.licensing')
+  card.appendChild(heading)
+
+  card.appendChild(
+    inputField({
+      id: 'dataset-license-spdx',
+      labelKey: 'publisher.datasetForm.field.licenseSpdx',
+      required: false,
+      value: state.licenseSpdx,
+      placeholder: 'CC0-1.0',
+      helpKey: 'publisher.datasetForm.help.licenseSpdx',
+      error: findError(state.errors, 'license_spdx'),
+      onChange: v => {
+        state.licenseSpdx = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    inputField({
+      id: 'dataset-license-url',
+      labelKey: 'publisher.datasetForm.field.licenseUrl',
+      required: false,
+      value: state.licenseUrl,
+      placeholder: 'https://creativecommons.org/publicdomain/zero/1.0/',
+      error: findError(state.errors, 'license_url'),
+      onChange: v => {
+        state.licenseUrl = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    textareaField({
+      id: 'dataset-license-statement',
+      labelKey: 'publisher.datasetForm.field.licenseStatement',
+      value: state.licenseStatement,
+      placeholder: t('publisher.datasetForm.placeholder.licenseStatement'),
+      rows: 3,
+      error: findError(state.errors, 'license_statement'),
+      onChange: v => {
+        state.licenseStatement = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    inputField({
+      id: 'dataset-attribution-text',
+      labelKey: 'publisher.datasetForm.field.attribution',
+      required: false,
+      value: state.attributionText,
+      placeholder: 'Visualization by NOAA/PMEL',
+      error: findError(state.errors, 'attribution_text'),
+      onChange: v => {
+        state.attributionText = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    inputField({
+      id: 'dataset-rights-holder',
+      labelKey: 'publisher.datasetForm.field.rightsHolder',
+      required: false,
+      value: state.rightsHolder,
+      placeholder: 'U.S. Government',
+      error: findError(state.errors, 'rights_holder'),
+      onChange: v => {
+        state.rightsHolder = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    inputField({
+      id: 'dataset-doi',
+      labelKey: 'publisher.datasetForm.field.doi',
+      required: false,
+      value: state.doi,
+      placeholder: '10.5066/F7M906QJ',
+      error: findError(state.errors, 'doi'),
+      onChange: v => {
+        state.doi = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    textareaField({
+      id: 'dataset-citation',
+      labelKey: 'publisher.datasetForm.field.citation',
+      value: state.citationText,
+      rows: 3,
+      error: findError(state.errors, 'citation_text'),
+      onChange: v => {
+        state.citationText = v
+      },
+    }),
+  )
+
+  // Suppress the "unused parameter" while we don't yet branch on
+  // anything inside this card. The `update` callback is in the
+  // signature so future field types (radios, repeaters) can
+  // request a re-render from this card.
+  void update
+  return card
 }
 
 function renderForm(
@@ -484,8 +649,23 @@ function renderForm(
     }),
   )
 
+  identityCard.appendChild(
+    inputField({
+      id: 'dataset-organization',
+      labelKey: 'publisher.datasetForm.field.organization',
+      required: false,
+      value: state.organization,
+      placeholder: 'NOAA/PMEL',
+      error: findError(state.errors, 'organization'),
+      onChange: v => {
+        state.organization = v
+      },
+    }),
+  )
+
   form.appendChild(identityCard)
   form.appendChild(abstractCard(state, update))
+  form.appendChild(licensingCard(state, update))
 
   // Submit row.
   const actions = document.createElement('div')
@@ -546,10 +726,22 @@ function renderForm(
       body.slug = state.slug.trim()
     }
     // Trim — leading/trailing whitespace shouldn't survive into
-    // the persisted row. An empty post-trim abstract is omitted
+    // the persisted row. An empty post-trim value is omitted
     // entirely so the column lands NULL rather than `""`.
-    const abstract = state.abstract.trim()
-    if (abstract) body.abstract = abstract
+    const trimmed = (v: string): string => v.trim()
+    const setIfPresent = (field: string, value: string): void => {
+      const t = trimmed(value)
+      if (t) body[field] = t
+    }
+    setIfPresent('abstract', state.abstract)
+    setIfPresent('organization', state.organization)
+    setIfPresent('license_spdx', state.licenseSpdx)
+    setIfPresent('license_url', state.licenseUrl)
+    setIfPresent('license_statement', state.licenseStatement)
+    setIfPresent('attribution_text', state.attributionText)
+    setIfPresent('rights_holder', state.rightsHolder)
+    setIfPresent('doi', state.doi)
+    setIfPresent('citation_text', state.citationText)
 
     const result = await publisherSend<{ dataset: { id: string } }>(
       CREATE_ENDPOINT,
@@ -609,8 +801,16 @@ export function renderDatasetNewPage(
     slugLocked: false,
     format: 'video/mp4',
     visibility: 'public',
+    organization: '',
     abstract: '',
     abstractPreviewing: false,
+    licenseSpdx: '',
+    licenseUrl: '',
+    licenseStatement: '',
+    attributionText: '',
+    rightsHolder: '',
+    doi: '',
+    citationText: '',
     isSaving: false,
     errors: [],
     topLevelError: null,
