@@ -16,6 +16,560 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3pc — Dataset create / edit / publish / retract
+
+**Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
+that landed Phase 3-pre, 3pa, and 3pb)
+**Commits:** 3pc/A through 3pc/F.
+
+Third code sub-phase of the publisher portal. Where 3pb made the
+catalog browsable, 3pc makes it editable: a staff or community
+publisher can now create a new dataset, fill in the recommended
+metadata, save as a draft, preview the row before flipping it
+public, and publish or retract it — all without leaving the
+browser. The CLI keeps working unchanged; the portal is an
+alternative surface on the same write API.
+
+**3pc/A — Shared markdown renderer.** Lifts the `marked` + custom
+HTML sanitizer into `src/services/markdownRenderer.ts` so the
+abstract preview (3pc/C1) and the read-only detail page share a
+single pipeline. The sanitizer's tag allowlist
+(`MARKDOWN_TAGS` in `src/ui/sanitizeHtml.ts`) is conservative —
+headings, paragraphs, lists, emphasis, code, blockquotes, links,
+horizontal rules. Anything else, including raw HTML attributes
+the publisher could try to smuggle through, is stripped.
+
+**3pc/B — `/publish/datasets/new` create form.** New page with
+the required-field core (title, slug, format, visibility) and a
+discriminated `PublisherSendResult<T>` on the API helper so the
+page can render per-field validation errors without spelunking
+response bodies. Auto-derives the slug from the title; locks the
+auto-derive once the publisher edits the slug manually so a
+later title change doesn't clobber their choice. POST success
+SPA-navigates to the new row's detail page.
+
+3pc/B caught two server-side gaps along the way:
+
+- **3pc/B-fix** improves the portal's error card to expose
+  status + body in a `<details>` disclosure, so a 500 reads as
+  a debuggable surface instead of a generic "server error."
+- **3pc/B-fix2** wraps the publish middleware in a try/catch
+  returning `{error: 'unhandled_exception', message}` instead
+  of letting a thrown exception bubble up as a Cloudflare
+  Error 1101 (which strips any structured response).
+- **3pc/B-fix3** then drops the stack trace from the wrapped
+  response (CodeQL flagged stack-trace exposure); the trace
+  still lands in `wrangler tail` via `console.error`.
+
+**3pc/C1 — Abstract + live markdown preview.** A textarea with
+the shared renderer powering a live preview pane. Reuses the
+3pc/A pipeline so the same allowlist applies whether the
+publisher is reading a draft they typed five seconds ago or a
+production row that originated in the SOS importer.
+**3pc/C1-tools** adds a GitHub-style toolbar over the textarea
+(9 buttons — heading, bold, italic, code, link, list, quote,
+hr, image alt). A future round-it-out captured in
+`docs/CATALOG_PUBLISHING_TOOLS.md` will swap this for a Lexical
+WYSIWYG.
+
+**3pc/C2 — Organization + licensing fields.** Adds the
+organization input, the SPDX license dropdown (with free-form
+`license_url` and `license_statement` for non-SPDX terms),
+attribution text, rights holder, DOI, and a citation block.
+
+**3pc/C3a — Time range card.** `start_time` / `end_time` /
+`period` with split Date + Time inputs side-by-side
+(**3pc/C3a-fix** — the native `datetime-local` widget was
+hiding the time portion on Firefox until the user clicked it).
+`dateTimeToIso(date, time)` composes the two inputs into a
+canonical ISO 8601 UTC string the server can store as-is.
+
+**3pc/C3b — Categorization.** Reusable chip input component
+(`components/chip-input.ts`) backing keyword + tag entry. Each
+chip lives as a separate row in `dataset_keywords` /
+`dataset_tags`; the chip-input's pure `appendChip` /
+`removeChipAt` transforms are decoupled from the DOM render so
+the same logic powers tests and the live form.
+
+**3pc/D/A — Extract shared form into a component.** Moves the
+~1200-line form machinery from `pages/dataset-new.ts` into
+`components/dataset-form.ts` exporting
+`renderDatasetForm(content, { mode: 'create' | 'edit', initial?,
+initialKeywords?, initialTags? })`. `pages/dataset-new.ts`
+becomes a ~25-line wrapper that calls the shared form in
+`'create'` mode. Submit logic branches on mode for POST vs PUT,
+endpoint, and post-save redirect target.
+
+**3pc/D/B — Detail endpoint returns decorations.** The detail
+GET now includes `keywords: string[]` and `tags: string[]`
+alongside the dataset row, so the upcoming edit page can prefill
+its chip inputs from the existing decoration rows. The
+read-only detail page renders the two arrays as chips in a new
+"Keywords & tags" card; the card hides itself when both arrays
+are empty so unannotated drafts don't grow a stub.
+
+**3pc/D/C — Edit page + route wiring.** New
+`/publish/datasets/:id/edit` route: fetches the row +
+decorations, hands the prefilled state to `renderDatasetForm`
+with `mode: 'edit'`. The detail page grows an Edit button in
+its title row — plain left-click is intercepted for SPA
+navigation, modifier-clicks fall through so a cmd-click still
+opens the edit form in a new tab.
+
+**3pc/E — `audit_events` writes.** The `audit_events` table has
+existed since 0005_publishers_audit but until now nothing was
+writing into it for the publisher API. New `audit-store.ts`
+helper wires into the four mutation routes
+(`dataset.create` / `dataset.update` / `dataset.publish` /
+`dataset.retract`) and records an append-only row per
+privileged write. The helper is best-effort: a failed insert
+logs via `console.error` (surfaces in `wrangler tail`) and
+returns null but never throws, so a transient audit-table
+hiccup can't reject a write that has already committed.
+
+Action metadata is intentionally small:
+
+- `dataset.create` → `{ slug, format, visibility }`
+- `dataset.update` → `{ fields: [...sorted touched keys] }` —
+  names only, not values; the row's own column history is the
+  source of truth for what changed to what.
+- `dataset.publish` / `dataset.retract` → `{ slug }`
+
+**3pc/F — Publish + retract on the detail page.** Lifecycle-aware
+action button next to Edit: Draft / Retracted → "Publish",
+Published → "Retract". Every click runs through `window.confirm`
+first; on confirm we POST to the existing /publish or /retract
+route, then re-fetch the row so the displayed badge and
+decorations match what the server now reports. The action
+endpoints already do the heavy lifting from 3pc/E (audit row,
+snapshot invalidate, embed enqueue); the portal just surfaces
+the result.
+
+Error handling tracks the established detail-page error model:
+401 → shared session redirect; 400 validation → re-fetch + an
+inline banner above the abstract (the badge stays consistent
+with the server's view so a failed publish doesn't accidentally
+appear to have succeeded); network / not_found → re-fetch +
+inline banner, falling back to the static error card if even
+the refetch fails.
+
+---
+
+## Phase 3pb — Read-only dataset list + detail
+
+**Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
+that landed Phase 3-pre and 3pa)
+**Commits:** 3pb/A through 3pb/D.
+
+Second code sub-phase of the publisher portal. After 3pb, a
+staff publisher can browse every dataset visible to them
+(drafts, published, retracted) and drill into a single
+dataset's full read-only detail view without leaving the
+portal. No write surfaces yet — that's 3pc onward — but every
+catalog row's data is now reachable through the browser instead
+of only via the CLI.
+
+**3pb/A — Extract publisher API client + session-error
+helper.** Hoists the fetch + retry + opaqueredirect-recovery
+logic that originated in /publish/me into a new
+`src/ui/publisher/api.ts`. Exposes three things every portal
+page now consumes:
+
+- `publisherGet<T>(path, options)` — `redirect: 'manual'` fetch
+  with the 100 ms retry-on-opaqueredirect from 3pa/L. Returns a
+  discriminated result (`ok` | `session` | `server` | `network`
+  — `not_found` added later in 3pb/C).
+- `handleSessionError({ navigate? })` — page-level recovery:
+  auto-navigates through the redirect-back endpoint on the
+  fresh path, or returns `'show-error'` when the sessionStorage
+  warmup flag is already set (genuine auth gap).
+- `buildSignInUrl()` — same URL the manual Sign in button uses,
+  so fallback and auto-recovery stay in lockstep.
+
+The sessionStorage key migrates from `publisher_me_warmup_attempted`
+to `publisher_warmup_attempted` — page-agnostic now that the
+warmup is portal-wide. `pages/me.ts` shrinks from ~140 lines of
+inlined auth machinery to a short pattern-match on the helper's
+result.
+
+**3pb/B — `/publish/datasets` list page with lifecycle tabs +
+Load more.** Replaces the placeholder at /publish/datasets
+with the read-only list:
+
+- Three tabs (Drafts / Published / Retracted) backed by the
+  `?status=` query param so the active filter is bookmarkable
+  and shareable.
+- `<table>` layout for density. Columns: Title (linked to the
+  detail page) | Slug (monospace) | Format (monospace) |
+  Updated (localized) | Status badge.
+- "Load more" button paginates via the server's
+  `next_cursor: string | null`. Appends rows in place; button
+  hidden when no further pages; disabled "Loading…" state
+  prevents double-click duplicate fetches.
+- Empty states are tab-specific. Drafts empty mentions the
+  CLI and references the 3pc sub-phase tag.
+- Tab clicks call `router.navigate()` for SPA-style transitions;
+  cmd/ctrl/middle-click falls through so power users can open
+  a tab's URL in a new browser tab.
+
+`src/ui/publisher/types.ts` declares the wire shape the portal
+consumes (`PublisherDataset`, `ListDatasetsResponse`,
+`lifecycleOf()` helper) — a narrow subset of the server's
+`DatasetRow`, kept here rather than imported from
+`functions/api/v1/_lib/catalog-store.ts` so the portal chunk
+doesn't drag in server-tree dependencies.
+
+22 new `publisher.datasets.*` i18n keys (columns, tabs, empty
+states, count plural, status badges, Load more).
+
+**3pb/C — `/publish/datasets/:id` read-only detail page.**
+Replaces the placeholder at /publish/datasets/:id with a dense
+admin view of the dataset row, grouped into four glass-surface
+section cards plus a header:
+
+- Back arrow link → /publish/datasets.
+- Header: title (h1) + lifecycle status badge + slug (mono).
+- Abstract card (rendered as plain text via `textContent` —
+  the markdown sanitizer lands in 3pc).
+- Identity card: ULID (mono), legacy SOS ID (mono), format,
+  visibility, organization, publisher ULID.
+- Lifecycle card: created/updated/published/retracted
+  timestamps plus the dataset's own start_time / end_time /
+  period.
+- Assets card: data_ref, thumbnail/legend/caption refs,
+  website link, run_tour_on_load.
+- Licensing & attribution card: SPDX, license URL, statement,
+  attribution text, rights holder, DOI, citation.
+
+`renderFieldsCard` filters out null/empty values so empty
+sections don't render empty card chrome.
+
+404 handling: the API returns 404 for both missing rows and
+rows the caller can't see (to avoid leaking other publishers'
+draft IDs). The shared API helper's result type grew a new
+`'not_found'` kind separate from `'server'`. The not-found
+card has no Refresh button — the back link to the list is the
+right recovery action. `me.ts` and `datasets.ts` collapse
+`not_found` to `server` since neither route should ever 404 in
+practice, but the union exhaustion forces an explicit decision.
+
+35 new `publisher.datasetDetail.*` i18n keys.
+
+**3pb/D — This file.**
+
+### Operator-visible changes
+
+- **New Pages routes:** /publish/datasets (with `?status=`
+  filter and cursor pagination) and /publish/datasets/:id
+  (read-only detail). The /publish/tours and /publish/import
+  placeholders are unchanged — they ship in 3pe and 3pf
+  respectively.
+- **No new analytics events** in 3pb. The existing
+  `publisher_portal_loaded` event fires for `route: 'datasets'`
+  (via the routeForPath mapping from 3pa/E) on both the list
+  and the detail page.
+- **No new env vars or bindings.** 3pb reads from API endpoints
+  Phase 1a already ships.
+
+### What this sub-phase deliberately does not do
+
+- **Write surfaces.** Drafts / publishes / retractions land in
+  3pc (entry form) and 3pd (asset uploader). 3pb is strictly a
+  reader.
+- **Audit history panel.** The plan listed an audit panel for
+  3pb, but the publisher API doesn't write to `audit_events`
+  yet (the table exists since Phase 1a migration 0005, but no
+  publish/retract handler records to it). Spinning up the
+  panel against an empty table isn't useful; an audit-writes
+  sub-phase (likely 3pb/audit or rolled into 3pc) precedes the
+  panel.
+- **Edit-from-detail.** Detail page renders every field but
+  none are editable. 3pc adds the form.
+
+### Sub-phase status
+
+- 3pa — Portal shell + Access browser flow. ✓ Shipped.
+- **3pb — Dataset list + detail (read-only).** ✓ Shipped.
+- 3pc — Dataset entry form (metadata). Next.
+- 3pd – 3pg — Future.
+
+---
+
+## Phase 3pa — Publisher portal shell + Access browser flow
+
+**Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
+that landed Phase 3-pre)
+**Commits:** 3pa/A through 3pa/H, plus a one-line 3pa/A-fix
+addendum picked up against the live Pages preview.
+
+First code sub-phase of the publisher portal. After 3pa, a staff
+publisher visiting `/publish/me` on a deployed instance lands on
+a glass-surface profile card showing their identity from the
+already-shipped publisher API; the portal's lazy chunk, History
+API router, top nav, i18n key skeleton, analytics events,
+Grafana panel row, and Cloudflare Access walkthrough are all in
+place. No write surface yet — that's 3pc onward — but every
+foundation downstream sub-phases depend on now ships.
+
+**3pa/A — Portal lazy chunk + History API router.** New module
+tree under `src/ui/publisher/**`. The chunk loads via a single
+dynamic `import('./ui/publisher')` from `src/main.ts`, gated on
+`location.pathname.startsWith('/publish')`; non-publisher visits
+never fetch the portal bytes. The router is a ~100-line History
+API wrapper with one `:id` placeholder, popstate re-dispatch,
+and an idempotent stop, matching the "vanilla TS with a few
+focused libraries" stance documented in `CLAUDE.md`. Every route
+mounts a placeholder page showing its section name and the
+sub-phase letter that will replace it. 13 router tests cover
+pattern matching, dispatch, navigate(), and popstate handling.
+
+**3pa/A-fix — Hide the SPA loading splash on portal boot.**
+Reported visually against the Pages preview: `/publish` showed
+the SPA's rotating-globe loading screen instead of the
+placeholder because the splash is `position: fixed; z-index:
+1000; opacity: 1` and only fades out on the SPA's own boot path.
+The portal route gate `return`s before that fades. One-line fix
+in `ensureMount()` to hide the splash explicitly, mirrored in
+`teardownPublisherPortal()` for test parity.
+
+**3pa/B — i18n keys + safe DOM construction.** Replaces the
+i18n-exempt scaffolding strings with `t()` calls under a new
+`publisher.*` namespace (8 keys for placeholder + section
+labels). Each key gets a translator-context entry in
+`locales/_explanations.json`. While replacing the template-
+literal `innerHTML`, also switches `renderPlaceholder` to
+`createElement` + `textContent` + `replaceChildren` so the
+`:id` URL segment cannot inject HTML by construction.
+
+**3pa/C — /publish/me page with real profile data.** Replaces
+the Profile placeholder with a glass-surface card that fetches
+`GET /api/v1/publish/me` and renders email, role (with an Admin
+badge when `is_admin` is true), affiliation (or "Not set"),
+status (Active / Pending approval / Suspended, colour-coded via
+a `data-status` attribute), and a localized "Member since" date.
+Loading / error states (network / 401 session expired / 5xx /
+JSON-parse failure) all share the same card chrome; a Refresh
+button on every error state reloads the page so Cloudflare
+Access can re-issue an identity token mid-session.
+`renderMePage(mount, fetchFn?)` injects fetch for test
+cleanliness — 11 tests with no `globalThis.fetch` stubbing. 20
+new i18n keys under `publisher.me.*`.
+
+**3pa/D — Glass-surface top bar with section nav.** Persistent
+`position: sticky` topbar above every portal page with four
+tabs (Profile / Datasets / Tours / Import) and a back arrow to
+the SPA. Active-state tracking is decoupled from the router
+via a new `publisher:routechange` CustomEvent — the router
+fires it after every dispatch, the topbar listens and updates
+its own DOM, neither holds a reference to the other. Sub-paths
+count as active for the parent tab (so `/publish/datasets/abc`
+keeps the Datasets tab highlighted). Plain left-clicks
+short-circuit to `router.navigate()`; modified clicks
+(cmd/ctrl/shift/middle) fall through so power users can open
+sections in a new tab. 10 topbar tests + 6 new
+`publisher.nav.*` i18n keys.
+
+**3pa/E — Publisher portal analytics events.** Three new
+`TelemetryEvent` types in `src/types/index.ts`:
+`PublisherPortalLoadedEvent` (Tier A, fields: `route`),
+`PublisherActionEvent` (Tier A, fields: `action`, hashed
+`dataset_id`), and `PublisherValidationFailedEvent` (Tier B,
+fields: `field`, `code`). Only `publisher_portal_loaded` is
+emitted by 3pa code — fires once at portal boot with the
+landing route. The other two are defined now so the emit-call
+shapes are locked before 3pc / 3pd / 3pf call them. The three
+new event-type strings land in `functions/api/ingest.ts` →
+`KNOWN_EVENT_TYPES`. 13 new tests (route-mapping + emit-on-boot
+across multiple paths + idempotency).
+
+**3pa/F — Grafana "Publisher portal" row.** Three new panels
+(ids 20–22) on the existing `Terraviz — Product Health`
+dashboard at y=58: a daily-by-route timeseries, a total stat,
+and a per-route table. Every panel pins
+`blob1 = 'publisher_portal_loaded'` and uses `blob5 AS route`
+(`PublisherPortalLoadedEvent`'s only own string field sorts to
+the first user-blob slot). Dashboard version 9 → 10 so
+operators re-import on upgrade and pick up the new row;
+`product-health.test.ts` gains four new structural assertions
+to keep the contract honest.
+
+**3pa/G — SELF_HOSTING.md Access walkthrough for /publish/**.
+New 8f subsection covering the second Cloudflare Access
+application that gates the *browser* surface at `/publish/**`
+(distinct from the existing 8a-8d setup for the API at
+`/api/v1/publish/**`). Documents the path-mode subtlety
+(`/publish` + `/publish/*` as two destinations), the
+recommended 24-hour session, and the explicit safety note that
+the in-between state (browser path reachable, API still 401s)
+is safe — the API middleware is the load-bearing boundary, the
+Access app is belt-and-suspenders.
+
+**3pa/H — This file.**
+
+### Operator-visible changes
+
+- **New Pages route:** `/publish/me` (and `/publish/datasets`,
+  `/publish/tours`, `/publish/import`, plus `/publish/datasets/:id`).
+  All five render through the lazy portal chunk; only
+  `/publish/me` exposes data today. The others render
+  placeholders showing which sub-phase brings them online.
+- **New analytics events:** `publisher_portal_loaded` (Tier A,
+  emitted from 3pa onward); `publisher_action` and
+  `publisher_validation_failed` (Tier A + B, types defined,
+  emits land in 3pc–3pf).
+- **New Grafana row:** Import `grafana/dashboards/product-health.json`
+  version 10 to pick up the publisher row.
+- **New Cloudflare Access application (optional):** see
+  `docs/SELF_HOSTING.md` §8f. The portal works without it
+  (the API is still gated), but operators wanting belt-and-
+  suspenders should add the second Access app.
+
+### What this sub-phase deliberately does not do
+
+- **Write surfaces.** No edit form, no asset upload, no
+  publish/retract from the browser. Those land in 3pc onward.
+- **Tour creator.** 3pe.
+- **Bulk import UI.** 3pf.
+- **Webhook fan-out scaffolding.** 3pg.
+- **Federation peer admin.** Phase 4.
+- **OIDC / community publishers.** Phase 6.
+
+### Sub-phase status
+
+- **3pa — Portal shell + Access browser flow.** ✓ Shipped.
+- **3pb — Dataset list + detail (read-only).** Next.
+- 3pc – 3pg — Future.
+
+---
+
+## Phase 3-pre — Publisher portal prep
+
+**Branch:** `claude/catalog-publisher-portal-phase-3`
+**Commits:** 3-pre/A through 3-pre/C — three doc-only changes.
+
+Sets the table for the BACKEND_PLAN's Phase 3 (publisher portal,
+staff) without touching source code. The backend has been ready
+since Phase 1f shipped — the publisher API at
+`functions/api/v1/publish/**` exposes the full metadata + asset
++ tour + featured surface, the CLI binary at `cli/terraviz.ts`
+drives it from a YAML, and the asset pipeline (R2 + HLS, R2
+auxiliary assets, R2 tour.json) is live. What hasn't existed is
+the browser-side portal under `src/ui/publisher/**`. This phase
+prep closes the planning gaps before code starts.
+
+**Why a prep phase at all.** Phase 3 in the backend plan is a
+six-bullet list. Splitting it into shippable sub-phases up
+front, and pinning the cross-cutting conventions (lazy-load
+shape, i18n discipline, markdown sanitization, portal analytics,
+Access browser policy) before the first form lands matches the
+`CLAUDE.md` §"Working in this repo" "design firms up before
+code" discipline and keeps each sub-phase PR bounded.
+
+**3-pre/A — Sub-phase breakdown + portal conventions.**
+`docs/CATALOG_BACKEND_PLAN.md` §Phase 3 gains a "Sub-phase
+execution plan" table splitting the scope into seven
+letter-suffixed sub-phases (3pa portal shell + Access browser
+flow, 3pb read-only list + detail, 3pc dataset entry form, 3pd
+asset uploader + preview pipeline, 3pe tour creator, 3pf bulk
+import, 3pg webhook scaffolding + verify-deploy). Each
+sub-phase ships as its own PR, is independently demoable, and
+leaves the deploy in a working state so Phase 4 federation can
+pull priority cleanly at any boundary.
+
+`docs/CATALOG_PUBLISHING_TOOLS.md` gains a "Phase 3
+implementation conventions" section covering the five gaps the
+per-feature sections leave implicit:
+
+- **Lazy-load shape** — single `import('./ui/publisher')` from
+  `src/main.ts` gated on a `/publish` path prefix, History API
+  routing, no framework. Mirrors the
+  `src/ui/vrButton.ts` → `import('three')` pattern that already
+  keeps Three.js out of the main bundle.
+- **i18n discipline** — every string in `src/ui/publisher/**`
+  flows through `t()`, ~100–150 new keys under a `publisher.*`
+  namespace, picked up by the existing `check:i18n-strings`
+  lint that already runs in the type-check chain.
+- **Markdown sanitization** — `marked` (already a build-time dep
+  used by `scripts/build-privacy-page.ts`) promoted to runtime
+  at ~30 KB gzipped, plus a new `DOMPurify` runtime dep at ~25
+  KB gzipped, with a strict tag/attr allow-list. Shared
+  renderer at `src/services/markdownRenderer.ts` used by both
+  the portal preview and the eventual public detail page so
+  preview is byte-for-byte the public render. Both deps load
+  through the lazy portal chunk; non-publisher visits pay
+  nothing.
+- **Portal analytics** — four new events
+  (`publisher_portal_loaded`, `publisher_action` in Tier A;
+  `publisher_validation_failed`, `publisher_dwell` in Tier B)
+  matching the existing `ANALYTICS.md` shape. Server-side
+  `audit_events` rows stay the source of truth for who-did-what;
+  the Tier-A events power the operator dashboard without
+  persisting publisher identity client-side. Grafana gains a
+  "Publisher activity" row in 3pa.
+- **Cloudflare Access browser policy** — extends the Phase 1a
+  service-token application to cover `/publish/**` HTML in 3pa.
+  `DEV_BYPASS_ACCESS=true` continues to work for local dev on
+  the browser side.
+
+The threat-model section "XSS via publisher markdown" in the
+backend plan is the substrate; the new sanitizer subsection pins
+the implementation.
+
+**3-pre/B — Retag sub-phases as 3pa–3pg.** The original 3-pre/A
+labelling used bare `3a`–`3g` sub-phase letters, which collide
+with the merged R2 + HLS video-pipeline work that already
+claimed `catalog(3a/...)` through `catalog(3h/...)` in the
+CHANGELOG and `git log`. Tooling and humans both grep on the
+commit-prefix substring, so reusing the bare letters would
+conflate two unrelated bodies of work. 3-pre/B retags the portal
+sub-phases as `3pa`–`3pg` in both docs and adds a short note in
+each explaining why the `p` qualifier exists. The BACKEND_PLAN's
+"Phase 3 — Publisher portal" designation stays intact at the
+semantic level; only commit and CHANGELOG prefixes carry the
+qualifier.
+
+**3-pre/C — This file.**
+
+### Operator-visible changes
+
+None. Doc-only. No new env vars, no new bindings, no new
+migrations.
+
+### What this phase deliberately does not do
+
+- **Ship any source code under `src/ui/publisher/**`.** That
+  starts with 3pa.
+- **Wire the Cloudflare Access browser policy.** The policy is
+  dashboard-managed (see BACKEND_PLAN §"Constraints found during
+  exploration" constraint 3); operator steps land in
+  `docs/SELF_HOSTING.md` during 3pa.
+- **Add the new dependencies (`marked` runtime, `DOMPurify`) to
+  `package.json`.** They land with the renderer in 3pc.
+- **Touch the federation phase plan.** Phase 4 is unchanged and
+  unblocked by Phase 3.
+
+### Sub-phase roadmap
+
+The seven sub-phases ship in order. Pausing between any pair is
+deliberately cheap:
+
+| Sub-phase | Topic | Demoable result |
+|---|---|---|
+| 3pa | Portal shell + Access browser flow | `/publish/me` renders behind Access |
+| 3pb | Dataset list + detail (read-only) | Browse drafts/published from the portal |
+| 3pc | Dataset entry form (metadata) | Create + edit drafts without asset upload |
+| 3pd | Asset uploader + preview pipeline | Upload a video or image and preview it on the live globe |
+| 3pe | Tour creator (capture mode) | Author and play back a tour without writing JSON |
+| 3pf | Bulk import UI | Drop a CSV and watch rows materialise |
+| 3pg | Webhook fan-out + verify-deploy | Phase 4 federation hook ready; smoke-test green |
+
+Exit criteria for Phase 3 as a whole match the existing backend
+plan: a staff user can publish a new dataset and a new tour
+end-to-end through the browser without touching the CLI or D1 /
+R2 manually.
+
+---
+
 ## Phase 3c — Tour JSON migration
 
 **Branch:** `claude/tour-migration-phase-3c`

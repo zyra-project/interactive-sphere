@@ -36,6 +36,7 @@ import { verifyAccessJwt, type AccessIdentity } from '../_lib/access-auth'
 import { isLoopbackHost } from '../_lib/loopback'
 import {
   getOrCreatePublisher,
+  parseTrustedDomains,
   type PublisherRow,
 } from '../_lib/publisher-store'
 
@@ -50,6 +51,63 @@ function jsonError(status: number, error: string, message: string): Response {
     status,
     headers: { 'Content-Type': CONTENT_TYPE },
   })
+}
+
+/**
+ * Wrap the chained handler (`context.next()`) in a try / catch so
+ * an unhandled exception in any /api/v1/publish/** route surfaces
+ * as a structured JSON 500 rather than Cloudflare's generic 1101
+ * "worker_threw_exception" page (which swallows the error
+ * detail). Only the access-gated publisher API is wrapped, so the
+ * structured detail is only visible to authenticated staff
+ * publishers.
+ *
+ * The response includes a *sanitized* first line of the
+ * exception's `.message` — enough to surface
+ * `"D1_ERROR: table datasets has no column named bbox_n"` so the
+ * publisher can recognise a missing-migration deploy without
+ * reading server logs, but stripped of stack-frame fragments
+ * (`at Foo (file://…)` lines, `file://…:42:13` location refs)
+ * that CodeQL's `js/stack-trace-exposure` rule flags. Operators
+ * who need the full stack read it from Cloudflare Workers logs
+ * via `wrangler tail` — the raw error is logged via
+ * `console.error` below before sanitization runs.
+ */
+
+/** Strip stack-frame fragments from a thrown-Error message so the
+ *  wire-safe payload is the structured detail (D1 codes, SQLite
+ *  errors, validation messages) without `at …:LINE:COL` traces.
+ *  Keeps the first line of the message, then drops anything that
+ *  looks like a JS stack frame ("at Foo (…)", "Error: …" on a
+ *  later line) or a file:line:col location. */
+function sanitizeErrorMessage(raw: string): string {
+  // Take only the first line; stacks always start on line 2+.
+  const firstLine = raw.split('\n', 1)[0] ?? ''
+  // Drop anything that looks like a file/URL location reference.
+  // Conservative — false positives just produce a shorter
+  // message, which is acceptable.
+  return firstLine
+    .replace(/\s*\bat\s+[^\s)]+\s*\([^)]*\)/g, '')
+    .replace(/\s*[A-Za-z0-9_./:\\-]+:\d+:\d+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function nextOrCaught(context: Parameters<PagesFunction<CatalogEnv>>[0]): Promise<Response> {
+  try {
+    return await context.next()
+  } catch (err) {
+    // Log the raw error (with full stack) to Workers logs FIRST so
+    // an operator can recover it via `wrangler tail` regardless of
+    // what the sanitizer does to the wire response.
+    console.error('[publish-middleware] unhandled exception', err)
+    const raw = err instanceof Error ? err.message : String(err)
+    const message = sanitizeErrorMessage(raw)
+    return new Response(
+      JSON.stringify({ error: 'unhandled_exception', message }),
+      { status: 500, headers: { 'Content-Type': CONTENT_TYPE } },
+    )
+  }
 }
 
 export const onRequest: PagesFunction<CatalogEnv> = async context => {
@@ -100,8 +158,10 @@ export const onRequest: PagesFunction<CatalogEnv> = async context => {
     }
   }
 
+  const trustedDomains = parseTrustedDomains(context.env.TRUSTED_PUBLISHER_DOMAINS)
   const publisher = await getOrCreatePublisher(context.env.CATALOG_DB, identity, {
     devBypass,
+    trustedDomains,
   })
 
   if (publisher.status === 'suspended') {
@@ -117,5 +177,5 @@ export const onRequest: PagesFunction<CatalogEnv> = async context => {
 
   // Stash the row so route handlers can authorise without re-querying D1.
   ;(context.data as unknown as PublisherData).publisher = publisher
-  return context.next()
+  return nextOrCaught(context)
 }

@@ -189,27 +189,50 @@ export async function verifyAccessJwt(
   const aud = Array.isArray(claims.aud) ? claims.aud : claims.aud ? [claims.aud] : []
   if (!aud.includes(env.ACCESS_AUD)) return null
 
-  const isService = claims.type === 'app'
-  // Cloudflare service-token JWTs emit `sub` as an empty string and
-  // carry the token's identifier in `common_name` (the Client ID
-  // such as `843feb...d30ef0f.access`). User-login JWTs are the
-  // opposite: `sub` is populated, `common_name` is absent. Pick
-  // whichever durable identifier the JWT actually carries before
-  // checking presence so a real service-token request doesn't get
-  // rejected for an empty sub. Surfaced by the first production
-  // service-token call against the publisher API in 1d.
-  const subject =
-    claims.sub && claims.sub.length > 0
-      ? claims.sub
-      : isService && typeof claims.common_name === 'string' && claims.common_name.length > 0
-        ? claims.common_name
-        : null
+  // Distinguish service tokens from user logins.
+  //
+  // The original heuristic — `claims.type === 'app'` — matched
+  // Cloudflare's documentation as it read at the time of Phase
+  // 1a, but live JWTs against the publisher API in 3pa surfaced
+  // a real-world user login carrying `type: 'app'` too. Reading
+  // the Access docs more carefully: `type` is an envelope marker
+  // (`app` = application JWT, `org` = organization JWT) and is
+  // present on *both* user logins and service-token requests
+  // once Access has issued the app-level token. It does not
+  // distinguish the two.
+  //
+  // The actual structural difference, observed in production:
+  //   - Service tokens: `sub` is `""` (empty), `common_name`
+  //     carries the Client ID (e.g.,
+  //     `843feb...d30ef0f.access`), `email` is absent.
+  //   - User logins: `sub` carries the user's IdP-issued
+  //     identifier, `email` is present, `common_name` is absent.
+  //
+  // Classify on `common_name`'s presence + `sub`'s emptiness so
+  // both signals must agree before we treat the request as
+  // service-token. A real user can never produce a JWT with
+  // `common_name` present and an empty `sub` — that requires
+  // Cloudflare's signing key.
+  const hasCommonName =
+    typeof claims.common_name === 'string' && claims.common_name.length > 0
+  const hasNonEmptySub = typeof claims.sub === 'string' && claims.sub.length > 0
+  const isService = hasCommonName && !hasNonEmptySub
+
+  const subject = hasNonEmptySub
+    ? (claims.sub as string)
+    : isService
+      ? (claims.common_name as string)
+      : null
   if (!subject) return null
 
-  // Service tokens may not carry an email; synthesize one keyed on
-  // the resolved subject so the publishers row has a stable unique
-  // identifier.
-  const email = claims.email ?? (isService ? `${subject}@service.local` : null)
+  // Service tokens always synthesize their email from the
+  // common_name so an attacker who somehow crafts a hybrid JWT
+  // (with both `common_name` and `email`) cannot attribute
+  // service-token actions to a real user's address. User logins
+  // require a real `email` claim and are rejected without one.
+  const email = isService
+    ? `${subject}@service.local`
+    : (claims.email ?? null)
   if (!email) return null
 
   return { email, sub: subject, type: isService ? 'service' : 'user' }

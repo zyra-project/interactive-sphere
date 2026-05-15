@@ -382,6 +382,7 @@ conceptual framing and points operators at the right tools.
 | `NODE_ID_PRIVATE_KEY_PEM` | Secret | Ed25519 keypair for federation signing (Phase 4) and `/.well-known/terraviz.json` advertisement. Generated with `npm run gen:node-key`. | Publishing anything. |
 | `PREVIEW_SIGNING_KEY` | Secret | HMAC-SHA-256 secret for preview-token signing. Without it the preview endpoints fail closed. | The CLI's `terraviz preview` command. |
 | `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` | Plaintext | Cloudflare Access app credentials for `/api/v1/publish/**`. Without them the publisher middleware 503s with `access_unconfigured`. | Publisher API access. |
+| `TRUSTED_PUBLISHER_DOMAINS` | Plaintext (optional) | Comma-separated email domains whose verified Access user logins JIT-provision as `staff/active/admin=1` instead of the default `community/pending`. Required for single-org deploys where the operator IS the publisher (otherwise SSO sign-in lands the operator at `pending` and locks them out of their own deploy). Match is exact, case-insensitive, no subdomain wildcarding. Service tokens are unaffected. | Single-org publisher portal access (Phase 3pa onward). |
 
 Every binding must be wired into **both Production and Preview
 environments** in the dashboard. The most common cutover mistake
@@ -407,6 +408,74 @@ the local-engine fallback) keeps the deploy usable when the
 ceiling hits. But the experience degrades — chips stop rendering
 through real search until quota recovers. Plan for Workers Paid
 on any deploy that runs a public chat surface.
+
+### 8b.5. Apply the catalog migrations (initial + on every update)
+
+The `CATALOG_DB` binding points at the same physical D1 instance
+as `FEEDBACK_DB`, but its migrations live in a separate directory
+(`migrations/catalog/`) and have to be applied separately:
+
+```bash
+wrangler d1 migrations apply sphere-feedback \
+  --remote \
+  --config wrangler.toml
+```
+
+Run this **before the first deploy** to create the catalog
+tables, and **again every time you pull a new release** if it
+ships a new migration file. The repo follows a strict
+"one migration per schema change" convention — every entry under
+`migrations/catalog/` is a numbered file
+(`0001_init.sql`, `0002_…`, … `0010_non_global_metadata.sql`,
+…) and the runner records which ones have already applied, so
+re-running is safe and only the unapplied files take effect.
+
+> ⚠️ **Skipping this step is the #1 cause of post-deploy 500s
+> in the publisher API.** Symptom: the portal's "Save draft"
+> button surfaces a generic server error; the response body
+> reads something like `D1_ERROR: table datasets has no column
+> named bbox_n`. The §8d `verify-deploy` probe catches missing
+> tables and missing columns on a smoke-test pass — if it's
+> green and you're still seeing the error, double-check the
+> Production / Preview environment toggle on the D1 binding.
+
+**Verify which migrations have applied.** The cleanest check
+is `wrangler d1 migrations list sphere-feedback --remote
+--config wrangler.toml`, which diffs `migrations/catalog/`
+against the tracker table on the remote and prints
+applied-vs-pending. From the dashboard D1 console you can read
+the tracker directly:
+
+```sql
+SELECT name, applied_at FROM d1_migrations ORDER BY id;
+```
+
+A canary for the most recent migration (`0010_non_global_metadata.sql`)
+is whether the new columns exist:
+
+```sql
+SELECT name FROM pragma_table_info('datasets')
+ WHERE name IN ('bbox_n', 'celestial_body', 'lon_origin');
+```
+
+Three rows = 0010 is in; zero rows = it isn't.
+
+**Dashboard fallback for applying.** If `wrangler` isn't
+installed where you're deploying from, you can paste each
+migration file's SQL directly into the Cloudflare dashboard →
+D1 → `sphere-feedback` → Console. Apply the files in numeric
+order, skipping ones that have already been applied (the
+dashboard has no already-applied check; pasting
+`0005_publishers_audit.sql` twice will fail because the tables
+already exist, which is the intended safety). After a manual
+paste, also insert the corresponding row into `d1_migrations`
+so a subsequent `wrangler d1 migrations apply` doesn't try to
+re-run the same file:
+
+```sql
+INSERT INTO d1_migrations (name, applied_at)
+VALUES ('0010_non_global_metadata.sql', CURRENT_TIMESTAMP);
+```
 
 ### 8c. Run the snapshot import
 
@@ -491,6 +560,119 @@ different env vars / flags:
   setup so each publisher signs in via SSO. The publishers row
   is JIT-provisioned on first sign-in; an operator with admin
   flips `status='active'` to allow publishing.
+- Enable the publisher portal browser flow (next subsection).
+
+### 8f. Publisher portal browser flow (Phase 3pa onward)
+
+Phase 1a wired Cloudflare Access to protect the publisher *API*
+(`/api/v1/publish/**`) — that's the service-token / programmatic
+surface the `terraviz` CLI uses. Phase 3pa adds a *browser*
+surface on top of the same API: a small admin UI lazy-loaded at
+`/publish/**` that lets staff publishers manage datasets and
+tours without dropping to the CLI.
+
+The browser path is *not yet* gated by Access by default — the
+portal HTML and lazy chunk are served by the SPA fallback rule
+in `public/_redirects` and reach anyone with the URL. Until you
+add an Access application that covers `/publish/**`, treat the
+preview deploy URLs as public. The portal placeholder pages
+render with no API calls; the live `/publish/me` page is what
+exposes data, and it 401s through the API middleware regardless.
+
+To gate the browser path, add a second Access application that
+mirrors the API policy:
+
+- **Application name**: `Terraviz Publisher Portal`
+- **Destinations**:
+  - `terraviz.pages.dev/publish` (Cloudflare matches `/publish*`
+    when you tick "Include subdomains" — actually for path-mode
+    you want to list the prefix explicitly; see the Cloudflare
+    docs for "self-hosted apps with subpath destinations"). For
+    most teams the working incantation is two destinations on
+    the same app: `terraviz.pages.dev/publish` and
+    `terraviz.pages.dev/publish/*`. Add your custom domain
+    alongside.
+  - `your-custom-domain.org/publish`
+  - `your-custom-domain.org/publish/*`
+- **Policies**: same shape as the `/api/v1/publish/**` policy —
+  one Allow policy, **Include → Emails ending in →
+  `your-org.org`** for the staff cohort that should be able to
+  publish.
+- **Session duration**: 24 hours is a good default. Publishers
+  typically need an editing session that doesn't time out
+  mid-form; a daily SSO re-prompt is the right cadence.
+
+The portal reads the resulting Access JWT cookie when it calls
+`/api/v1/publish/me` — same JWT the existing API middleware
+already verifies. No code changes when you flip the policy on;
+the portal starts succeeding instead of showing the
+session-expired error card.
+
+Local dev continues to use `DEV_BYPASS_ACCESS=true` for the API,
+and the portal honours it for the browser path too — so
+`wrangler pages dev` against `.dev.vars` is the cheapest way to
+iterate without going through Access for every refresh.
+
+If you're not ready for the second Access app yet, the
+intermediate state (portal HTML reachable, but every API call
+hits Access on the way) is safe: an unauthenticated visitor
+sees the "Your session has expired. Refresh to sign in again."
+error card and cannot exercise any write surface. The Access app
+is the right belt-and-suspenders, not a safety prerequisite.
+
+**Trusted-domain auto-promotion.** Once §8f's Access app is
+wired and you sign into the portal for the first time, the
+publisher middleware JIT-provisions a row for your email. The
+default classification for an Access user login is
+`role=community, status=pending` — which a Phase 6 multi-org
+review queue would later approve. For a Phase 3 single-org
+deploy where you ARE the publisher, leave the queue out of the
+picture by setting `TRUSTED_PUBLISHER_DOMAINS` to your
+operator's email-domain pattern (see the bindings table in §8a):
+
+```
+TRUSTED_PUBLISHER_DOMAINS = noaa.gov,zyra-project.org
+```
+
+Set on both Production and Preview, then redeploy. Verified
+user logins matching either domain provision as
+`role=staff, status=active, is_admin=1` — full administrative
+authority over the deploying node's catalog. Service tokens are
+unaffected (they continue to provision as `role=service`).
+
+**If you already signed in before setting this var.** Pages will
+have JIT-provisioned a `community/pending` row already; the
+`getOrCreatePublisher` path doesn't update existing rows.
+Promote it once via the D1 console:
+
+```sql
+UPDATE publishers
+SET role = 'staff', is_admin = 1, status = 'active'
+WHERE email = 'you@your-org.org';
+```
+
+Subsequent sign-ins (and any other operator from a trusted
+domain) will land at the right classification on first
+provision.
+
+**Why the "session expired" card and not a real sign-in flow.**
+Cloudflare Access responds to unauthenticated requests with a
+302 to its cross-origin login page. The portal's fetch is
+configured with `redirect: 'manual'` so we can recognise this
+explicitly — but the underlying response is opaque (we can't
+read the login URL, can't auto-follow without CORS errors, can't
+embed Access's login UI in our own page). So the portal can
+*detect* the redirect and tell the user "you need to sign in,"
+but it can't *complete* the sign-in itself.
+
+The Refresh button on the error card is the working escape
+hatch: once you've wired this §8f Access app, refreshing the
+portal page triggers Access at top-level navigation time, the
+user signs in, Access redirects back to `/publish/me`, the
+portal loads with the cookie present, and the next fetch
+succeeds without ever touching the error card. Until you wire
+the app, refreshing just reproduces the same state — that's the
+operator-config gap this section closes.
 
 ---
 
@@ -589,6 +771,29 @@ Cloudflare Zero Trust → Access → Service Auth → Service Tokens,
 attach it to your Access app's policy as a Service Auth
 include, and re-run with
 `TERRAVIZ_ACCESS_CLIENT_ID=... TERRAVIZ_ACCESS_CLIENT_SECRET=...`.
+
+### Publisher portal shows `role: service` for a real user
+
+The publisher portal's profile card (or a raw `GET
+/api/v1/publish/me`) shows `role: service` even though you
+signed in interactively. This was a pre-3pa middleware bug —
+the Access-JWT classifier read `claims.type === 'app'` as the
+service-token signal, but Cloudflare stamps `type: 'app'` on
+every application-level JWT (both users and service tokens).
+Fixed in 3pa/J/A; any row JIT-provisioned before that fix
+shipped still has the wrong classification.
+
+One-shot D1 fix-up:
+
+```sql
+UPDATE publishers
+SET role = 'staff', is_admin = 1, status = 'active'
+WHERE email = 'you@your-org.org';
+```
+
+Then verify with `GET /api/v1/publish/me` — `role` should
+report `staff` (or `community` / `pending` if your email
+domain isn't in `TRUSTED_PUBLISHER_DOMAINS`; see §8f).
 
 ---
 

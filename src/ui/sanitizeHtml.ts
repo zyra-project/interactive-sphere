@@ -1,30 +1,46 @@
 /**
- * Allowlist-based HTML sanitizer for translator-supplied content.
+ * Allowlist-based HTML sanitizer for untrusted input.
  *
- * Used for the help-guide section blobs (`help.guide.section.*`) —
- * these locale strings ship inline HTML for emphasis, lists, and
- * keyboard-shortcut markers, and translators may edit them via
- * Weblate (untrusted input). Without sanitization, a translation
- * containing `<img onerror=...>` or `<script>` would execute when
- * the panel opens.
+ * Two call sites today:
  *
- * Defense in depth pairs with `forbiddenPatterns()` in
- * `scripts/generate-locales.ts`, which fails CI if a locale string
- * carries an obviously hostile substring (script tags, event
- * handlers, javascript: URLs). The codegen catches accidents at
- * build time; this sanitizer catches anything that slipped past
- * (or that lands in a runtime-fetched override later).
+ * 1. Help-guide section blobs (`help.guide.section.*`) — inline
+ *    HTML in locale strings that translators may edit via Weblate.
+ *    Without sanitization a translation containing
+ *    `<img onerror=...>` or `<script>` would execute when the panel
+ *    opens. Defense in depth pairs with `forbiddenPatterns()` in
+ *    `scripts/generate-locales.ts`, which fails CI if a locale
+ *    string carries an obviously hostile substring.
+ * 2. Publisher portal abstract markdown (3pc/A onward) — the
+ *    publisher's markdown is parsed by `marked` and the resulting
+ *    HTML is sanitized through `sanitizeMarkdownHtml` before
+ *    landing in the DOM. Same allowlist pattern, slightly wider
+ *    tag set to cover markdown's full output.
  *
- * The allowlist is intentionally small — exactly the tags + attrs
- * the help guide actually uses. Anything outside the allowlist is
- * unwrapped (text content kept, tag dropped) so a typo in one
- * tag doesn't blank the whole section. `href` values are
+ * The allowlists are intentionally small — exactly the tags + attrs
+ * each call site actually uses. Anything outside is unwrapped (text
+ * content kept, tag dropped) so a typo or unrecognised construct
+ * doesn't blank the surrounding block. `href` values are
  * additionally restricted to safe schemes.
  */
 
-const ALLOWED_TAGS = new Set([
+/** Tags + attrs allowed in the translator-supplied help-guide
+ *  blobs. Narrow surface (the help guide uses these and only
+ *  these). */
+const GUIDE_TAGS = new Set([
   'SECTION', 'H3', 'H4', 'P', 'UL', 'OL', 'LI',
   'STRONG', 'EM', 'KBD', 'CODE', 'A', 'BR', 'SPAN',
+])
+
+/** Tags allowed in markdown-derived HTML (output of `marked`).
+ *  Strict superset of the guide set: adds H2, BLOCKQUOTE, PRE, HR,
+ *  plus the inline emphasis classes markdown leans on. */
+const MARKDOWN_TAGS = new Set([
+  'P', 'BR', 'HR',
+  'H2', 'H3', 'H4',
+  'STRONG', 'EM', 'CODE', 'PRE',
+  'UL', 'OL', 'LI',
+  'BLOCKQUOTE',
+  'A',
 ])
 
 const ALLOWED_ATTRS_BY_TAG: Readonly<Record<string, ReadonlyArray<string>>> = {
@@ -37,8 +53,8 @@ const ALLOWED_ATTRS_BY_TAG: Readonly<Record<string, ReadonlyArray<string>>> = {
 const SAFE_HREF = /^(https?:\/\/|mailto:|\/|#)/i
 
 /**
- * Sanitize a translator-supplied HTML blob against the allowlist
- * above. Output is safe to set as `innerHTML`. Idempotent.
+ * Sanitize a translator-supplied HTML blob against the guide
+ * allowlist. Output is safe to set as `innerHTML`. Idempotent.
  *
  * Implementation note: parses via `<template>.innerHTML` rather
  * than `DOMParser` — `<template>` is the
@@ -49,22 +65,40 @@ const SAFE_HREF = /^(https?:\/\/|mailto:|\/|#)/i
  * `innerHTML` back out.
  */
 export function sanitizeGuideHtml(html: string): string {
+  return sanitizeWith(html, GUIDE_TAGS)
+}
+
+/**
+ * Sanitize the HTML produced by `marked.parse()` against the
+ * markdown allowlist. Used by `src/services/markdownRenderer.ts`
+ * for the publisher portal's abstract preview.
+ *
+ * The publisher's input is untrusted (a community publisher may
+ * eventually author a malicious abstract), so the `marked` ->
+ * sanitize pipeline is what stands between them and a DOM-side XSS.
+ */
+export function sanitizeMarkdownHtml(html: string): string {
+  return sanitizeWith(html, MARKDOWN_TAGS)
+}
+
+function sanitizeWith(html: string, allowedTags: ReadonlySet<string>): string {
   if (typeof document === 'undefined') return ''
   const tpl = document.createElement('template')
   tpl.innerHTML = html
-  walkAndSanitize(tpl.content)
+  walkAndSanitize(tpl.content, allowedTags)
   return tpl.innerHTML
 }
 
-function walkAndSanitize(node: ParentNode): void {
+function walkAndSanitize(node: ParentNode, allowedTags: ReadonlySet<string>): void {
   for (const child of Array.from(node.childNodes)) {
     if (child.nodeType !== 1 /* ELEMENT_NODE */) continue
     const el = child as Element
     const tag = el.tagName
 
-    if (!ALLOWED_TAGS.has(tag)) {
+    if (!allowedTags.has(tag)) {
       // Unwrap rather than delete — preserves visible text so a
-      // translator typo doesn't blank a paragraph.
+      // translator typo (or an unexpected markdown construct)
+      // doesn't blank the surrounding block.
       const text = document.createTextNode(el.textContent ?? '')
       el.replaceWith(text)
       continue
@@ -83,10 +117,11 @@ function walkAndSanitize(node: ParentNode): void {
     }
 
     // Reverse-tabnabbing defense: any <a target="_blank"> must
-    // carry rel="noopener noreferrer". A translator might write a
-    // link without rel at all, or omit one of the two tokens —
-    // forcibly merge them in. Leaves any other rel tokens the
-    // translator legitimately set (e.g. nofollow, ugc) intact.
+    // carry rel="noopener noreferrer". A translator (or marked's
+    // output) might write a link without rel at all, or omit one
+    // of the two tokens — forcibly merge them in. Leaves any
+    // other rel tokens legitimately set (e.g. nofollow, ugc)
+    // intact.
     if (tag === 'A' && el.getAttribute('target')?.toLowerCase() === '_blank') {
       const existing = (el.getAttribute('rel') ?? '').split(/\s+/).filter(Boolean)
       const lower = new Set(existing.map(token => token.toLowerCase()))
@@ -95,6 +130,6 @@ function walkAndSanitize(node: ParentNode): void {
       el.setAttribute('rel', existing.join(' '))
     }
 
-    walkAndSanitize(el)
+    walkAndSanitize(el, allowedTags)
   }
 }

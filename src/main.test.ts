@@ -200,12 +200,20 @@ describe('App initialization', () => {
     vi.clearAllMocks()
   })
 
-  it('initializes without throwing when datasets are empty', async () => {
-    // Dynamically import to get a fresh module
-    const module = await import('./main.ts')
-    // The module auto-registers DOMContentLoaded, so we verify it loaded
-    expect(module).toBeDefined()
-  })
+  it(
+    'initializes without throwing when datasets are empty',
+    async () => {
+      // Dynamically import to get a fresh module
+      const module = await import('./main.ts')
+      // The module auto-registers DOMContentLoaded, so we verify it loaded
+      expect(module).toBeDefined()
+    },
+    // main.ts is the SPA entry — 2500+ lines and many static imports.
+    // Transforming + loading it can take 4–6 s depending on machine
+    // load; the default 5 s timeout has been borderline for a while.
+    // 15 s gives plenty of headroom without masking real regressions.
+    15_000,
+  )
 })
 
 // ---------------------------------------------------------------------------
