@@ -409,6 +409,47 @@ ceiling hits. But the experience degrades — chips stop rendering
 through real search until quota recovers. Plan for Workers Paid
 on any deploy that runs a public chat surface.
 
+### 8b.5. Apply the catalog migrations (initial + on every update)
+
+The `CATALOG_DB` binding points at the same physical D1 instance
+as `FEEDBACK_DB`, but its migrations live in a separate directory
+(`migrations/catalog/`) and have to be applied separately:
+
+```bash
+wrangler d1 migrations apply sphere-feedback \
+  --remote \
+  --config wrangler.toml
+```
+
+Run this **before the first deploy** to create the catalog
+tables, and **again every time you pull a new release** if it
+ships a new migration file. The repo follows a strict
+"one migration per schema change" convention — every entry under
+`migrations/catalog/` is a numbered file
+(`0001_init.sql`, `0002_…`, … `0010_non_global_metadata.sql`,
+…) and the runner records which ones have already applied, so
+re-running is safe and only the unapplied files take effect.
+
+> ⚠️ **Skipping this step is the #1 cause of post-deploy 500s
+> in the publisher API.** Symptom: the portal's "Save draft"
+> button surfaces a generic server error; the response body
+> reads something like `D1_ERROR: table datasets has no column
+> named bbox_n`. The §8d `verify-deploy` probe catches missing
+> tables and missing columns on a smoke-test pass — if it's
+> green and you're still seeing the error, double-check the
+> Production / Preview environment toggle on the D1 binding.
+
+**Dashboard fallback.** If `wrangler` isn't installed where
+you're deploying from, you can paste each migration file's SQL
+directly into the Cloudflare dashboard → D1 → `sphere-feedback`
+→ Console. Apply the files in numeric order, skipping ones
+that have already been applied (the dashboard has no
+already-applied check; pasting `0005_publishers_audit.sql`
+twice will fail because the tables already exist, which is the
+intended safety). The `_cf_d1_migrations` tracker table the
+wrangler runner uses is the source of truth — peek at it with
+`SELECT name FROM _cf_d1_migrations ORDER BY id`.
+
 ### 8c. Run the snapshot import
 
 Once the bindings are wired, the catalog tables are empty. Two
