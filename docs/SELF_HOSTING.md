@@ -439,16 +439,43 @@ re-running is safe and only the unapplied files take effect.
 > green and you're still seeing the error, double-check the
 > Production / Preview environment toggle on the D1 binding.
 
-**Dashboard fallback.** If `wrangler` isn't installed where
-you're deploying from, you can paste each migration file's SQL
-directly into the Cloudflare dashboard → D1 → `sphere-feedback`
-→ Console. Apply the files in numeric order, skipping ones
-that have already been applied (the dashboard has no
-already-applied check; pasting `0005_publishers_audit.sql`
-twice will fail because the tables already exist, which is the
-intended safety). The `_cf_d1_migrations` tracker table the
-wrangler runner uses is the source of truth — peek at it with
-`SELECT name FROM _cf_d1_migrations ORDER BY id`.
+**Verify which migrations have applied.** The cleanest check
+is `wrangler d1 migrations list sphere-feedback --remote
+--config wrangler.toml`, which diffs `migrations/catalog/`
+against the tracker table on the remote and prints
+applied-vs-pending. From the dashboard D1 console you can read
+the tracker directly:
+
+```sql
+SELECT name, applied_at FROM d1_migrations ORDER BY id;
+```
+
+A canary for the most recent migration (`0010_non_global_metadata.sql`)
+is whether the new columns exist:
+
+```sql
+SELECT name FROM pragma_table_info('datasets')
+ WHERE name IN ('bbox_n', 'celestial_body', 'lon_origin');
+```
+
+Three rows = 0010 is in; zero rows = it isn't.
+
+**Dashboard fallback for applying.** If `wrangler` isn't
+installed where you're deploying from, you can paste each
+migration file's SQL directly into the Cloudflare dashboard →
+D1 → `sphere-feedback` → Console. Apply the files in numeric
+order, skipping ones that have already been applied (the
+dashboard has no already-applied check; pasting
+`0005_publishers_audit.sql` twice will fail because the tables
+already exist, which is the intended safety). After a manual
+paste, also insert the corresponding row into `d1_migrations`
+so a subsequent `wrangler d1 migrations apply` doesn't try to
+re-run the same file:
+
+```sql
+INSERT INTO d1_migrations (name, applied_at)
+VALUES ('0010_non_global_metadata.sql', CURRENT_TIMESTAMP);
+```
 
 ### 8c. Run the snapshot import
 
