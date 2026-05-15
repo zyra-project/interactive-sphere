@@ -605,6 +605,33 @@ export async function publishDataset(
     }
   }
 
+  // Refuse to publish a row whose video source is still being
+  // transcoded. The detail page's UI gate already disables the
+  // Publish button while `transcoding=1`, but a direct API
+  // POST or a CLI call could bypass that — this server-side
+  // check is the authoritative gate. For a row whose
+  // `data_ref` is already pointing at a playable bundle (the
+  // re-upload case on a published / retracted row), publishing
+  // mid-transcode would also point public clients at the OLD
+  // bundle even though the row's metadata is mid-flip; cleaner
+  // to require the transcode to finish first.
+  if (row.transcoding) {
+    return {
+      ok: false,
+      status: 409,
+      errors: [
+        {
+          field: 'transcoding',
+          code: 'transcoding_in_progress',
+          message:
+            'Cannot publish while a video transcode is in flight. ' +
+            'Wait for the workflow to finish and the "Transcoding…" ' +
+            'badge to clear, then publish.',
+        },
+      ],
+    }
+  }
+
   const errors = validateForPublish({
     title: row.title,
     slug: row.slug,
