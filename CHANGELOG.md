@@ -16,6 +16,145 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3pc — Dataset create / edit / publish / retract
+
+**Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
+that landed Phase 3-pre, 3pa, and 3pb)
+**Commits:** 3pc/A through 3pc/F.
+
+Third code sub-phase of the publisher portal. Where 3pb made the
+catalog browsable, 3pc makes it editable: a staff or community
+publisher can now create a new dataset, fill in the recommended
+metadata, save as a draft, preview the row before flipping it
+public, and publish or retract it — all without leaving the
+browser. The CLI keeps working unchanged; the portal is an
+alternative surface on the same write API.
+
+**3pc/A — Shared markdown renderer.** Lifts the `marked` + custom
+HTML sanitizer into `src/services/markdownRenderer.ts` so the
+abstract preview (3pc/C1) and the read-only detail page share a
+single pipeline. The sanitizer's tag allowlist
+(`MARKDOWN_TAGS` in `src/ui/sanitizeHtml.ts`) is conservative —
+headings, paragraphs, lists, emphasis, code, blockquotes, links,
+horizontal rules. Anything else, including raw HTML attributes
+the publisher could try to smuggle through, is stripped.
+
+**3pc/B — `/publish/datasets/new` create form.** New page with
+the required-field core (title, slug, format, visibility) and a
+discriminated `PublisherSendResult<T>` on the API helper so the
+page can render per-field validation errors without spelunking
+response bodies. Auto-derives the slug from the title; locks the
+auto-derive once the publisher edits the slug manually so a
+later title change doesn't clobber their choice. POST success
+SPA-navigates to the new row's detail page.
+
+3pc/B caught two server-side gaps along the way:
+
+- **3pc/B-fix** improves the portal's error card to expose
+  status + body in a `<details>` disclosure, so a 500 reads as
+  a debuggable surface instead of a generic "server error."
+- **3pc/B-fix2** wraps the publish middleware in a try/catch
+  returning `{error: 'unhandled_exception', message}` instead
+  of letting a thrown exception bubble up as a Cloudflare
+  Error 1101 (which strips any structured response).
+- **3pc/B-fix3** then drops the stack trace from the wrapped
+  response (CodeQL flagged stack-trace exposure); the trace
+  still lands in `wrangler tail` via `console.error`.
+
+**3pc/C1 — Abstract + live markdown preview.** A textarea with
+the shared renderer powering a live preview pane. Reuses the
+3pc/A pipeline so the same allowlist applies whether the
+publisher is reading a draft they typed five seconds ago or a
+production row that originated in the SOS importer.
+**3pc/C1-tools** adds a GitHub-style toolbar over the textarea
+(9 buttons — heading, bold, italic, code, link, list, quote,
+hr, image alt). A future round-it-out captured in
+`docs/CATALOG_PUBLISHING_TOOLS.md` will swap this for a Lexical
+WYSIWYG.
+
+**3pc/C2 — Organization + licensing fields.** Adds the
+organization input, the SPDX license dropdown (with free-form
+`license_url` and `license_statement` for non-SPDX terms),
+attribution text, rights holder, DOI, and a citation block.
+
+**3pc/C3a — Time range card.** `start_time` / `end_time` /
+`period` with split Date + Time inputs side-by-side
+(**3pc/C3a-fix** — the native `datetime-local` widget was
+hiding the time portion on Firefox until the user clicked it).
+`dateTimeToIso(date, time)` composes the two inputs into a
+canonical ISO 8601 UTC string the server can store as-is.
+
+**3pc/C3b — Categorization.** Reusable chip input component
+(`components/chip-input.ts`) backing keyword + tag entry. Each
+chip lives as a separate row in `dataset_keywords` /
+`dataset_tags`; the chip-input's pure `appendChip` /
+`removeChipAt` transforms are decoupled from the DOM render so
+the same logic powers tests and the live form.
+
+**3pc/D/A — Extract shared form into a component.** Moves the
+~1200-line form machinery from `pages/dataset-new.ts` into
+`components/dataset-form.ts` exporting
+`renderDatasetForm(content, { mode: 'create' | 'edit', initial?,
+initialKeywords?, initialTags? })`. `pages/dataset-new.ts`
+becomes a ~25-line wrapper that calls the shared form in
+`'create'` mode. Submit logic branches on mode for POST vs PUT,
+endpoint, and post-save redirect target.
+
+**3pc/D/B — Detail endpoint returns decorations.** The detail
+GET now includes `keywords: string[]` and `tags: string[]`
+alongside the dataset row, so the upcoming edit page can prefill
+its chip inputs from the existing decoration rows. The
+read-only detail page renders the two arrays as chips in a new
+"Keywords & tags" card; the card hides itself when both arrays
+are empty so unannotated drafts don't grow a stub.
+
+**3pc/D/C — Edit page + route wiring.** New
+`/publish/datasets/:id/edit` route: fetches the row +
+decorations, hands the prefilled state to `renderDatasetForm`
+with `mode: 'edit'`. The detail page grows an Edit button in
+its title row — plain left-click is intercepted for SPA
+navigation, modifier-clicks fall through so a cmd-click still
+opens the edit form in a new tab.
+
+**3pc/E — `audit_events` writes.** The `audit_events` table has
+existed since 0005_publishers_audit but until now nothing was
+writing into it for the publisher API. New `audit-store.ts`
+helper wires into the four mutation routes
+(`dataset.create` / `dataset.update` / `dataset.publish` /
+`dataset.retract`) and records an append-only row per
+privileged write. The helper is best-effort: a failed insert
+logs via `console.error` (surfaces in `wrangler tail`) and
+returns null but never throws, so a transient audit-table
+hiccup can't reject a write that has already committed.
+
+Action metadata is intentionally small:
+
+- `dataset.create` → `{ slug, format, visibility }`
+- `dataset.update` → `{ fields: [...sorted touched keys] }` —
+  names only, not values; the row's own column history is the
+  source of truth for what changed to what.
+- `dataset.publish` / `dataset.retract` → `{ slug }`
+
+**3pc/F — Publish + retract on the detail page.** Lifecycle-aware
+action button next to Edit: Draft / Retracted → "Publish",
+Published → "Retract". Every click runs through `window.confirm`
+first; on confirm we POST to the existing /publish or /retract
+route, then re-fetch the row so the displayed badge and
+decorations match what the server now reports. The action
+endpoints already do the heavy lifting from 3pc/E (audit row,
+snapshot invalidate, embed enqueue); the portal just surfaces
+the result.
+
+Error handling tracks the established detail-page error model:
+401 → shared session redirect; 400 validation → re-fetch + an
+inline banner above the abstract (the badge stays consistent
+with the server's view so a failed publish doesn't accidentally
+appear to have succeeded); network / not_found → re-fetch +
+inline banner, falling back to the static error card if even
+the refetch fails.
+
+---
+
 ## Phase 3pb — Read-only dataset list + detail
 
 **Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
