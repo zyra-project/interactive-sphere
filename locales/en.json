@@ -296,6 +296,7 @@
   "publisher.datasetDetail.action.error.network": "Couldn't reach the server. Check your connection and try again.",
   "publisher.datasetDetail.action.error.session": "Your session has expired. Refresh the page to sign in again.",
   "publisher.datasetDetail.action.error.validation": "The server rejected the action. Edit the dataset to fix the validation errors and try again.",
+  "publisher.datasetDetail.action.error.validationPrefix": "Can't publish — the server returned these validation errors:",
   "publisher.datasetDetail.action.publish": "Publish",
   "publisher.datasetDetail.action.publishing": "Publishing…",
   "publisher.datasetDetail.action.retract": "Retract",

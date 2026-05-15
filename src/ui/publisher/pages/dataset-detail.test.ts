@@ -381,7 +381,13 @@ describe('renderDatasetDetailPage', () => {
     mount.querySelector<HTMLButtonElement>('.publisher-detail-publish')!.click()
     await new Promise(r => setTimeout(r, 0))
     await new Promise(r => setTimeout(r, 0))
-    expect(mount.querySelector('.publisher-detail-action-error')?.textContent).toMatch(
+    const banner = mount.querySelector('.publisher-detail-action-error')?.textContent ?? ''
+    // The banner now surfaces the per-field server message so
+    // the publisher can see what to fix without leaving the
+    // page (was a generic "validation errors" string in 3pc/F).
+    expect(banner).toContain('data_ref')
+    expect(banner).toContain('data_ref required')
+    expect(banner).toMatch(
       /validation/i,
     )
     expect(mount.querySelector<HTMLElement>('.publisher-badge-status')?.textContent).toBe(

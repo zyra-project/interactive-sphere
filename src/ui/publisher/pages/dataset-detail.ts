@@ -22,6 +22,7 @@ import {
   handleSessionError,
   publisherGet,
   publisherSend,
+  type PublisherValidationError,
 } from '../api'
 import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
 import type {
@@ -600,7 +601,10 @@ async function dispatchAction(
   // Re-fetch the row so the displayed status badge is consistent
   // with what the server thinks, then render the error banner over
   // the refreshed row.
-  const errorMessage = actionErrorMessage(result.kind)
+  const errorMessage =
+    result.kind === 'validation'
+      ? formatValidationErrors(result.errors)
+      : actionErrorMessage(result.kind)
   const fresh = await publisherGet<DatasetDetailResponse>(endpoint(id), {
     fetchFn: options.fetchFn,
     sleep: options.sleep,
@@ -624,4 +628,22 @@ function actionErrorMessage(kind: 'validation' | 'network' | 'server' | 'not_fou
   if (kind === 'validation') return t('publisher.datasetDetail.action.error.validation')
   if (kind === 'not_found') return t('publisher.datasetDetail.notFound')
   return t('publisher.datasetDetail.action.error.network')
+}
+
+/**
+ * Compose a per-field publish-readiness message from the
+ * server's `{errors: [{field, code, message}]}` envelope.
+ * Falls back to the generic banner when no field-level details
+ * are available — but the publish / retract endpoints always
+ * populate `errors`, so in practice this returns the joined
+ * server messages so the publisher can see what to fix without
+ * leaving the detail page.
+ */
+function formatValidationErrors(errors: ReadonlyArray<PublisherValidationError>): string {
+  if (errors.length === 0) {
+    return t('publisher.datasetDetail.action.error.validation')
+  }
+  const prefix = t('publisher.datasetDetail.action.error.validationPrefix')
+  const detail = errors.map(e => `${e.field}: ${e.message}`).join('; ')
+  return `${prefix} ${detail}`
 }
