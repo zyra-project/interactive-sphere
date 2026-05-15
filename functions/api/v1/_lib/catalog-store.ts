@@ -109,6 +109,20 @@ export interface DatasetRow {
    * the publish button while this is set. NULL on every other
    * row. Migration 0011. */
   transcoding: number | null
+  /** SHA-256 of the asset's *delivered bytes* — for an HLS bundle
+   * this is the hash of the master.m3u8 + variant manifests +
+   * segments concatenated in canonical order. NULL when the row
+   * predates Phase 1b content-digest verification or when the
+   * pipeline trusts an upstream-provided source digest instead.
+   * Phase 1b. */
+  content_digest: string | null
+  /** SHA-256 of the publisher's *source upload* (the MP4 they
+   * dropped into the portal uploader, before any transcoding).
+   * Set at /asset/{upload_id}/complete time and round-trips into
+   * the GHA workflow's repository_dispatch payload so the runner
+   * can re-verify before encoding. NULL on rows that never went
+   * through the source-upload flow. */
+  source_digest: string | null
 }
 
 export interface DecorationRows {

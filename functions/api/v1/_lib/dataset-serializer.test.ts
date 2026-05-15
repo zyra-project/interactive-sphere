@@ -66,6 +66,8 @@ function fakeRow(overrides: Partial<DatasetRow> = {}): DatasetRow {
     lon_origin: null,
     is_flipped_in_y: null,
     transcoding: null,
+    content_digest: null,
+    source_digest: null,
     ...overrides,
   }
 }
