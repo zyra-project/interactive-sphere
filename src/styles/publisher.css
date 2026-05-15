@@ -812,6 +812,62 @@
   font-size: 0.75rem;
 }
 
+/* Modal for the Preview link surface (3pd/E). Backdrop dims the
+   detail page and centres the modal. Plain DOM — there's no other
+   modal in the portal yet, so a portal-wide manager would be
+   premature. */
+.publisher-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.publisher-modal {
+  max-width: 32rem;
+  width: 100%;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-radius: 8px;
+}
+
+.publisher-modal-heading {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.publisher-modal-body {
+  margin: 0;
+  color: var(--color-text-secondary, #bbbbbb);
+  font-size: 0.875rem;
+}
+
+.publisher-modal-url {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--black-o20, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--white-o12, rgba(255, 255, 255, 0.12));
+  border-radius: 4px;
+  color: var(--color-text, #e8eaf0);
+  font-family: monospace;
+  font-size: 0.8125rem;
+  box-sizing: border-box;
+}
+
+.publisher-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
 .publisher-shell h1 {
   font-size: 1.5rem;
   font-weight: 600;

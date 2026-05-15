@@ -395,6 +395,76 @@ describe('renderDatasetDetailPage', () => {
     )
   })
 
+  it('renders a Preview button on a non-transcoding row', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset()))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    expect(mount.querySelector('.publisher-detail-preview')?.textContent).toBe('Preview')
+  })
+
+  it('hides the Preview button while transcoding', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(detailResponse(dataset({ transcoding: 1, published_at: null })))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      sleep: () => new Promise(() => {}),
+    })
+    expect(mount.querySelector('.publisher-detail-preview')).toBeNull()
+  })
+
+  it('opens a modal with the preview URL when Preview is clicked', async () => {
+    const fetchFn = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce(detailResponse(dataset()))
+      // POST preview → token
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            token: 'PREVIEW-TOKEN-ABC',
+            url: '/api/v1/datasets/01ABC/preview/PREVIEW-TOKEN-ABC',
+            expires_in: 900,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    await renderDatasetDetailPage(mount, '01AAAAAAAAAAAAAAAAAAAAAAAA', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-preview')!.click()
+    // microtask + a tick for the publisherSend promise + a tick for paint
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+    expect(mount.querySelector('.publisher-modal')).not.toBeNull()
+    const urlField = mount.querySelector<HTMLInputElement>('.publisher-modal-url')
+    expect(urlField?.value).toContain('preview=PREVIEW-TOKEN-ABC')
+    expect(urlField?.value).toContain('dataset=01AAAAAAAAAAAAAAAAAAAAAAAA')
+  })
+
+  it('closes the preview modal on Close click', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(detailResponse(dataset()))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'T', url: '/x', expires_in: 60 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-preview')!.click()
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+    expect(mount.querySelector('.publisher-modal')).not.toBeNull()
+    const closeBtn = Array.from(
+      mount.querySelectorAll<HTMLButtonElement>('.publisher-modal .publisher-button'),
+    ).find(b => b.textContent === 'Close')!
+    closeBtn.click()
+    expect(mount.querySelector('.publisher-modal')).toBeNull()
+  })
+
   it('renders a Transcoding badge when transcoding=1', async () => {
     const fetchFn = vi
       .fn()

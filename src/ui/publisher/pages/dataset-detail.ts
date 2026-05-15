@@ -106,6 +106,11 @@ interface HeaderHooks {
    *  The page hands this through to `dispatchAction` so the
    *  re-fetch / re-render loop has access to options + content. */
   onAction?: (action: LifecycleAction) => void
+  /** Dispatched when the publisher clicks the Preview button.
+   *  The page mints a preview token and surfaces the resulting
+   *  URL — the SPA consumer for `?preview=...` is a follow-up
+   *  piece of work in `dataService.ts`. */
+  onPreview?: () => void
 }
 
 function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElement {
@@ -170,6 +175,26 @@ function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElemen
     })
   }
   titleRow.appendChild(editLink)
+
+  // Preview button — mints a 15-minute signed token and surfaces
+  // the consumer URL so the publisher can share an unpublished
+  // draft for review. Hidden while transcoding (data_ref is empty
+  // so there'd be nothing to preview). The SPA consumer for
+  // `?preview=...` is a follow-up piece of work in dataService.ts
+  // — until it lands, the publisher's preview URL is mostly
+  // useful as something they can paste to a reviewer who manually
+  // hits the API.
+  if (!d.transcoding) {
+    const previewBtn = document.createElement('button')
+    previewBtn.type = 'button'
+    previewBtn.className =
+      'publisher-button publisher-button-secondary publisher-detail-preview'
+    previewBtn.textContent = t('publisher.datasetDetail.action.preview')
+    previewBtn.addEventListener('click', () => {
+      hooks.onPreview?.()
+    })
+    titleRow.appendChild(previewBtn)
+  }
 
   // Drafts and retracted rows surface a "Publish" affordance;
   // published rows surface "Retract". The route handlers accept
@@ -576,6 +601,9 @@ function paint(
     onAction: action => {
       void dispatchAction(content, id, action, options)
     },
+    onPreview: () => {
+      void dispatchPreview(content, id, options)
+    },
   }
   renderDetail(
     content,
@@ -672,6 +700,139 @@ function defaultSleep(ms: number): Promise<void> {
  * embed enqueue — happens server-side. The portal's job here is
  * to surface the result.
  */
+/**
+ * Mint a preview token + surface the resulting consumer URL in a
+ * lightweight modal so the publisher can copy/share it. The
+ * underlying endpoint (POST .../preview) has shipped since Phase
+ * 1b; 3pd/E just wires the UI.
+ *
+ * The minted URL points at `/?preview=<token>&dataset=<id>`. The
+ * SPA-side consumer that reads those params and fetches via the
+ * anonymous preview route is a follow-up piece of work in
+ * `dataService.ts`; until it lands, the URL is mostly useful as
+ * something a publisher can paste to a reviewer who manually
+ * exercises the API. Surfacing the URL still has value now — the
+ * portal proves out the token-mint half of the flow + lets the
+ * publisher inspect / shorten the TTL without changing the form.
+ */
+async function dispatchPreview(
+  content: HTMLElement,
+  id: string,
+  options: DatasetDetailPageOptions,
+): Promise<void> {
+  const result = await publisherSend<{ token: string; url: string; expires_in: number }>(
+    `${endpoint(id)}/preview`,
+    {},
+    { fetchFn: options.fetchFn, sleep: options.sleep },
+  )
+  if (!result.ok) {
+    if (result.kind === 'session') {
+      if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+        renderError(content, 'session')
+      }
+      return
+    }
+    // Surface as an inline banner — same path as the dispatch
+    // action handler so the publisher sees a consistent error
+    // pattern across every detail-page button.
+    const errorMessage = actionErrorMessage(result.kind)
+    const fresh = await publisherGet<DatasetDetailResponse>(endpoint(id), {
+      fetchFn: options.fetchFn,
+      sleep: options.sleep,
+    })
+    if (fresh.ok) {
+      paint(content, id, fresh.data, options, errorMessage)
+    }
+    return
+  }
+  // Build the SPA-side URL. `result.data.url` is the API path the
+  // SPA's preview consumer fetches; the publisher's tab opens the
+  // SPA at `?preview=<token>&dataset=<id>` so the consumer
+  // (3pd-followup or 3pe) can pick it up.
+  const previewUrl = `/?preview=${encodeURIComponent(result.data.token)}&dataset=${encodeURIComponent(id)}`
+  openPreviewModal(content, previewUrl, result.data.expires_in)
+}
+
+/**
+ * Lightweight modal showing the preview URL + a Copy button.
+ * Plain DOM rather than a portal-wide modal manager — this is
+ * the first / only modal in the portal and inventing the
+ * infrastructure for one-off use isn't worth it.
+ */
+function openPreviewModal(
+  content: HTMLElement,
+  url: string,
+  expiresIn: number,
+): void {
+  // Tear down any existing modal (re-clicking Preview while one
+  // is open should refresh, not stack).
+  content.querySelector('.publisher-modal-backdrop')?.remove()
+
+  const backdrop = document.createElement('div')
+  backdrop.className = 'publisher-modal-backdrop'
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) backdrop.remove()
+  })
+
+  const modal = document.createElement('div')
+  modal.className = 'publisher-modal publisher-glass'
+
+  const heading = document.createElement('h2')
+  heading.className = 'publisher-modal-heading'
+  heading.textContent = t('publisher.datasetDetail.preview.heading')
+  modal.appendChild(heading)
+
+  const body = document.createElement('p')
+  body.className = 'publisher-modal-body'
+  body.textContent = t('publisher.datasetDetail.preview.body', {
+    minutes: String(Math.round(expiresIn / 60)),
+  })
+  modal.appendChild(body)
+
+  // Read-only input so the publisher can select + copy by hand
+  // even on browsers without a working `navigator.clipboard`.
+  const urlInput = document.createElement('input')
+  urlInput.type = 'text'
+  urlInput.className = 'publisher-modal-url'
+  urlInput.readOnly = true
+  urlInput.value = new URL(url, window.location.origin).toString()
+  modal.appendChild(urlInput)
+
+  const actions = document.createElement('div')
+  actions.className = 'publisher-modal-actions'
+
+  const copyBtn = document.createElement('button')
+  copyBtn.type = 'button'
+  copyBtn.className = 'publisher-button publisher-button-primary'
+  copyBtn.textContent = t('publisher.datasetDetail.preview.copy')
+  copyBtn.addEventListener('click', () => {
+    void navigator.clipboard
+      ?.writeText(urlInput.value)
+      .then(() => {
+        copyBtn.textContent = t('publisher.datasetDetail.preview.copied')
+      })
+      .catch(() => {
+        // Clipboard API not available — select the field so the
+        // publisher can Ctrl-C manually.
+        urlInput.select()
+      })
+  })
+  actions.appendChild(copyBtn)
+
+  const closeBtn = document.createElement('button')
+  closeBtn.type = 'button'
+  closeBtn.className = 'publisher-button publisher-button-secondary'
+  closeBtn.textContent = t('publisher.datasetDetail.preview.close')
+  closeBtn.addEventListener('click', () => backdrop.remove())
+  actions.appendChild(closeBtn)
+
+  modal.appendChild(actions)
+  backdrop.appendChild(modal)
+  content.appendChild(backdrop)
+  urlInput.focus()
+  urlInput.select()
+}
+
 async function dispatchAction(
   content: HTMLElement,
   id: string,
