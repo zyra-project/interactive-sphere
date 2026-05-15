@@ -414,6 +414,43 @@ describe('renderDatasetDetailPage', () => {
     expect(mount.querySelector('.publisher-detail-preview')).toBeNull()
   })
 
+  it('restores focus to the Preview button on close (fix #1)', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(detailResponse(dataset()))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'T', url: '/x', expires_in: 60 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    const previewBtn = mount.querySelector<HTMLButtonElement>('.publisher-detail-preview')!
+    previewBtn.focus()
+    expect(document.activeElement).toBe(previewBtn)
+    previewBtn.click()
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+    // Modal opened, focus moved into the URL input.
+    const urlField = mount.querySelector<HTMLInputElement>('.publisher-modal-url')
+    expect(document.activeElement).toBe(urlField)
+    // Close → focus returns to the Preview button (not the
+    // now-detached URL input). Without the fix the
+    // `previouslyFocused` capture would have happened AFTER
+    // `urlInput.focus()` and pointed at the URL field, so
+    // the restore would attempt to focus an element that
+    // had already been removed.
+    const closeBtn = Array.from(
+      mount.querySelectorAll<HTMLButtonElement>('.publisher-modal .publisher-button'),
+    ).find(b => b.textContent === 'Close')!
+    closeBtn.click()
+    // MutationObserver runs in microtask queue; tick a few
+    // times to let it fire.
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+    expect(document.activeElement).toBe(previewBtn)
+  })
+
   it('preview modal carries dialog ARIA semantics', async () => {
     const fetchFn = vi
       .fn()

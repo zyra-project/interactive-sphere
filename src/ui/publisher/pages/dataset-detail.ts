@@ -777,6 +777,14 @@ function openPreviewModal(
   url: string,
   expiresIn: number,
 ): void {
+  // Capture the originating focus target FIRST, before we mount
+  // the modal — otherwise the urlInput.focus() at the bottom of
+  // this function would have already moved document.activeElement
+  // into the (about-to-be-removed) modal, and "restore on close"
+  // would target the urlInput rather than the Preview button
+  // that opened the dialog. Fix for PR #112 Copilot #1.
+  const previouslyFocused = document.activeElement as HTMLElement | null
+
   // Tear down any existing modal (re-clicking Preview while one
   // is open should refresh, not stack).
   content.querySelector('.publisher-modal-backdrop')?.remove()
@@ -879,9 +887,9 @@ function openPreviewModal(
   // keyboard focus inside the dialog while it's open. Without
   // this a Tab from the last button drops the user into
   // page-behind-the-modal controls. Fix for PR #112 Copilot #8.
-  // Also restore focus to the previously-focused element on
-  // close (typically the Preview button that opened the modal).
-  const previouslyFocused = document.activeElement as HTMLElement | null
+  // The `previouslyFocused` capture happens at the very top of
+  // this function, before the urlInput.focus() call below
+  // moves the active element into the dialog.
   const focusables: HTMLElement[] = [urlInput, copyBtn, closeBtn]
   const trapListener = (event: KeyboardEvent): void => {
     if (event.key !== 'Tab') return
