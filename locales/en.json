@@ -328,6 +328,8 @@
   "publisher.datasetForm.action.preview": "Preview",
   "publisher.datasetForm.action.saveDraft": "Save draft",
   "publisher.datasetForm.action.saving": "Saving…",
+  "publisher.datasetForm.datetime.date": "Date",
+  "publisher.datasetForm.datetime.time": "Time (24h)",
   "publisher.datasetForm.deferredHint": "Recommended fields (abstract, organization, license, time range, categories, keywords) ship in sub-phase 3pc/C. Drafts can be saved with the required fields only.",
   "publisher.datasetForm.field.abstract": "Abstract",
   "publisher.datasetForm.field.attribution": "Attribution",

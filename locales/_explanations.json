@@ -73,6 +73,8 @@
   "publisher.datasets.newDraft": "Label for the primary call-to-action button on /publish/datasets that takes the publisher to the create-new-dataset form. The leading '+' is a deliberate visual cue; preserve it.",
   "publisher.datasets.tabs.aria": "ARIA label for the lifecycle filter tablist on /publish/datasets. Read by screen readers; not visible text.",
   "publisher.datasetForm.action.cancel": "Label for the Cancel button on the dataset create / edit form. Navigates back to the list. Single word.",
+  "publisher.datasetForm.datetime.date": "Sub-label above the date half of a Start time / End time picker on the dataset form. The picker is split into two inputs (date + time) so the publisher can see both halves clearly; this label sits above the `<input type=\"date\">` half.",
+  "publisher.datasetForm.datetime.time": "Sub-label above the time half of a Start time / End time picker on the dataset form. The `(24h)` suffix tells the publisher to use 24-hour clock format; preserve it in the translation since the time input accepts 24-hour values regardless of locale.",
   "publisher.datasetForm.action.edit": "Label for the toggle button above the abstract textarea when the form is showing the rendered markdown preview. Clicking switches back to the editable source view. Single word.",
   "publisher.datasetForm.action.preview": "Label for the toggle button above the abstract textarea when the form is showing the editable source. Clicking switches to the rendered markdown preview. Single word.",
   "publisher.datasetForm.field.abstract": "Field label on the dataset form for the abstract — a longer description of the dataset, supports markdown. Sits above the textarea.",

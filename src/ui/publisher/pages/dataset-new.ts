@@ -73,14 +73,23 @@ interface FormState {
   rightsHolder: string
   doi: string
   citationText: string
-  // Time range fields (3pc/C3a). startTimeLocal / endTimeLocal
-  // are the raw `<input type="datetime-local">` values
-  // (`YYYY-MM-DDTHH:MM` in local time); we convert to / from ISO
-  // 8601 UTC at the submit + edit-prefill seams. `period` is an
-  // ISO 8601 duration string (`P1D`, `PT1H`, …) and submits
-  // verbatim.
-  startTimeLocal: string
-  endTimeLocal: string
+  // Time range fields. Split into explicit Date + Time inputs
+  // (`<input type="date">` + `<input type="time">`) so the
+  // publisher can see both halves of the picker; some browser
+  // renderings of `datetime-local` collapse the time portion
+  // into a hard-to-spot scrubber.
+  //
+  // startDate / endDate are `YYYY-MM-DD`; startTime / endTime
+  // are `HH:MM` (24-hour). `dateTimeToIso` composes them into
+  // the ISO 8601 UTC the server's `ISO_DATE_RE` validator
+  // requires. An empty time defaults to `00:00` so a date-only
+  // entry survives the round-trip with a sensible default.
+  // `period` is an ISO 8601 duration string (`P1D`, `PT1H`, …)
+  // and submits verbatim.
+  startDate: string
+  startTime: string
+  endDate: string
+  endTime: string
   period: string
   // Categorization (3pc/C3b). Both arrays cap at 20 entries
   // server-side; chip-input applies the same cap so the UI
@@ -436,54 +445,102 @@ function textareaField(opts: {
 }
 
 /**
- * Convert a `<input type="datetime-local">` value to ISO 8601
- * UTC. The browser surfaces the value in local time
- * (`YYYY-MM-DDTHH:MM`) — `new Date(...)` parses it as local; we
- * then serialise to UTC with the Z suffix the server's
- * `ISO_DATE_RE` validator requires.
+ * Compose a `<input type="date">` value (`YYYY-MM-DD`) and a
+ * `<input type="time">` value (`HH:MM`) into an ISO 8601 UTC
+ * string. `time` defaults to `00:00` when empty so a date-only
+ * entry survives the round-trip.
+ *
+ * Returns '' for empty / unparseable date (no time without a
+ * date — `period`-only ranges aren't a thing the validator
+ * supports).
  */
-export function localDatetimeToIso(local: string): string {
-  if (!local) return ''
-  const d = new Date(local)
+export function dateTimeToIso(date: string, time: string): string {
+  if (!date) return ''
+  const t = time || '00:00'
+  // `new Date('YYYY-MM-DDTHH:MM:00')` parses as local; serialise
+  // to UTC with the Z suffix the server's `ISO_DATE_RE` requires.
+  const d = new Date(`${date}T${t}:00`)
   if (Number.isNaN(d.getTime())) return ''
   return d.toISOString()
 }
 
-function datetimeField(opts: {
-  id: string
+function dateTimePairField(opts: {
+  idPrefix: string
   labelKey: MessageKey
-  value: string
-  error: PublisherValidationError | null
-  onChange: (v: string) => void
+  dateValue: string
+  timeValue: string
+  dateError: PublisherValidationError | null
+  timeError: PublisherValidationError | null
+  onDateChange: (v: string) => void
+  onTimeChange: (v: string) => void
 }): HTMLElement {
   const wrap = document.createElement('div')
   wrap.className = 'publisher-form-field'
 
   const label = document.createElement('label')
   label.className = 'publisher-form-label'
-  label.htmlFor = opts.id
+  label.htmlFor = `${opts.idPrefix}-date`
   label.textContent = t(opts.labelKey)
   wrap.appendChild(label)
 
-  const input = document.createElement('input')
-  input.type = 'datetime-local'
-  input.id = opts.id
-  input.className = 'publisher-form-input'
-  input.value = opts.value
-  if (opts.error) {
-    input.setAttribute('aria-invalid', 'true')
-    input.setAttribute('aria-describedby', `${opts.id}-err`)
-  }
-  input.addEventListener('input', () => opts.onChange(input.value))
-  input.addEventListener('change', () => opts.onChange(input.value))
-  wrap.appendChild(input)
+  const row = document.createElement('div')
+  row.className = 'publisher-form-datetime-row'
 
-  if (opts.error) {
+  // Date half.
+  const dateCol = document.createElement('div')
+  dateCol.className = 'publisher-form-datetime-date'
+  const dateInner = document.createElement('label')
+  dateInner.className = 'publisher-form-datetime-sublabel'
+  dateInner.htmlFor = `${opts.idPrefix}-date`
+  dateInner.textContent = t('publisher.datasetForm.datetime.date')
+  dateCol.appendChild(dateInner)
+  const dateInput = document.createElement('input')
+  dateInput.type = 'date'
+  dateInput.id = `${opts.idPrefix}-date`
+  dateInput.className = 'publisher-form-input'
+  dateInput.value = opts.dateValue
+  if (opts.dateError) {
+    dateInput.setAttribute('aria-invalid', 'true')
+    dateInput.setAttribute('aria-describedby', `${opts.idPrefix}-err`)
+  }
+  dateInput.addEventListener('input', () => opts.onDateChange(dateInput.value))
+  dateInput.addEventListener('change', () => opts.onDateChange(dateInput.value))
+  dateCol.appendChild(dateInput)
+  row.appendChild(dateCol)
+
+  // Time half. `step="60"` is the default but being explicit
+  // nudges some browsers to a more useful UI.
+  const timeCol = document.createElement('div')
+  timeCol.className = 'publisher-form-datetime-time'
+  const timeInner = document.createElement('label')
+  timeInner.className = 'publisher-form-datetime-sublabel'
+  timeInner.htmlFor = `${opts.idPrefix}-time`
+  timeInner.textContent = t('publisher.datasetForm.datetime.time')
+  timeCol.appendChild(timeInner)
+  const timeInput = document.createElement('input')
+  timeInput.type = 'time'
+  timeInput.id = `${opts.idPrefix}-time`
+  timeInput.className = 'publisher-form-input'
+  timeInput.value = opts.timeValue
+  timeInput.step = '60'
+  if (opts.timeError) {
+    timeInput.setAttribute('aria-invalid', 'true')
+    timeInput.setAttribute('aria-describedby', `${opts.idPrefix}-err`)
+  }
+  timeInput.addEventListener('input', () => opts.onTimeChange(timeInput.value))
+  timeInput.addEventListener('change', () => opts.onTimeChange(timeInput.value))
+  timeCol.appendChild(timeInput)
+  row.appendChild(timeCol)
+
+  wrap.appendChild(row)
+
+  const error = opts.dateError ?? opts.timeError
+  if (error) {
     const err = document.createElement('p')
-    err.id = `${opts.id}-err`
+    err.id = `${opts.idPrefix}-err`
     err.className = 'publisher-form-error'
     err.setAttribute('role', 'alert')
-    err.textContent = opts.error.message
+    err.textContent = error.message
     wrap.appendChild(err)
   }
   return wrap
@@ -499,25 +556,35 @@ function timeRangeCard(state: FormState): HTMLElement {
   card.appendChild(heading)
 
   card.appendChild(
-    datetimeField({
-      id: 'dataset-start-time',
+    dateTimePairField({
+      idPrefix: 'dataset-start',
       labelKey: 'publisher.datasetForm.field.startTime',
-      value: state.startTimeLocal,
-      error: findError(state.errors, 'start_time'),
-      onChange: v => {
-        state.startTimeLocal = v
+      dateValue: state.startDate,
+      timeValue: state.startTime,
+      dateError: findError(state.errors, 'start_time'),
+      timeError: null,
+      onDateChange: v => {
+        state.startDate = v
+      },
+      onTimeChange: v => {
+        state.startTime = v
       },
     }),
   )
 
   card.appendChild(
-    datetimeField({
-      id: 'dataset-end-time',
+    dateTimePairField({
+      idPrefix: 'dataset-end',
       labelKey: 'publisher.datasetForm.field.endTime',
-      value: state.endTimeLocal,
-      error: findError(state.errors, 'end_time'),
-      onChange: v => {
-        state.endTimeLocal = v
+      dateValue: state.endDate,
+      timeValue: state.endTime,
+      dateError: findError(state.errors, 'end_time'),
+      timeError: null,
+      onDateChange: v => {
+        state.endDate = v
+      },
+      onTimeChange: v => {
+        state.endTime = v
       },
     }),
   )
@@ -911,11 +978,12 @@ function renderForm(
     setIfPresent('rights_holder', state.rightsHolder)
     setIfPresent('doi', state.doi)
     setIfPresent('citation_text', state.citationText)
-    // Time range. `datetime-local` value is local-time;
-    // convert to ISO 8601 UTC for the server. Empty inputs
-    // produce empty ISO; the helper skips them.
-    setIfPresent('start_time', localDatetimeToIso(state.startTimeLocal))
-    setIfPresent('end_time', localDatetimeToIso(state.endTimeLocal))
+    // Time range. The form holds date + time as separate
+    // `YYYY-MM-DD` / `HH:MM` strings; compose into ISO 8601 UTC
+    // for the server. Empty date short-circuits the composer to
+    // empty ISO (which the helper then skips).
+    setIfPresent('start_time', dateTimeToIso(state.startDate, state.startTime))
+    setIfPresent('end_time', dateTimeToIso(state.endDate, state.endTime))
     setIfPresent('period', state.period)
     // Arrays — omit when empty so the join tables stay empty
     // instead of carrying placeholder rows.
@@ -990,8 +1058,10 @@ export function renderDatasetNewPage(
     rightsHolder: '',
     doi: '',
     citationText: '',
-    startTimeLocal: '',
-    endTimeLocal: '',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
     period: '',
     keywords: [],
     tags: [],

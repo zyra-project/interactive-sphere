@@ -606,6 +606,35 @@
   border-start-end-radius: 0;
 }
 
+/* --- Split date + time picker --- */
+
+.publisher-form-datetime-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.publisher-form-datetime-date {
+  flex: 2;
+  min-width: 9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.publisher-form-datetime-time {
+  flex: 1;
+  min-width: 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.publisher-form-datetime-sublabel {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #999999);
+}
+
 /* --- Chip input (keywords / tags) --- */
 
 .publisher-chip-input {
