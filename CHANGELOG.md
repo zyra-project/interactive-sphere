@@ -107,10 +107,15 @@ publisher re-uploading the same video twice doesn't race two
 encodes against the same R2 prefix.
 
 **3pd/C — Portal asset uploader.** New
-`components/asset-uploader.ts` replaces the 3pc/F-fix2 manual
-data_ref text input (in edit mode). Three-stage flow:
+`components/asset-uploader.ts` mounts alongside the 3pc/F-fix2
+manual data_ref text input (in edit mode) so editors can still
+swap to legacy `vimeo:` / `url:` references without re-uploading
+bytes. Three-stage flow:
 
-1. Hash the file via `crypto.subtle.digest('SHA-256', ...)`.
+1. Hash the file with a chunked SHA-256 from `@noble/hashes`
+   (3pd-review2/C — Web Crypto's `crypto.subtle.digest` has no
+   streaming API, so 4K MP4 uploads would otherwise blow the
+   browser tab's memory cap on `file.arrayBuffer()`).
 2. POST `/asset` to mint a presigned R2 PUT URL.
 3. XHR PUT to R2 (XHR not fetch — fetch doesn't surface request-
    body upload progress).

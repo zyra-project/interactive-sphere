@@ -97,9 +97,23 @@ Five hops from publisher click to playable row:
    POSTs `POST /api/v1/publish/datasets/{id}/asset/{upload_id}/complete`
    (no body). The Worker:
 
-   - Looks up the asset_uploads row, verifies it belongs to
-     this dataset, and verifies the publisher's claimed SHA-256
-     digest against the bytes now in R2.
+   - Looks up the asset_uploads row and verifies it belongs to
+     this dataset.
+   - **For video sources:** HEAD-checks that the R2 object
+     exists (size + Last-Modified, no body read — the Workers
+     128 MB memory cap can't accommodate `arrayBuffer()`-ing a
+     multi-GB MP4), then **trusts the publisher's claimed
+     SHA-256 digest**. The GHA runner re-hashes the bytes via
+     Node's streaming `crypto.createHash` before invoking
+     ffmpeg, so a tampered upload still surfaces — as the
+     runner's exit-code-2 + stuck `transcoding=1` rather than
+     a synchronous 409 here. Same security model the Stream
+     path used pre-3pd ("trust the claim until the workflow
+     completes").
+   - **For non-video uploads:** the Worker recomputes SHA-256
+     over the full R2 object (the existing 100 MB image / 1 MB
+     caption caps stay comfortable for `arrayBuffer()`) and
+     409s on `digest_mismatch`.
    - Stamps the row as `transcoding=1` (a new column added in
      migration 0011). For drafts also clears `data_ref` to
      empty string; for published rows leaves `data_ref` pointing

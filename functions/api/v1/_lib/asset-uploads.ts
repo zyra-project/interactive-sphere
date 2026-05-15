@@ -527,16 +527,18 @@ export async function revertTranscodingStamp(
 /**
  * Called by the GHA transcode workflow when the HLS bundle is
  * written to R2. Flips `data_ref` to the master.m3u8 path and
- * clears `transcoding`. Mirrors `applyAssetAndMarkCompleted`'s
- * batch atomicity — the dataset row never sees `data_ref` set
- * while `transcoding=1` (which would lie to the manifest endpoint).
+ * clears `transcoding`. The dataset row never sees `data_ref`
+ * set while `transcoding=1` (which would lie to the manifest
+ * endpoint) — the single UPDATE atomically swaps both columns.
  *
- * Reached via `PATCH /api/v1/publish/datasets/{id}` from the
- * workflow's last step using a `role=service` Cloudflare Access
- * service token — same auth path the CLI uses. The route handler
- * for that PATCH (already shipped in 3pc) needs to learn about
- * the `transcoding` field; that's the small follow-on in
- * dataset-mutations.ts.
+ * Reached via `POST /api/v1/publish/datasets/{id}/transcode-complete`
+ * — a dedicated route added in 3pd/A-fix specifically because
+ * the generic dataset PUT path refuses the `transcoding` field
+ * by design (server-managed column). The workflow authenticates
+ * with a `role=service` Cloudflare Access service token; the
+ * route constructs `data_ref` server-side from the route id +
+ * upload_id so the workflow can't accidentally point the row
+ * at another dataset's bundle.
  */
 export async function clearTranscoding(
   db: D1Database,

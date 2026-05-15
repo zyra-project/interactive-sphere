@@ -104,10 +104,11 @@ export interface DatasetRow {
   /** Boolean (0/1) flag set by the video-upload /complete handler
    * when a `source.mp4` lands in R2 and a GHA transcode dispatch
    * fires (Phase 3pd). The workflow clears the flag and writes
-   * `data_ref = r2:videos/{id}/master.m3u8` when the HLS bundle
-   * is ready. The portal renders a "Transcoding…" badge and gates
-   * the publish button while this is set. NULL on every other
-   * row. Migration 0011. */
+   * `data_ref = r2:videos/{id}/{upload_id}/master.m3u8` (per-
+   * upload-versioned so a re-upload doesn't clobber a still-
+   * playing bundle) when the HLS bundle is ready. The portal
+   * renders a "Transcoding…" badge and gates the publish button
+   * while this is set. NULL on every other row. Migration 0011. */
   transcoding: number | null
   /** SHA-256 of the asset's *delivered bytes* — for an HLS bundle
    * this is the hash of the master.m3u8 + variant manifests +
