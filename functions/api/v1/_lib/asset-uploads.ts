@@ -437,6 +437,94 @@ export async function markVideoSourceUploadedAndStampTranscoding(
 }
 
 /**
+ * Just the dataset-row half of the video-source finalisation —
+ * stamp `transcoding=1`, record the publisher's `source_digest`,
+ * and conditionally clear `data_ref` for drafts. Used by the
+ * /complete handler's "persist before dispatch" ordering so the
+ * dispatch fires against a row whose state already matches what
+ * the workflow expects. The asset_uploads row stays `pending`
+ * and gets flipped to `completed` only after the dispatch is
+ * confirmed (see `markVideoUploadCompleted` below).
+ */
+export async function stampTranscodingForVideoSource(
+  db: D1Database,
+  datasetId: string,
+  upload: AssetUploadRow,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE datasets
+         SET transcoding = 1,
+             data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
+             source_digest = ?,
+             updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(upload.claimed_digest, now, datasetId)
+    .run()
+}
+
+/**
+ * Mark just the asset_uploads row as completed. The companion
+ * dataset-row stamp lives in `stampTranscodingForVideoSource`
+ * above; the two are split so the /complete handler can persist
+ * the dataset state, fire the external dispatch, and then mark
+ * the upload completed only after the dispatch confirms.
+ *
+ * The `WHERE status = 'pending'` guard makes this idempotent
+ * against a retry in the same way `applyAssetAndMarkCompleted`
+ * is — a duplicate /complete call inside a tight retry window
+ * is a no-op rather than a double-update.
+ */
+export async function markVideoUploadCompleted(
+  db: D1Database,
+  uploadId: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE asset_uploads
+         SET status = 'completed', completed_at = ?, failure_reason = NULL
+       WHERE id = ? AND status = 'pending'`,
+    )
+    .bind(now, uploadId)
+    .run()
+}
+
+/**
+ * Compensating update for the dispatch-failure path: revert the
+ * transcoding stamp set by `stampTranscodingForVideoSource` so
+ * the row goes back to the state it was in before /complete
+ * was called. Best-effort — if this UPDATE itself fails, the
+ * row stays stuck `transcoding=1` and an operator has to clear
+ * it by hand. Failed compensation is logged at the call site so
+ * `wrangler tail` shows it.
+ */
+export async function revertTranscodingStamp(
+  db: D1Database,
+  datasetId: string,
+  upload: AssetUploadRow,
+  previousDataRef: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE datasets
+         SET transcoding = NULL,
+             data_ref = ?,
+             source_digest = NULL,
+             updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(previousDataRef, now, datasetId)
+    .run()
+  // upload row may still be pending (we hadn't marked it yet);
+  // leave the status alone so a retry works.
+  void upload
+}
+
+/**
  * Called by the GHA transcode workflow when the HLS bundle is
  * written to R2. Flips `data_ref` to the master.m3u8 path and
  * clears `transcoding`. Mirrors `applyAssetAndMarkCompleted`'s

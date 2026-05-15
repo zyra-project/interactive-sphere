@@ -1061,6 +1061,64 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
     expect(row.transcoding).toBe(1)
   })
 
+  it('reverts the transcoding stamp when dispatch fails after persist (fix #9)', async () => {
+    // Persist-before-dispatch ordering: when the dispatch step
+    // throws after we've already stamped transcoding=1, the
+    // handler runs a compensating UPDATE so the row goes back
+    // to its prior state — otherwise the publisher would see a
+    // stuck "Transcoding…" badge with no workflow actually
+    // running.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: true })
+    const priorDataRef = `r2:videos/${datasetId}/PRIOR/master.m3u8`
+    sqlite
+      .prepare(`UPDATE datasets SET data_ref = ? WHERE id = ?`)
+      .run(priorDataRef, datasetId)
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      MOCK_R2: 'true',
+      // No GitHub config + no mock → dispatchTranscode throws
+      // ConfigurationError. The handler maps that to 503 and
+      // runs the compensating revert.
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO-FAIL',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO-FAIL' }))
+    expect(res.status).toBe(503)
+    expect((await readJson<{ error: string }>(res)).error).toBe(
+      'github_dispatch_unconfigured',
+    )
+
+    // The row reverted to its prior state — transcoding NULL,
+    // data_ref restored, source_digest cleared.
+    const row = sqlite
+      .prepare(
+        `SELECT data_ref, transcoding, source_digest FROM datasets WHERE id = ?`,
+      )
+      .get(datasetId) as {
+      data_ref: string
+      transcoding: number | null
+      source_digest: string | null
+    }
+    expect(row.transcoding).toBeNull()
+    expect(row.data_ref).toBe(priorDataRef)
+    expect(row.source_digest).toBeNull()
+
+    // The asset_upload row stayed `pending` so the publisher
+    // can retry /complete after the operator fixes the config.
+    const upload = sqlite
+      .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+      .get('UP-VIDEO-FAIL') as { status: string }
+    expect(upload.status).toBe('pending')
+  })
+
   it('returns 503 github_dispatch_unconfigured when neither real config nor mock is set', async () => {
     const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
     const env = {

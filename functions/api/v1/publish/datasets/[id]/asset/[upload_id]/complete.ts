@@ -56,7 +56,9 @@ import {
   applyAssetAndMarkCompleted,
   getAssetUpload,
   markAssetUploadFailed,
-  markVideoSourceUploadedAndStampTranscoding,
+  markVideoUploadCompleted,
+  revertTranscodingStamp,
+  stampTranscodingForVideoSource,
 } from '../../../../../_lib/asset-uploads'
 import {
   type JobQueue,
@@ -320,15 +322,33 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
 
   // Phase 3pd video-source branch: the upload bytes are an MP4 at
   // `uploads/{id}/source.mp4`, not the final asset the catalog
-  // serves. Don't write `data_ref` yet — stamp `transcoding=1` so
-  // the portal can render a "Transcoding…" badge, mark the upload
-  // row completed, then fire a repository_dispatch so a GitHub
-  // Actions workflow picks up the source MP4, encodes the HLS
-  // ladder, writes the bundle to `videos/{id}/`, and PATCHes the
-  // row to clear `transcoding` and set `data_ref` to the
-  // master.m3u8. Failures in the dispatch step surface as 502 /
-  // 503 — the source bytes stay in R2 and the publisher can
-  // retry `/complete` once the operator fixes the GitHub config.
+  // serves. The workflow does the encoding asynchronously and
+  // PATCHes data_ref via `/transcode-complete` when done.
+  //
+  // Ordering matters: we **persist transcoding=1 BEFORE firing
+  // the dispatch**, then **mark the upload completed AFTER the
+  // dispatch confirms**. The dispatch is the external side
+  // effect; we want the row to already match what the workflow
+  // will expect by the time it asks. Phase 3pd review fix #9 —
+  // the prior order (dispatch first, persist second) could
+  // produce a race where the workflow ran against a
+  // non-transcoding row and got 409 from /transcode-complete.
+  //
+  // Failure paths:
+  //   - dispatch fails: revert `transcoding` back to NULL +
+  //     restore the prior `data_ref` (compensating UPDATE).
+  //     The upload row stays `pending` so the publisher can
+  //     retry /complete after the operator fixes the GitHub
+  //     config. 502 / 503 with the underlying error message.
+  //   - persist fails before dispatch: nothing fired, no state
+  //     change. Surfaced as the unhandled-exception path
+  //     (the middleware wraps it).
+  //   - mark-completed fails after dispatch succeeds: the
+  //     workflow runs, the dataset row says transcoding=1, the
+  //     workflow PATCHes via /transcode-complete which clears
+  //     it — the asset_uploads row stays `pending` but that's
+  //     cosmetic (the publisher-facing surface is the dataset
+  //     row's `transcoding` flag).
   const isVideoSource =
     upload.target === 'r2' &&
     upload.target_ref.startsWith('r2:') &&
@@ -349,6 +369,20 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
         )
       }
     }
+
+    // 1. Persist the dataset-row half (transcoding=1, +
+    //    conditional data_ref clear, + source_digest). The
+    //    asset_uploads row stays `pending` for now — that's
+    //    the cursor we'll flip after the dispatch confirms.
+    const previousDataRef = dataset.data_ref
+    await stampTranscodingForVideoSource(
+      context.env.CATALOG_DB!,
+      datasetId,
+      upload,
+      now,
+    )
+
+    // 2. Fire the external side effect.
     try {
       await dispatchTranscode(context.env, {
         dataset_id: datasetId,
@@ -357,18 +391,37 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
         source_digest: verifiedDigest,
       })
     } catch (err) {
+      // Compensating revert. Best-effort — if this throws, the
+      // row is stuck `transcoding=1` and an operator has to
+      // clear it by hand; log via console.error so wrangler
+      // tail surfaces it.
+      try {
+        await revertTranscodingStamp(
+          context.env.CATALOG_DB!,
+          datasetId,
+          upload,
+          previousDataRef,
+          new Date().toISOString(),
+        )
+      } catch (revertErr) {
+        console.error(
+          `[asset/complete] failed to revert transcoding stamp on ${datasetId}:`,
+          revertErr,
+        )
+      }
       const message = err instanceof Error ? err.message : String(err)
       if (isConfigurationError(err)) {
         return jsonError(503, 'github_dispatch_unconfigured', message)
       }
       return jsonError(502, 'github_dispatch_upstream_error', message)
     }
-    await markVideoSourceUploadedAndStampTranscoding(
-      context.env.CATALOG_DB!,
-      datasetId,
-      upload,
-      now,
-    )
+
+    // 3. Mark the upload row completed only after the dispatch
+    //    succeeded. A later /complete retry on the same upload
+    //    would now read status='completed' and short-circuit
+    //    cleanly via the idempotent branch above.
+    await markVideoUploadCompleted(context.env.CATALOG_DB!, uploadId, now)
+
     const updatedAfterDispatch = await context.env.CATALOG_DB!
       .prepare(`SELECT * FROM datasets WHERE id = ?`)
       .bind(datasetId)
