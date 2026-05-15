@@ -906,6 +906,26 @@
   color: #ffe1a8;
 }
 
+/* Transcoding badge — used by the detail page while a 3pd video
+   upload's GHA workflow is in flight. Yellow tone to distinguish
+   from the lifecycle badge's green/red/grey, with a subtle
+   pulsing background to convey "in progress". */
+.publisher-badge-transcoding {
+  background: rgba(255, 198, 88, 0.18);
+  border: 1px solid rgba(255, 198, 88, 0.32);
+  color: #ffd88a;
+  animation: publisher-transcoding-pulse 2s ease-in-out infinite;
+}
+
+@keyframes publisher-transcoding-pulse {
+  0%, 100% {
+    background: rgba(255, 198, 88, 0.18);
+  }
+  50% {
+    background: rgba(255, 198, 88, 0.32);
+  }
+}
+
 .publisher-badge-status[data-status='suspended'] {
   background: rgba(255, 120, 120, 0.18);
   color: #ffc6c6;

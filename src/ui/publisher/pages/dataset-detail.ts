@@ -42,6 +42,10 @@ export interface DatasetDetailPageOptions {
   /** Confirmation prompt. Defaults to `window.confirm`; tests
    *  override to skip / auto-confirm without a real dialog. */
   confirmFn?: (message: string) => boolean
+  /** Transcode poll cadence in ms. Defaults to 5000; tests
+   *  override to a small value so the polling loop completes
+   *  inside a vitest run. */
+  transcodePollIntervalMs?: number
 }
 
 /** Kind of lifecycle-flip action the detail page can dispatch. */
@@ -127,7 +131,20 @@ function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElemen
       : status === 'published'
         ? t('publisher.datasets.status.published')
         : t('publisher.datasets.status.retracted')
+
   titleRow.appendChild(badge)
+
+  // Transcoding badge — shown when 3pd's video upload has fired a
+  // dispatch but the workflow hasn't finished yet. Renders inline
+  // next to the lifecycle badge so the publisher sees both states
+  // at a glance ("Draft" + "Transcoding…"). The badge disappears
+  // automatically when the row's `transcoding` flag clears.
+  if (d.transcoding) {
+    const transcodingBadge = document.createElement('span')
+    transcodingBadge.className = 'publisher-badge publisher-badge-transcoding'
+    transcodingBadge.textContent = t('publisher.datasetDetail.transcoding.badge')
+    titleRow.appendChild(transcodingBadge)
+  }
 
   const editHref = `/publish/datasets/${encodeURIComponent(d.id)}/edit`
   const editLink = document.createElement('a')
@@ -158,10 +175,18 @@ function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElemen
   // published rows surface "Retract". The route handlers accept
   // re-publishing a retracted row (it clears retracted_at and
   // re-stamps published_at) so the same button does double duty.
+  //
+  // While a row is transcoding (Phase 3pd video upload in flight)
+  // the Publish button is gated: data_ref is empty until the GHA
+  // workflow finishes, so the publish-readiness validator would
+  // reject anyway. Disabling here gives the publisher a clearer
+  // signal than "submit-then-error."
   if (status === 'published') {
     titleRow.appendChild(renderActionButton('retract', hooks.onAction))
   } else {
-    titleRow.appendChild(renderActionButton('publish', hooks.onAction))
+    titleRow.appendChild(
+      renderActionButton('publish', hooks.onAction, { disabled: !!d.transcoding }),
+    )
   }
 
   header.appendChild(titleRow)
@@ -177,6 +202,7 @@ function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElemen
 function renderActionButton(
   action: LifecycleAction,
   onAction: ((action: LifecycleAction) => void) | undefined,
+  opts: { disabled?: boolean } = {},
 ): HTMLButtonElement {
   const btn = document.createElement('button')
   btn.type = 'button'
@@ -188,8 +214,12 @@ function renderActionButton(
     action === 'publish'
       ? t('publisher.datasetDetail.action.publish')
       : t('publisher.datasetDetail.action.retract')
+  if (opts.disabled) {
+    btn.disabled = true
+    btn.title = t('publisher.datasetDetail.action.publishDisabledTranscoding')
+  }
   btn.addEventListener('click', () => {
-    if (!onAction) return
+    if (!onAction || btn.disabled) return
     onAction(action)
   })
   return btn
@@ -555,6 +585,83 @@ function paint(
     hooks,
     actionError,
   )
+  // Start (or restart) transcode polling if the row is still
+  // transcoding. Stop any running poller if it isn't. The
+  // start helper is idempotent — it cancels any prior poller
+  // bound to this mount before starting a new one.
+  if (data.dataset.transcoding) {
+    startTranscodePolling(content, id, options)
+  } else {
+    stopTranscodePolling(content)
+  }
+}
+
+/** Tracks the in-flight poll loop per mount element so a route
+ *  change (or a successful poll completing) cancels the prior
+ *  loop cleanly. WeakMap so detached mounts don't pin the
+ *  AbortController in memory. */
+const activeTranscodePolls = new WeakMap<HTMLElement, AbortController>()
+
+/** Default polling cadence — matches what the asset-pipeline doc
+ *  promises the publisher ("Whole loop takes 1–10 minutes ... the
+ *  detail page polls every 5 s"). */
+const TRANSCODE_POLL_INTERVAL_MS = 5000
+
+function startTranscodePolling(
+  content: HTMLElement,
+  id: string,
+  options: DatasetDetailPageOptions,
+): void {
+  // Cancel any prior loop on this mount — paint() re-runs on every
+  // poll tick and we'd otherwise stack one new AbortController per
+  // tick.
+  activeTranscodePolls.get(content)?.abort()
+  const controller = new AbortController()
+  activeTranscodePolls.set(content, controller)
+  void runTranscodePollLoop(content, id, options, controller.signal)
+}
+
+function stopTranscodePolling(content: HTMLElement): void {
+  activeTranscodePolls.get(content)?.abort()
+  activeTranscodePolls.delete(content)
+}
+
+async function runTranscodePollLoop(
+  content: HTMLElement,
+  id: string,
+  options: DatasetDetailPageOptions,
+  signal: AbortSignal,
+): Promise<void> {
+  const sleep = options.sleep ?? defaultSleep
+  while (!signal.aborted) {
+    await sleep(options.transcodePollIntervalMs ?? TRANSCODE_POLL_INTERVAL_MS)
+    if (signal.aborted) return
+    const result = await publisherGet<DatasetDetailResponse>(endpoint(id), {
+      fetchFn: options.fetchFn,
+      sleep: options.sleep,
+    })
+    if (signal.aborted) return
+    if (!result.ok) {
+      // Transient errors don't tear down the page — they just
+      // pause the polling for one cycle. Session errors hand
+      // through to the shared handler.
+      if (result.kind === 'session') {
+        if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+          renderError(content, 'session')
+          return
+        }
+      }
+      continue
+    }
+    // paint() reads the fresh `transcoding` flag and either
+    // restarts this loop (still transcoding) or stops it (cleared).
+    paint(content, id, result.data, options, null)
+    if (!result.data.dataset.transcoding) return
+  }
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 /**

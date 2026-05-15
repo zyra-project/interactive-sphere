@@ -68,6 +68,10 @@ export interface PublisherDatasetDetail extends PublisherDataset {
   rights_holder: string | null
   doi: string | null
   citation_text: string | null
+  /** 1 while a video transcode is in flight (Phase 3pd); NULL/0
+   *  otherwise. The detail page polls every 5 s while this is
+   *  set and stops once it clears. */
+  transcoding?: number | null
 }
 
 export interface ListDatasetsResponse {

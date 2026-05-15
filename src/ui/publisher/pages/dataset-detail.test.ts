@@ -395,6 +395,59 @@ describe('renderDatasetDetailPage', () => {
     )
   })
 
+  it('renders a Transcoding badge when transcoding=1', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(detailResponse(dataset({ published_at: null, transcoding: 1 })))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      // Disable polling so the test doesn't hang on the loop.
+      sleep: () => new Promise(() => {}),
+    })
+    expect(mount.querySelector('.publisher-badge-transcoding')?.textContent).toBe(
+      'Transcoding…',
+    )
+  })
+
+  it('disables Publish while transcoding', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(detailResponse(dataset({ published_at: null, transcoding: 1 })))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      sleep: () => new Promise(() => {}),
+    })
+    const publish = mount.querySelector<HTMLButtonElement>('.publisher-detail-publish')
+    expect(publish?.disabled).toBe(true)
+  })
+
+  it('polls the detail endpoint while transcoding and stops when it clears', async () => {
+    const transcodingRow = dataset({ published_at: null, transcoding: 1 })
+    const finishedRow = dataset({ published_at: null, transcoding: null })
+    const fetchFn = vi
+      .fn()
+      // initial GET → transcoding
+      .mockResolvedValueOnce(detailResponse(transcodingRow))
+      // first poll → still transcoding
+      .mockResolvedValueOnce(detailResponse(transcodingRow))
+      // second poll → done
+      .mockResolvedValueOnce(detailResponse(finishedRow))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      // Resolve immediately so the loop ticks without real timers.
+      sleep: () => Promise.resolve(),
+      transcodePollIntervalMs: 0,
+    })
+    // Let the loop run a few microtask ticks.
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    // Three GETs total: initial + 2 polls. The badge should be gone
+    // and the Publish button enabled after the second poll lands.
+    expect(fetchFn).toHaveBeenCalledTimes(3)
+    expect(mount.querySelector('.publisher-badge-transcoding')).toBeNull()
+    const publish = mount.querySelector<HTMLButtonElement>('.publisher-detail-publish')
+    expect(publish?.disabled).toBe(false)
+  })
+
   it('renders the retracted-state badge for a retracted row', async () => {
     const fetchFn = vi
       .fn()

@@ -12,7 +12,7 @@ function pickFile(mount: HTMLElement, mime: string, body = 'bytes'): void {
   const input = mount.querySelector<HTMLInputElement>('input[type="file"]')!
   const file = new File([body], 'video.mp4', { type: mime })
   Object.defineProperty(input, 'files', {
-    value: { 0: file, length: 1, item: (i: number) => (i === 0 ? file : null) } as FileList,
+    value: { 0: file, length: 1, item: (i: number) => (i === 0 ? file : null) } as unknown as FileList,
     configurable: true,
   })
   input.dispatchEvent(new Event('change', { bubbles: true }))
