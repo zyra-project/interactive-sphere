@@ -72,6 +72,15 @@ interface FormState {
   rightsHolder: string
   doi: string
   citationText: string
+  // Time range fields (3pc/C3a). startTimeLocal / endTimeLocal
+  // are the raw `<input type="datetime-local">` values
+  // (`YYYY-MM-DDTHH:MM` in local time); we convert to / from ISO
+  // 8601 UTC at the submit + edit-prefill seams. `period` is an
+  // ISO 8601 duration string (`P1D`, `PT1H`, …) and submits
+  // verbatim.
+  startTimeLocal: string
+  endTimeLocal: string
+  period: string
   isSaving: boolean
   errors: ReadonlyArray<PublisherValidationError>
   /** Non-validation top-level error (network / server / session
@@ -420,6 +429,116 @@ function textareaField(opts: {
   return wrap
 }
 
+/**
+ * Convert a `<input type="datetime-local">` value to ISO 8601
+ * UTC. The browser surfaces the value in local time
+ * (`YYYY-MM-DDTHH:MM`) — `new Date(...)` parses it as local; we
+ * then serialise to UTC with the Z suffix the server's
+ * `ISO_DATE_RE` validator requires.
+ */
+export function localDatetimeToIso(local: string): string {
+  if (!local) return ''
+  const d = new Date(local)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toISOString()
+}
+
+function datetimeField(opts: {
+  id: string
+  labelKey: MessageKey
+  value: string
+  error: PublisherValidationError | null
+  onChange: (v: string) => void
+}): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'publisher-form-field'
+
+  const label = document.createElement('label')
+  label.className = 'publisher-form-label'
+  label.htmlFor = opts.id
+  label.textContent = t(opts.labelKey)
+  wrap.appendChild(label)
+
+  const input = document.createElement('input')
+  input.type = 'datetime-local'
+  input.id = opts.id
+  input.className = 'publisher-form-input'
+  input.value = opts.value
+  if (opts.error) {
+    input.setAttribute('aria-invalid', 'true')
+    input.setAttribute('aria-describedby', `${opts.id}-err`)
+  }
+  input.addEventListener('input', () => opts.onChange(input.value))
+  input.addEventListener('change', () => opts.onChange(input.value))
+  wrap.appendChild(input)
+
+  if (opts.error) {
+    const err = document.createElement('p')
+    err.id = `${opts.id}-err`
+    err.className = 'publisher-form-error'
+    err.setAttribute('role', 'alert')
+    err.textContent = opts.error.message
+    wrap.appendChild(err)
+  }
+  return wrap
+}
+
+function timeRangeCard(state: FormState): HTMLElement {
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass publisher-form-card'
+
+  const heading = document.createElement('h2')
+  heading.className = 'publisher-card-heading'
+  heading.textContent = t('publisher.datasetForm.section.timeRange')
+  card.appendChild(heading)
+
+  card.appendChild(
+    datetimeField({
+      id: 'dataset-start-time',
+      labelKey: 'publisher.datasetForm.field.startTime',
+      value: state.startTimeLocal,
+      error: findError(state.errors, 'start_time'),
+      onChange: v => {
+        state.startTimeLocal = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    datetimeField({
+      id: 'dataset-end-time',
+      labelKey: 'publisher.datasetForm.field.endTime',
+      value: state.endTimeLocal,
+      error: findError(state.errors, 'end_time'),
+      onChange: v => {
+        state.endTimeLocal = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    inputField({
+      id: 'dataset-period',
+      labelKey: 'publisher.datasetForm.field.period',
+      required: false,
+      value: state.period,
+      placeholder: 'P1D',
+      helpKey: 'publisher.datasetForm.help.period',
+      error: findError(state.errors, 'period'),
+      onChange: v => {
+        state.period = v
+      },
+    }),
+  )
+
+  const hint = document.createElement('p')
+  hint.className = 'publisher-form-help'
+  hint.textContent = t('publisher.datasetForm.help.timeRange')
+  card.appendChild(hint)
+
+  return card
+}
+
 function licensingCard(state: FormState, update: () => void): HTMLElement {
   const card = document.createElement('section')
   card.className = 'publisher-card publisher-glass publisher-form-card'
@@ -666,6 +785,7 @@ function renderForm(
   form.appendChild(identityCard)
   form.appendChild(abstractCard(state, update))
   form.appendChild(licensingCard(state, update))
+  form.appendChild(timeRangeCard(state))
 
   // Submit row.
   const actions = document.createElement('div')
@@ -742,6 +862,12 @@ function renderForm(
     setIfPresent('rights_holder', state.rightsHolder)
     setIfPresent('doi', state.doi)
     setIfPresent('citation_text', state.citationText)
+    // Time range. `datetime-local` value is local-time;
+    // convert to ISO 8601 UTC for the server. Empty inputs
+    // produce empty ISO; the helper skips them.
+    setIfPresent('start_time', localDatetimeToIso(state.startTimeLocal))
+    setIfPresent('end_time', localDatetimeToIso(state.endTimeLocal))
+    setIfPresent('period', state.period)
 
     const result = await publisherSend<{ dataset: { id: string } }>(
       CREATE_ENDPOINT,
@@ -811,6 +937,9 @@ export function renderDatasetNewPage(
     rightsHolder: '',
     doi: '',
     citationText: '',
+    startTimeLocal: '',
+    endTimeLocal: '',
+    period: '',
     isSaving: false,
     errors: [],
     topLevelError: null,

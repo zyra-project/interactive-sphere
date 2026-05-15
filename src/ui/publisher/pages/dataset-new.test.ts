@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderDatasetNewPage } from './dataset-new'
+import { renderDatasetNewPage, localDatetimeToIso } from './dataset-new'
 
 function jsonResponse(body: unknown, status = 201): Response {
   return new Response(JSON.stringify(body), {
@@ -32,6 +32,23 @@ function submitForm(mount: HTMLElement): void {
   const form = mount.querySelector<HTMLFormElement>('form.publisher-form')!
   form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
+
+describe('localDatetimeToIso', () => {
+  it('returns empty string for empty input', () => {
+    expect(localDatetimeToIso('')).toBe('')
+  })
+
+  it('returns empty string for unparseable input', () => {
+    expect(localDatetimeToIso('not a date')).toBe('')
+  })
+
+  it('produces an ISO 8601 UTC string with Z suffix for valid datetime-local input', () => {
+    // Test runner's TZ varies; assert on the shape the server's
+    // ISO_DATE_RE accepts rather than a literal UTC offset.
+    const iso = localDatetimeToIso('2026-04-01T00:00')
+    expect(iso).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/)
+  })
+})
 
 describe('renderDatasetNewPage', () => {
   let mount: HTMLDivElement
@@ -452,6 +469,62 @@ describe('renderDatasetNewPage', () => {
     const urlInput = mount.querySelector<HTMLInputElement>('#dataset-license-url')
     expect(urlInput?.getAttribute('aria-invalid')).toBe('true')
     expect(mount.textContent).toContain('License URL must be a valid URL')
+  })
+
+  it('renders the time-range card with start, end, and period inputs', () => {
+    renderDatasetNewPage(mount)
+    const start = mount.querySelector<HTMLInputElement>('#dataset-start-time')
+    const end = mount.querySelector<HTMLInputElement>('#dataset-end-time')
+    const period = mount.querySelector<HTMLInputElement>('#dataset-period')
+    expect(start?.type).toBe('datetime-local')
+    expect(end?.type).toBe('datetime-local')
+    expect(period?.type).toBe('text')
+  })
+
+  it('omits time-range fields from the body when blank', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.start_time).toBeUndefined()
+    expect(body.end_time).toBeUndefined()
+    expect(body.period).toBeUndefined()
+  })
+
+  it('converts datetime-local values to ISO 8601 UTC on submit', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    setInput(mount, '#dataset-start-time', '2026-04-01T00:00')
+    setInput(mount, '#dataset-end-time', '2026-04-30T23:59')
+    setInput(mount, '#dataset-period', 'P1M')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    // ISO 8601 with Z suffix — exact UTC offset depends on the
+    // test runner's TZ, so assert on the format invariants the
+    // server's `ISO_DATE_RE` checks (with-T, with-Z).
+    expect(body.start_time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/)
+    expect(body.end_time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/)
+    expect(body.period).toBe('P1M')
   })
 
   it('Cancel link routes back to /publish/datasets via SPA navigation', () => {
