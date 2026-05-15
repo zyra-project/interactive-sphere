@@ -184,8 +184,34 @@ describe('GET / PUT /api/v1/publish/datasets/{id}', () => {
     const { env, id } = await seedOne()
     const res = await datasetGet(ctxWithPublisher<'id'>({ env, params: { id } }))
     expect(res.status).toBe(200)
-    const body = await readJson<{ dataset: { id: string; title: string } }>(res)
+    const body = await readJson<{
+      dataset: { id: string; title: string }
+      keywords: string[]
+      tags: string[]
+    }>(res)
     expect(body.dataset.id).toBe(id)
+    expect(body.keywords).toEqual([])
+    expect(body.tags).toEqual([])
+  })
+
+  it('GET includes keywords + tags when present', async () => {
+    const { env, id } = await seedOne()
+    // Patch the row to attach decorations, mirroring how the form posts
+    // them on save. The edit page prefills its chip inputs from these
+    // arrays so the round-trip needs to survive the GET.
+    await datasetPut(
+      ctxWithPublisher<'id'>({
+        env,
+        method: 'PUT',
+        body: { keywords: ['sst', 'anomaly'], tags: ['demo'] },
+        params: { id },
+      }),
+    )
+    const res = await datasetGet(ctxWithPublisher<'id'>({ env, params: { id } }))
+    expect(res.status).toBe(200)
+    const body = await readJson<{ keywords: string[]; tags: string[] }>(res)
+    expect(body.keywords.sort()).toEqual(['anomaly', 'sst'])
+    expect(body.tags).toEqual(['demo'])
   })
 
   it('GET 404 for an unknown id', async () => {

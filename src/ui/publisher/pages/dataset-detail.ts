@@ -220,7 +220,76 @@ function renderAbstract(d: PublisherDatasetDetail): HTMLElement {
   return card
 }
 
-function renderDetail(content: HTMLElement, d: PublisherDatasetDetail): void {
+function renderChipList(values: ReadonlyArray<string>): HTMLElement {
+  const list = document.createElement('div')
+  list.className = 'publisher-chip-list'
+  for (const v of values) {
+    const chip = document.createElement('span')
+    chip.className = 'publisher-chip'
+    const text = document.createElement('span')
+    text.className = 'publisher-chip-text'
+    text.textContent = v
+    chip.appendChild(text)
+    list.appendChild(chip)
+  }
+  return list
+}
+
+function renderCategorizationCard(
+  keywords: ReadonlyArray<string>,
+  tags: ReadonlyArray<string>,
+): HTMLElement {
+  if (keywords.length === 0 && tags.length === 0) {
+    return document.createDocumentFragment() as unknown as HTMLElement
+  }
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass'
+
+  const h2 = document.createElement('h2')
+  h2.className = 'publisher-card-heading'
+  h2.textContent = t('publisher.datasetDetail.section.categorization')
+  card.appendChild(h2)
+
+  const grid = document.createElement('div')
+  grid.className = 'publisher-fields'
+
+  const rows: ReadonlyArray<
+    readonly [
+      (
+        | 'publisher.datasetDetail.section.keywords'
+        | 'publisher.datasetDetail.section.tags'
+      ),
+      ReadonlyArray<string>,
+    ]
+  > = [
+    ['publisher.datasetDetail.section.keywords', keywords],
+    ['publisher.datasetDetail.section.tags', tags],
+  ]
+  for (const [labelKey, values] of rows) {
+    if (values.length === 0) continue
+    const row = document.createElement('div')
+    row.className = 'publisher-field'
+    const label = document.createElement('span')
+    label.className = 'publisher-field-label'
+    label.textContent = t(labelKey)
+    row.appendChild(label)
+    const value = document.createElement('span')
+    value.className = 'publisher-field-value'
+    value.appendChild(renderChipList(values))
+    row.appendChild(value)
+    grid.appendChild(row)
+  }
+
+  card.appendChild(grid)
+  return card
+}
+
+function renderDetail(
+  content: HTMLElement,
+  d: PublisherDatasetDetail,
+  keywords: ReadonlyArray<string>,
+  tags: ReadonlyArray<string>,
+): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
 
@@ -279,6 +348,8 @@ function renderDetail(content: HTMLElement, d: PublisherDatasetDetail): void {
       { labelKey: 'publisher.datasetDetail.field.period', value: d.period },
     ]),
   )
+
+  shell.appendChild(renderCategorizationCard(keywords, tags))
 
   shell.appendChild(
     renderFieldsCard('publisher.datasetDetail.section.assets', [
@@ -371,5 +442,5 @@ export async function renderDatasetDetailPage(
     return
   }
   clearWarmupFlag()
-  renderDetail(content, result.data.dataset)
+  renderDetail(content, result.data.dataset, result.data.keywords ?? [], result.data.tags ?? [])
 }

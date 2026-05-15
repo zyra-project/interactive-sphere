@@ -77,6 +77,11 @@ export interface ListDatasetsResponse {
 
 export interface DatasetDetailResponse {
   dataset: PublisherDatasetDetail
+  /** Decoration arrays sit alongside the row rather than inline
+   *  because the server stores them in separate join tables; the
+   *  edit form prefills its chip inputs from these. */
+  keywords: string[]
+  tags: string[]
 }
 
 /**

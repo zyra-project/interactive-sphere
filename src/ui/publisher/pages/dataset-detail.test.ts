@@ -39,11 +39,21 @@ function dataset(
   }
 }
 
-function detailResponse(d: PublisherDatasetDetail): Response {
-  return new Response(JSON.stringify({ dataset: d }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
+function detailResponse(
+  d: PublisherDatasetDetail,
+  extras: { keywords?: string[]; tags?: string[] } = {},
+): Response {
+  return new Response(
+    JSON.stringify({
+      dataset: d,
+      keywords: extras.keywords ?? [],
+      tags: extras.tags ?? [],
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    },
+  )
 }
 
 describe('renderDatasetDetailPage', () => {
@@ -159,6 +169,37 @@ describe('renderDatasetDetailPage', () => {
     // No Refresh button on the not-found state — the back link
     // is the right recovery action.
     expect(mount.querySelector('.publisher-button')).toBeNull()
+  })
+
+  it('renders keywords + tags as chips in the categorization card', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      detailResponse(dataset(), {
+        keywords: ['sst', 'anomaly'],
+        tags: ['demo'],
+      }),
+    )
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    const headings = Array.from(
+      mount.querySelectorAll('.publisher-card-heading'),
+    ).map(h => h.textContent)
+    expect(headings).toContain('Keywords & tags')
+    const chipTexts = Array.from(mount.querySelectorAll('.publisher-chip-text')).map(
+      el => el.textContent,
+    )
+    expect(chipTexts).toEqual(expect.arrayContaining(['sst', 'anomaly', 'demo']))
+  })
+
+  it('omits the categorization card when keywords and tags are empty', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset()))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    const headings = Array.from(
+      mount.querySelectorAll('.publisher-card-heading'),
+    ).map(h => h.textContent)
+    expect(headings).not.toContain('Keywords & tags')
   })
 
   it('renders the retracted-state badge for a retracted row', async () => {

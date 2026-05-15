@@ -14,6 +14,7 @@
 
 import type { CatalogEnv } from '../../_lib/env'
 import type { PublisherData } from '../_middleware'
+import { getDecorations } from '../../_lib/catalog-store'
 import {
   getDatasetForPublisher,
   updateDataset,
@@ -44,12 +45,21 @@ export const onRequestGet: PagesFunction<CatalogEnv, 'id'> = async context => {
   const publisher = (context.data as unknown as PublisherData).publisher
   const id = pickId(context)
   if (!id) return jsonError(400, 'invalid_request', 'Missing dataset id.')
-  const row = await getDatasetForPublisher(context.env.CATALOG_DB!, publisher, id)
+  const db = context.env.CATALOG_DB!
+  const row = await getDatasetForPublisher(db, publisher, id)
   if (!row) return jsonError(404, 'not_found', `Dataset ${id} not found.`)
-  return new Response(JSON.stringify({ dataset: row }), {
-    status: 200,
-    headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
-  })
+  const decorations = (await getDecorations(db, [id])).get(id)
+  return new Response(
+    JSON.stringify({
+      dataset: row,
+      keywords: decorations?.keywords ?? [],
+      tags: decorations?.tags ?? [],
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
+    },
+  )
 }
 
 export const onRequestPut: PagesFunction<CatalogEnv, 'id'> = async context => {
