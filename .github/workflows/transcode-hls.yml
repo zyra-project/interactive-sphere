@@ -27,6 +27,15 @@ concurrency:
   group: transcode-hls-${{ github.event.client_payload.dataset_id }}
   cancel-in-progress: true
 
+# Lock the GITHUB_TOKEN to the minimum the workflow needs. The
+# runner clones the repo read-only (no push, no PR, no issues —
+# the transcode pipeline writes its results back via the publisher
+# API, not through git). Defaults to write-everything otherwise,
+# which CodeQL's `actions/missing-workflow-permissions` rule
+# correctly flags.
+permissions:
+  contents: read
+
 # Single-job workflow; matrix lives in `transcode-from-dispatch`'s
 # rendition ladder.
 jobs:
@@ -40,17 +49,26 @@ jobs:
 
     steps:
       - name: Validate dispatch payload
+        # client_payload fields are JSON-decoded by the runner but
+        # still untrusted input — a forged dispatch could include
+        # shell metacharacters in any of them. Move into env vars
+        # and quote the expansions so the shell parser never sees
+        # the raw payload string.
+        env:
+          PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          PAYLOAD_SOURCE_KEY: ${{ github.event.client_payload.source_key }}
+          PAYLOAD_SOURCE_DIGEST: ${{ github.event.client_payload.source_digest }}
         run: |
           set -e
-          if [ -z "${{ github.event.client_payload.dataset_id }}" ]; then
+          if [ -z "$PAYLOAD_DATASET_ID" ]; then
             echo "::error::client_payload.dataset_id is missing"
             exit 1
           fi
-          if [ -z "${{ github.event.client_payload.source_key }}" ]; then
+          if [ -z "$PAYLOAD_SOURCE_KEY" ]; then
             echo "::error::client_payload.source_key is missing"
             exit 1
           fi
-          if [ -z "${{ github.event.client_payload.source_digest }}" ]; then
+          if [ -z "$PAYLOAD_SOURCE_DIGEST" ]; then
             echo "::error::client_payload.source_digest is missing"
             exit 1
           fi
@@ -96,19 +114,29 @@ jobs:
           TERRAVIZ_SERVER: ${{ secrets.TERRAVIZ_SERVER }}
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          # Re-read the client_payload fields through env vars (same
+          # rationale as the validation step above — quoted env
+          # expansions can't be escaped by metacharacters in the
+          # payload).
+          PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          PAYLOAD_SOURCE_KEY: ${{ github.event.client_payload.source_key }}
+          PAYLOAD_SOURCE_DIGEST: ${{ github.event.client_payload.source_digest }}
         run: |
           set -e
           npx tsx cli/transcode-from-dispatch.ts \
-            --dataset-id=${{ github.event.client_payload.dataset_id }} \
-            --source-key=${{ github.event.client_payload.source_key }} \
-            --source-digest=${{ github.event.client_payload.source_digest }} \
+            --dataset-id="$PAYLOAD_DATASET_ID" \
+            --source-key="$PAYLOAD_SOURCE_KEY" \
+            --source-digest="$PAYLOAD_SOURCE_DIGEST" \
             --cleanup-on-failure
 
       - name: Summarise outcome
         if: always()
+        env:
+          PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "::notice::Transcode complete for ${{ github.event.client_payload.dataset_id }}"
+          if [ "$JOB_STATUS" = "success" ]; then
+            echo "::notice::Transcode complete for $PAYLOAD_DATASET_ID"
           else
-            echo "::error::Transcode failed for ${{ github.event.client_payload.dataset_id }} (job status: ${{ job.status }}). The dataset row is still flagged transcoding=1; an operator can clear it manually after diagnosing or trigger a retry by re-uploading."
+            echo "::error::Transcode failed for $PAYLOAD_DATASET_ID (job status: $JOB_STATUS). The dataset row is still flagged transcoding=1; an operator can clear it manually after diagnosing or trigger a retry by re-uploading."
           fi
