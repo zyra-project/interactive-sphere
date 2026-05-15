@@ -1985,9 +1985,12 @@ frontend renders. The current app already renders some HTML in
 tour `popupHTML` and `addPlacemark` — the plan widens the input
 surface.
 
-**Mitigations:** `abstract` is rendered as Markdown through a
-sanitizer (DOMPurify or equivalent) with a small allowlist
-(headings, paragraphs, links, code, images). `popupHTML` /
+**Mitigations:** `abstract` is rendered as Markdown through the
+in-house `sanitizeMarkdownHtml` allowlist sanitizer in
+[`src/ui/sanitizeHtml.ts`](../src/ui/sanitizeHtml.ts) — a small
+strict allowlist (headings, paragraphs, links, code, images; no
+tables, no inline event handlers, only `https:` / `mailto:` /
+same-origin `<a href>`). Shipped in 3pc/A. `popupHTML` /
 `tourOverlayHTML` go through the same sanitizer. Raw HTML upload
 in tours is forbidden in Phase 1 — only the sanitised path. Phase
 3+ may add a `trusted: true` flag on staff-published tours that
@@ -2861,7 +2864,7 @@ uses `3-pre/<letter>`.
 |---|---|---|
 | **3pa — Portal shell + Access browser flow** | Lazy-loaded `src/ui/publisher/` chunk, route shell, `/publish/me` page, top nav, i18n key skeleton, portal analytics baseline (`publisher_portal_loaded`, `publisher_action`), Cloudflare Access policy steps added to `docs/SELF_HOSTING.md`. | Smallest demoable slice. Validates routing, auth, chunking, and i18n discipline before any form work lands. |
 | **3pb — Dataset list + detail (read-only)** | Drafts / published / retracted tabs against `GET /api/v1/publish/datasets`, per-dataset detail view, per-dataset audit history panel (consumes `GET .../audit`). | Tests the API surface in production without write risk. Surfaces any missing filters or response fields cheaply. |
-| **3pc — Dataset entry form (metadata)** | Create / edit form wired to every validator from [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md) §"Validation rules", abstract markdown preview through the shared `marked` → `DOMPurify` renderer, save draft. No asset upload yet. | Closes the threat-model XSS gap (see §"Threat model" → "XSS via publisher markdown") with a concrete sanitizer choice and exercises the validator contract end-to-end. |
+| **3pc — Dataset entry form (metadata)** | Create / edit form wired to every validator from [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md) §"Validation rules", abstract markdown preview through the shared `marked` → `sanitizeMarkdownHtml` renderer (the in-house allowlist sanitizer in [`src/ui/sanitizeHtml.ts`](../src/ui/sanitizeHtml.ts) — no DOMPurify dependency), save draft. No asset upload yet. | Closes the threat-model XSS gap (see §"Threat model" → "XSS via publisher markdown") with a concrete sanitizer choice and exercises the validator contract end-to-end. |
 | **3pd — Asset uploader + preview pipeline** | Reusable uploader component (R2 presigned PUT for image, Stream direct-upload for video), digest verification, `data_ref` write, "Preview" button minting a token via `POST .../preview` and opening the SPA with `?preview=…`. | Heaviest single piece. Touches Stream + R2 + the SPA preview hook; isolating it makes rollback cheap. |
 | **3pe — Tour creator (capture mode)** | Floating dock on SPA chrome capturing `flyTo` / `loadDataset` / `unloadDataset` / `setEnvView` / `addPlacemark` / pause-question, drag-reorder, "play from here", 30-second auto-save to `drafts/{publisher}/{tour_id}/tour.json`. | Largest subproject in [`CATALOG_PUBLISHING_TOOLS.md`](CATALOG_PUBLISHING_TOOLS.md) §"Tour creator"; needs its own sub-phase. |
 | **3pf — Bulk import UI** | Drag-drop CSV/JSON, reuses the CLI's `import-snapshot` validator and pump, surfaces per-row errors inline. | Mostly UI — the importer pipeline already shipped in Phase 1d. |

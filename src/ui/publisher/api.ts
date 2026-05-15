@@ -24,6 +24,7 @@
  * same behaviour.
  */
 
+import { t } from '../../i18n'
 import { logger } from '../../utils/logger'
 
 export type PublisherApiResult<T> =
@@ -314,14 +315,24 @@ export async function publisherSend<T>(
         errors:
           errors.length > 0
             ? errors
-            : [{ field: '_root', code: 'invalid', message: 'Validation failed.' }],
+            : [
+                {
+                  field: '_root',
+                  code: 'invalid',
+                  message: t('publisher.api.fallbackError.validationFailed'),
+                },
+              ],
       }
     } catch {
       return {
         ok: false,
         kind: 'validation',
         errors: [
-          { field: '_root', code: 'invalid', message: 'The server rejected the request.' },
+          {
+            field: '_root',
+            code: 'invalid',
+            message: t('publisher.api.fallbackError.invalidJson'),
+          },
         ],
       }
     }

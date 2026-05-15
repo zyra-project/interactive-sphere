@@ -124,18 +124,18 @@ adds the following event types to `TelemetryEvent` in
 research-tier entries; no other change to the tier gate. Server-
 side stamping in `functions/api/ingest.ts` lists the new event
 types in `KNOWN_EVENT_TYPES`. Grafana gains a "Publisher activity"
-row on the existing `Terraviz — Product Health` dashboard in 3a.
+row on the existing `Terraviz — Product Health` dashboard in 3pa.
 
 ### Cloudflare Access — browser policy
 
 Phase 1a wired Access to protect `/api/v1/publish/**` for the
-service-token / API flow. Phase 3a extends the same Access
+service-token / API flow. Phase 3pa extends the same Access
 application to cover the browser flow at `/publish/**` so the
 portal HTML and chunk respect the same auth boundary as the API.
 The policy is dashboard-managed (see
 [`CATALOG_BACKEND_PLAN.md`](CATALOG_BACKEND_PLAN.md) §"Constraints
 found during exploration" constraint 3); operator steps land in
-[`SELF_HOSTING.md`](SELF_HOSTING.md) during 3a.
+[`SELF_HOSTING.md`](SELF_HOSTING.md) during 3pa.
 
 Local dev continues to use `DEV_BYPASS_ACCESS=true` for the API;
 the portal reads the same bypass for the browser side so a

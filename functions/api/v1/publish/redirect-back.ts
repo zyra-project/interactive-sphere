@@ -58,8 +58,21 @@ export function isSafeRedirectTarget(to: string | null): to is string {
   if (to.startsWith('//')) return false
   // Reject control characters and CRLF (Location-header injection).
   if (/[\x00-\x1f\x7f]/.test(to)) return false
-  // Only allow paths under the portal mount.
-  if (to !== '/publish' && !to.startsWith('/publish/')) return false
+  // Parse against a dummy origin so we can validate `pathname`
+  // independent of any query / hash the portal's sign-in URL
+  // builder appended (e.g. `?utm=…`). A relative path that
+  // smuggles a host override would resolve away from the dummy
+  // origin; the host check below catches that.
+  let parsed: URL
+  try {
+    parsed = new URL(to, 'http://safe-check.invalid')
+  } catch {
+    return false
+  }
+  if (parsed.host !== 'safe-check.invalid') return false
+  if (parsed.pathname !== '/publish' && !parsed.pathname.startsWith('/publish/')) {
+    return false
+  }
   return true
 }
 

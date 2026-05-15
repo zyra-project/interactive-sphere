@@ -7,6 +7,11 @@ describe('isSafeRedirectTarget', () => {
     ['/publish/', true],
     ['/publish/me', true],
     ['/publish/datasets/abc-123', true],
+    // Query string and hash on a /publish path stay safe — they're
+    // legitimate state the portal's sign-in URL builder can include.
+    ['/publish?utm=foo', true],
+    ['/publish/me?next=1#section', true],
+    ['/publish/datasets?status=draft', true],
     [null, false],
     ['', false],
     ['/', false], // root path is not /publish-prefixed
