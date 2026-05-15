@@ -127,11 +127,15 @@ describe('POST /api/v1/publish/datasets/{id}/asset — happy paths', () => {
       expires_at: string
     }>(res)
     // Stream branch is gone — video data now goes to R2 at a
-    // predictable key the GHA transcode workflow can discover via
-    // the `repository_dispatch` payload.
+    // predictable per-upload key the GHA transcode workflow can
+    // discover via the `repository_dispatch` payload. The
+    // upload_id is in the key (not just the dataset_id) so a
+    // re-upload before the first transcode finishes lands in a
+    // distinct slot rather than overwriting bytes the workflow
+    // is about to download. Fix for PR #112 Copilot #9.
     expect(body.target).toBe('r2')
     expect(body.stream).toBeUndefined()
-    expect(body.r2?.key).toBe(`uploads/${datasetId}/source.mp4`)
+    expect(body.r2?.key).toBe(`uploads/${datasetId}/${body.upload_id}/source.mp4`)
     expect(body.r2?.method).toBe('PUT')
     expect(body.kind).toBe('data')
 
@@ -139,7 +143,9 @@ describe('POST /api/v1/publish/datasets/{id}/asset — happy paths', () => {
       .prepare(`SELECT * FROM asset_uploads WHERE id = ?`)
       .get(body.upload_id) as Record<string, unknown> | undefined
     expect(row?.target).toBe('r2')
-    expect((row?.target_ref as string)).toBe(`r2:uploads/${datasetId}/source.mp4`)
+    expect((row?.target_ref as string)).toBe(
+      `r2:uploads/${datasetId}/${body.upload_id}/source.mp4`,
+    )
   })
 
   it('routes a thumbnail to R2 with a content-addressed key', async () => {

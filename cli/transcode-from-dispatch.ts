@@ -125,7 +125,7 @@ export function parseArgs(argv: readonly string[]): Args | { error: string } {
   const sourceKey = get('source-key')
   if (!sourceKey || !sourceKey.startsWith('uploads/') || !sourceKey.endsWith('/source.mp4')) {
     return {
-      error: `--source-key must look like uploads/{id}/source.mp4; got ${sourceKey ?? '(missing)'}`,
+      error: `--source-key must look like uploads/{dataset_id}/{upload_id}/source.mp4; got ${sourceKey ?? '(missing)'}`,
     }
   }
   const sourceDigest = get('source-digest')

@@ -237,7 +237,7 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
       const ext = extForMime(mime)
       const hex = content_digest.slice('sha256:'.length)
       const key = isVideoSourceUpload(kind, mime)
-        ? buildVideoSourceKey(id)
+        ? buildVideoSourceKey(id, uploadId)
         : buildAssetKey(id, kind, hex, ext)
       const presigned = await presignPut(context.env, key, { contentType: mime })
       const targetRef = `r2:${key}`

@@ -89,26 +89,41 @@ export const VIDEO_SOURCE_KEY_PREFIX = 'uploads'
 
 /**
  * Build the R2 key for a video source upload that's destined for
- * transcoding. `r2:uploads/{dataset_id}/source.mp4`. Used only
- * for `kind='data'` + `mime='video/mp4'` uploads in Phase 3pd;
- * every other asset kind uses the content-addressed
+ * transcoding. `r2:uploads/{dataset_id}/{upload_id}/source.mp4`.
+ * Used only for `kind='data'` + `mime='video/mp4'` uploads in
+ * Phase 3pd; every other asset kind uses the content-addressed
  * `buildAssetKey` helper above.
+ *
+ * Scoping by upload_id (not just dataset_id) avoids the race
+ * Copilot #9 flagged: a publisher re-uploading the same dataset
+ * before the first transcode completes would otherwise overwrite
+ * the source MP4 the workflow is about to download, leaving the
+ * first upload stuck with a digest mismatch. The asset_uploads
+ * row's ULID is the natural version slot — each mint gets a
+ * fresh upload_id and a fresh source key.
  */
-export function buildVideoSourceKey(datasetId: string): string {
+export function buildVideoSourceKey(datasetId: string, uploadId: string): string {
   if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(datasetId)) {
     throw new Error(
       `buildVideoSourceKey: datasetId must be a ULID (26 base32 chars), got "${datasetId}"`,
     )
   }
-  return `${VIDEO_SOURCE_KEY_PREFIX}/${datasetId}/source.mp4`
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(uploadId)) {
+    throw new Error(
+      `buildVideoSourceKey: uploadId must be a ULID (26 base32 chars), got "${uploadId}"`,
+    )
+  }
+  return `${VIDEO_SOURCE_KEY_PREFIX}/${datasetId}/${uploadId}/source.mp4`
 }
 
 /**
  * Does an R2 key look like a video-source upload destined for the
  * transcode workflow? The /complete handler uses this to branch
  * between "write data_ref and finish" and "fire dispatch + stamp
- * transcoding=1". A simple prefix check is sufficient because the
- * `uploads/` namespace is reserved for this one purpose.
+ * transcoding=1". Matches the
+ * `uploads/{dataset_id}/{upload_id}/source.mp4` shape — the
+ * `uploads/` namespace is reserved for this one purpose, so the
+ * prefix + filename check is sufficient.
  */
 export function isVideoSourceKey(key: string): boolean {
   return key.startsWith(`${VIDEO_SOURCE_KEY_PREFIX}/`) && key.endsWith('/source.mp4')
