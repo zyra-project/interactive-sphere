@@ -61,7 +61,16 @@ export function matchRoute(pattern: string, path: string): RouteParams | null {
   for (let i = 0; i < patSegs.length; i++) {
     if (patSegs[i] === ':id') {
       if (!pathSegs[i]) return null
-      params.id = decodeURIComponent(pathSegs[i])
+      // `decodeURIComponent` throws on malformed percent-encoding
+      // (e.g. a stray `%E0%A4` from a pasted URL). Treating that as
+      // a non-match — letting the notFound handler run — is far
+      // friendlier than letting the URIError abort the whole
+      // dispatch and stranding the publisher on a blank page.
+      try {
+        params.id = decodeURIComponent(pathSegs[i])
+      } catch {
+        return null
+      }
     } else if (patSegs[i] !== pathSegs[i]) {
       return null
     }

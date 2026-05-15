@@ -80,7 +80,12 @@ function ensureMount(): PortalMount {
   // without touching the topbar.
   let content = document.getElementById(PORTAL_CONTENT_ID)
   if (!content) {
-    content = document.createElement('main')
+    // Plain <div>, not <main>. Each page renderer mounts its own
+    // <main class="publisher-shell"> inside this wrapper as the
+    // page-level landmark; making the wrapper a <main> too would
+    // produce nested <main> elements, which screen readers and
+    // HTML validators both flag.
+    content = document.createElement('div')
     content.id = PORTAL_CONTENT_ID
     content.className = 'publisher-content'
     root.appendChild(content)

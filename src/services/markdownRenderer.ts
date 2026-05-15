@@ -4,19 +4,25 @@
  * Two-stage pipeline:
  *
  *   1. `marked.parse` turns the publisher's markdown source into
- *      HTML. We configure marked for GFM (GitHub-flavored markdown
- *      — code fences, tables, autolinks) with breaks: false so a
- *      single newline is collapsed rather than rendered as a `<br>`
- *      (markdown's `\n\n` paragraph break stays the standard
- *      separator).
+ *      HTML. We enable GFM (autolinks, fenced code) but the
+ *      output is then filtered against the
+ *      `MARKDOWN_TAGS` allowlist in `src/ui/sanitizeHtml.ts`,
+ *      which intentionally omits tables — GFM `|---|` syntax
+ *      will parse but the resulting `<table>` is stripped at
+ *      sanitize time. Publisher abstracts don't realistically
+ *      use tables, and admitting them would force a styling
+ *      surface and a wider attribute allowlist for marginal
+ *      value. `breaks: false` keeps the paragraph model
+ *      markdown-standard (`\n\n` separates) rather than
+ *      GitHub-comment-style.
  *
- *   2. `sanitizeMarkdownHtml` walks the result against a strict
- *      tag/attr allowlist (defined in `src/ui/sanitizeHtml.ts`).
- *      Anything outside the allowlist — `<img onerror=…>`,
- *      `<script>`, inline event handlers, `javascript:` hrefs — is
- *      unwrapped or stripped. Same defense in depth the help-
- *      guide renderer uses; publisher input is at least as
- *      untrusted as translator input.
+ *   2. `sanitizeMarkdownHtml` walks the result against the
+ *      tag/attr allowlist. Anything outside it —
+ *      `<img onerror=…>`, `<script>`, inline event handlers,
+ *      `javascript:` hrefs — is unwrapped or stripped. Same
+ *      defense in depth the help-guide renderer uses;
+ *      publisher input is at least as untrusted as translator
+ *      input.
  *
  * Used by the publisher portal's abstract preview (3pc onward) and
  * — once the public dataset detail page surfaces the rendered

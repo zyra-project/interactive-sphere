@@ -205,4 +205,71 @@ describe('publish/_middleware', () => {
     expect((await readJson<{ error: string }>(res)).error).toBe('suspended')
     expect(next.fn).not.toHaveBeenCalled()
   })
+
+  it('catches an unhandled downstream exception and returns 500 unhandled_exception', async () => {
+    const sqlite = seedFixtures({ count: 0 })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      DEV_BYPASS_ACCESS: 'true',
+      DEV_PUBLISHER_EMAIL: 'me@localhost',
+    }
+    // Replace `next` with one that throws — simulates a downstream
+    // route handler erroring out (the original 3pc/B-fix2 scenario).
+    const next = {
+      fn: vi.fn(async () => {
+        throw new Error('D1_ERROR: table datasets has no column named bbox_n: SQLITE_ERROR')
+      }),
+      response: new Response(),
+    }
+    const consoleSpy = console.error
+    console.error = () => {}
+    try {
+      const res = await onRequest(
+        ctxWithNext({ env, url: 'http://localhost:8788/api/v1/publish/me' }, next),
+      )
+      expect(res.status).toBe(500)
+      const body = await readJson<{ error: string; message: string }>(res)
+      expect(body.error).toBe('unhandled_exception')
+      expect(body.message).toContain('D1_ERROR')
+      expect(body.message).toContain('bbox_n')
+    } finally {
+      console.error = consoleSpy
+    }
+  })
+
+  it('strips stack-frame fragments from the surfaced error message', async () => {
+    const sqlite = seedFixtures({ count: 0 })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: makeKV(),
+      DEV_BYPASS_ACCESS: 'true',
+      DEV_PUBLISHER_EMAIL: 'me@localhost',
+    }
+    // Synthesise a multi-line `.message` whose body looks like a
+    // Node-style stack trace. The sanitizer must keep the first
+    // line (the human-readable cause) and drop the rest.
+    const fakeError = new Error(
+      'Boom\n    at handler (file:///worker/index.js:42:13)\n    at next (file:///worker/middleware.js:7:5)',
+    )
+    const next = {
+      fn: vi.fn(async () => {
+        throw fakeError
+      }),
+      response: new Response(),
+    }
+    const consoleSpy = console.error
+    console.error = () => {}
+    try {
+      const res = await onRequest(
+        ctxWithNext({ env, url: 'http://localhost:8788/api/v1/publish/me' }, next),
+      )
+      const body = await readJson<{ message: string }>(res)
+      expect(body.message).toBe('Boom')
+      expect(body.message).not.toMatch(/\bat\b/)
+      expect(body.message).not.toMatch(/file:\/\//)
+    } finally {
+      console.error = consoleSpy
+    }
+  })
 })

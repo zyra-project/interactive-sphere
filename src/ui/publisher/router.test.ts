@@ -23,6 +23,15 @@ describe('matchRoute', () => {
     ).toEqual({ id: 'sst/anomaly' })
   })
 
+  it('returns null on malformed percent-encoding instead of throwing', () => {
+    // `decodeURIComponent('%E0%A4')` throws URIError — verify the
+    // matcher absorbs that and treats the segment as a non-match
+    // rather than crashing the whole dispatch loop.
+    expect(
+      matchRoute('/publish/datasets/:id', '/publish/datasets/%E0%A4'),
+    ).toBeNull()
+  })
+
   it('matches :id followed by a literal segment', () => {
     expect(
       matchRoute('/publish/datasets/:id/edit', '/publish/datasets/01ABC/edit'),

@@ -62,25 +62,47 @@ function jsonError(status: number, error: string, message: string): Response {
  * structured detail is only visible to authenticated staff
  * publishers.
  *
- * The response includes the exception's `.message` (e.g.
- * `"D1_ERROR: table datasets has no column named bbox_n:
- * SQLITE_ERROR"`) but deliberately omits the stack trace —
- * CodeQL flags stack frames as "Information exposure" even
- * behind Access, and the message alone has been sufficient to
- * diagnose every issue surfaced in 3pc development. Operators
- * who need the stack can read it from Cloudflare Workers logs.
- * Also log to the Worker's console so the stack reaches
- * `wrangler tail` / the dashboard's Logs viewer regardless.
+ * The response includes a *sanitized* first line of the
+ * exception's `.message` — enough to surface
+ * `"D1_ERROR: table datasets has no column named bbox_n"` so the
+ * publisher can recognise a missing-migration deploy without
+ * reading server logs, but stripped of stack-frame fragments
+ * (`at Foo (file://…)` lines, `file://…:42:13` location refs)
+ * that CodeQL's `js/stack-trace-exposure` rule flags. Operators
+ * who need the full stack read it from Cloudflare Workers logs
+ * via `wrangler tail` — the raw error is logged via
+ * `console.error` below before sanitization runs.
  */
+
+/** Strip stack-frame fragments from a thrown-Error message so the
+ *  wire-safe payload is the structured detail (D1 codes, SQLite
+ *  errors, validation messages) without `at …:LINE:COL` traces.
+ *  Keeps the first line of the message, then drops anything that
+ *  looks like a JS stack frame ("at Foo (…)", "Error: …" on a
+ *  later line) or a file:line:col location. */
+function sanitizeErrorMessage(raw: string): string {
+  // Take only the first line; stacks always start on line 2+.
+  const firstLine = raw.split('\n', 1)[0] ?? ''
+  // Drop anything that looks like a file/URL location reference.
+  // Conservative — false positives just produce a shorter
+  // message, which is acceptable.
+  return firstLine
+    .replace(/\s*\bat\s+[^\s)]+\s*\([^)]*\)/g, '')
+    .replace(/\s*[A-Za-z0-9_./:\\-]+:\d+:\d+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function nextOrCaught(context: Parameters<PagesFunction<CatalogEnv>>[0]): Promise<Response> {
   try {
     return await context.next()
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Side-channel the stack to Workers logs so an operator can
-    // recover it via `wrangler tail` or the dashboard's Logs
-    // viewer without us echoing it back over the wire.
+    // Log the raw error (with full stack) to Workers logs FIRST so
+    // an operator can recover it via `wrangler tail` regardless of
+    // what the sanitizer does to the wire response.
     console.error('[publish-middleware] unhandled exception', err)
+    const raw = err instanceof Error ? err.message : String(err)
+    const message = sanitizeErrorMessage(raw)
     return new Response(
       JSON.stringify({ error: 'unhandled_exception', message }),
       { status: 500, headers: { 'Content-Type': CONTENT_TYPE } },

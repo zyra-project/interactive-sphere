@@ -137,7 +137,10 @@ function formatDate(iso: string): string {
   })
 }
 
-function renderTable(datasets: PublisherDataset[]): HTMLElement {
+function renderTable(
+  datasets: PublisherDataset[],
+  routerNavigate: ((path: string) => void) | undefined,
+): HTMLElement {
   const tableWrap = document.createElement('div')
   tableWrap.className = 'publisher-table-wrap publisher-glass'
 
@@ -168,9 +171,28 @@ function renderTable(datasets: PublisherDataset[]): HTMLElement {
 
     const titleCell = document.createElement('td')
     const titleLink = document.createElement('a')
-    titleLink.href = `/publish/datasets/${encodeURIComponent(d.id)}`
+    const detailHref = `/publish/datasets/${encodeURIComponent(d.id)}`
+    titleLink.href = detailHref
     titleLink.className = 'publisher-row-link'
     titleLink.textContent = d.title
+    if (routerNavigate) {
+      // Plain left-click → SPA navigation through the portal
+      // router (skips the lazy-chunk reload). Modifier-click and
+      // middle-click fall through so cmd-click still opens a new
+      // tab. Same pattern the Edit button on the detail page uses.
+      titleLink.addEventListener('click', event => {
+        if (
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey
+        ) {
+          event.preventDefault()
+          routerNavigate(detailHref)
+        }
+      })
+    }
     titleCell.appendChild(titleLink)
     tr.appendChild(titleCell)
 
@@ -301,7 +323,7 @@ function renderListShell(
   }
 
   shell.appendChild(renderCount(state.datasets.length))
-  shell.appendChild(renderTable(state.datasets))
+  shell.appendChild(renderTable(state.datasets, options.routerNavigate))
 
   if (state.nextCursor) {
     shell.appendChild(

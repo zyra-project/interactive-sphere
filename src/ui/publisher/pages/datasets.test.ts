@@ -119,6 +119,51 @@ describe('renderDatasetsPage', () => {
     expect(firstLink?.getAttribute('href')).toBe('/publish/datasets/A')
   })
 
+  it('intercepts a plain title-link click and routes through the portal router', async () => {
+    window.history.replaceState(null, '', '/publish/datasets?status=published')
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        datasets: [dataset({ id: 'A', title: 'Dataset A' })],
+        next_cursor: null,
+      }),
+    )
+    const routerNavigate = vi.fn<(path: string) => void>()
+    await renderDatasetsPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate,
+    })
+    const link = mount.querySelector<HTMLAnchorElement>('.publisher-row-link')!
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    link.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(routerNavigate).toHaveBeenCalledWith('/publish/datasets/A')
+  })
+
+  it('lets a cmd-clicked title link fall through to the browser', async () => {
+    window.history.replaceState(null, '', '/publish/datasets?status=published')
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        datasets: [dataset({ id: 'A' })],
+        next_cursor: null,
+      }),
+    )
+    const routerNavigate = vi.fn<(path: string) => void>()
+    await renderDatasetsPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate,
+    })
+    const link = mount.querySelector<HTMLAnchorElement>('.publisher-row-link')!
+    const ev = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      metaKey: true,
+    })
+    link.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(false)
+    expect(routerNavigate).not.toHaveBeenCalled()
+  })
+
   it('renders a draft-state badge for rows with no published_at and no retracted_at', async () => {
     window.history.replaceState(null, '', '/publish/datasets?status=draft')
     const fetchFn = vi.fn().mockResolvedValue(
