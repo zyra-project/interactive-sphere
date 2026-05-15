@@ -804,6 +804,24 @@ visible in the codebase today, the candidates are:
   pipeline. Doubles as a federation explorer when the graph
   spans peers. Phase 4 — design lives in its own plan once the
   sphere-thumbnail asset is in place.
+- **True WYSIWYG abstract editor.** 3pc/C1 ships a markdown
+  textarea + GitHub-style syntax-insertion toolbar + Edit /
+  Preview toggle (`src/ui/publisher/components/markdown-toolbar.ts`).
+  That gets a non-technical publisher 80 % of the way without
+  bringing in a heavyweight editor. If publisher feedback says
+  the remaining 20 % is critical — i.e. publishers find the
+  markdown syntax visible in the textarea actively confusing —
+  the upgrade path is to mount Lexical (Meta's open-source
+  editor, ~60-80 KB gzipped) with its markdown-serialization
+  extension over the same textarea. The wire format stays
+  markdown so the CLI YAML workflow and federation peers are
+  unaffected; the editor is purely an in-portal authoring
+  affordance. Pre-conditions before committing: (a) measured
+  publisher feedback that the toolbar isn't enough, (b) a
+  short bundle-size budget review against the lazy publisher
+  chunk, (c) paste-handling and accessibility audit on the
+  Lexical default extensions. Lives outside any specific phase
+  — pick it up whenever the toolbar's ceiling is hit.
 
 (The CLI for non-portal authoring is now a first-class Phase 1a
 feature — see "Authoring CLI" earlier in this document, not a
