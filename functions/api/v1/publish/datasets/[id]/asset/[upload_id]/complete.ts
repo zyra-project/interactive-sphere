@@ -45,7 +45,11 @@ import { getDatasetForPublisher } from '../../../../../_lib/dataset-mutations'
 import { isConfigurationError, isUpstreamError } from '../../../../../_lib/errors'
 import { isLoopbackHost } from '../../../../../_lib/loopback'
 import { invalidateSnapshot } from '../../../../../_lib/snapshot'
-import { isVideoSourceKey, verifyContentDigest } from '../../../../../_lib/r2-store'
+import {
+  isVideoSourceKey,
+  verifyContentDigest,
+  verifyObjectExists,
+} from '../../../../../_lib/r2-store'
 import { getTranscodeStatus } from '../../../../../_lib/stream-store'
 import { dispatchTranscode } from '../../../../../_lib/github-dispatch'
 import {
@@ -157,33 +161,65 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
       verifiedDigest = upload.claimed_digest
     } else {
       const key = upload.target_ref.slice('r2:'.length)
-      const verification = await verifyContentDigest(context.env, key, upload.claimed_digest)
-      if (!verification.ok) {
-        const now = new Date().toISOString()
-        switch (verification.reason) {
-          case 'binding_missing':
+      if (isVideoSourceKey(key)) {
+        // Video sources can be up to 10 GB — the standard
+        // arrayBuffer-based digest recompute would blow past the
+        // Workers 128 MB memory cap (Phase 3pd review fix for
+        // `Memory limit would be exceeded before EOF.`).
+        //
+        // Just confirm the upload arrived (HEAD-style check) and
+        // trust the publisher's claim here; the GHA transcode
+        // runner re-hashes the source bytes via Node's streaming
+        // `crypto.createHash` before kicking off ffmpeg, so a
+        // tampered upload surfaces as the runner's exit-code-2 +
+        // stuck `transcoding=1` rather than as bad bytes encoded
+        // into the HLS bundle. Same security trade we made for
+        // Stream uploads pre-3pd ("Stream's UID is opaque, trust
+        // the claim until the workflow runs").
+        const existence = await verifyObjectExists(context.env, key)
+        if (!existence.ok) {
+          const now = new Date().toISOString()
+          if (existence.reason === 'binding_missing') {
             return jsonError(503, 'r2_binding_missing', 'CATALOG_R2 binding is not configured on this deployment.')
-          case 'malformed_claim':
-            // Should never reach here — the init handler validates the
-            // claim shape — but defending against direct row writes.
-            await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'malformed_claim', now)
-            return jsonError(409, 'malformed_claim', 'Stored content_digest claim is malformed.')
-          case 'missing':
-            await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'asset_missing', now)
-            return jsonError(
-              409,
-              'asset_missing',
-              `Object at ${key} is not present in R2. The publisher likely never uploaded the bytes; mint a fresh upload to retry.`,
-            )
-          case 'mismatch':
-            await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'digest_mismatch', now)
-            return jsonError(409, 'digest_mismatch', 'Recomputed digest does not match the claim.', {
-              claimed: verification.claimed,
-              actual: verification.actual,
-            })
+          }
+          // 'missing'
+          await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'asset_missing', now)
+          return jsonError(
+            409,
+            'asset_missing',
+            `Object at ${key} is not present in R2. The publisher likely never uploaded the bytes; mint a fresh upload to retry.`,
+          )
         }
+        verifiedDigest = upload.claimed_digest
+      } else {
+        const verification = await verifyContentDigest(context.env, key, upload.claimed_digest)
+        if (!verification.ok) {
+          const now = new Date().toISOString()
+          switch (verification.reason) {
+            case 'binding_missing':
+              return jsonError(503, 'r2_binding_missing', 'CATALOG_R2 binding is not configured on this deployment.')
+            case 'malformed_claim':
+              // Should never reach here — the init handler validates the
+              // claim shape — but defending against direct row writes.
+              await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'malformed_claim', now)
+              return jsonError(409, 'malformed_claim', 'Stored content_digest claim is malformed.')
+            case 'missing':
+              await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'asset_missing', now)
+              return jsonError(
+                409,
+                'asset_missing',
+                `Object at ${key} is not present in R2. The publisher likely never uploaded the bytes; mint a fresh upload to retry.`,
+              )
+            case 'mismatch':
+              await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'digest_mismatch', now)
+              return jsonError(409, 'digest_mismatch', 'Recomputed digest does not match the claim.', {
+                claimed: verification.claimed,
+                actual: verification.actual,
+              })
+          }
+        }
+        verifiedDigest = verification.digest
       }
-      verifiedDigest = verification.digest
     }
   } else if (upload.target === 'stream') {
     if (!upload.target_ref.startsWith('stream:')) {

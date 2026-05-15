@@ -338,6 +338,40 @@ export async function verifyContentDigest(
   return { ok: true, digest: actual, size: buffer.byteLength }
 }
 
+/**
+ * Existence-only verification: HEAD the R2 object, return its
+ * recorded size, but **don't read the body**. Used by the
+ * video-source /complete path where the source MP4 can be up to
+ * 10 GB — pulling it through `arrayBuffer()` would blow past the
+ * Workers 128 MB memory cap. The transcode runner re-hashes the
+ * source via Node's streaming `crypto.createHash` before kicking
+ * off ffmpeg, so a tampered upload still surfaces as the
+ * runner's exit-code-2 + stuck `transcoding=1` rather than
+ * silently encoding bad bytes.
+ *
+ * Returns:
+ *   - `{ ok: true, size }` when the object exists. Size is the
+ *     bytes R2 has recorded for it (operator can sanity-check
+ *     against the publisher's `declared_size`).
+ *   - `{ ok: false, reason: 'missing' }` if not present.
+ *   - `{ ok: false, reason: 'binding_missing' }` if CATALOG_R2
+ *     isn't wired.
+ */
+export type ExistenceVerification =
+  | { ok: true; size: number }
+  | { ok: false; reason: 'missing' }
+  | { ok: false; reason: 'binding_missing' }
+
+export async function verifyObjectExists(
+  env: R2Env,
+  key: string,
+): Promise<ExistenceVerification> {
+  if (!env.CATALOG_R2) return { ok: false, reason: 'binding_missing' }
+  const head = await env.CATALOG_R2.head(key)
+  if (!head) return { ok: false, reason: 'missing' }
+  return { ok: true, size: head.size }
+}
+
 function parseSha256Claim(claim: string): string | null {
   const match = /^sha256:([0-9a-f]{64})$/.exec(claim)
   return match ? match[1] : null

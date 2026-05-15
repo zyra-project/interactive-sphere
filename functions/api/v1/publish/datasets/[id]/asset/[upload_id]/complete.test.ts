@@ -112,6 +112,13 @@ function makeBucket(content: ArrayBuffer | null): R2Bucket {
       if (!content) return null
       return { arrayBuffer: async () => content } as unknown as R2ObjectBody
     },
+    // HEAD-only response — `verifyObjectExists` in r2-store.ts
+    // uses this for the video-source path (avoids reading the
+    // body, which can be up to 10 GB).
+    head: async (_key: string) => {
+      if (!content) return null
+      return { size: content.byteLength } as unknown as R2Object
+    },
   } as unknown as R2Bucket
 }
 
@@ -960,6 +967,60 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       .get('UP-VIDEO') as { status: string; completed_at: string }
     expect(upload.status).toBe('completed')
     expect(typeof upload.completed_at).toBe('string')
+  })
+
+  it('verifies via HEAD (not arrayBuffer) when the source is a video upload', async () => {
+    // The arrayBuffer-based digest recompute would blow the
+    // Workers 128 MB memory cap on a real video upload (cap is
+    // 10 GB). Phase 3pd review fix: the /complete handler does
+    // a HEAD-style existence check on the source key and trusts
+    // the publisher's claimed digest. The transcode runner
+    // re-hashes the bytes via Node's streaming
+    // crypto.createHash before encoding, so a tampered upload
+    // surfaces there.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      // Real R2 binding (no MOCK_R2) so the verify path is
+      // exercised end-to-end. The bucket returns HEAD-only —
+      // get() never gets called on the video-source branch.
+      CATALOG_R2: makeBucket(new ArrayBuffer(8)), // size=8, irrelevant content
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO-HEAD',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO-HEAD' }))
+    expect(res.status).toBe(202)
+  })
+
+  it('returns 409 asset_missing when the source object is absent from R2', async () => {
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(null), // HEAD returns null → missing
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO-MISS',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO-MISS' }))
+    expect(res.status).toBe(409)
+    expect((await readJson<{ error: string }>(res)).error).toBe('asset_missing')
   })
 
   it('on a published row, preserves the existing data_ref while transcoding=1 (fix #2)', async () => {
