@@ -31,7 +31,7 @@ of:
 The reference scheme keeps the catalog row stable while assets move
 between backends. A row first published as `vimeo:` and later
 re-encoded to R2 HLS swaps `data_ref` from `vimeo:...` to
-`r2:videos/{id}/master.m3u8` without any client-visible change.
+`r2:videos/{id}/{upload_id}/master.m3u8` without any client-visible change.
 
 ## Video pipeline (R2 + GitHub Actions — current)
 
@@ -52,17 +52,25 @@ texturing needs:
 | 720p | 1440 × 720 | ~2 Mbps |
 
 H.264 main profile, AAC 192kbps audio, **6-second VOD segments**.
-The bundle is laid out under `r2:videos/{dataset_id}/`:
+The bundle is laid out under `r2:videos/{dataset_id}/{upload_id}/`:
 
 ```
-master.m3u8                # the variant playlist consumed by hls.js
-4k/index.m3u8              # per-rendition media playlist
-4k/seg000.ts ... segNNN.ts # segments
-1080p/index.m3u8
-1080p/seg000.ts ...
-720p/index.m3u8
-720p/seg000.ts ...
+videos/{dataset_id}/{upload_id}/master.m3u8        # the variant playlist consumed by hls.js
+videos/{dataset_id}/{upload_id}/4k/index.m3u8      # per-rendition media playlist
+videos/{dataset_id}/{upload_id}/4k/seg000.ts ...   # segments
+videos/{dataset_id}/{upload_id}/1080p/index.m3u8
+videos/{dataset_id}/{upload_id}/1080p/seg000.ts ...
+videos/{dataset_id}/{upload_id}/720p/index.m3u8
+videos/{dataset_id}/{upload_id}/720p/seg000.ts ...
 ```
+
+The `{upload_id}` segment is the asset_uploads row ULID — versioning
+by upload means a re-upload to an already-published row lands its
+new bundle at a fresh prefix without overwriting the bytes a public
+client is mid-playback against; `/transcode-complete` swaps
+`data_ref` atomically when the new bundle is fully written. The
+older bundle continues to serve until the swap (and stays in R2
+until a future lifecycle pass cleans it up).
 
 `data_ref` points at `master.m3u8`; the existing `hlsService.ts`
 takes it from there and adaptively picks the rendition.

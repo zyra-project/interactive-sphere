@@ -17,12 +17,17 @@
  *   4. `encodeHls` against the 4K + 1080p + 720p 2:1 spherical
  *      ladder shared with `migrate-r2-hls`. Same renditions, same
  *      CRF, same 6-second segments.
- *   5. `uploadHlsBundle` to `videos/{id}/`. The master.m3u8 lands
- *      at `videos/{id}/master.m3u8`.
- *   6. POST the publisher API's `transcode-complete` endpoint with
- *      `{ data_ref: 'r2:videos/{id}/master.m3u8', source_digest }`
- *      using the Cloudflare Access service-token headers. The
- *      handler clears `transcoding=NULL` and flips `data_ref`.
+ *   5. `uploadHlsBundle` to a per-upload prefix
+ *      `videos/{datasetId}/{uploadId}/`. The master.m3u8 lands
+ *      at `videos/{datasetId}/{uploadId}/master.m3u8`. Scoping
+ *      by upload_id keeps a re-upload to an already-published
+ *      row from overwriting the bundle the public manifest is
+ *      mid-playback against.
+ *   6. POST the publisher API's `transcode-complete` endpoint
+ *      with `{ upload_id, source_digest }` using the Cloudflare
+ *      Access service-token headers. The handler constructs
+ *      `data_ref` server-side from the route id + upload_id,
+ *      flips it, and clears `transcoding`.
  *   7. Clean up the workdir on success. Failed runs keep it for
  *      post-mortem unless `--cleanup-on-failure` is set.
  *

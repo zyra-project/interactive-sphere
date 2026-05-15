@@ -285,9 +285,12 @@ Behavior:
 - Detects MIME type and picks the right target — **everything goes
   to R2**; the only thing the kind decides is what happens *after*
   the PUT.
-- Shows progress (XHR upload events feed a `<progress>`), retries on
-  transient 5xx with exponential backoff, emits a completion event
-  with the final `data_ref`.
+- Shows progress (XHR upload events feed a `<progress>`) and emits
+  a completion event with the final `data_ref`. Surfaces stage-
+  specific errors (mint / upload / finalize) through an inline
+  status line + a `<details>` disclosure for the raw API code;
+  the publisher can retry by re-picking the file (no automatic
+  retry loop today — that's a follow-up).
 - **Image** (`image/png` / `image/jpeg` / `image/webp`): the
   presigned PUT lands the image at `r2:datasets/{id}/{filename}`.
   The finalize step writes `data_ref` directly — no transcode.
@@ -299,8 +302,10 @@ Behavior:
   `transcoding=true`. The form returns control to the publisher
   immediately; the detail page polls every 5 s until `transcoding`
   flips back to false and `data_ref` resolves to
-  `r2:videos/{id}/master.m3u8`. Whole loop is 1–10 minutes
-  depending on source length.
+  `r2:videos/{id}/{upload_id}/master.m3u8` (versioned per upload
+  so a re-upload to a published row doesn't overwrite the
+  bundle the public manifest is still serving). Whole loop is
+  1–10 minutes depending on source length.
 
 ### Sub-phase 3pd breakdown
 
