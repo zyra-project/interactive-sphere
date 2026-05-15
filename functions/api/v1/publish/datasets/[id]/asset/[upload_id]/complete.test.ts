@@ -907,7 +907,7 @@ describe('POST .../asset/{upload_id}/complete — sphere thumbnail enqueue', () 
 })
 
 describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)', () => {
-  it('stamps transcoding=1, leaves data_ref empty, and returns 202', async () => {
+  it('on a draft, stamps transcoding=1, clears data_ref, returns 202', async () => {
     const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
     const env = {
       CATALOG_DB: asD1(sqlite),
@@ -960,6 +960,44 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       .get('UP-VIDEO') as { status: string; completed_at: string }
     expect(upload.status).toBe('completed')
     expect(typeof upload.completed_at).toBe('string')
+  })
+
+  it('on a published row, preserves the existing data_ref while transcoding=1 (fix #2)', async () => {
+    // Published rows must keep serving their existing HLS bundle
+    // until the workflow completes — clearing data_ref would
+    // break public playback the moment the upload finalises.
+    // Phase 3pd review fix.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: true })
+    const existingDataRef = `r2:videos/${datasetId}/PRIOR-UPLOAD/master.m3u8`
+    sqlite
+      .prepare(`UPDATE datasets SET data_ref = ? WHERE id = ?`)
+      .run(existingDataRef, datasetId)
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      MOCK_R2: 'true',
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-PUB',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-PUB' }))
+    expect(res.status).toBe(202)
+
+    const row = sqlite
+      .prepare(`SELECT data_ref, transcoding FROM datasets WHERE id = ?`)
+      .get(datasetId) as { data_ref: string; transcoding: number }
+    // data_ref kept pointing at the prior bundle so public manifest
+    // resolution keeps working through the transcode window.
+    expect(row.data_ref).toBe(existingDataRef)
+    expect(row.transcoding).toBe(1)
   })
 
   it('returns 503 github_dispatch_unconfigured when neither real config nor mock is set', async () => {

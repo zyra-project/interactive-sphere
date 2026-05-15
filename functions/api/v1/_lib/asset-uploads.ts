@@ -382,21 +382,27 @@ export async function applyAssetAndMarkCompleted(
 /**
  * Video-source variant: the upload bytes have landed in R2 at
  * `uploads/{id}/source.mp4` and we've verified the publisher's
- * digest, but `data_ref` stays empty — the GHA transcode workflow
- * writes it later when it finishes producing the HLS bundle. We
- * stamp `transcoding=1` on the dataset row so the detail page can
- * show a "Transcoding…" badge and gate the publish button, and we
- * mark the upload row `completed` (the upload itself succeeded;
- * the *transcode* is a separate concern that lives in GHA).
+ * digest. We stamp `transcoding=1` so the portal renders a
+ * "Transcoding…" badge + gates the publish button, mark the
+ * asset_upload row `completed` (the upload step itself
+ * succeeded; the transcode is async + lives in GHA), and store
+ * the publisher's claimed digest as `source_digest`.
+ *
+ * **`data_ref` handling:** for a draft row (`published_at IS NULL`)
+ * we clear `data_ref` to empty string — there's nothing to
+ * preserve, and an empty ref keeps the publish-readiness validator
+ * honest. For a *published* row we leave `data_ref` pointing at
+ * its existing HLS bundle, because public clients are still
+ * actively reading it. The new bundle lands at a versioned R2
+ * path (`videos/{id}/{upload_id}/...`) the GHA workflow uploads
+ * to, and `/transcode-complete` swaps `data_ref` atomically when
+ * the new bundle is fully written. Until that swap, the old
+ * bundle continues to serve cleanly. The orphan-bundle cleanup
+ * (deleting the old prefix after a published-row re-upload) is
+ * a Phase 4 R2 lifecycle concern.
  *
  * Atomic via `db.batch` so the upload-row state and the dataset
  * row never end up in disagreement.
- *
- * NOTE: also clears `data_ref` to empty string. A previous video
- * upload's HLS bundle still lives at the old `r2:videos/{id}/...`
- * key — that's the publisher's previous content, and zeroing out
- * the row's pointer is the right behaviour. The orphan cleanup is
- * a Phase 4 R2 lifecycle concern.
  */
 export async function markVideoSourceUploadedAndStampTranscoding(
   db: D1Database,
@@ -404,12 +410,17 @@ export async function markVideoSourceUploadedAndStampTranscoding(
   upload: AssetUploadRow,
   now: string,
 ): Promise<void> {
+  // Conditional clear: empty string only for drafts. The
+  // `data_ref = CASE WHEN published_at IS NULL THEN '' ELSE
+  // data_ref END` keeps the column value frozen for published
+  // rows during the transcode window so the public manifest
+  // endpoint keeps resolving cleanly.
   await db.batch([
     db
       .prepare(
         `UPDATE datasets
            SET transcoding = 1,
-               data_ref = '',
+               data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
                source_digest = ?,
                updated_at = ?
          WHERE id = ?`,

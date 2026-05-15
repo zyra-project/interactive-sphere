@@ -93,6 +93,7 @@ const R2_REGION = 'auto'
 
 interface Args {
   datasetId: string
+  uploadId: string
   sourceKey: string
   sourceDigest: string
   workdir: string
@@ -112,6 +113,10 @@ export function parseArgs(argv: readonly string[]): Args | { error: string } {
   if (!datasetId || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(datasetId)) {
     return { error: `--dataset-id must be a ULID (26 base32 chars); got ${datasetId ?? '(missing)'}` }
   }
+  const uploadId = get('upload-id')
+  if (!uploadId || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(uploadId)) {
+    return { error: `--upload-id must be a ULID (26 base32 chars); got ${uploadId ?? '(missing)'}` }
+  }
   const sourceKey = get('source-key')
   if (!sourceKey || !sourceKey.startsWith('uploads/') || !sourceKey.endsWith('/source.mp4')) {
     return {
@@ -126,9 +131,10 @@ export function parseArgs(argv: readonly string[]): Args | { error: string } {
   }
   return {
     datasetId,
+    uploadId,
     sourceKey,
     sourceDigest,
-    workdir: get('workdir') ?? `/tmp/terraviz-transcode/${datasetId}`,
+    workdir: get('workdir') ?? `/tmp/terraviz-transcode/${datasetId}-${uploadId}`,
     cleanupOnFailure: has('cleanup-on-failure'),
     ffmpegBin: get('ffmpeg-bin'),
   }
@@ -195,10 +201,10 @@ async function downloadFromR2(
   return { digest: `sha256:${hash.digest('hex')}`, bytes }
 }
 
-async function patchTranscodeComplete(
+async function postTranscodeComplete(
   server: ServerEnv,
   datasetId: string,
-  dataRef: string,
+  uploadId: string,
   sourceDigest: string,
 ): Promise<void> {
   const url = `${server.server}/api/v1/publish/datasets/${datasetId}/transcode-complete`
@@ -210,7 +216,12 @@ async function patchTranscodeComplete(
       'CF-Access-Client-Id': server.accessClientId,
       'CF-Access-Client-Secret': server.accessClientSecret,
     },
-    body: JSON.stringify({ data_ref: dataRef, source_digest: sourceDigest }),
+    // The server constructs data_ref itself from the route id +
+    // upload_id. We just identify which upload this transcode
+    // finalises; the path convention is fixed
+    // (`r2:videos/{datasetId}/{uploadId}/master.m3u8`) so neither
+    // side has to negotiate it.
+    body: JSON.stringify({ upload_id: uploadId, source_digest: sourceDigest }),
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
@@ -262,7 +273,14 @@ async function main(): Promise<number> {
       console.error(
         `error: source digest mismatch. expected=${args.sourceDigest} actual=${downloaded.digest}`,
       )
-      return 2
+      // Set `exitCode` and fall through rather than `return 2` —
+      // the `finally` block below decides workdir cleanup based
+      // on `exitCode` + `--cleanup-on-failure`. A direct `return 2`
+      // skipped that and removed the workdir even when the
+      // operator wanted to keep it for post-mortem. Fix for
+      // PR #112 Copilot #10.
+      exitCode = 2
+      return exitCode
     }
 
     // 3. Encode.
@@ -278,10 +296,16 @@ async function main(): Promise<number> {
       `[transcode] encode done in ${Date.now() - encodeStart} ms; ${encoded.files.length} files`,
     )
 
-    // 4. Upload bundle.
-    console.error(`[transcode] uploading bundle → r2://videos/${args.datasetId}/`)
+    // 4. Upload bundle to a per-upload-id prefix. Scoping by
+    //    upload_id means a re-upload to an already-published row
+    //    lands in a fresh prefix without overwriting the bundle
+    //    the public manifest is still serving — the
+    //    `/transcode-complete` route swaps `data_ref` atomically
+    //    when this script finishes. Fix for PR #112 Copilot #15.
+    const bundlePrefix = `videos/${args.datasetId}/${args.uploadId}`
+    console.error(`[transcode] uploading bundle → r2://${bundlePrefix}/`)
     const uploadStart = Date.now()
-    const uploaded = await uploadHlsBundle(r2Config, outputDir, `videos/${args.datasetId}`, {
+    const uploaded = await uploadHlsBundle(r2Config, outputDir, bundlePrefix, {
       onProgress: info =>
         console.error(`[r2] PUT ${info.key} (${info.bytes} B; ${info.done}/${info.total})`),
     })
@@ -289,11 +313,14 @@ async function main(): Promise<number> {
       `[transcode] upload done in ${Date.now() - uploadStart} ms; ${uploaded.totalBytes} bytes total`,
     )
 
-    // 5. PATCH transcode-complete.
-    const dataRef = `r2:videos/${args.datasetId}/master.m3u8`
-    console.error(`[transcode] PATCH transcode-complete data_ref=${dataRef}`)
-    await patchTranscodeComplete(serverEnv, args.datasetId, dataRef, args.sourceDigest)
-    console.error('[transcode] done — row patched, transcoding cleared')
+    // 5. POST transcode-complete. The server constructs the
+    //    expected data_ref from (route id + upload id) and
+    //    refuses any mismatch — we don't pass it.
+    console.error(
+      `[transcode] POST transcode-complete dataset=${args.datasetId} upload=${args.uploadId}`,
+    )
+    await postTranscodeComplete(serverEnv, args.datasetId, args.uploadId, args.sourceDigest)
+    console.error('[transcode] done — row updated, transcoding cleared')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`error: ${message}`)

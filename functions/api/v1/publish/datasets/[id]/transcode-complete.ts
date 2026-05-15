@@ -2,7 +2,8 @@
  * POST /api/v1/publish/datasets/{id}/transcode-complete
  *
  * Called by the GitHub Actions transcode workflow once it has
- * written the HLS bundle to R2. Flips `data_ref` to the
+ * written the HLS bundle to R2 under
+ * `videos/{datasetId}/{uploadId}/`. Flips `data_ref` to the
  * `master.m3u8` path and clears `transcoding`. Restricted to
  * service-token publishers (and admins) because the
  * `transcoding` column is server-managed — community publishers
@@ -11,15 +12,21 @@
  *
  * Body:
  *   {
- *     "data_ref": "r2:videos/{id}/master.m3u8",
- *     "source_digest": "sha256:..."     // optional; if supplied,
- *                                       // must match the stored
- *                                       // source_digest set at
- *                                       // /asset/{upload_id}/complete
- *                                       // time. Belt-and-suspenders
- *                                       // against the workflow
- *                                       // PATCHing the wrong row.
+ *     "upload_id":      "<26-char ULID>",   // required; the
+ *                                           // asset_uploads row
+ *                                           // this transcode is
+ *                                           // finalising.
+ *     "source_digest":  "sha256:..."        // optional; if
+ *                                           // supplied, must match
+ *                                           // the row's stored
+ *                                           // source_digest.
  *   }
+ *
+ * The server **constructs `data_ref` itself** from the route id
+ * + the upload id (`r2:videos/{routeId}/{uploadId}/master.m3u8`).
+ * The workflow doesn't get to choose — that's the fix for
+ * PR #112 Copilot #3: a misrouted workflow could otherwise PATCH
+ * dataset A with dataset B's bundle by passing the wrong path.
  *
  * Authorization: caller must be `role='service'` or `role='staff'`
  * with `is_admin=1`. The Phase 3pa publisher-store provisions
@@ -28,19 +35,25 @@
  * carry exactly the right identity by default.
  *
  * Failure envelopes match the rest of the publisher API:
- *   - 400 invalid_json / invalid_body / invalid_data_ref
+ *   - 400 invalid_json / invalid_body / invalid_upload_id
  *   - 403 transcode_complete_forbidden — non-service caller
  *   - 404 not_found — dataset doesn't exist
+ *   - 404 upload_not_found — upload_id doesn't exist or isn't
+ *     bound to this dataset
  *   - 409 not_transcoding — the row isn't currently `transcoding=1`
  *   - 409 source_digest_mismatch — supplied digest doesn't match
+ *   - 409 upload_kind_mismatch — the upload row isn't a video
+ *     source (`kind != 'data'` or target_ref doesn't live under
+ *     `uploads/`)
  */
 
 import type { CatalogEnv } from '../../../_lib/env'
 import type { PublisherData } from '../../_middleware'
 import type { DatasetRow } from '../../../_lib/catalog-store'
 import { writeDatasetAudit } from '../../../_lib/audit-store'
-import { clearTranscoding } from '../../../_lib/asset-uploads'
+import { clearTranscoding, getAssetUpload } from '../../../_lib/asset-uploads'
 import { invalidateSnapshot } from '../../../_lib/snapshot'
+import { buildVideoBundleMasterKey, isVideoSourceKey } from '../../../_lib/r2-store'
 
 const CONTENT_TYPE = 'application/json; charset=utf-8'
 
@@ -52,7 +65,7 @@ function jsonError(status: number, error: string, message: string): Response {
 }
 
 interface TranscodeCompleteBody {
-  data_ref: string
+  upload_id: string
   source_digest?: string
 }
 
@@ -61,23 +74,13 @@ function validateBody(raw: unknown): TranscodeCompleteBody | { error: string } {
     return { error: 'Request body must be an object.' }
   }
   const obj = raw as Record<string, unknown>
-  if (typeof obj.data_ref !== 'string' || obj.data_ref.length === 0) {
-    return { error: 'data_ref must be a non-empty string.' }
-  }
-  // Workflow always writes the bundle to `r2:videos/{id}/master.m3u8`.
-  // Refusing any other prefix here keeps a misconfigured workflow
-  // (or a forged call from an unintended caller) from pointing the
-  // row at arbitrary URLs.
-  if (!obj.data_ref.startsWith('r2:videos/')) {
-    return { error: 'data_ref must start with "r2:videos/" for transcode completions.' }
-  }
-  if (!obj.data_ref.endsWith('/master.m3u8')) {
-    return { error: 'data_ref must end with "/master.m3u8" for transcode completions.' }
+  if (typeof obj.upload_id !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(obj.upload_id)) {
+    return { error: 'upload_id must be a 26-character ULID.' }
   }
   if (obj.source_digest !== undefined && typeof obj.source_digest !== 'string') {
     return { error: 'source_digest must be a string when supplied.' }
   }
-  return { data_ref: obj.data_ref, source_digest: obj.source_digest as string | undefined }
+  return { upload_id: obj.upload_id, source_digest: obj.source_digest as string | undefined }
 }
 
 export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
@@ -127,6 +130,30 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     )
   }
 
+  // Look up the upload row. Two things to verify: (a) the upload
+  // belongs to *this* dataset, defending against a workflow that
+  // dispatched on dataset A trying to PATCH dataset B; (b) the
+  // upload was a video source (not a thumbnail or some other
+  // kind that happened to share the upload_id namespace).
+  const upload = await getAssetUpload(db, validated.upload_id)
+  if (!upload || upload.dataset_id !== id) {
+    return jsonError(
+      404,
+      'upload_not_found',
+      `Upload ${validated.upload_id} not found for dataset ${id}.`,
+    )
+  }
+  const targetKey = upload.target_ref.startsWith('r2:')
+    ? upload.target_ref.slice('r2:'.length)
+    : ''
+  if (upload.kind !== 'data' || !isVideoSourceKey(targetKey)) {
+    return jsonError(
+      409,
+      'upload_kind_mismatch',
+      `Upload ${validated.upload_id} is not a video source (kind=${upload.kind}, target=${upload.target_ref}).`,
+    )
+  }
+
   if (
     validated.source_digest !== undefined &&
     existing.source_digest !== validated.source_digest
@@ -139,8 +166,13 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     )
   }
 
+  // Build the data_ref server-side from the *route* id and the
+  // *upload* id. The workflow doesn't get to choose; even a
+  // forged body can't point the row at another dataset's bundle.
+  const dataRef = `r2:${buildVideoBundleMasterKey(id, validated.upload_id)}`
+
   const now = new Date().toISOString()
-  await clearTranscoding(db, id, validated.data_ref, now)
+  await clearTranscoding(db, id, dataRef, now)
 
   // Refresh the row so the response carries the latest state.
   const updated = await db
@@ -148,11 +180,11 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     .bind(id)
     .first<DatasetRow>()
 
-  // If the dataset is currently published, mutating its data_ref
-  // changes what public consumers see — invalidate the snapshot so
-  // the next /api/v1/catalog read sees the change. Drafts (the
-  // common case for transcode-complete) don't appear in the
-  // snapshot, so the invalidate is a no-op for them.
+  // Always invalidate when transcode finishes — for a draft this
+  // is a no-op (drafts don't appear in the snapshot), but for a
+  // re-upload to a published row the snapshot still holds the
+  // *old* data_ref and needs a refresh so public clients pick up
+  // the new HLS bundle on their next read.
   if (updated?.published_at && !updated.retracted_at) {
     await invalidateSnapshot(context.env)
   }
@@ -160,6 +192,7 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
   await writeDatasetAudit(db, publisher, 'dataset.update', id, {
     fields: ['data_ref', 'transcoding'],
     reason: 'transcode_complete',
+    upload_id: validated.upload_id,
   })
 
   return new Response(

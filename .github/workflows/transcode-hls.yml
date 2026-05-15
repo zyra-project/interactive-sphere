@@ -56,12 +56,17 @@ jobs:
         # the raw payload string.
         env:
           PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          PAYLOAD_UPLOAD_ID: ${{ github.event.client_payload.upload_id }}
           PAYLOAD_SOURCE_KEY: ${{ github.event.client_payload.source_key }}
           PAYLOAD_SOURCE_DIGEST: ${{ github.event.client_payload.source_digest }}
         run: |
           set -e
           if [ -z "$PAYLOAD_DATASET_ID" ]; then
             echo "::error::client_payload.dataset_id is missing"
+            exit 1
+          fi
+          if [ -z "$PAYLOAD_UPLOAD_ID" ]; then
+            echo "::error::client_payload.upload_id is missing"
             exit 1
           fi
           if [ -z "$PAYLOAD_SOURCE_KEY" ]; then
@@ -119,12 +124,14 @@ jobs:
           # expansions can't be escaped by metacharacters in the
           # payload).
           PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          PAYLOAD_UPLOAD_ID: ${{ github.event.client_payload.upload_id }}
           PAYLOAD_SOURCE_KEY: ${{ github.event.client_payload.source_key }}
           PAYLOAD_SOURCE_DIGEST: ${{ github.event.client_payload.source_digest }}
         run: |
           set -e
           npx tsx cli/transcode-from-dispatch.ts \
             --dataset-id="$PAYLOAD_DATASET_ID" \
+            --upload-id="$PAYLOAD_UPLOAD_ID" \
             --source-key="$PAYLOAD_SOURCE_KEY" \
             --source-digest="$PAYLOAD_SOURCE_DIGEST" \
             --cleanup-on-failure

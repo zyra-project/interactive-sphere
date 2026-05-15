@@ -12,29 +12,33 @@
 import { describe, expect, it } from 'vitest'
 import { parseArgs, loadServerEnv } from './transcode-from-dispatch'
 
-const GOOD_ID = '01HXAAAAAAAAAAAAAAAAAAAAAA'
-const GOOD_KEY = `uploads/${GOOD_ID}/source.mp4`
+const GOOD_DS = '01HXAAAAAAAAAAAAAAAAAAAAAA'
+const GOOD_UP = '01HYAAAAAAAAAAAAAAAAAAAAAA'
+const GOOD_KEY = `uploads/${GOOD_DS}/source.mp4`
 const GOOD_DIGEST = 'sha256:' + 'a'.repeat(64)
 
 describe('parseArgs', () => {
   it('parses a well-formed argv', () => {
     const r = parseArgs([
-      `--dataset-id=${GOOD_ID}`,
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
       `--source-key=${GOOD_KEY}`,
       `--source-digest=${GOOD_DIGEST}`,
     ])
     expect('error' in r).toBe(false)
     if ('error' in r) return
-    expect(r.datasetId).toBe(GOOD_ID)
+    expect(r.datasetId).toBe(GOOD_DS)
+    expect(r.uploadId).toBe(GOOD_UP)
     expect(r.sourceKey).toBe(GOOD_KEY)
     expect(r.sourceDigest).toBe(GOOD_DIGEST)
-    expect(r.workdir).toBe(`/tmp/terraviz-transcode/${GOOD_ID}`)
+    expect(r.workdir).toBe(`/tmp/terraviz-transcode/${GOOD_DS}-${GOOD_UP}`)
     expect(r.cleanupOnFailure).toBe(false)
   })
 
   it('rejects a malformed dataset id', () => {
     const r = parseArgs([
       `--dataset-id=not-a-ulid`,
+      `--upload-id=${GOOD_UP}`,
       `--source-key=${GOOD_KEY}`,
       `--source-digest=${GOOD_DIGEST}`,
     ])
@@ -44,10 +48,24 @@ describe('parseArgs', () => {
     }
   })
 
+  it('rejects a malformed upload id', () => {
+    const r = parseArgs([
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=not-a-ulid`,
+      `--source-key=${GOOD_KEY}`,
+      `--source-digest=${GOOD_DIGEST}`,
+    ])
+    expect('error' in r).toBe(true)
+    if ('error' in r) {
+      expect(r.error).toMatch(/upload-id/)
+    }
+  })
+
   it('rejects a source key outside the uploads/ namespace', () => {
     const r = parseArgs([
-      `--dataset-id=${GOOD_ID}`,
-      `--source-key=datasets/${GOOD_ID}/by-digest/sha256/abc/asset.mp4`,
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
+      `--source-key=datasets/${GOOD_DS}/by-digest/sha256/abc/asset.mp4`,
       `--source-digest=${GOOD_DIGEST}`,
     ])
     expect('error' in r).toBe(true)
@@ -58,7 +76,8 @@ describe('parseArgs', () => {
 
   it('rejects a malformed digest', () => {
     const r = parseArgs([
-      `--dataset-id=${GOOD_ID}`,
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
       `--source-key=${GOOD_KEY}`,
       `--source-digest=md5:abcdef`,
     ])
@@ -67,7 +86,8 @@ describe('parseArgs', () => {
 
   it('respects --workdir and --cleanup-on-failure', () => {
     const r = parseArgs([
-      `--dataset-id=${GOOD_ID}`,
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
       `--source-key=${GOOD_KEY}`,
       `--source-digest=${GOOD_DIGEST}`,
       `--workdir=/var/transcode`,

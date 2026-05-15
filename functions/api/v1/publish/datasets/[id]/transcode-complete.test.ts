@@ -2,10 +2,16 @@
  * Tests for `POST /api/v1/publish/datasets/{id}/transcode-complete`.
  *
  * The endpoint is the workflow side of the 3pd transcode pipeline:
- * GHA writes the HLS bundle to R2, then PATCHes back through this
- * route to flip `data_ref` and clear `transcoding`. Restricted to
- * service-token / admin callers — community publishers shouldn't
- * be able to manipulate the `transcoding` column directly.
+ * GHA writes the HLS bundle to R2 under
+ * `videos/{datasetId}/{uploadId}/`, then POSTs back through this
+ * route to flip `data_ref` and clear `transcoding`. The server
+ * constructs `data_ref` itself from the route id + upload id, so
+ * the workflow can't accidentally PATCH dataset A with dataset B's
+ * bundle (Phase 3pd review fix #3).
+ *
+ * Restricted to service-token / admin-staff callers — community
+ * publishers shouldn't be able to manipulate the `transcoding`
+ * column directly.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -43,7 +49,26 @@ const COMMUNITY: PublisherRow = {
   is_admin: 0,
 }
 
-function setupEnv(opts: { transcoding?: boolean; sourceDigest?: string } = {}) {
+// ULIDs are Crockford base32 — `U`, `I`, `L`, `O` are excluded.
+// `DS000` (D, S, 0) and `KP000` (K, P, 0) all live inside the
+// allowed set so the route's regex check accepts them.
+const DATASET_ID = 'DS000' + 'A'.repeat(21)
+const UPLOAD_ID = 'KP000' + 'A'.repeat(21)
+const DEFAULT_SOURCE_DIGEST = 'sha256:' + 'a'.repeat(64)
+
+function setupEnv(opts: {
+  transcoding?: boolean
+  sourceDigest?: string
+  /** Seed the matching asset_uploads row. Defaults to true.
+   *  Tests that want to exercise the "upload not found" branch
+   *  pass `false`. */
+  seedUpload?: boolean
+  /** Override the seeded upload's `target_ref` (for the
+   *  "upload_kind_mismatch" branch). */
+  uploadTargetRef?: string
+  /** Override the seeded upload's `kind`. */
+  uploadKind?: 'data' | 'thumbnail'
+} = {}) {
   const sqlite = seedFixtures({ count: 1 })
   for (const p of [STAFF_ADMIN, SERVICE, COMMUNITY]) {
     sqlite
@@ -53,18 +78,40 @@ function setupEnv(opts: { transcoding?: boolean; sourceDigest?: string } = {}) {
       )
       .run(p.id, p.email, p.display_name, p.role, p.is_admin, p.status, p.created_at)
   }
-  const datasetId = 'DS000' + 'A'.repeat(21)
-  // Seed the row as transcoding=1 by default — this is the state
-  // the workflow PATCHes against. Tests for "not transcoding"
-  // override to NULL.
+  const sourceDigest = opts.sourceDigest ?? DEFAULT_SOURCE_DIGEST
   if (opts.transcoding ?? true) {
     sqlite
       .prepare(
         `UPDATE datasets SET transcoding = 1, data_ref = '', source_digest = ? WHERE id = ?`,
       )
-      .run(opts.sourceDigest ?? 'sha256:' + 'a'.repeat(64), datasetId)
+      .run(sourceDigest, DATASET_ID)
   }
-  return { sqlite, datasetId, env: { CATALOG_DB: asD1(sqlite), CATALOG_KV: makeKV() } }
+  if (opts.seedUpload ?? true) {
+    sqlite
+      .prepare(
+        `INSERT INTO asset_uploads
+           (id, dataset_id, publisher_id, kind, target, target_ref, mime,
+            declared_size, claimed_digest, status, failure_reason,
+            created_at, completed_at)
+         VALUES (?, ?, ?, ?, 'r2', ?, 'video/mp4', 1000, ?, 'completed', NULL, ?, ?)`,
+      )
+      .run(
+        UPLOAD_ID,
+        DATASET_ID,
+        STAFF_ADMIN.id,
+        opts.uploadKind ?? 'data',
+        opts.uploadTargetRef ?? `r2:uploads/${DATASET_ID}/source.mp4`,
+        sourceDigest,
+        '2026-04-29T12:00:00.000Z',
+        '2026-04-29T12:01:00.000Z',
+      )
+  }
+  return {
+    sqlite,
+    datasetId: DATASET_ID,
+    uploadId: UPLOAD_ID,
+    env: { CATALOG_DB: asD1(sqlite), CATALOG_KV: makeKV() },
+  }
 }
 
 function ctx(opts: {
@@ -95,60 +142,54 @@ async function readJson<T>(res: Response): Promise<T> {
 }
 
 describe('POST .../transcode-complete — happy path', () => {
-  it('clears transcoding, sets data_ref, returns the updated row', async () => {
-    const { sqlite, datasetId, env } = setupEnv()
+  it('clears transcoding, server-constructs data_ref, returns the updated row', async () => {
+    const { sqlite, datasetId, uploadId, env } = setupEnv()
     const res = await transcodeComplete(
-      ctx({
-        env,
-        datasetId,
-        body: { data_ref: `r2:videos/${datasetId}/master.m3u8` },
-      }),
+      ctx({ env, datasetId, body: { upload_id: uploadId } }),
     )
     expect(res.status).toBe(200)
     const body = await readJson<{ dataset: { data_ref: string; transcoding: number | null } }>(
       res,
     )
-    expect(body.dataset.data_ref).toBe(`r2:videos/${datasetId}/master.m3u8`)
+    // data_ref is built server-side from the route id + upload id;
+    // the workflow never gets to choose. Fix for #3.
+    expect(body.dataset.data_ref).toBe(`r2:videos/${datasetId}/${uploadId}/master.m3u8`)
     expect(body.dataset.transcoding).toBeNull()
 
     const row = sqlite
       .prepare(`SELECT data_ref, transcoding FROM datasets WHERE id = ?`)
       .get(datasetId) as { data_ref: string; transcoding: number | null }
-    expect(row.data_ref).toBe(`r2:videos/${datasetId}/master.m3u8`)
+    expect(row.data_ref).toBe(`r2:videos/${datasetId}/${uploadId}/master.m3u8`)
     expect(row.transcoding).toBeNull()
   })
 
-  it('writes an audit_events row tagged transcode_complete', async () => {
-    const { sqlite, datasetId, env } = setupEnv()
-    await transcodeComplete(
-      ctx({
-        env,
-        datasetId,
-        body: { data_ref: `r2:videos/${datasetId}/master.m3u8` },
-      }),
-    )
+  it('writes an audit_events row tagged transcode_complete with the upload_id', async () => {
+    const { sqlite, datasetId, uploadId, env } = setupEnv()
+    await transcodeComplete(ctx({ env, datasetId, body: { upload_id: uploadId } }))
     const audit = sqlite
       .prepare(
         `SELECT action, metadata_json FROM audit_events WHERE subject_id = ? ORDER BY id DESC LIMIT 1`,
       )
       .get(datasetId) as { action: string; metadata_json: string }
     expect(audit.action).toBe('dataset.update')
-    const meta = JSON.parse(audit.metadata_json) as { fields: string[]; reason: string }
+    const meta = JSON.parse(audit.metadata_json) as {
+      fields: string[]
+      reason: string
+      upload_id: string
+    }
     expect(meta.reason).toBe('transcode_complete')
     expect(meta.fields).toEqual(['data_ref', 'transcoding'])
+    expect(meta.upload_id).toBe(uploadId)
   })
 
   it('accepts a matching source_digest belt-and-suspenders check', async () => {
     const sourceDigest = 'sha256:' + 'b'.repeat(64)
-    const { datasetId, env } = setupEnv({ sourceDigest })
+    const { datasetId, uploadId, env } = setupEnv({ sourceDigest })
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId,
-        body: {
-          data_ref: `r2:videos/${datasetId}/master.m3u8`,
-          source_digest: sourceDigest,
-        },
+        body: { upload_id: uploadId, source_digest: sourceDigest },
       }),
     )
     expect(res.status).toBe(200)
@@ -157,26 +198,26 @@ describe('POST .../transcode-complete — happy path', () => {
 
 describe('POST .../transcode-complete — auth', () => {
   it('allows staff admins through', async () => {
-    const { datasetId, env } = setupEnv()
+    const { datasetId, uploadId, env } = setupEnv()
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId,
         publisher: STAFF_ADMIN,
-        body: { data_ref: `r2:videos/${datasetId}/master.m3u8` },
+        body: { upload_id: uploadId },
       }),
     )
     expect(res.status).toBe(200)
   })
 
   it('rejects community publishers with 403', async () => {
-    const { datasetId, env } = setupEnv()
+    const { datasetId, uploadId, env } = setupEnv()
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId,
         publisher: COMMUNITY,
-        body: { data_ref: `r2:videos/${datasetId}/master.m3u8` },
+        body: { upload_id: uploadId },
       }),
     )
     expect(res.status).toBe(403)
@@ -185,13 +226,13 @@ describe('POST .../transcode-complete — auth', () => {
 
   it('rejects non-admin staff with 403', async () => {
     const nonAdmin: PublisherRow = { ...STAFF_ADMIN, is_admin: 0 }
-    const { datasetId, env } = setupEnv()
+    const { datasetId, uploadId, env } = setupEnv()
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId,
         publisher: nonAdmin,
-        body: { data_ref: `r2:videos/${datasetId}/master.m3u8` },
+        body: { upload_id: uploadId },
       }),
     )
     expect(res.status).toBe(403)
@@ -200,38 +241,108 @@ describe('POST .../transcode-complete — auth', () => {
 
 describe('POST .../transcode-complete — refusals', () => {
   it('returns 404 for an unknown dataset id', async () => {
-    const { env } = setupEnv()
+    const { uploadId, env } = setupEnv()
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId: 'NOPE',
-        body: { data_ref: 'r2:videos/NOPE/master.m3u8' },
+        body: { upload_id: uploadId },
       }),
     )
     expect(res.status).toBe(404)
   })
 
-  it('returns 409 not_transcoding when the row isn’t currently transcoding', async () => {
-    const { datasetId, env } = setupEnv({ transcoding: false })
+  it('returns 404 upload_not_found when the upload doesn’t exist', async () => {
+    const { datasetId, env } = setupEnv({ seedUpload: false })
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId,
-        body: { data_ref: `r2:videos/${datasetId}/master.m3u8` },
+        body: { upload_id: UPLOAD_ID },
       }),
+    )
+    expect(res.status).toBe(404)
+    expect((await readJson<{ error: string }>(res)).error).toBe('upload_not_found')
+  })
+
+  it('returns 404 upload_not_found when the upload belongs to a different dataset', async () => {
+    // Seed a fresh dataset with a different id and bind the
+    // upload to it; the route still points at the original
+    // datasetId, so the mismatched binding should 404.
+    const { sqlite, env } = setupEnv({ seedUpload: false })
+    const otherDataset = 'DSXYZ' + 'A'.repeat(21)
+    sqlite
+      .prepare(
+        `INSERT INTO datasets (id, slug, origin_node, title, format, data_ref,
+                                weight, visibility, is_hidden, schema_version,
+                                created_at, updated_at, transcoding)
+         VALUES (?, 'other', 'NODE000', 'Other', 'video/mp4', '',
+                 0, 'public', 0, 1,
+                 '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 1)`,
+      )
+      .run(otherDataset)
+    sqlite
+      .prepare(
+        `INSERT INTO asset_uploads
+           (id, dataset_id, publisher_id, kind, target, target_ref, mime,
+            declared_size, claimed_digest, status, failure_reason,
+            created_at, completed_at)
+         VALUES (?, ?, ?, 'data', 'r2', ?, 'video/mp4', 1000, ?, 'completed', NULL, ?, ?)`,
+      )
+      .run(
+        UPLOAD_ID,
+        otherDataset,
+        STAFF_ADMIN.id,
+        `r2:uploads/${otherDataset}/source.mp4`,
+        DEFAULT_SOURCE_DIGEST,
+        '2026-04-29T12:00:00.000Z',
+        '2026-04-29T12:01:00.000Z',
+      )
+    const res = await transcodeComplete(
+      ctx({
+        env,
+        datasetId: DATASET_ID, // <- doesn't match the upload's dataset_id
+        body: { upload_id: UPLOAD_ID },
+      }),
+    )
+    expect(res.status).toBe(404)
+    expect((await readJson<{ error: string }>(res)).error).toBe('upload_not_found')
+  })
+
+  it('returns 409 upload_kind_mismatch when the upload isn’t a video source', async () => {
+    // Seed an upload whose target_ref doesn't live under
+    // `uploads/` — i.e. it's an image upload that landed at the
+    // content-addressed key. The workflow shouldn't be finalising
+    // anything except video sources.
+    const { datasetId, uploadId, env } = setupEnv({
+      uploadTargetRef: `r2:datasets/${DATASET_ID}/by-digest/sha256/abc/asset.png`,
+    })
+    const res = await transcodeComplete(
+      ctx({ env, datasetId, body: { upload_id: uploadId } }),
+    )
+    expect(res.status).toBe(409)
+    expect((await readJson<{ error: string }>(res)).error).toBe('upload_kind_mismatch')
+  })
+
+  it('returns 409 not_transcoding when the row isn’t currently transcoding', async () => {
+    const { datasetId, uploadId, env } = setupEnv({ transcoding: false })
+    const res = await transcodeComplete(
+      ctx({ env, datasetId, body: { upload_id: uploadId } }),
     )
     expect(res.status).toBe(409)
     expect((await readJson<{ error: string }>(res)).error).toBe('not_transcoding')
   })
 
   it('returns 409 source_digest_mismatch on a digest mismatch', async () => {
-    const { datasetId, env } = setupEnv({ sourceDigest: 'sha256:' + 'a'.repeat(64) })
+    const { datasetId, uploadId, env } = setupEnv({
+      sourceDigest: 'sha256:' + 'a'.repeat(64),
+    })
     const res = await transcodeComplete(
       ctx({
         env,
         datasetId,
         body: {
-          data_ref: `r2:videos/${datasetId}/master.m3u8`,
+          upload_id: uploadId,
           source_digest: 'sha256:' + 'f'.repeat(64),
         },
       }),
@@ -240,24 +351,18 @@ describe('POST .../transcode-complete — refusals', () => {
     expect((await readJson<{ error: string }>(res)).error).toBe('source_digest_mismatch')
   })
 
-  it('returns 400 invalid_body on a missing data_ref', async () => {
+  it('returns 400 invalid_body on a missing upload_id', async () => {
     const { datasetId, env } = setupEnv()
     const res = await transcodeComplete(ctx({ env, datasetId, body: {} }))
     expect(res.status).toBe(400)
   })
 
-  it('returns 400 invalid_body on a data_ref that doesn’t look like an HLS bundle', async () => {
+  it('returns 400 invalid_body on an upload_id that isn’t a ULID', async () => {
     const { datasetId, env } = setupEnv()
-    for (const badRef of [
-      'r2:datasets/abc/by-digest/sha256/x/asset.png',
-      'r2:videos/abc/segments.ts',
-      'https://example.com/foo',
-    ]) {
-      const res = await transcodeComplete(
-        ctx({ env, datasetId, body: { data_ref: badRef } }),
-      )
-      expect(res.status).toBe(400)
-    }
+    const res = await transcodeComplete(
+      ctx({ env, datasetId, body: { upload_id: 'not-a-ulid' } }),
+    )
+    expect(res.status).toBe(400)
   })
 
   it('returns 400 invalid_json on a non-JSON body', async () => {

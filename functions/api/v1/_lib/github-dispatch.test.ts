@@ -21,6 +21,7 @@ const ENV_OK = {
 
 const PAYLOAD = {
   dataset_id: '01HX0000000000000000000000',
+  upload_id: '01HY0000000000000000000000',
   source_key: 'uploads/01HX0000000000000000000000/source.mp4',
   source_digest: 'sha256:' + 'a'.repeat(64),
 }

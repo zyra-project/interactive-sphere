@@ -115,6 +115,51 @@ export function isVideoSourceKey(key: string): boolean {
 }
 
 /**
+ * R2 key prefix for transcoded HLS bundles, scoped per
+ * dataset + upload (Phase 3pd review fix #2 / #15). The
+ * upload-scoping is what lets a re-upload to an already-
+ * published row land its new bundle at a fresh prefix
+ * without overwriting the bytes a public client is mid-
+ * playback against. The `/transcode-complete` route swaps
+ * `data_ref` atomically once the workflow finishes writing
+ * the new bundle; the old bundle continues to serve until
+ * the swap.
+ */
+export const VIDEO_BUNDLE_KEY_PREFIX = 'videos'
+
+/**
+ * Build the R2 key for the master playlist of a transcoded HLS
+ * bundle: `videos/{datasetId}/{uploadId}/master.m3u8`. The
+ * workflow uploads its bundle under
+ * `videos/{datasetId}/{uploadId}/` and the publisher API stores
+ * the master path as `data_ref`. Versioning per upload_id (the
+ * asset_uploads row ULID) means concurrent transcodes against
+ * the same dataset land in distinct prefixes; the
+ * `/transcode-complete` route picks the right one by looking up
+ * the upload row.
+ */
+export function buildVideoBundleMasterKey(datasetId: string, uploadId: string): string {
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(datasetId)) {
+    throw new Error(
+      `buildVideoBundleMasterKey: datasetId must be a ULID (26 base32 chars), got "${datasetId}"`,
+    )
+  }
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(uploadId)) {
+    throw new Error(
+      `buildVideoBundleMasterKey: uploadId must be a ULID (26 base32 chars), got "${uploadId}"`,
+    )
+  }
+  return `${VIDEO_BUNDLE_KEY_PREFIX}/${datasetId}/${uploadId}/master.m3u8`
+}
+
+/** Same as `buildVideoBundleMasterKey` but returns the directory
+ *  prefix (no `/master.m3u8` tail). Used by the workflow runner
+ *  to scope its `uploadHlsBundle` call to a per-upload prefix. */
+export function buildVideoBundlePrefix(datasetId: string, uploadId: string): string {
+  return `${VIDEO_BUNDLE_KEY_PREFIX}/${datasetId}/${uploadId}`
+}
+
+/**
  * Build a content-addressed R2 key per `CATALOG_ASSETS_PIPELINE.md`
  * "R2 assets: content-addressed keys". The hex must be the SHA-256
  * the publisher claims for these bytes; the upload-complete handler

@@ -316,6 +316,7 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     try {
       await dispatchTranscode(context.env, {
         dataset_id: datasetId,
+        upload_id: uploadId,
         source_key: upload.target_ref.slice('r2:'.length),
         source_digest: verifiedDigest,
       })

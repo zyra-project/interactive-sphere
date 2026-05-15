@@ -43,6 +43,13 @@ export interface GitHubDispatchEnv {
 export interface TranscodeDispatchPayload {
   /** Dataset id the workflow will encode for. */
   dataset_id: string
+  /** Upload id (asset_uploads row ULID). The workflow uses this
+   *  to scope the output bundle to a versioned R2 prefix
+   *  (`videos/{dataset_id}/{upload_id}/...`) and to POST back to
+   *  `/transcode-complete` — the route handler reconstructs
+   *  `data_ref` from the route id + this upload id so a misrouted
+   *  workflow can't point the row at the wrong bundle. */
+  upload_id: string
   /** R2 key of the source MP4 (typically `uploads/{id}/source.mp4`). */
   source_key: string
   /** SHA-256 of the source bytes — workflow re-verifies before encoding. */
