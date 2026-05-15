@@ -1,0 +1,149 @@
+name: Transcode HLS
+
+# Fires when the publisher API completes a video upload and posts a
+# repository_dispatch. The portal triggers this from
+# `functions/api/v1/publish/datasets/[id]/asset/[upload_id]/complete.ts`
+# via the helper in `functions/api/v1/_lib/github-dispatch.ts`. The
+# workflow downloads the source MP4 from R2, runs ffmpeg against the
+# 4K / 1080p / 720p 2:1 spherical ladder, writes the HLS bundle back
+# to R2, and PATCHes the row through the publisher API. See
+# `docs/CATALOG_ASSETS_PIPELINE.md` "Video pipeline (R2 + GitHub
+# Actions — current)" for the full design.
+#
+# This workflow does NOT modify the repository — `repository_dispatch`
+# is a pure event API. The runner checks out the code read-only so it
+# can reuse `cli/lib/ffmpeg-hls.ts` and `cli/lib/r2-upload.ts`, then
+# the `cli/transcode-from-dispatch.ts` script drives the per-row
+# pipeline.
+
+on:
+  repository_dispatch:
+    types: [transcode-hls]
+
+# Cap concurrent runs per dataset so a publisher re-uploading the
+# same video in quick succession doesn't race two encodes against
+# the same R2 prefix. Different datasets transcode in parallel.
+concurrency:
+  group: transcode-hls-${{ github.event.client_payload.dataset_id }}
+  cancel-in-progress: true
+
+# Lock the GITHUB_TOKEN to the minimum the workflow needs. The
+# runner clones the repo read-only (no push, no PR, no issues —
+# the transcode pipeline writes its results back via the publisher
+# API, not through git). Defaults to write-everything otherwise,
+# which CodeQL's `actions/missing-workflow-permissions` rule
+# correctly flags.
+permissions:
+  contents: read
+
+# Single-job workflow; matrix lives in `transcode-from-dispatch`'s
+# rendition ladder.
+jobs:
+  transcode:
+    name: Transcode ${{ github.event.client_payload.dataset_id }}
+    runs-on: ubuntu-22.04
+    # 30 min cap — large 4K sources can push 10–15 min; doubling the
+    # ceiling keeps the runner from killing a slow but eventually-
+    # successful encode.
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate dispatch payload
+        # client_payload fields are JSON-decoded by the runner but
+        # still untrusted input — a forged dispatch could include
+        # shell metacharacters in any of them. Move into env vars
+        # and quote the expansions so the shell parser never sees
+        # the raw payload string.
+        env:
+          PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          PAYLOAD_UPLOAD_ID: ${{ github.event.client_payload.upload_id }}
+          PAYLOAD_SOURCE_KEY: ${{ github.event.client_payload.source_key }}
+          PAYLOAD_SOURCE_DIGEST: ${{ github.event.client_payload.source_digest }}
+        run: |
+          set -e
+          if [ -z "$PAYLOAD_DATASET_ID" ]; then
+            echo "::error::client_payload.dataset_id is missing"
+            exit 1
+          fi
+          if [ -z "$PAYLOAD_UPLOAD_ID" ]; then
+            echo "::error::client_payload.upload_id is missing"
+            exit 1
+          fi
+          if [ -z "$PAYLOAD_SOURCE_KEY" ]; then
+            echo "::error::client_payload.source_key is missing"
+            exit 1
+          fi
+          if [ -z "$PAYLOAD_SOURCE_DIGEST" ]; then
+            echo "::error::client_payload.source_digest is missing"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ffmpeg
+        run: |
+          set -e
+          sudo apt-get update -qq
+          # The Ubuntu 22.04 runner ships ffmpeg 4.4, which covers
+          # every codec the ladder uses (H.264 + AAC + HLS muxer).
+          # The PPA upgrade would buy us AV1 support but the ladder
+          # stays on H.264 main profile for now (see
+          # CATALOG_ASSETS_PIPELINE.md "Codec choices").
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -n1
+          ffprobe -version | head -n1
+
+      - name: Run transcode pipeline
+        env:
+          # R2 S3-API credentials for both source download and
+          # bundle upload. Add via repo Settings → Secrets and
+          # variables → Actions.
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CATALOG_R2_BUCKET: ${{ secrets.CATALOG_R2_BUCKET }}
+          # Publisher API target + Cloudflare Access service token.
+          # The Pages deploy provisions the service token as a
+          # `role=service` publisher via the
+          # `functions/api/v1/publish/_middleware.ts` JIT path.
+          TERRAVIZ_SERVER: ${{ secrets.TERRAVIZ_SERVER }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          # Re-read the client_payload fields through env vars (same
+          # rationale as the validation step above — quoted env
+          # expansions can't be escaped by metacharacters in the
+          # payload).
+          PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          PAYLOAD_UPLOAD_ID: ${{ github.event.client_payload.upload_id }}
+          PAYLOAD_SOURCE_KEY: ${{ github.event.client_payload.source_key }}
+          PAYLOAD_SOURCE_DIGEST: ${{ github.event.client_payload.source_digest }}
+        run: |
+          set -e
+          npx tsx cli/transcode-from-dispatch.ts \
+            --dataset-id="$PAYLOAD_DATASET_ID" \
+            --upload-id="$PAYLOAD_UPLOAD_ID" \
+            --source-key="$PAYLOAD_SOURCE_KEY" \
+            --source-digest="$PAYLOAD_SOURCE_DIGEST" \
+            --cleanup-on-failure
+
+      - name: Summarise outcome
+        if: always()
+        env:
+          PAYLOAD_DATASET_ID: ${{ github.event.client_payload.dataset_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            echo "::notice::Transcode complete for $PAYLOAD_DATASET_ID"
+          else
+            echo "::error::Transcode failed for $PAYLOAD_DATASET_ID (job status: $JOB_STATUS). The dataset row is still flagged transcoding=1; an operator can clear it manually after diagnosing or trigger a retry by re-uploading."
+          fi
