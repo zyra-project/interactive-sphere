@@ -32,6 +32,7 @@ import {
   attachToolbar,
   renderMarkdownToolbar,
 } from '../components/markdown-toolbar'
+import { renderChipInput } from '../components/chip-input'
 import { renderMarkdown } from '../../../services/markdownRenderer'
 
 export interface DatasetNewPageOptions {
@@ -81,6 +82,11 @@ interface FormState {
   startTimeLocal: string
   endTimeLocal: string
   period: string
+  // Categorization (3pc/C3b). Both arrays cap at 20 entries
+  // server-side; chip-input applies the same cap so the UI
+  // matches the validator.
+  keywords: ReadonlyArray<string>
+  tags: ReadonlyArray<string>
   isSaving: boolean
   errors: ReadonlyArray<PublisherValidationError>
   /** Non-validation top-level error (network / server / session
@@ -539,6 +545,48 @@ function timeRangeCard(state: FormState): HTMLElement {
   return card
 }
 
+function categorizationCard(state: FormState): HTMLElement {
+  const card = document.createElement('section')
+  card.className = 'publisher-card publisher-glass publisher-form-card'
+
+  const heading = document.createElement('h2')
+  heading.className = 'publisher-card-heading'
+  heading.textContent = t('publisher.datasetForm.section.categorization')
+  card.appendChild(heading)
+
+  card.appendChild(
+    renderChipInput({
+      id: 'dataset-keywords',
+      labelKey: 'publisher.datasetForm.field.keywords',
+      values: state.keywords,
+      placeholder: t('publisher.datasetForm.placeholder.keywords'),
+      helpKey: 'publisher.datasetForm.help.keywords',
+      max: 20,
+      maxLength: 40,
+      onChange: v => {
+        state.keywords = v
+      },
+    }),
+  )
+
+  card.appendChild(
+    renderChipInput({
+      id: 'dataset-tags',
+      labelKey: 'publisher.datasetForm.field.tags',
+      values: state.tags,
+      placeholder: t('publisher.datasetForm.placeholder.tags'),
+      helpKey: 'publisher.datasetForm.help.tags',
+      max: 20,
+      maxLength: 40,
+      onChange: v => {
+        state.tags = v
+      },
+    }),
+  )
+
+  return card
+}
+
 function licensingCard(state: FormState, update: () => void): HTMLElement {
   const card = document.createElement('section')
   card.className = 'publisher-card publisher-glass publisher-form-card'
@@ -786,6 +834,7 @@ function renderForm(
   form.appendChild(abstractCard(state, update))
   form.appendChild(licensingCard(state, update))
   form.appendChild(timeRangeCard(state))
+  form.appendChild(categorizationCard(state))
 
   // Submit row.
   const actions = document.createElement('div')
@@ -868,6 +917,10 @@ function renderForm(
     setIfPresent('start_time', localDatetimeToIso(state.startTimeLocal))
     setIfPresent('end_time', localDatetimeToIso(state.endTimeLocal))
     setIfPresent('period', state.period)
+    // Arrays — omit when empty so the join tables stay empty
+    // instead of carrying placeholder rows.
+    if (state.keywords.length > 0) body.keywords = [...state.keywords]
+    if (state.tags.length > 0) body.tags = [...state.tags]
 
     const result = await publisherSend<{ dataset: { id: string } }>(
       CREATE_ENDPOINT,
@@ -940,6 +993,8 @@ export function renderDatasetNewPage(
     startTimeLocal: '',
     endTimeLocal: '',
     period: '',
+    keywords: [],
+    tags: [],
     isSaving: false,
     errors: [],
     topLevelError: null,

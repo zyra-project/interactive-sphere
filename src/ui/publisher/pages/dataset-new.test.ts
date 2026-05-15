@@ -527,6 +527,68 @@ describe('renderDatasetNewPage', () => {
     expect(body.period).toBe('P1M')
   })
 
+  it('renders the categorization card with keyword + tag chip inputs', () => {
+    renderDatasetNewPage(mount)
+    expect(mount.querySelector('#dataset-keywords')).not.toBeNull()
+    expect(mount.querySelector('#dataset-tags')).not.toBeNull()
+  })
+
+  it('omits keywords + tags from the body when empty', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.keywords).toBeUndefined()
+    expect(body.tags).toBeUndefined()
+  })
+
+  it('includes keywords + tags in the body after the publisher commits chips', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'X' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'A title')
+
+    // Type into the keywords chip-input and press Enter twice.
+    const keywords = mount.querySelector<HTMLInputElement>('#dataset-keywords')!
+    keywords.value = 'climate'
+    keywords.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    keywords.value = 'sst'
+    keywords.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+
+    const tags = mount.querySelector<HTMLInputElement>('#dataset-tags')!
+    tags.value = 'featured'
+    tags.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(body.keywords).toEqual(['climate', 'sst'])
+    expect(body.tags).toEqual(['featured'])
+  })
+
   it('Cancel link routes back to /publish/datasets via SPA navigation', () => {
     const routerNavigate = vi.fn()
     renderDatasetNewPage(mount, { routerNavigate })
