@@ -17,7 +17,12 @@
  */
 
 import { t } from '../../../i18n'
-import { clearWarmupFlag, handleSessionError, publisherGet } from '../api'
+import {
+  clearWarmupFlag,
+  handleSessionError,
+  publisherGet,
+  publisherSend,
+} from '../api'
 import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
 import type {
   DatasetDetailResponse,
@@ -33,7 +38,13 @@ export interface DatasetDetailPageOptions {
    *  jump to `/publish/datasets/:id/edit` reuses the portal's
    *  router instead of a hard page load. */
   routerNavigate?: (path: string) => void
+  /** Confirmation prompt. Defaults to `window.confirm`; tests
+   *  override to skip / auto-confirm without a real dialog. */
+  confirmFn?: (message: string) => boolean
 }
+
+/** Kind of lifecycle-flip action the detail page can dispatch. */
+type LifecycleAction = 'publish' | 'retract'
 
 function endpoint(id: string): string {
   return `/api/v1/publish/datasets/${encodeURIComponent(id)}`
@@ -84,10 +95,15 @@ function formatDate(iso: string | null | undefined): string {
   })
 }
 
-function renderHeader(
-  d: PublisherDatasetDetail,
-  routerNavigate: ((path: string) => void) | undefined,
-): HTMLElement {
+interface HeaderHooks {
+  routerNavigate?: (path: string) => void
+  /** Dispatched when the publisher confirms a lifecycle flip.
+   *  The page hands this through to `dispatchAction` so the
+   *  re-fetch / re-render loop has access to options + content. */
+  onAction?: (action: LifecycleAction) => void
+}
+
+function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElement {
   const header = document.createElement('header')
   header.className = 'publisher-detail-header'
 
@@ -114,10 +130,10 @@ function renderHeader(
 
   const editHref = `/publish/datasets/${encodeURIComponent(d.id)}/edit`
   const editLink = document.createElement('a')
-  editLink.className = 'publisher-button publisher-button-primary publisher-detail-edit'
+  editLink.className = 'publisher-button publisher-button-secondary publisher-detail-edit'
   editLink.href = editHref
   editLink.textContent = t('publisher.datasetDetail.editAction')
-  if (routerNavigate) {
+  if (hooks.routerNavigate) {
     editLink.addEventListener('click', event => {
       // Plain left-click + no modifier → SPA navigation. Anything
       // else (cmd-click, middle-click, etc.) falls through to the
@@ -131,11 +147,21 @@ function renderHeader(
         !event.altKey
       ) {
         event.preventDefault()
-        routerNavigate(editHref)
+        hooks.routerNavigate!(editHref)
       }
     })
   }
   titleRow.appendChild(editLink)
+
+  // Drafts and retracted rows surface a "Publish" affordance;
+  // published rows surface "Retract". The route handlers accept
+  // re-publishing a retracted row (it clears retracted_at and
+  // re-stamps published_at) so the same button does double duty.
+  if (status === 'published') {
+    titleRow.appendChild(renderActionButton('retract', hooks.onAction))
+  } else {
+    titleRow.appendChild(renderActionButton('publish', hooks.onAction))
+  }
 
   header.appendChild(titleRow)
 
@@ -145,6 +171,27 @@ function renderHeader(
   header.appendChild(slug)
 
   return header
+}
+
+function renderActionButton(
+  action: LifecycleAction,
+  onAction: ((action: LifecycleAction) => void) | undefined,
+): HTMLButtonElement {
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className =
+    action === 'publish'
+      ? 'publisher-button publisher-button-primary publisher-detail-publish'
+      : 'publisher-button publisher-button-danger publisher-detail-retract'
+  btn.textContent =
+    action === 'publish'
+      ? t('publisher.datasetDetail.action.publish')
+      : t('publisher.datasetDetail.action.retract')
+  btn.addEventListener('click', () => {
+    if (!onAction) return
+    onAction(action)
+  })
+  return btn
 }
 
 interface FieldSpec {
@@ -321,13 +368,21 @@ function renderDetail(
   d: PublisherDatasetDetail,
   keywords: ReadonlyArray<string>,
   tags: ReadonlyArray<string>,
-  routerNavigate: ((path: string) => void) | undefined,
+  hooks: HeaderHooks,
+  actionError: string | null,
 ): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
 
   shell.appendChild(backLink())
-  shell.appendChild(renderHeader(d, routerNavigate))
+  shell.appendChild(renderHeader(d, hooks))
+  if (actionError) {
+    const err = document.createElement('p')
+    err.className = 'publisher-detail-action-error'
+    err.setAttribute('role', 'alert')
+    err.textContent = actionError
+    shell.appendChild(err)
+  }
   shell.appendChild(renderAbstract(d))
 
   shell.appendChild(
@@ -475,11 +530,98 @@ export async function renderDatasetDetailPage(
     return
   }
   clearWarmupFlag()
+  paint(content, id, result.data, options, null)
+}
+
+function paint(
+  content: HTMLElement,
+  id: string,
+  data: DatasetDetailResponse,
+  options: DatasetDetailPageOptions,
+  actionError: string | null,
+): void {
+  const hooks: HeaderHooks = {
+    routerNavigate: options.routerNavigate,
+    onAction: action => {
+      void dispatchAction(content, id, action, options)
+    },
+  }
   renderDetail(
     content,
-    result.data.dataset,
-    result.data.keywords ?? [],
-    result.data.tags ?? [],
-    options.routerNavigate,
+    data.dataset,
+    data.keywords ?? [],
+    data.tags ?? [],
+    hooks,
+    actionError,
   )
+}
+
+/**
+ * Run a publish or retract action: ask for confirmation, POST to
+ * the lifecycle endpoint, and re-render the page (with a fresh row
+ * on success, or with an inline error banner on failure). The
+ * heavy lifting — the audit row, the snapshot invalidation, the
+ * embed enqueue — happens server-side. The portal's job here is
+ * to surface the result.
+ */
+async function dispatchAction(
+  content: HTMLElement,
+  id: string,
+  action: LifecycleAction,
+  options: DatasetDetailPageOptions,
+): Promise<void> {
+  const confirmFn = options.confirmFn ?? ((m: string) => window.confirm(m))
+  const message =
+    action === 'publish'
+      ? t('publisher.datasetDetail.action.confirm.publish')
+      : t('publisher.datasetDetail.action.confirm.retract')
+  if (!confirmFn(message)) return
+
+  const url = `${endpoint(id)}/${action}`
+  const result = await publisherSend<DatasetDetailResponse>(url, {}, {
+    fetchFn: options.fetchFn,
+    sleep: options.sleep,
+  })
+
+  if (result.ok) {
+    // The action endpoints return `{ dataset }`; refetch so we pick
+    // up the fresh decoration arrays the action route doesn't echo
+    // back. Cheap and keeps the surface trivially correct against
+    // future server-side response-shape drift.
+    await renderDatasetDetailPage(content, id, options)
+    return
+  }
+  if (result.kind === 'session') {
+    if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+      renderError(content, 'session')
+    }
+    return
+  }
+  // Re-fetch the row so the displayed status badge is consistent
+  // with what the server thinks, then render the error banner over
+  // the refreshed row.
+  const errorMessage = actionErrorMessage(result.kind)
+  const fresh = await publisherGet<DatasetDetailResponse>(endpoint(id), {
+    fetchFn: options.fetchFn,
+    sleep: options.sleep,
+  })
+  if (fresh.ok) {
+    paint(content, id, fresh.data, options, errorMessage)
+    return
+  }
+  // If even the refetch fails, fall back to the static error card.
+  if (fresh.kind === 'session') {
+    if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+      renderError(content, 'session')
+    }
+    return
+  }
+  renderError(content, fresh.kind)
+}
+
+function actionErrorMessage(kind: 'validation' | 'network' | 'server' | 'not_found'): string {
+  if (kind === 'network') return t('publisher.datasetDetail.action.error.network')
+  if (kind === 'validation') return t('publisher.datasetDetail.action.error.validation')
+  if (kind === 'not_found') return t('publisher.datasetDetail.notFound')
+  return t('publisher.datasetDetail.action.error.network')
 }

@@ -250,6 +250,145 @@ describe('renderDatasetDetailPage', () => {
     expect(routerNavigate).not.toHaveBeenCalled()
   })
 
+  it('renders a Publish button on a draft row', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset({ published_at: null })))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    expect(mount.querySelector('.publisher-detail-publish')?.textContent).toBe(
+      'Publish',
+    )
+    expect(mount.querySelector('.publisher-detail-retract')).toBeNull()
+  })
+
+  it('renders a Retract button on a published row', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset()))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    expect(mount.querySelector('.publisher-detail-retract')?.textContent).toBe(
+      'Retract',
+    )
+    expect(mount.querySelector('.publisher-detail-publish')).toBeNull()
+  })
+
+  it('renders a Publish button on a retracted row (re-publish path)', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(detailResponse(dataset({ retracted_at: '2026-05-01T00:00:00Z' })))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    expect(mount.querySelector('.publisher-detail-publish')?.textContent).toBe(
+      'Publish',
+    )
+  })
+
+  it('skips the publish action when the publisher cancels the confirm prompt', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset({ published_at: null })))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      confirmFn: () => false,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-publish')?.click()
+    await new Promise(r => setTimeout(r, 0))
+    // Only the initial GET — no POST to the publish endpoint.
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('POSTs to /publish on confirm and refreshes the view', async () => {
+    const draft = dataset({ published_at: null })
+    const published = dataset({ published_at: '2026-05-10T00:00:00Z' })
+    const fetchFn = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce(detailResponse(draft))
+      // POST publish
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ dataset: published, keywords: [], tags: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      // post-action GET
+      .mockResolvedValueOnce(detailResponse(published))
+    await renderDatasetDetailPage(mount, '01AAAAAAAAAAAAAAAAAAAAAAAA', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      confirmFn: () => true,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-publish')!.click()
+    await new Promise(r => setTimeout(r, 0))
+    // Wait for the post-action refetch to settle.
+    await new Promise(r => setTimeout(r, 0))
+    expect(fetchFn).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/publish/datasets/01AAAAAAAAAAAAAAAAAAAAAAAA/publish',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(mount.querySelector<HTMLElement>('.publisher-badge-status')?.textContent).toBe(
+      'Published',
+    )
+    expect(mount.querySelector('.publisher-detail-retract')).not.toBeNull()
+  })
+
+  it('POSTs to /retract on a published row', async () => {
+    const published = dataset()
+    const retracted = dataset({ retracted_at: '2026-05-10T00:00:00Z' })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(detailResponse(published))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ dataset: retracted, keywords: [], tags: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(detailResponse(retracted))
+    await renderDatasetDetailPage(mount, '01AAAAAAAAAAAAAAAAAAAAAAAA', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      confirmFn: () => true,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-retract')!.click()
+    await new Promise(r => setTimeout(r, 0))
+    await new Promise(r => setTimeout(r, 0))
+    expect(fetchFn).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/publish/datasets/01AAAAAAAAAAAAAAAAAAAAAAAA/retract',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('surfaces a validation error inline without flipping the badge', async () => {
+    const draft = dataset({ published_at: null })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(detailResponse(draft))
+      // POST publish → 400 with validation errors
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            errors: [{ field: 'data_ref', code: 'required', message: 'data_ref required' }],
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      // post-action refetch — still a draft
+      .mockResolvedValueOnce(detailResponse(draft))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      confirmFn: () => true,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-publish')!.click()
+    await new Promise(r => setTimeout(r, 0))
+    await new Promise(r => setTimeout(r, 0))
+    expect(mount.querySelector('.publisher-detail-action-error')?.textContent).toMatch(
+      /validation/i,
+    )
+    expect(mount.querySelector<HTMLElement>('.publisher-badge-status')?.textContent).toBe(
+      'Draft',
+    )
+  })
+
   it('renders the retracted-state badge for a retracted row', async () => {
     const fetchFn = vi
       .fn()
