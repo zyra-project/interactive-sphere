@@ -737,6 +737,81 @@
   outline: 0;
 }
 
+/* Asset uploader (3pd/C). Three visual rows — current ref,
+   file input, status — plus an inline progress bar that's
+   only mounted while an upload is in flight. */
+.publisher-asset-uploader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--white-o05, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--white-o12, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+}
+
+.publisher-asset-uploader-current {
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  font-size: 0.875rem;
+}
+
+.publisher-asset-uploader-current-label {
+  color: var(--color-text-muted, #999999);
+}
+
+.publisher-asset-uploader-current-value {
+  word-break: break-all;
+}
+
+.publisher-asset-uploader-input-row {
+  display: flex;
+  align-items: center;
+}
+
+.publisher-asset-uploader-input {
+  font: inherit;
+  color: var(--color-text, #e8eaf0);
+}
+
+.publisher-asset-uploader-status {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary, #bbbbbb);
+}
+
+.publisher-asset-uploader-status-error {
+  color: #ffd1d1;
+}
+
+.publisher-asset-uploader-status-done-direct,
+.publisher-asset-uploader-status-done-transcoding {
+  color: #c8e8d4;
+}
+
+.publisher-asset-uploader-progress {
+  width: 100%;
+  height: 0.5rem;
+}
+
+.publisher-asset-uploader-error-details {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #999999);
+}
+
+.publisher-asset-uploader-error-details pre {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  background: var(--black-o20, rgba(0, 0, 0, 0.2));
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.75rem;
+}
+
 .publisher-shell h1 {
   font-size: 1.5rem;
   font-weight: 600;

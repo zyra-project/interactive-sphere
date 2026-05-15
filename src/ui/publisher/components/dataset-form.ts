@@ -29,6 +29,7 @@ import {
 import { buildErrorCard, type ErrorCardDetails } from './error-card'
 import { attachToolbar, renderMarkdownToolbar } from './markdown-toolbar'
 import { renderChipInput } from './chip-input'
+import { renderAssetUploader } from './asset-uploader'
 import { renderMarkdown } from '../../../services/markdownRenderer'
 import type { PublisherDatasetDetail } from '../types'
 
@@ -918,24 +919,64 @@ function renderForm(
     }),
   )
 
-  // data_ref is required by `validateForPublish` server-side
-  // but draft-saveable empty. Interim manual input until the
-  // 3pd asset uploader replaces it. Placeholder shows the four
-  // accepted shapes so the publisher doesn't have to guess.
-  identityCard.appendChild(
-    inputField({
-      id: 'dataset-data-ref',
-      labelKey: 'publisher.datasetForm.field.dataRef',
-      required: false,
-      value: state.dataRef,
-      placeholder: t('publisher.datasetForm.placeholder.dataRef'),
-      helpKey: 'publisher.datasetForm.help.dataRef',
-      error: findError(state.errors, 'data_ref'),
-      onChange: v => {
-        state.dataRef = v
-      },
-    }),
-  )
+  // data_ref is required by `validateForPublish` server-side but
+  // draft-saveable empty. In create mode the dataset id doesn't
+  // exist yet — the uploader needs an id to scope its
+  // /asset endpoint against — so we keep the manual ref input as
+  // a fallback for `vimeo:` / external URLs. In edit mode we hand
+  // off to the asset uploader (3pd/C); the manual ref input stays
+  // available for the non-upload paths (legacy / external).
+  if (ctx.mode === 'edit' && ctx.datasetId) {
+    const uploaderWrap = document.createElement('div')
+    uploaderWrap.className = 'publisher-field'
+    const label = document.createElement('span')
+    label.className = 'publisher-field-label'
+    label.textContent = t('publisher.datasetForm.field.dataRef')
+    uploaderWrap.appendChild(label)
+    uploaderWrap.appendChild(
+      renderAssetUploader({
+        datasetId: ctx.datasetId,
+        format: state.format,
+        currentDataRef: state.dataRef || null,
+        navigate: ctx.navigate,
+        fetchFn: ctx.fetchFn,
+        sleep: ctx.sleep,
+        onUploaded: outcome => {
+          // On a direct upload (image), the server already wrote
+          // `data_ref` to the row. Mirror the field-state so a
+          // subsequent form save doesn't clobber it with an empty
+          // string. On a video upload the server stamped
+          // `transcoding=1` and cleared data_ref — the parent
+          // detail page picks up the row + starts polling in 3pd/D.
+          if (outcome.mode === 'direct') {
+            state.dataRef = outcome.dataRef
+          } else {
+            state.dataRef = ''
+          }
+        },
+      }),
+    )
+    identityCard.appendChild(uploaderWrap)
+  } else {
+    // Create-mode fallback — the publisher can still paste a
+    // `vimeo:` ref or an external URL by hand. Once the draft
+    // saves and they navigate to the edit page, the uploader
+    // shows up.
+    identityCard.appendChild(
+      inputField({
+        id: 'dataset-data-ref',
+        labelKey: 'publisher.datasetForm.field.dataRef',
+        required: false,
+        value: state.dataRef,
+        placeholder: t('publisher.datasetForm.placeholder.dataRef'),
+        helpKey: 'publisher.datasetForm.help.dataRef',
+        error: findError(state.errors, 'data_ref'),
+        onChange: v => {
+          state.dataRef = v
+        },
+      }),
+    )
+  }
 
   identityCard.appendChild(
     inputField({
