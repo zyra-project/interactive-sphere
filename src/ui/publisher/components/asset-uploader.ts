@@ -136,15 +136,40 @@ const STAGE_STATUS_KEY: Record<Stage, MessageKey> = {
   error: 'publisher.assetUploader.status.error',
 }
 
-/** SHA-256 of a File via the browser's SubtleCrypto. Returns the
- *  `sha256:<hex>` form the publisher API expects. */
+/** Chunk size for incremental hashing — 8 MB. Large enough that
+ *  per-chunk overhead is negligible, small enough that 4K video
+ *  uploads don't blow the tab's memory budget. */
+const HASH_CHUNK_BYTES = 8 * 1024 * 1024
+
+/**
+ * SHA-256 of a File via streaming chunks. The browser-native
+ * `crypto.subtle.digest` only operates on a complete
+ * `BufferSource` (no incremental API), so an `arrayBuffer()`
+ * over a 4K MP4 would load the whole file into memory before
+ * hashing — risky for >1 GB clips. Instead we slice the file
+ * into `HASH_CHUNK_BYTES` chunks and feed each chunk into an
+ * incremental SHA-256 from `@noble/hashes`. Fix for PR #112
+ * Copilot #2.
+ *
+ * Returns the `sha256:<hex>` form the publisher API expects.
+ */
 export async function hashFileSha256(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer()
-  const digest = await crypto.subtle.digest('SHA-256', buffer)
-  const hex = Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-  return `sha256:${hex}`
+  // Dynamic import keeps `@noble/hashes` out of the main SPA
+  // bundle — only loaded when the publisher actually opens the
+  // uploader. ~10 KB tax on the portal lazy chunk.
+  const { sha256 } = await import('@noble/hashes/sha2.js')
+  const { bytesToHex } = await import('@noble/hashes/utils.js')
+  const hasher = sha256.create()
+  for (let offset = 0; offset < file.size; offset += HASH_CHUNK_BYTES) {
+    const slice = file.slice(offset, offset + HASH_CHUNK_BYTES)
+    const buf = await slice.arrayBuffer()
+    hasher.update(new Uint8Array(buf))
+    // The local `buf` + `slice` go out of scope on the next
+    // iteration, letting the GC reclaim each chunk before we
+    // read the next one. Peak memory ≈ HASH_CHUNK_BYTES + the
+    // hasher's small internal state.
+  }
+  return `sha256:${bytesToHex(hasher.digest())}`
 }
 
 /**
