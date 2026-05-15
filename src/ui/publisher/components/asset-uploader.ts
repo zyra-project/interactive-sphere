@@ -228,7 +228,19 @@ export function renderAssetUploader(options: AssetUploaderOptions): HTMLElement 
     input.id = inputId
     input.className = 'publisher-asset-uploader-input'
     input.accept = acceptForFormat(options.format)
-    input.disabled = s.stage !== 'idle' && s.stage !== 'error' && !s.stage.startsWith('done-')
+    // Re-enable only when the uploader is idle, in an error
+    // state the publisher can retry from, or done with a
+    // direct (non-transcode) finalisation. `done-transcoding`
+    // keeps the picker disabled — starting a second upload
+    // while the first transcode is still in flight would fire
+    // an overlapping dispatch, and the server-side
+    // `transcoding_in_progress` gate (3pd-review2/A) would
+    // refuse it anyway. Cleaner to disable here. Fix for
+    // PR #112 Copilot #2.
+    input.disabled =
+      s.stage !== 'idle' &&
+      s.stage !== 'error' &&
+      s.stage !== 'done-direct'
     input.addEventListener('change', () => {
       const file = input.files?.[0]
       if (!file) return

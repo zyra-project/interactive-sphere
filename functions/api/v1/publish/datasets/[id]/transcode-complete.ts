@@ -16,10 +16,14 @@
  *                                           // asset_uploads row
  *                                           // this transcode is
  *                                           // finalising.
- *     "source_digest":  "sha256:..."        // optional; if
- *                                           // supplied, must match
+ *     "source_digest":  "sha256:..."        // required; must match
  *                                           // the row's stored
- *                                           // source_digest.
+ *                                           // source_digest. Guards
+ *                                           // against a stale
+ *                                           // dispatch winning
+ *                                           // against a fresher
+ *                                           // upload — PR #112
+ *                                           // Copilot #3.
  *   }
  *
  * The server **constructs `data_ref` itself** from the route id
@@ -66,7 +70,7 @@ function jsonError(status: number, error: string, message: string): Response {
 
 interface TranscodeCompleteBody {
   upload_id: string
-  source_digest?: string
+  source_digest: string
 }
 
 function validateBody(raw: unknown): TranscodeCompleteBody | { error: string } {
@@ -77,10 +81,12 @@ function validateBody(raw: unknown): TranscodeCompleteBody | { error: string } {
   if (typeof obj.upload_id !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(obj.upload_id)) {
     return { error: 'upload_id must be a 26-character ULID.' }
   }
-  if (obj.source_digest !== undefined && typeof obj.source_digest !== 'string') {
-    return { error: 'source_digest must be a string when supplied.' }
+  if (typeof obj.source_digest !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(obj.source_digest)) {
+    return {
+      error: 'source_digest is required and must be sha256:<64-hex>.',
+    }
   }
-  return { upload_id: obj.upload_id, source_digest: obj.source_digest as string | undefined }
+  return { upload_id: obj.upload_id, source_digest: obj.source_digest }
 }
 
 export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
@@ -154,10 +160,7 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     )
   }
 
-  if (
-    validated.source_digest !== undefined &&
-    existing.source_digest !== validated.source_digest
-  ) {
+  if (existing.source_digest !== validated.source_digest) {
     return jsonError(
       409,
       'source_digest_mismatch',

@@ -145,7 +145,7 @@ describe('POST .../transcode-complete — happy path', () => {
   it('clears transcoding, server-constructs data_ref, returns the updated row', async () => {
     const { sqlite, datasetId, uploadId, env } = setupEnv()
     const res = await transcodeComplete(
-      ctx({ env, datasetId, body: { upload_id: uploadId } }),
+      ctx({ env, datasetId, body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST } }),
     )
     expect(res.status).toBe(200)
     const body = await readJson<{ dataset: { data_ref: string; transcoding: number | null } }>(
@@ -165,7 +165,7 @@ describe('POST .../transcode-complete — happy path', () => {
 
   it('writes an audit_events row tagged transcode_complete with the upload_id', async () => {
     const { sqlite, datasetId, uploadId, env } = setupEnv()
-    await transcodeComplete(ctx({ env, datasetId, body: { upload_id: uploadId } }))
+    await transcodeComplete(ctx({ env, datasetId, body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST } }))
     const audit = sqlite
       .prepare(
         `SELECT action, metadata_json FROM audit_events WHERE subject_id = ? ORDER BY id DESC LIMIT 1`,
@@ -204,7 +204,7 @@ describe('POST .../transcode-complete — auth', () => {
         env,
         datasetId,
         publisher: STAFF_ADMIN,
-        body: { upload_id: uploadId },
+        body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST },
       }),
     )
     expect(res.status).toBe(200)
@@ -217,7 +217,7 @@ describe('POST .../transcode-complete — auth', () => {
         env,
         datasetId,
         publisher: COMMUNITY,
-        body: { upload_id: uploadId },
+        body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST },
       }),
     )
     expect(res.status).toBe(403)
@@ -232,7 +232,7 @@ describe('POST .../transcode-complete — auth', () => {
         env,
         datasetId,
         publisher: nonAdmin,
-        body: { upload_id: uploadId },
+        body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST },
       }),
     )
     expect(res.status).toBe(403)
@@ -246,7 +246,7 @@ describe('POST .../transcode-complete — refusals', () => {
       ctx({
         env,
         datasetId: 'NOPE',
-        body: { upload_id: uploadId },
+        body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST },
       }),
     )
     expect(res.status).toBe(404)
@@ -258,7 +258,7 @@ describe('POST .../transcode-complete — refusals', () => {
       ctx({
         env,
         datasetId,
-        body: { upload_id: UPLOAD_ID },
+        body: { upload_id: UPLOAD_ID, source_digest: DEFAULT_SOURCE_DIGEST },
       }),
     )
     expect(res.status).toBe(404)
@@ -302,7 +302,7 @@ describe('POST .../transcode-complete — refusals', () => {
       ctx({
         env,
         datasetId: DATASET_ID, // <- doesn't match the upload's dataset_id
-        body: { upload_id: UPLOAD_ID },
+        body: { upload_id: UPLOAD_ID, source_digest: DEFAULT_SOURCE_DIGEST },
       }),
     )
     expect(res.status).toBe(404)
@@ -318,7 +318,7 @@ describe('POST .../transcode-complete — refusals', () => {
       uploadTargetRef: `r2:datasets/${DATASET_ID}/by-digest/sha256/abc/asset.png`,
     })
     const res = await transcodeComplete(
-      ctx({ env, datasetId, body: { upload_id: uploadId } }),
+      ctx({ env, datasetId, body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST } }),
     )
     expect(res.status).toBe(409)
     expect((await readJson<{ error: string }>(res)).error).toBe('upload_kind_mismatch')
@@ -327,7 +327,7 @@ describe('POST .../transcode-complete — refusals', () => {
   it('returns 409 not_transcoding when the row isn’t currently transcoding', async () => {
     const { datasetId, uploadId, env } = setupEnv({ transcoding: false })
     const res = await transcodeComplete(
-      ctx({ env, datasetId, body: { upload_id: uploadId } }),
+      ctx({ env, datasetId, body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST } }),
     )
     expect(res.status).toBe(409)
     expect((await readJson<{ error: string }>(res)).error).toBe('not_transcoding')
@@ -349,6 +349,19 @@ describe('POST .../transcode-complete — refusals', () => {
     )
     expect(res.status).toBe(409)
     expect((await readJson<{ error: string }>(res)).error).toBe('source_digest_mismatch')
+  })
+
+  it('returns 400 invalid_body on a missing source_digest (#3)', async () => {
+    // Required since 3pd-review3/B — a stale dispatch should
+    // not be able to win against a fresher upload's
+    // source_digest just by omitting the field.
+    const { datasetId, uploadId, env } = setupEnv()
+    const res = await transcodeComplete(
+      ctx({ env, datasetId, body: { upload_id: uploadId } }),
+    )
+    expect(res.status).toBe(400)
+    const body = await readJson<{ message: string }>(res)
+    expect(body.message).toMatch(/source_digest/)
   })
 
   it('returns 400 invalid_body on a missing upload_id', async () => {
