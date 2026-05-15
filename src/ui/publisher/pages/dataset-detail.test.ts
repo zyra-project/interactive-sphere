@@ -414,6 +414,30 @@ describe('renderDatasetDetailPage', () => {
     expect(mount.querySelector('.publisher-detail-preview')).toBeNull()
   })
 
+  it('preview modal carries dialog ARIA semantics', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(detailResponse(dataset()))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'T', url: '/x', expires_in: 60 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    mount.querySelector<HTMLButtonElement>('.publisher-detail-preview')!.click()
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+    const modal = mount.querySelector<HTMLElement>('.publisher-modal')!
+    expect(modal.getAttribute('role')).toBe('dialog')
+    expect(modal.getAttribute('aria-modal')).toBe('true')
+    const labelledBy = modal.getAttribute('aria-labelledby')
+    expect(labelledBy).toBeTruthy()
+    const heading = modal.querySelector(`#${labelledBy}`)
+    expect(heading?.textContent).toBe('Preview link ready')
+  })
+
   it('opens a modal with the preview URL when Preview is clicked', async () => {
     const fetchFn = vi
       .fn()

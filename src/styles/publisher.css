@@ -965,7 +965,10 @@
 /* Transcoding badge — used by the detail page while a 3pd video
    upload's GHA workflow is in flight. Yellow tone to distinguish
    from the lifecycle badge's green/red/grey, with a subtle
-   pulsing background to convey "in progress". */
+   pulsing background to convey "in progress". The animation is
+   disabled when the user prefers reduced motion (Copilot #5);
+   the steady tinted background is enough to communicate the
+   state without the pulse. */
 .publisher-badge-transcoding {
   background: rgba(255, 198, 88, 0.18);
   border: 1px solid rgba(255, 198, 88, 0.32);
@@ -979,6 +982,12 @@
   }
   50% {
     background: rgba(255, 198, 88, 0.32);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .publisher-badge-transcoding {
+    animation: none;
   }
 }
 

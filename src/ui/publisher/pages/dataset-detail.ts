@@ -776,8 +776,31 @@ function openPreviewModal(
 
   const modal = document.createElement('div')
   modal.className = 'publisher-modal publisher-glass'
+  // ARIA dialog semantics — screen readers announce the role
+  // change + the labelled heading, and `aria-modal=true` tells
+  // them the rest of the page is inert while this is open.
+  // Fix for PR #112 Copilot #4.
+  modal.setAttribute('role', 'dialog')
+  modal.setAttribute('aria-modal', 'true')
+  const headingId = 'publisher-modal-heading-preview'
+  modal.setAttribute('aria-labelledby', headingId)
+  // Escape key dismisses, matching dialog conventions.
+  const escListener = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') backdrop.remove()
+  }
+  document.addEventListener('keydown', escListener)
+  // Remove the listener when the backdrop is detached so we
+  // don't leak handlers across modal lifecycles.
+  const cleanup = new MutationObserver(() => {
+    if (!document.contains(backdrop)) {
+      document.removeEventListener('keydown', escListener)
+      cleanup.disconnect()
+    }
+  })
+  cleanup.observe(document.body, { childList: true, subtree: true })
 
   const heading = document.createElement('h2')
+  heading.id = headingId
   heading.className = 'publisher-modal-heading'
   heading.textContent = t('publisher.datasetDetail.preview.heading')
   modal.appendChild(heading)
