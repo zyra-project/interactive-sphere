@@ -72,6 +72,12 @@ interface FormState {
   slugLocked: boolean
   format: string
   visibility: string
+  /** Asset reference — `vimeo:1234567`, `r2:videos/.../master.m3u8`,
+   *  `r2:datasets/.../image.png`, or an absolute HTTPS URL.
+   *  Required by `validateForPublish`; a draft can be saved
+   *  with it empty. Stays as a manual text input until the
+   *  3pd asset uploader replaces it with a guided upload flow. */
+  dataRef: string
   organization: string
   abstract: string
   /** Toggle between editing the abstract markdown source and
@@ -912,6 +918,25 @@ function renderForm(
     }),
   )
 
+  // data_ref is required by `validateForPublish` server-side
+  // but draft-saveable empty. Interim manual input until the
+  // 3pd asset uploader replaces it. Placeholder shows the four
+  // accepted shapes so the publisher doesn't have to guess.
+  identityCard.appendChild(
+    inputField({
+      id: 'dataset-data-ref',
+      labelKey: 'publisher.datasetForm.field.dataRef',
+      required: false,
+      value: state.dataRef,
+      placeholder: t('publisher.datasetForm.placeholder.dataRef'),
+      helpKey: 'publisher.datasetForm.help.dataRef',
+      error: findError(state.errors, 'data_ref'),
+      onChange: v => {
+        state.dataRef = v
+      },
+    }),
+  )
+
   identityCard.appendChild(
     inputField({
       id: 'dataset-organization',
@@ -996,6 +1021,7 @@ function renderForm(
       const t = trimmed(value)
       if (t) body[field] = t
     }
+    setIfPresent('data_ref', state.dataRef)
     setIfPresent('abstract', state.abstract)
     setIfPresent('organization', state.organization)
     setIfPresent('license_spdx', state.licenseSpdx)
@@ -1097,6 +1123,7 @@ function initialState(
       slugLocked: false,
       format: 'video/mp4',
       visibility: 'public',
+      dataRef: '',
       organization: '',
       abstract: '',
       abstractPreviewing: false,
@@ -1131,6 +1158,7 @@ function initialState(
     slugLocked: true,
     format: row.format,
     visibility: row.visibility,
+    dataRef: row.data_ref ?? '',
     organization: row.organization ?? '',
     abstract: row.abstract ?? '',
     abstractPreviewing: false,

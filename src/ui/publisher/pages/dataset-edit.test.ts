@@ -89,6 +89,18 @@ describe('renderDatasetEditPage', () => {
     )
   })
 
+  it('prefills the data_ref input from the existing row', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      detailResponse(dataset({ data_ref: 'r2:videos/01XYZ/master.m3u8' })),
+    )
+    await renderDatasetEditPage(mount, '01EDIT0000000000000000000', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    expect(mount.querySelector<HTMLInputElement>('#dataset-data-ref')?.value).toBe(
+      'r2:videos/01XYZ/master.m3u8',
+    )
+  })
+
   it('prefills keyword chips from the decoration arrays', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       detailResponse(dataset(), { keywords: ['sst', 'anomaly'], tags: ['demo'] }),

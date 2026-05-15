@@ -138,6 +138,46 @@ describe('renderDatasetNewPage', () => {
     )
   })
 
+  it('sends data_ref in the body when the input is non-empty', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'NEW01' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'With ref')
+    setInput(mount, '#dataset-data-ref', '  vimeo:123456  ')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const sentBody = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    // Trim happens in the form's setIfPresent helper; whitespace
+    // round-tripping cleanly is what keeps the column from
+    // landing with a leading-space artifact.
+    expect(sentBody.data_ref).toBe('vimeo:123456')
+  })
+
+  it('omits data_ref entirely when the input is empty (so the column lands NULL)', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'NEW01' } }))
+    renderDatasetNewPage(mount, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate: vi.fn(),
+    })
+
+    setInput(mount, '#dataset-title', 'No ref')
+    submitForm(mount)
+    await new Promise(r => setTimeout(r, 0))
+
+    const sentBody = JSON.parse(fetchFn.mock.calls[0][1].body as string) as Record<
+      string,
+      unknown
+    >
+    expect(sentBody.data_ref).toBeUndefined()
+  })
+
   it('omits the slug from the body when not manually overridden (server derives)', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ dataset: { id: 'NEW01' } }))
     renderDatasetNewPage(mount, {
