@@ -138,6 +138,7 @@
   "publisher.datasetForm.format.imageWebp": "Format radio option for image/webp datasets.",
   "publisher.datasetForm.format.tour": "Format radio option for tour/json (SOS-style guided tour) datasets.",
   "publisher.datasetForm.format.video": "Format radio option for video/mp4 datasets. Default selection on a new draft.",
+  "publisher.datasetForm.headingEdit": "H1 heading at the top of the edit-existing-dataset form. Mirrors `publisher.datasetForm.headingNew` shape. Single short phrase.",
   "publisher.datasetForm.headingNew": "H1 heading at the top of the create-new-dataset form. Single short phrase.",
   "publisher.datasetForm.help.slug": "Helper text below the Slug field explaining the auto-derivation behaviour and the validation rule (lowercase letters, digits, hyphens; must start with a letter).",
   "publisher.datasetForm.placeholder.title": "Placeholder text inside the Title field on a fresh form. Shown as a hint; cleared on focus. Should look like a plausible real dataset title.",

@@ -354,6 +354,7 @@
   "publisher.datasetForm.format.imageWebp": "WebP image",
   "publisher.datasetForm.format.tour": "Tour (SOS JSON)",
   "publisher.datasetForm.format.video": "Video (MP4)",
+  "publisher.datasetForm.headingEdit": "Edit dataset",
   "publisher.datasetForm.headingNew": "New dataset",
   "publisher.datasetForm.help.abstract": "Markdown supported. Headings (##, ###), **bold**, *italic*, lists, code, blockquotes, links.",
   "publisher.datasetForm.help.keywords": "Press Enter or comma to add. Max 20 keywords, 40 characters each.",
