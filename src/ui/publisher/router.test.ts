@@ -23,6 +23,18 @@ describe('matchRoute', () => {
     ).toEqual({ id: 'sst/anomaly' })
   })
 
+  it('matches :id followed by a literal segment', () => {
+    expect(
+      matchRoute('/publish/datasets/:id/edit', '/publish/datasets/01ABC/edit'),
+    ).toEqual({ id: '01ABC' })
+    expect(
+      matchRoute('/publish/datasets/:id/edit', '/publish/datasets/01ABC'),
+    ).toBeNull()
+    expect(
+      matchRoute('/publish/datasets/:id/edit', '/publish/datasets/01ABC/publish'),
+    ).toBeNull()
+  })
+
   it('treats trailing slashes as equivalent', () => {
     expect(matchRoute('/publish/me/', '/publish/me')).toEqual({})
     expect(matchRoute('/publish/me', '/publish/me/')).toEqual({})

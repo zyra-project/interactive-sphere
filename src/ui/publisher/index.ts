@@ -25,6 +25,7 @@ import { PublisherRouter, type RouteHandler } from './router'
 import { renderMePage } from './pages/me'
 import { renderDatasetsPage } from './pages/datasets'
 import { renderDatasetDetailPage } from './pages/dataset-detail'
+import { renderDatasetEditPage } from './pages/dataset-edit'
 import { renderDatasetNewPage } from './pages/dataset-new'
 import { renderTopbar } from './components/topbar'
 import '../../styles/publisher.css'
@@ -145,14 +146,35 @@ function datasetNewPage(mount: HTMLElement, router: () => PublisherRouter): Rout
     })
 }
 
-function datasetDetailPage(mount: HTMLElement): RouteHandler {
+function datasetDetailPage(
+  mount: HTMLElement,
+  router: () => PublisherRouter,
+): RouteHandler {
   return params => {
     const id = params.id ?? ''
     if (!id) {
       renderPlaceholder(mount, t('publisher.section.notFound'), '3pa/A')
       return
     }
-    void renderDatasetDetailPage(mount, id)
+    void renderDatasetDetailPage(mount, id, {
+      routerNavigate: path => void router().navigate(path),
+    })
+  }
+}
+
+function datasetEditPage(
+  mount: HTMLElement,
+  router: () => PublisherRouter,
+): RouteHandler {
+  return params => {
+    const id = params.id ?? ''
+    if (!id) {
+      renderPlaceholder(mount, t('publisher.section.notFound'), '3pa/A')
+      return
+    }
+    void renderDatasetEditPage(mount, id, {
+      routerNavigate: path => void router().navigate(path),
+    })
   }
 }
 
@@ -197,7 +219,11 @@ export async function bootPublisherPortal(): Promise<void> {
       // — otherwise the matcher captures "new" as the id and
       // routes to the detail page.
       { pattern: '/publish/datasets/new', handler: datasetNewPage(content, getRouter) },
-      { pattern: '/publish/datasets/:id', handler: datasetDetailPage(content) },
+      {
+        pattern: '/publish/datasets/:id/edit',
+        handler: datasetEditPage(content, getRouter),
+      },
+      { pattern: '/publish/datasets/:id', handler: datasetDetailPage(content, getRouter) },
       { pattern: '/publish/tours', handler: toursPage(content) },
       { pattern: '/publish/import', handler: importPage(content) },
     ],

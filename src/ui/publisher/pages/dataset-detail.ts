@@ -29,6 +29,10 @@ export interface DatasetDetailPageOptions {
   fetchFn?: typeof fetch
   sleep?: (ms: number) => Promise<void>
   navigate?: (url: string) => void
+  /** History-API SPA navigation. Used by the Edit button so the
+   *  jump to `/publish/datasets/:id/edit` reuses the portal's
+   *  router instead of a hard page load. */
+  routerNavigate?: (path: string) => void
 }
 
 function endpoint(id: string): string {
@@ -80,7 +84,10 @@ function formatDate(iso: string | null | undefined): string {
   })
 }
 
-function renderHeader(d: PublisherDatasetDetail): HTMLElement {
+function renderHeader(
+  d: PublisherDatasetDetail,
+  routerNavigate: ((path: string) => void) | undefined,
+): HTMLElement {
   const header = document.createElement('header')
   header.className = 'publisher-detail-header'
 
@@ -104,6 +111,31 @@ function renderHeader(d: PublisherDatasetDetail): HTMLElement {
         ? t('publisher.datasets.status.published')
         : t('publisher.datasets.status.retracted')
   titleRow.appendChild(badge)
+
+  const editHref = `/publish/datasets/${encodeURIComponent(d.id)}/edit`
+  const editLink = document.createElement('a')
+  editLink.className = 'publisher-button publisher-button-primary publisher-detail-edit'
+  editLink.href = editHref
+  editLink.textContent = t('publisher.datasetDetail.editAction')
+  if (routerNavigate) {
+    editLink.addEventListener('click', event => {
+      // Plain left-click + no modifier → SPA navigation. Anything
+      // else (cmd-click, middle-click, etc.) falls through to the
+      // browser so the publisher can still open the edit form in a
+      // new tab.
+      if (
+        event.button === 0 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        event.preventDefault()
+        routerNavigate(editHref)
+      }
+    })
+  }
+  titleRow.appendChild(editLink)
 
   header.appendChild(titleRow)
 
@@ -289,12 +321,13 @@ function renderDetail(
   d: PublisherDatasetDetail,
   keywords: ReadonlyArray<string>,
   tags: ReadonlyArray<string>,
+  routerNavigate: ((path: string) => void) | undefined,
 ): void {
   const shell = document.createElement('main')
   shell.className = 'publisher-shell'
 
   shell.appendChild(backLink())
-  shell.appendChild(renderHeader(d))
+  shell.appendChild(renderHeader(d, routerNavigate))
   shell.appendChild(renderAbstract(d))
 
   shell.appendChild(
@@ -442,5 +475,11 @@ export async function renderDatasetDetailPage(
     return
   }
   clearWarmupFlag()
-  renderDetail(content, result.data.dataset, result.data.keywords ?? [], result.data.tags ?? [])
+  renderDetail(
+    content,
+    result.data.dataset,
+    result.data.keywords ?? [],
+    result.data.tags ?? [],
+    options.routerNavigate,
+  )
 }

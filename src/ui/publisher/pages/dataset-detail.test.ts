@@ -202,6 +202,54 @@ describe('renderDatasetDetailPage', () => {
     expect(headings).not.toContain('Keywords & tags')
   })
 
+  it('renders an Edit button linking to the edit page', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset()))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    const edit = mount.querySelector<HTMLAnchorElement>('.publisher-detail-edit')
+    expect(edit).not.toBeNull()
+    expect(edit?.getAttribute('href')).toBe(
+      '/publish/datasets/01AAAAAAAAAAAAAAAAAAAAAAAA/edit',
+    )
+    expect(edit?.textContent).toBe('Edit')
+  })
+
+  it('Edit button delegates to routerNavigate on a plain click', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset()))
+    const routerNavigate = vi.fn<(path: string) => void>()
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate,
+    })
+    const edit = mount.querySelector<HTMLAnchorElement>('.publisher-detail-edit')!
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    edit.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(routerNavigate).toHaveBeenCalledWith(
+      '/publish/datasets/01AAAAAAAAAAAAAAAAAAAAAAAA/edit',
+    )
+  })
+
+  it('Edit button lets the browser handle modifier-clicks', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(dataset()))
+    const routerNavigate = vi.fn<(path: string) => void>()
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      routerNavigate,
+    })
+    const edit = mount.querySelector<HTMLAnchorElement>('.publisher-detail-edit')!
+    const ev = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      metaKey: true,
+    })
+    edit.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(false)
+    expect(routerNavigate).not.toHaveBeenCalled()
+  })
+
   it('renders the retracted-state badge for a retracted row', async () => {
     const fetchFn = vi
       .fn()
