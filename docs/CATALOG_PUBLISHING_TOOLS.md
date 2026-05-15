@@ -273,17 +273,48 @@ can refuse a tour newer than it understands.
 
 ## Asset uploader
 
-A reusable component used by both the dataset and tour forms:
+A reusable component used by both the dataset and tour forms.
+**Cloudflare Stream is no longer in the picture** — Phase 3 cut over
+to a pure R2 + GitHub Actions pipeline; the full design lives in
+[`CATALOG_ASSETS_PIPELINE.md`](CATALOG_ASSETS_PIPELINE.md) §"Video
+pipeline (R2 + GitHub Actions — current)".
+
+Behavior:
 
 - Drag-drop or click-to-browse.
-- Detects MIME type, picks the right upload target (Stream vs. R2).
-- Shows progress, retries on transient failure, emits a
-  completion event with the final `data_ref`.
-- For video: polls Stream's transcode-status endpoint; only flips
-  to "ready" when HLS is playable.
-- For image: optional client-side downsample preview before upload
-  so a publisher knows roughly what the 2048-wide variant will
-  look like.
+- Detects MIME type and picks the right target — **everything goes
+  to R2**; the only thing the kind decides is what happens *after*
+  the PUT.
+- Shows progress (XHR upload events feed a `<progress>`), retries on
+  transient 5xx with exponential backoff, emits a completion event
+  with the final `data_ref`.
+- **Image** (`image/png` / `image/jpeg` / `image/webp`): the
+  presigned PUT lands the image at `r2:datasets/{id}/{filename}`.
+  The finalize step writes `data_ref` directly — no transcode.
+  Optional client-side downsample preview before upload so the
+  publisher sees roughly what the 2048-wide variant will look like.
+- **Video** (`video/mp4`): the presigned PUT lands the MP4 at
+  `r2:uploads/{id}/source.mp4`. The finalize step fires a
+  GitHub `repository_dispatch` and stamps the row
+  `transcoding=true`. The form returns control to the publisher
+  immediately; the detail page polls every 5 s until `transcoding`
+  flips back to false and `data_ref` resolves to
+  `r2:videos/{id}/master.m3u8`. Whole loop is 1–10 minutes
+  depending on source length.
+
+### Sub-phase 3pd breakdown
+
+Same `3p<letter>` convention 3pa–3pc used. Each sub-commit ships
+something demoable on its own.
+
+| Sub-phase | Demoable result | Notes |
+|---|---|---|
+| **3pd/A** — Presigned PUT + finalize endpoints | `POST /api/v1/publish/datasets/{id}/asset` (mint presigned URL) and `POST .../asset/finalize` (verify + dispatch). Migration 0011 adds the `transcoding` boolean. No portal UI yet. | Worker side complete; tested via `curl` + a manual repository_dispatch. |
+| **3pd/B** — GHA workflow | `.github/workflows/transcode-hls.yml` listens on `repository_dispatch: types: [transcode-hls]`, runs the existing `cli/lib/encode-hls.ts` + `cli/lib/upload-hls.ts`, PATCHes the row. | Reuses the proven Phase 3 transcoder code path. New repo secrets: `GITHUB_DISPATCH_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_TRANSCODE_SERVICE_TOKEN`. |
+| **3pd/C** — Portal uploader | Drag-drop / click-to-browse component in the dataset form, replacing the 3pc/F-fix2 manual `data_ref` input. XHR-progress events, retry-on-5xx. | Replaces a manual text input with a guided flow — same FormState slot, different surface. |
+| **3pd/D** — Transcoding status | "Transcoding…" badge on the detail page when `transcoding=true`, with the elapsed time. Detail-page polling every 5 s, stops when `transcoding=false`. | Stops automatically when the row reaches a terminal state. Reuses the existing detail-page render loop. |
+| **3pd/E** — Preview button | "Preview" button on the detail page mints a token via `POST .../preview` and opens the SPA at `/?preview={token}`. The preview endpoint already exists from Phase 1b; 3pd just wires the UI. | Closes the read → upload → preview → publish loop for the publisher portal. |
+| **3pd/F** — CHANGELOG + SELF_HOSTING walkthrough | Operator-facing summary of the new bindings, the GHA secrets, and the migration order. | Same pattern 3pc/G followed. |
 
 ## Preview pipeline
 
@@ -350,10 +381,10 @@ format:      video/mp4
 visibility:  public
 
 asset:
-  # Local file (Phase 1b uploads to Stream / R2 automatically)…
+  # Local file (uploads to R2 + triggers the HLS transcode)…
   file:       ./renders/sst-anomaly-2026-04.mp4
   # …or an existing data_ref the catalog should point at:
-  # ref:      stream:abc123def456
+  # ref:      r2:videos/01HX.../master.m3u8
 
 categories:  [Ocean, Climate]
 keywords:    [sst, anomaly, monthly]
