@@ -14,6 +14,7 @@
 
 import type { CatalogEnv } from '../../_lib/env'
 import type { PublisherData } from '../_middleware'
+import { writeDatasetAudit } from '../../_lib/audit-store'
 import { getDecorations } from '../../_lib/catalog-store'
 import {
   getDatasetForPublisher,
@@ -95,6 +96,13 @@ export const onRequestPut: PagesFunction<CatalogEnv, 'id'> = async context => {
       headers: { 'Content-Type': CONTENT_TYPE },
     })
   }
+  await writeDatasetAudit(
+    context.env.CATALOG_DB!,
+    publisher,
+    'dataset.update',
+    id,
+    { fields: Object.keys(body as Record<string, unknown>).sort() },
+  )
   return new Response(JSON.stringify({ dataset: result.dataset }), {
     status: 200,
     headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },

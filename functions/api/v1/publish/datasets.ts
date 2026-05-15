@@ -16,6 +16,7 @@
 
 import type { CatalogEnv } from '../_lib/env'
 import type { PublisherData } from './_middleware'
+import { writeDatasetAudit } from '../_lib/audit-store'
 import { getNodeIdentity } from '../_lib/catalog-store'
 import {
   createDataset,
@@ -99,6 +100,17 @@ export const onRequestPost: PagesFunction<CatalogEnv> = async context => {
   }
   const result = await createDataset(context.env, publisher, body as Record<string, unknown>)
   if (!result.ok) return validationFailure(result.errors, result.status)
+  await writeDatasetAudit(
+    context.env.CATALOG_DB!,
+    publisher,
+    'dataset.create',
+    result.dataset.id,
+    {
+      slug: result.dataset.slug,
+      format: result.dataset.format,
+      visibility: result.dataset.visibility,
+    },
+  )
   return new Response(JSON.stringify({ dataset: result.dataset }), {
     status: 201,
     headers: { 'Content-Type': CONTENT_TYPE, Location: `/api/v1/publish/datasets/${result.dataset.id}` },

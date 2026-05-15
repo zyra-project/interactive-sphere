@@ -10,6 +10,7 @@
 
 import type { CatalogEnv } from '../../../_lib/env'
 import type { PublisherData } from '../../_middleware'
+import { writeDatasetAudit } from '../../../_lib/audit-store'
 import {
   getDatasetForPublisher,
   retractDataset,
@@ -57,6 +58,13 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
       headers: { 'Content-Type': CONTENT_TYPE },
     })
   }
+  await writeDatasetAudit(
+    context.env.CATALOG_DB!,
+    publisher,
+    'dataset.retract',
+    id,
+    { slug: result.dataset.slug },
+  )
   return new Response(JSON.stringify({ dataset: result.dataset }), {
     status: 200,
     headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },

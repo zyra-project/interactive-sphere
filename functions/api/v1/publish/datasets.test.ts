@@ -425,6 +425,129 @@ describe('POST /api/v1/publish/datasets/{id}/retract', () => {
   })
 })
 
+describe('audit_events writes', () => {
+  interface AuditRow {
+    actor_kind: string
+    actor_id: string
+    action: string
+    subject_kind: string
+    subject_id: string
+    metadata_json: string | null
+  }
+  function readAudit(
+    sqlite: ReturnType<typeof setupEnv>['sqlite'],
+    subjectId: string,
+  ): AuditRow[] {
+    return sqlite
+      .prepare(
+        `SELECT actor_kind, actor_id, action, subject_kind, subject_id, metadata_json
+           FROM audit_events WHERE subject_id = ? ORDER BY id`,
+      )
+      .all(subjectId) as AuditRow[]
+  }
+
+  it('records dataset.create on POST', async () => {
+    const { env, sqlite } = setupEnv()
+    const res = await onRequestPost(
+      ctxWithPublisher({
+        env,
+        method: 'POST',
+        body: { title: 'Audited', format: 'video/mp4' },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(res)).dataset.id
+    const rows = readAudit(sqlite, id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].actor_kind).toBe('publisher')
+    expect(rows[0].actor_id).toBe(STAFF.id)
+    expect(rows[0].action).toBe('dataset.create')
+    expect(rows[0].subject_kind).toBe('dataset')
+    expect(JSON.parse(rows[0].metadata_json ?? '{}')).toMatchObject({
+      slug: 'audited',
+      format: 'video/mp4',
+    })
+  })
+
+  it('records dataset.update on PUT with the touched fields', async () => {
+    const { env, sqlite } = setupEnv()
+    const created = await onRequestPost(
+      ctxWithPublisher({
+        env,
+        method: 'POST',
+        body: { title: 'Pre-edit', format: 'video/mp4' },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(created)).dataset.id
+    await datasetPut(
+      ctxWithPublisher<'id'>({
+        env,
+        method: 'PUT',
+        body: { title: 'Renamed', abstract: 'new copy' },
+        params: { id },
+      }),
+    )
+    const rows = readAudit(sqlite, id)
+    const updateRows = rows.filter(r => r.action === 'dataset.update')
+    expect(updateRows).toHaveLength(1)
+    expect(JSON.parse(updateRows[0].metadata_json ?? '{}')).toEqual({
+      fields: ['abstract', 'title'],
+    })
+  })
+
+  it('records dataset.publish on the publish route', async () => {
+    const { env, sqlite } = setupEnv()
+    const created = await onRequestPost(
+      ctxWithPublisher({
+        env,
+        method: 'POST',
+        body: {
+          title: 'Audit publish',
+          format: 'video/mp4',
+          data_ref: 'vimeo:1',
+          license_spdx: 'CC-BY-4.0',
+        },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(created)).dataset.id
+    await datasetPublish(ctxWithPublisher<'id'>({ env, method: 'POST', params: { id } }))
+    const rows = readAudit(sqlite, id).filter(r => r.action === 'dataset.publish')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].actor_id).toBe(STAFF.id)
+  })
+
+  it('records dataset.retract on the retract route', async () => {
+    const { env, sqlite } = setupEnv()
+    const created = await onRequestPost(
+      ctxWithPublisher({
+        env,
+        method: 'POST',
+        body: { title: 'Audit retract', format: 'video/mp4' },
+      }),
+    )
+    const id = (await readJson<{ dataset: { id: string } }>(created)).dataset.id
+    await datasetRetract(ctxWithPublisher<'id'>({ env, method: 'POST', params: { id } }))
+    const rows = readAudit(sqlite, id).filter(r => r.action === 'dataset.retract')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].actor_id).toBe(STAFF.id)
+  })
+
+  it('does not record an audit row when create fails validation', async () => {
+    const { env, sqlite } = setupEnv()
+    const res = await onRequestPost(
+      ctxWithPublisher({
+        env,
+        method: 'POST',
+        body: { title: '', format: 'video/mp4' },
+      }),
+    )
+    expect(res.status).toBe(400)
+    const rowCount = (
+      sqlite.prepare('SELECT COUNT(*) AS c FROM audit_events').get() as { c: number }
+    ).c
+    expect(rowCount).toBe(0)
+  })
+})
+
 describe('POST /api/v1/publish/datasets/{id}/preview', () => {
   it('returns a token + consumer URL', async () => {
     const { env } = setupEnv()
