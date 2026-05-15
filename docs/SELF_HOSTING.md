@@ -546,7 +546,65 @@ different env vars / flags:
 - `verify-deploy` reads `--server` (or `TERRAVIZ_SERVER`); change
   it to point the HTTP smoke-test at a different deploy URL.
 
-### 8e. Next steps
+### 8e. Video transcode pipeline (R2 + GitHub Actions)
+
+The publisher portal's video uploads (Phase 3pd) hand off to a
+GitHub Actions workflow that runs ffmpeg against the 4K / 1080p /
+720p 2:1 spherical HLS ladder. The workflow doesn't need a fork
+of the repo or any commit access — it fires via the
+`repository_dispatch` event, which is a pure event API.
+
+The Pages-side wiring you need (Settings → Bindings):
+
+| Binding | Value |
+|---|---|
+| `GITHUB_OWNER` | `zyra-project` (or your fork's owner) |
+| `GITHUB_REPO` | `terraviz` (or your fork's name) |
+| `GITHUB_DISPATCH_TOKEN` | GitHub PAT with `repo` scope on the repo above. Wrangler **secret**, not a plaintext env. |
+
+The GitHub-side wiring (repo Settings → Secrets and variables →
+Actions → Repository secrets):
+
+| Secret | What it carries |
+|---|---|
+| `R2_S3_ENDPOINT` | Same value as the Pages `R2_S3_ENDPOINT` env. |
+| `R2_ACCESS_KEY_ID` | R2 S3 access-key id with read+write on the assets bucket. Same key the publisher API uses for digest verification is fine. |
+| `R2_SECRET_ACCESS_KEY` | The matching secret. |
+| `CATALOG_R2_BUCKET` | Optional bucket-name override. Defaults to `terraviz-assets`. |
+| `TERRAVIZ_SERVER` | Base URL of the Pages deploy (e.g. `https://terraviz.app`). The workflow PATCHes this URL with the HLS bundle's `data_ref` at the end of the run. |
+| `CF_ACCESS_CLIENT_ID` | Cloudflare Access **service token** id. The token is provisioned via Zero Trust → Access → Service Auth. The publisher API JIT-provisions it as `role='service'` on first use; the `/transcode-complete` route accepts that role explicitly. |
+| `CF_ACCESS_CLIENT_SECRET` | The matching secret. |
+
+Both halves are required. A misconfigured deploy fails closed:
+
+- Missing `GITHUB_DISPATCH_TOKEN` on Pages → `/asset/complete`
+  returns 503 `github_dispatch_unconfigured` on a video upload.
+  The publisher sees an inline error; the source bytes stay in
+  R2 and the upload can be retried after you fix the binding.
+- Missing R2 / Access secrets on GitHub → the workflow's
+  pipeline step exits non-zero with a stage-specific code (2
+  download, 3 encode, 4 upload, 5 PATCH). The dataset row
+  stays flagged `transcoding=1` until you either manually clear
+  it or re-upload to trigger a fresh dispatch. The "Transcoding…"
+  badge in the portal stays visible — that's the operator's
+  signal something needs attention.
+
+**Mock mode for local development.** Set `MOCK_GITHUB_DISPATCH=true`
+in `.dev.vars` to skip the dispatch call entirely; the dataset
+row still gets stamped `transcoding=1` so you can exercise the
+portal's polling surface without a real GHA workflow. The
+publisher API refuses `MOCK_GITHUB_DISPATCH=true` on a
+non-loopback hostname — same defense-in-depth pattern `MOCK_R2`
+and `MOCK_STREAM` use.
+
+**Cost model.** GitHub Actions free tier: 2000 CI-minutes/month
+for public repos. A 5-minute 1080p source encodes in ~3 minutes
+on the `ubuntu-22.04` runner. At 50 uploads/month with average
+5-minute sources that's 150 CI-minutes — well under the ceiling.
+R2 egress is the dominant ongoing cost: at 4K @ ~25 Mbps the
+ladder lands ~250 MB per minute of source content.
+
+### 8f. Next steps
 
 - Wire up the orbit-cost dashboard alongside the existing three
   (Phase 7 above).
@@ -562,7 +620,7 @@ different env vars / flags:
   flips `status='active'` to allow publishing.
 - Enable the publisher portal browser flow (next subsection).
 
-### 8f. Publisher portal browser flow (Phase 3pa onward)
+### 8g. Publisher portal browser flow (Phase 3pa onward)
 
 Phase 1a wired Cloudflare Access to protect the publisher *API*
 (`/api/v1/publish/**`) — that's the service-token / programmatic
@@ -620,7 +678,7 @@ sees the "Your session has expired. Refresh to sign in again."
 error card and cannot exercise any write surface. The Access app
 is the right belt-and-suspenders, not a safety prerequisite.
 
-**Trusted-domain auto-promotion.** Once §8f's Access app is
+**Trusted-domain auto-promotion.** Once §8g's Access app is
 wired and you sign into the portal for the first time, the
 publisher middleware JIT-provisions a row for your email. The
 default classification for an Access user login is
@@ -666,7 +724,7 @@ embed Access's login UI in our own page). So the portal can
 but it can't *complete* the sign-in itself.
 
 The Refresh button on the error card is the working escape
-hatch: once you've wired this §8f Access app, refreshing the
+hatch: once you've wired this §8g Access app, refreshing the
 portal page triggers Access at top-level navigation time, the
 user signs in, Access redirects back to `/publish/me`, the
 portal loads with the cookie present, and the next fetch
@@ -793,7 +851,7 @@ WHERE email = 'you@your-org.org';
 
 Then verify with `GET /api/v1/publish/me` — `role` should
 report `staff` (or `community` / `pending` if your email
-domain isn't in `TRUSTED_PUBLISHER_DOMAINS`; see §8f).
+domain isn't in `TRUSTED_PUBLISHER_DOMAINS`; see §8g).
 
 ---
 

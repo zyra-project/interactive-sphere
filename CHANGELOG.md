@@ -16,6 +16,155 @@ referenced in [`README.md`](README.md).
 
 ---
 
+## Phase 3pd — Asset uploader + transcode pipeline (R2 + GHA)
+
+**Branch:** `claude/catalog-publisher-portal-phase-3pd` (PR #112)
+**Commits:** 3pd-pre through 3pd/F.
+
+Fourth sub-phase of the publisher portal. 3pc made datasets editable;
+3pd makes their **assets** uploadable. The Phase 1b asset_uploads
+pipeline existed already but routed video data through Cloudflare
+Stream. Live testing exposed Stream's standard-plan 1080p ceiling
+(insufficient for 4K spherical content), and Phase 3 shipped a
+CLI-driven R2 + ffmpeg replacement (`cli/migrate-r2-hls.ts`). 3pd
+exposes the same pipeline through the portal: a publisher uploads
+an MP4 in the browser, a GitHub Actions workflow runs ffmpeg
+against the 4K / 1080p / 720p 2:1 spherical ladder, writes the
+HLS bundle to R2, and PATCHes the row.
+
+**3pd-pre — Doc refresh.** Banner at the top of
+`CATALOG_ASSETS_PIPELINE.md` flagging Stream removal. Rewrites
+§"Video pipeline" around the R2 + GHA reality — the actual ladder
+(4096×2048 / 2160×1080 / 1440×720 at H.264 main, AAC 192kbps,
+6-second VOD segments), the upload → presigned PUT →
+repository_dispatch → workflow → row-PATCH sequence, the cost
+model, and the rationale for GHA over Workers+WASM. `stream:`
+data_ref prefix marked Deprecated. `CATALOG_PUBLISHING_TOOLS.md`
+gains the 3pd sub-phase breakdown table; `CATALOG_BACKEND_PLAN.md`
+3pd row rewritten.
+
+**3pd/A — Server-side wiring + migration 0011.** The substantial
+"already-shipped infrastructure now points at R2" sub-phase.
+
+- Migration 0011 adds `transcoding INTEGER` to `datasets`. Starts
+  NULL, flipped to 1 while a transcode is in flight, cleared
+  back to NULL by the workflow's PATCH.
+- `chooseTarget()` in `asset.ts` collapses to "always R2." The
+  Stream branch is now dead code waiting for a follow-up cleanup
+  PR; the type union stays `'r2' | 'stream'` so the deletion can
+  land incrementally.
+- `r2-store.ts` gains `buildVideoSourceKey(datasetId)` →
+  `uploads/{id}/source.mp4`. The GHA workflow finds the bytes
+  at a predictable key via the `client_payload.source_key`
+  carried in the dispatch. Every other asset kind keeps the
+  content-addressed `datasets/{id}/by-digest/sha256/{hex}/...`
+  scheme.
+- New `_lib/github-dispatch.ts` POSTs to
+  `https://api.github.com/repos/{owner}/{repo}/dispatches` with
+  `event_type: 'transcode-hls'` + a typed `client_payload`.
+  Mock mode (`MOCK_GITHUB_DISPATCH=true`) for local dev, refused
+  on non-loopback hosts. Errors map to the same typed
+  `ConfigurationError` / `UpstreamError` classes the rest of
+  the storage helpers use.
+- `complete.ts` branches on `isVideoSourceKey()` after digest
+  verification. Video-source uploads fire the dispatch, stamp
+  `transcoding=1` + clear `data_ref`, mark the asset_upload
+  completed, and return 202. Non-video uploads keep the existing
+  `applyAssetAndMarkCompleted` path. On dispatch failure the
+  dataset row is NOT modified and the upload stays `pending` so
+  the publisher can retry after the operator fixes config.
+- Six new env vars (`GITHUB_OWNER`, `GITHUB_REPO`,
+  `GITHUB_DISPATCH_TOKEN`, plus three `MOCK_*` variants) wired
+  into `CatalogEnv`.
+
+**3pd/A-fix — `POST /api/v1/publish/datasets/{id}/transcode-complete`.**
+The endpoint the workflow PATCHes back through to clear
+`transcoding=1` and set `data_ref`. Restricted to `role='service'`
++ admin staff because the column is server-managed.
+Belt-and-suspenders `source_digest` re-verify so a misrouted
+workflow can't PATCH the wrong row. `dataset.update` audit_event
+stamped with `metadata.reason = 'transcode_complete'`.
+
+**3pd/B — GitHub Actions workflow + transcode runner.**
+`.github/workflows/transcode-hls.yml` listens on
+`repository_dispatch: types: [transcode-hls]` and invokes
+`cli/transcode-from-dispatch.ts` — a single-dataset sibling of
+`cli/migrate-r2-hls.ts`. The runner downloads the source MP4
+from R2 (S3 API), re-verifies the digest, runs `encodeHls`
+against the same `DEFAULT_RENDITIONS` ladder, calls
+`uploadHlsBundle`, then POSTs the transcode-complete endpoint
+with the Access service-token headers. Stage-specific exit codes
+(1 arg / 2 download / 3 encode / 4 upload / 5 PATCH) so an
+operator skimming the GHA UI sees which stage broke without
+digging into the log. Per-dataset concurrency cap so a
+publisher re-uploading the same video twice doesn't race two
+encodes against the same R2 prefix.
+
+**3pd/C — Portal asset uploader.** New
+`components/asset-uploader.ts` replaces the 3pc/F-fix2 manual
+data_ref text input (in edit mode). Three-stage flow:
+
+1. Hash the file via `crypto.subtle.digest('SHA-256', ...)`.
+2. POST `/asset` to mint a presigned R2 PUT URL.
+3. XHR PUT to R2 (XHR not fetch — fetch doesn't surface request-
+   body upload progress).
+4. POST `/complete` to verify the digest server-side.
+
+The component surfaces a status line + `<progress>` bar at every
+step. Image uploads write `data_ref` synchronously and return
+`{ mode: 'direct', dataRef }` to the parent. Video uploads stamp
+`transcoding=1` and return `{ mode: 'transcoding' }` — the
+detail page picks up from there (3pd/D). Mock mode bypasses the
+XHR PUT (the `mock-r2.localhost` mint URL isn't reachable) and
+trusts the publisher's claimed digest server-side.
+
+In create mode the manual text input stays as a fallback for
+`vimeo:` / external URLs where no upload is needed — the dataset
+id doesn't exist yet, and `/asset` is scoped per-dataset.
+
+**3pd/D — Transcoding badge + 5-second polling.** Detail page
+gains a "Transcoding…" badge inline next to the lifecycle badge
+whenever `transcoding=1`. Yellow tone with a subtle pulse
+animation. Publish button is disabled while transcoding (with
+a tooltip explaining why) — the publish-readiness validator
+would reject anyway since data_ref is empty.
+
+The polling loop:
+
+- `paint()` is the single source of truth: every render starts
+  (or restarts) the poll loop if `transcoding=1` and stops it
+  otherwise.
+- `WeakMap<HTMLElement, AbortController>` keeps the binding
+  alive only while the mount is reachable, so a route change
+  naturally drops the prior loop.
+- Default cadence 5 s; overridable via `transcodePollIntervalMs`
+  for tests.
+- Transient errors don't tear down the page — they pause the
+  poll for one cycle. Session errors hand to the shared
+  `handleSessionError`.
+
+**3pd/E — Preview button + share-link modal.** The
+POST `.../preview` endpoint has shipped since Phase 1b but no
+portal surface called it. 3pd/E wires a Preview button next to
+Edit on the detail page that mints the 15-minute token and
+surfaces the resulting `/?preview=<token>&dataset=<id>` URL in
+a lightweight modal. The publisher can copy the link to share
+a draft for review without publishing.
+
+Hidden while transcoding (data_ref is empty, nothing to
+preview yet). The SPA-side consumer for `?preview=<token>` is
+a follow-up piece of work — 3pd/E proves out the token-mint
+half + lets the publisher inspect the TTL today.
+
+**3pd/F — Operator-facing docs.** This CHANGELOG entry + the
+SELF_HOSTING walkthrough for the new GHA secrets the workflow
+needs (`GITHUB_DISPATCH_TOKEN` on Pages,
+`R2_S3_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` /
+`CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` /
+`TERRAVIZ_SERVER` as GitHub Actions repo secrets).
+
+---
+
 ## Phase 3pc — Dataset create / edit / publish / retract
 
 **Branch:** `claude/catalog-publisher-portal-phase-3` (same PR
@@ -420,7 +569,7 @@ Access app is belt-and-suspenders.
 - **New Grafana row:** Import `grafana/dashboards/product-health.json`
   version 10 to pick up the publisher row.
 - **New Cloudflare Access application (optional):** see
-  `docs/SELF_HOSTING.md` §8f. The portal works without it
+  `docs/SELF_HOSTING.md` §8g. The portal works without it
   (the API is still gated), but operators wanting belt-and-
   suspenders should add the second Access app.
 
