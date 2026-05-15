@@ -96,6 +96,33 @@ describe('PublisherRouter', () => {
     expect(mePage).not.toHaveBeenCalled()
   })
 
+  it('absorbs a throwing notFound handler and still fires the route-change event', async () => {
+    const throwingNotFound = vi.fn<RouteHandler>(() => {
+      throw new Error('notFound exploded')
+    })
+    const localRouter = new PublisherRouter(
+      [{ pattern: '/publish/me', handler: mePage }],
+      throwingNotFound,
+    )
+    window.history.replaceState(null, '', '/publish/no-such-route')
+    let fired = false
+    const listener = (): void => {
+      fired = true
+    }
+    window.addEventListener('publisher:routechange', listener)
+    try {
+      // start() must not reject even though notFound throws —
+      // otherwise the call site (`bootPublisherPortal`) crashes
+      // and the topbar listener never re-syncs.
+      await localRouter.start()
+      expect(throwingNotFound).toHaveBeenCalledOnce()
+      expect(fired).toBe(true)
+    } finally {
+      window.removeEventListener('publisher:routechange', listener)
+      localRouter.stop()
+    }
+  })
+
   it('passes :id params to the matching handler', async () => {
     window.history.replaceState(null, '', '/publish/datasets/abc')
     await router.start()

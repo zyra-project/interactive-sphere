@@ -153,30 +153,43 @@ export function applyAction(textarea: HTMLTextAreaElement, action: Action): void
   const end = textarea.selectionEnd
   const selected = value.slice(start, end)
 
+  // Translator-supplied placeholder text the wrap helpers insert
+  // when the publisher hasn't selected anything. Localized at
+  // call time so a runtime locale switch picks up the right
+  // strings on the next button press.
+  const boldPlaceholder = t('publisher.markdownToolbar.placeholder.bold')
+  const italicPlaceholder = t('publisher.markdownToolbar.placeholder.italic')
+  const codePlaceholder = t('publisher.markdownToolbar.placeholder.code')
+  const linkTextPlaceholder = t('publisher.markdownToolbar.placeholder.linkText')
+  const linkUrlPlaceholder = t('publisher.markdownToolbar.placeholder.linkUrl')
+
   let result: { text: string; selStart: number; selEnd: number }
   switch (action) {
     case 'bold':
-      result = wrap(value, start, end, selected, '**', '**', 'bold text')
+      result = wrap(value, start, end, selected, '**', '**', boldPlaceholder)
       break
     case 'italic':
-      result = wrap(value, start, end, selected, '*', '*', 'italic text')
+      result = wrap(value, start, end, selected, '*', '*', italicPlaceholder)
       break
     case 'code-inline':
-      result = wrap(value, start, end, selected, '`', '`', 'code')
+      result = wrap(value, start, end, selected, '`', '`', codePlaceholder)
       break
     case 'link': {
       // `[text](url)` — placeholder cursors into the URL slot
       // when no selection, into the text slot when there is one.
-      const text = selected || 'text'
-      const inserted = `[${text}](url)`
+      // Both placeholders are translator-supplied so a non-English
+      // locale gets a familiar word in its own language.
+      const text = selected || linkTextPlaceholder
+      const inserted = `[${text}](${linkUrlPlaceholder})`
       const newValue = value.slice(0, start) + inserted + value.slice(end)
-      // Position cursor on `url` so the user can immediately
-      // paste / type it.
+      // Position cursor on the URL slot so the user can
+      // immediately paste / type. The offset uses the actual
+      // localized text length, not a hard-coded 3.
       const urlOffset = start + 1 + text.length + 2 // past `[text](`
       result = {
         text: newValue,
         selStart: urlOffset,
-        selEnd: urlOffset + 3, // length of "url"
+        selEnd: urlOffset + linkUrlPlaceholder.length,
       }
       break
     }
@@ -199,7 +212,7 @@ export function applyAction(textarea: HTMLTextAreaElement, action: Action): void
       const needsLeading = start > 0 && value[start - 1] !== '\n'
       const open = (needsLeading ? '\n' : '') + '```\n'
       const close = '\n```'
-      const innerText = selected || 'code'
+      const innerText = selected || codePlaceholder
       const inserted = open + innerText + close
       const newValue = value.slice(0, start) + inserted + value.slice(end)
       const innerStart = start + open.length

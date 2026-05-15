@@ -52,6 +52,21 @@ describe('renderTopbar', () => {
     expect(active?.getAttribute('aria-current')).toBe('page')
   })
 
+  it('does not stamp aria-current on inactive links', () => {
+    window.history.replaceState(null, '', '/publish/datasets')
+    renderTopbar(host, router)
+    const inactive = Array.from(
+      host.querySelectorAll<HTMLAnchorElement>('a.publisher-nav-link'),
+    ).filter(a => !a.classList.contains('publisher-nav-link-active'))
+    expect(inactive.length).toBeGreaterThan(0)
+    for (const link of inactive) {
+      // Absence of the attribute is the spec-correct
+      // "not current" state. `aria-current="false"` confuses
+      // some assistive tech.
+      expect(link.hasAttribute('aria-current')).toBe(false)
+    }
+  })
+
   it('keeps the parent tab active on sub-paths (e.g., /publish/datasets/abc)', () => {
     window.history.replaceState(null, '', '/publish/datasets/some-id')
     renderTopbar(host, router)

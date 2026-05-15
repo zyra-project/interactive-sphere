@@ -130,7 +130,15 @@ export class PublisherRouter {
       }
     }
     if (!handled) {
-      await this.notFound({})
+      // Same try/catch the matched-route branch above uses — a
+      // throwing notFound handler shouldn't suppress the
+      // route-change event (the topbar listens for it to refresh
+      // its active-tab state and would otherwise stay stale).
+      try {
+        await this.notFound({})
+      } catch (err) {
+        logger.error('[publisher] notFound handler failed', err)
+      }
     }
     window.dispatchEvent(
       new CustomEvent<RouteChangeDetail>(ROUTE_CHANGE_EVENT, {

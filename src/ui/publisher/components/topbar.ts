@@ -61,7 +61,16 @@ function applyActiveState(nav: HTMLElement, currentPath: string): void {
   nav.querySelectorAll<HTMLAnchorElement>('a.publisher-nav-link').forEach(a => {
     const active = isActive(a.pathname, currentPath)
     a.classList.toggle('publisher-nav-link-active', active)
-    a.setAttribute('aria-current', active ? 'page' : 'false')
+    // `aria-current` is set on the matching link and *removed*
+    // from every other one. Some assistive technologies announce
+    // `aria-current="false"` as "not current" on every inactive
+    // link, which is noise — the spec treats absence as the
+    // implicit non-current state.
+    if (active) {
+      a.setAttribute('aria-current', 'page')
+    } else {
+      a.removeAttribute('aria-current')
+    }
   })
 }
 
