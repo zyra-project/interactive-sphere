@@ -46,6 +46,7 @@ import { isConfigurationError } from '../../../_lib/errors'
 import { isLoopbackHost } from '../../../_lib/loopback'
 import {
   buildAssetKey,
+  buildVideoSourceKey,
   presignPut,
   R2_PUT_TTL_SECONDS,
   type AssetKind,
@@ -77,13 +78,30 @@ function pickId(context: Parameters<PagesFunction<CatalogEnv, 'id'>>[0]): string
 }
 
 /**
- * Decide which backend an `(kind, mime)` pair lands in. Video data
- * goes to Stream so we get transcoding + ABR for free; everything
- * else goes to R2 under a content-addressed key.
+ * Decide which backend an `(kind, mime)` pair lands in. Phase 3pd
+ * collapsed the two-backend split: Cloudflare Stream is gone, R2
+ * is the only target. Video data still gets a special key layout
+ * (see `buildVideoSourceKey` in `r2-store.ts`) so the GHA transcode
+ * workflow can find the source at a predictable path, but the
+ * upload mechanism is the same presigned PUT.
+ *
+ * The function signature still returns the union type so
+ * downstream code paths can be torn out incrementally — the Stream
+ * branch in `complete.ts` and `stream-store.ts` is now dead code
+ * waiting for a follow-up cleanup PR.
  */
-function chooseTarget(kind: AssetKind, mime: string): 'r2' | 'stream' {
-  if (kind === 'data' && mime === 'video/mp4') return 'stream'
+function chooseTarget(_kind: AssetKind, _mime: string): 'r2' | 'stream' {
   return 'r2'
+}
+
+/**
+ * Should this `(kind, mime)` upload land at the video-source key
+ * for the GHA transcode workflow to pick up, or at a regular
+ * content-addressed asset key? Video data is the one case that
+ * goes through the async transcode pipeline.
+ */
+function isVideoSourceUpload(kind: AssetKind, mime: string): boolean {
+  return kind === 'data' && mime === 'video/mp4'
 }
 
 /**
@@ -209,9 +227,18 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
         mock,
       }
     } else {
+      // Video data uploads land at the predictable
+      // `uploads/{id}/source.mp4` key so the GHA transcode workflow
+      // can find them via the `client_payload.source_key` passed in
+      // the repository_dispatch fired at /complete time. Every
+      // other asset kind keeps the content-addressed
+      // `datasets/{id}/by-digest/...` scheme that lets revisions
+      // land at a new path without invalidating any existing cache.
       const ext = extForMime(mime)
       const hex = content_digest.slice('sha256:'.length)
-      const key = buildAssetKey(id, kind, hex, ext)
+      const key = isVideoSourceUpload(kind, mime)
+        ? buildVideoSourceKey(id)
+        : buildAssetKey(id, kind, hex, ext)
       const presigned = await presignPut(context.env, key, { contentType: mime })
       const targetRef = `r2:${key}`
       await insertAssetUpload(context.env.CATALOG_DB!, {

@@ -101,6 +101,14 @@ export interface DatasetRow {
    * Zero rows use this in the current SOS snapshot; persisted for
    * future publishers whose imagery uses inverted Y conventions. */
   is_flipped_in_y: number | null
+  /** Boolean (0/1) flag set by the video-upload /complete handler
+   * when a `source.mp4` lands in R2 and a GHA transcode dispatch
+   * fires (Phase 3pd). The workflow clears the flag and writes
+   * `data_ref = r2:videos/{id}/master.m3u8` when the HLS bundle
+   * is ready. The portal renders a "Transcoding…" badge and gates
+   * the publish button while this is set. NULL on every other
+   * row. Migration 0011. */
+  transcoding: number | null
 }
 
 export interface DecorationRows {

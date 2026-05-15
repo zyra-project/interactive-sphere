@@ -905,3 +905,135 @@ describe('POST .../asset/{upload_id}/complete — sphere thumbnail enqueue', () 
     }
   })
 })
+
+describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)', () => {
+  it('stamps transcoding=1, leaves data_ref empty, and returns 202', async () => {
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      // Loopback host on the request URL so the mock-r2 short-circuit
+      // is allowed (digest trusts the claim; no real bucket needed).
+      MOCK_R2: 'true',
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO' }))
+
+    // 202 because the transcode is still in flight — the row isn't
+    // "ready" yet, even though the upload bytes are. data_ref stays
+    // empty until the GHA workflow PATCHes it back; the publisher's
+    // detail page surfaces a "Transcoding…" badge in the meantime.
+    expect(res.status).toBe(202)
+    const body = await readJson<{
+      dataset: { data_ref: string; transcoding: number | null; source_digest: string }
+      transcoding: boolean
+    }>(res)
+    expect(body.transcoding).toBe(true)
+    expect(body.dataset.data_ref).toBe('')
+    expect(body.dataset.transcoding).toBe(1)
+    // source_digest carries the claim so the workflow can re-verify
+    // before kicking off ffmpeg.
+    expect(body.dataset.source_digest).toBe(HELLO_DIGEST)
+
+    // Persisted state matches the response.
+    const row = sqlite
+      .prepare(`SELECT data_ref, transcoding, source_digest FROM datasets WHERE id = ?`)
+      .get(datasetId) as { data_ref: string; transcoding: number; source_digest: string }
+    expect(row.data_ref).toBe('')
+    expect(row.transcoding).toBe(1)
+    expect(row.source_digest).toBe(HELLO_DIGEST)
+
+    // The asset_uploads row is marked completed — the upload step
+    // itself succeeded; the transcode is a separate, async concern.
+    const upload = sqlite
+      .prepare(`SELECT status, completed_at FROM asset_uploads WHERE id = ?`)
+      .get('UP-VIDEO') as { status: string; completed_at: string }
+    expect(upload.status).toBe('completed')
+    expect(typeof upload.completed_at).toBe('string')
+  })
+
+  it('returns 503 github_dispatch_unconfigured when neither real config nor mock is set', async () => {
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      MOCK_R2: 'true',
+      // Intentionally no MOCK_GITHUB_DISPATCH, no GITHUB_OWNER/REPO/TOKEN.
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO-503',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO-503' }))
+    expect(res.status).toBe(503)
+    expect((await readJson<{ error: string }>(res)).error).toBe('github_dispatch_unconfigured')
+
+    // Critical: the dataset row is NOT modified on dispatch failure,
+    // and the upload row stays `pending` so the publisher can retry
+    // `/complete` after the operator fixes the GitHub config. Without
+    // this, a misconfigured deploy would burn the upload window and
+    // force a fresh upload mint.
+    const row = sqlite
+      .prepare(`SELECT data_ref, transcoding FROM datasets WHERE id = ?`)
+      .get(datasetId) as { data_ref: string | null; transcoding: number | null }
+    expect(row.transcoding).toBeNull()
+    const upload = sqlite
+      .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+      .get('UP-VIDEO-503') as { status: string }
+    expect(upload.status).toBe('pending')
+  })
+
+  it('refuses MOCK_GITHUB_DISPATCH=true on a non-loopback hostname', async () => {
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    // Don't enable MOCK_R2 — it has its own non-loopback refusal
+    // that would fire before the github-dispatch check we want to
+    // exercise here. Use a real R2 binding instead so digest
+    // verification passes on the real path.
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO-PROD',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+
+    // Hit the handler with a production-hostname URL to trigger the
+    // mock-on-non-loopback refusal. Same defense-in-depth pattern as
+    // MOCK_R2 / MOCK_STREAM.
+    const baseCtx = ctx({ env, datasetId, uploadId: 'UP-VIDEO-PROD' })
+    const prodCtx = {
+      ...baseCtx,
+      request: new Request(
+        `https://terraviz.example.com/api/v1/publish/datasets/${datasetId}/asset/UP-VIDEO-PROD/complete`,
+        { method: 'POST' },
+      ),
+    } as typeof baseCtx
+    const res = await completeHandler(prodCtx)
+    expect(res.status).toBe(500)
+    expect((await readJson<{ error: string }>(res)).error).toBe('mock_github_dispatch_unsafe')
+  })
+})

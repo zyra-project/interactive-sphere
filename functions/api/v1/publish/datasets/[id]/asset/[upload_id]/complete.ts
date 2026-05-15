@@ -45,12 +45,14 @@ import { getDatasetForPublisher } from '../../../../../_lib/dataset-mutations'
 import { isConfigurationError, isUpstreamError } from '../../../../../_lib/errors'
 import { isLoopbackHost } from '../../../../../_lib/loopback'
 import { invalidateSnapshot } from '../../../../../_lib/snapshot'
-import { verifyContentDigest } from '../../../../../_lib/r2-store'
+import { isVideoSourceKey, verifyContentDigest } from '../../../../../_lib/r2-store'
 import { getTranscodeStatus } from '../../../../../_lib/stream-store'
+import { dispatchTranscode } from '../../../../../_lib/github-dispatch'
 import {
   applyAssetAndMarkCompleted,
   getAssetUpload,
   markAssetUploadFailed,
+  markVideoSourceUploadedAndStampTranscoding,
 } from '../../../../../_lib/asset-uploads'
 import {
   type JobQueue,
@@ -279,6 +281,75 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
   // the upload row still reads 'pending', which would let a retry
   // re-fire the sphere-thumbnail enqueue + KV invalidation).
   const now = new Date().toISOString()
+
+  // Phase 3pd video-source branch: the upload bytes are an MP4 at
+  // `uploads/{id}/source.mp4`, not the final asset the catalog
+  // serves. Don't write `data_ref` yet — stamp `transcoding=1` so
+  // the portal can render a "Transcoding…" badge, mark the upload
+  // row completed, then fire a repository_dispatch so a GitHub
+  // Actions workflow picks up the source MP4, encodes the HLS
+  // ladder, writes the bundle to `videos/{id}/`, and PATCHes the
+  // row to clear `transcoding` and set `data_ref` to the
+  // master.m3u8. Failures in the dispatch step surface as 502 /
+  // 503 — the source bytes stay in R2 and the publisher can
+  // retry `/complete` once the operator fixes the GitHub config.
+  const isVideoSource =
+    upload.target === 'r2' &&
+    upload.target_ref.startsWith('r2:') &&
+    isVideoSourceKey(upload.target_ref.slice('r2:'.length))
+
+  if (isVideoSource) {
+    // Refuse mock-mode dispatch on a non-loopback hostname for the
+    // same reason MOCK_R2 / MOCK_STREAM refuse: a production
+    // misconfig with MOCK_GITHUB_DISPATCH=true could otherwise
+    // claim transcodes that never run.
+    if (context.env.MOCK_GITHUB_DISPATCH === 'true') {
+      const url = new URL(context.request.url)
+      if (!isLoopbackHost(url.hostname)) {
+        return jsonError(
+          500,
+          'mock_github_dispatch_unsafe',
+          `MOCK_GITHUB_DISPATCH=true refuses to honor a non-loopback hostname (got "${url.hostname}").`,
+        )
+      }
+    }
+    try {
+      await dispatchTranscode(context.env, {
+        dataset_id: datasetId,
+        source_key: upload.target_ref.slice('r2:'.length),
+        source_digest: verifiedDigest,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (isConfigurationError(err)) {
+        return jsonError(503, 'github_dispatch_unconfigured', message)
+      }
+      return jsonError(502, 'github_dispatch_upstream_error', message)
+    }
+    await markVideoSourceUploadedAndStampTranscoding(
+      context.env.CATALOG_DB!,
+      datasetId,
+      upload,
+      now,
+    )
+    const updatedAfterDispatch = await context.env.CATALOG_DB!
+      .prepare(`SELECT * FROM datasets WHERE id = ?`)
+      .bind(datasetId)
+      .first<DatasetRow>()
+    return new Response(
+      JSON.stringify({
+        dataset: updatedAfterDispatch,
+        upload: { ...upload, status: 'completed', completed_at: now },
+        verified_digest: verifiedDigest,
+        transcoding: true,
+      }),
+      {
+        status: 202,
+        headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
+      },
+    )
+  }
+
   await applyAssetAndMarkCompleted(
     context.env.CATALOG_DB!,
     datasetId,

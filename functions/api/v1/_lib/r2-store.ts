@@ -76,6 +76,45 @@ export const R2_PUT_TTL_SECONDS = 15 * 60
 export const MOCK_R2_HOST = 'https://mock-r2.localhost'
 
 /**
+ * R2 key prefix the GHA transcode workflow watches for source
+ * MP4 uploads (Phase 3pd). Lives outside the content-addressed
+ * `datasets/{id}/by-digest/...` scheme because the workflow
+ * doesn't know the digest in advance — it only knows the
+ * dataset id from the `repository_dispatch` payload. The single
+ * `source.mp4` filename means re-uploading the same dataset's
+ * video overwrites the prior source rather than accumulating
+ * stale variants.
+ */
+export const VIDEO_SOURCE_KEY_PREFIX = 'uploads'
+
+/**
+ * Build the R2 key for a video source upload that's destined for
+ * transcoding. `r2:uploads/{dataset_id}/source.mp4`. Used only
+ * for `kind='data'` + `mime='video/mp4'` uploads in Phase 3pd;
+ * every other asset kind uses the content-addressed
+ * `buildAssetKey` helper above.
+ */
+export function buildVideoSourceKey(datasetId: string): string {
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(datasetId)) {
+    throw new Error(
+      `buildVideoSourceKey: datasetId must be a ULID (26 base32 chars), got "${datasetId}"`,
+    )
+  }
+  return `${VIDEO_SOURCE_KEY_PREFIX}/${datasetId}/source.mp4`
+}
+
+/**
+ * Does an R2 key look like a video-source upload destined for the
+ * transcode workflow? The /complete handler uses this to branch
+ * between "write data_ref and finish" and "fire dispatch + stamp
+ * transcoding=1". A simple prefix check is sufficient because the
+ * `uploads/` namespace is reserved for this one purpose.
+ */
+export function isVideoSourceKey(key: string): boolean {
+  return key.startsWith(`${VIDEO_SOURCE_KEY_PREFIX}/`) && key.endsWith('/source.mp4')
+}
+
+/**
  * Build a content-addressed R2 key per `CATALOG_ASSETS_PIPELINE.md`
  * "R2 assets: content-addressed keys". The hex must be the SHA-256
  * the publisher claims for these bytes; the upload-complete handler

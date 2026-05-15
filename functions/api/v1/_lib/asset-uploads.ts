@@ -380,6 +380,84 @@ export async function applyAssetAndMarkCompleted(
 }
 
 /**
+ * Video-source variant: the upload bytes have landed in R2 at
+ * `uploads/{id}/source.mp4` and we've verified the publisher's
+ * digest, but `data_ref` stays empty — the GHA transcode workflow
+ * writes it later when it finishes producing the HLS bundle. We
+ * stamp `transcoding=1` on the dataset row so the detail page can
+ * show a "Transcoding…" badge and gate the publish button, and we
+ * mark the upload row `completed` (the upload itself succeeded;
+ * the *transcode* is a separate concern that lives in GHA).
+ *
+ * Atomic via `db.batch` so the upload-row state and the dataset
+ * row never end up in disagreement.
+ *
+ * NOTE: also clears `data_ref` to empty string. A previous video
+ * upload's HLS bundle still lives at the old `r2:videos/{id}/...`
+ * key — that's the publisher's previous content, and zeroing out
+ * the row's pointer is the right behaviour. The orphan cleanup is
+ * a Phase 4 R2 lifecycle concern.
+ */
+export async function markVideoSourceUploadedAndStampTranscoding(
+  db: D1Database,
+  datasetId: string,
+  upload: AssetUploadRow,
+  now: string,
+): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = 1,
+               data_ref = '',
+               source_digest = ?,
+               updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(upload.claimed_digest, now, datasetId),
+    db
+      .prepare(
+        `UPDATE asset_uploads
+           SET status = 'completed', completed_at = ?, failure_reason = NULL
+         WHERE id = ? AND status = 'pending'`,
+      )
+      .bind(now, upload.id),
+  ])
+}
+
+/**
+ * Called by the GHA transcode workflow when the HLS bundle is
+ * written to R2. Flips `data_ref` to the master.m3u8 path and
+ * clears `transcoding`. Mirrors `applyAssetAndMarkCompleted`'s
+ * batch atomicity — the dataset row never sees `data_ref` set
+ * while `transcoding=1` (which would lie to the manifest endpoint).
+ *
+ * Reached via `PATCH /api/v1/publish/datasets/{id}` from the
+ * workflow's last step using a `role=service` Cloudflare Access
+ * service token — same auth path the CLI uses. The route handler
+ * for that PATCH (already shipped in 3pc) needs to learn about
+ * the `transcoding` field; that's the small follow-on in
+ * dataset-mutations.ts.
+ */
+export async function clearTranscoding(
+  db: D1Database,
+  datasetId: string,
+  dataRef: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE datasets
+         SET transcoding = NULL,
+             data_ref = ?,
+             updated_at = ?
+       WHERE id = ?`,
+    )
+    .bind(dataRef, now, datasetId)
+    .run()
+}
+
+/**
  * Build (but do not execute) the `UPDATE datasets` statement for a
  * verified upload. Returns a prepared+bound D1PreparedStatement so
  * callers can either run it directly or include it in a batch.

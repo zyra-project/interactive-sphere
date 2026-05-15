@@ -103,7 +103,7 @@ async function readJson<T>(res: Response): Promise<T> {
 }
 
 describe('POST /api/v1/publish/datasets/{id}/asset — happy paths', () => {
-  it('routes a video data upload to Stream and persists a pending row', async () => {
+  it('routes a video data upload to R2 at the dispatch-discoverable source key (3pd)', async () => {
     const { env, sqlite, datasetId } = setupEnv()
     const res = await assetInit(
       ctx({
@@ -118,34 +118,28 @@ describe('POST /api/v1/publish/datasets/{id}/asset — happy paths', () => {
       }),
     )
     expect(res.status).toBe(201)
-    expect(res.headers.get('location')).toMatch(
-      new RegExp(`^/api/v1/publish/datasets/${datasetId}/asset/`),
-    )
     const body = await readJson<{
       upload_id: string
       kind: string
       target: string
-      stream?: { upload_url: string; stream_uid: string }
-      r2?: unknown
+      stream?: unknown
+      r2?: { method: string; url: string; key: string; headers: Record<string, string> }
       expires_at: string
     }>(res)
-    expect(body.target).toBe('stream')
+    // Stream branch is gone — video data now goes to R2 at a
+    // predictable key the GHA transcode workflow can discover via
+    // the `repository_dispatch` payload.
+    expect(body.target).toBe('r2')
+    expect(body.stream).toBeUndefined()
+    expect(body.r2?.key).toBe(`uploads/${datasetId}/source.mp4`)
+    expect(body.r2?.method).toBe('PUT')
     expect(body.kind).toBe('data')
-    expect(body.r2).toBeUndefined()
-    expect(body.stream?.upload_url).toContain('mock-stream.localhost')
-    expect(body.stream?.stream_uid).toMatch(/^[0-9a-f]{32}$/)
-    expect(typeof body.expires_at).toBe('string')
 
     const row = sqlite
       .prepare(`SELECT * FROM asset_uploads WHERE id = ?`)
       .get(body.upload_id) as Record<string, unknown> | undefined
-    expect(row).toBeTruthy()
-    expect(row?.dataset_id).toBe(datasetId)
-    expect(row?.publisher_id).toBe(STAFF.id)
-    expect(row?.status).toBe('pending')
-    expect(row?.target).toBe('stream')
-    expect((row?.target_ref as string).startsWith('stream:')).toBe(true)
-    expect(row?.claimed_digest).toBe(HAPPY_DIGEST)
+    expect(row?.target).toBe('r2')
+    expect((row?.target_ref as string)).toBe(`r2:uploads/${datasetId}/source.mp4`)
   })
 
   it('routes a thumbnail to R2 with a content-addressed key', async () => {
@@ -325,24 +319,12 @@ describe('POST /api/v1/publish/datasets/{id}/asset — body validation', () => {
 })
 
 describe('POST /api/v1/publish/datasets/{id}/asset — config errors', () => {
-  it('returns 503 stream_unconfigured when video upload but no Stream config', async () => {
-    const { env, datasetId } = setupEnv({ MOCK_STREAM: undefined })
-    delete (env as Record<string, unknown>).MOCK_STREAM
-    const res = await assetInit(
-      ctx({
-        env,
-        datasetId,
-        body: {
-          kind: 'data',
-          mime: 'video/mp4',
-          size: 1000,
-          content_digest: HAPPY_DIGEST,
-        },
-      }),
-    )
-    expect(res.status).toBe(503)
-    expect((await readJson<{ error: string }>(res)).error).toBe('stream_unconfigured')
-  })
+  // Stream-routing tests removed in 3pd/A. Video data now goes
+  // through R2 like every other asset kind, so the
+  // `stream_unconfigured` / `stream_upstream_error` /
+  // `mock_stream_unsafe` branches are no longer reachable from
+  // `chooseTarget`. The R2 path's analogous tests below cover
+  // the surviving error envelopes.
 
   it('returns 503 r2_unconfigured when image upload but no R2 config', async () => {
     const { env, datasetId } = setupEnv({ MOCK_R2: undefined })
@@ -421,39 +403,9 @@ describe('POST /api/v1/publish/datasets/{id}/asset — config errors', () => {
     expect(res.status).toBe(201)
   })
 
-  it('returns 502 stream_upstream_error when Stream API errors out (configured)', async () => {
-    const { env, datasetId } = setupEnv({ MOCK_STREAM: undefined })
-    delete (env as Record<string, unknown>).MOCK_STREAM
-    Object.assign(env, {
-      STREAM_ACCOUNT_ID: 'acct',
-      STREAM_API_TOKEN: 'tok',
-    })
-    const fetchStub = (async () =>
-      new Response(JSON.stringify({ success: false, errors: [{ code: 1, message: 'quota' }] }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json' },
-      })) as unknown as typeof fetch
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = fetchStub
-    try {
-      const res = await assetInit(
-        ctx({
-          env,
-          datasetId,
-          body: {
-            kind: 'data',
-            mime: 'video/mp4',
-            size: 1000,
-            content_digest: HAPPY_DIGEST,
-          },
-        }),
-      )
-      expect(res.status).toBe(502)
-      expect((await readJson<{ error: string }>(res)).error).toBe('stream_upstream_error')
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
+  // Stream upstream-error test removed in 3pd/A; same rationale as
+  // the deletions in §"config errors" above — the chooseTarget
+  // branch that reached Stream is gone.
 })
 
 describe('POST /api/v1/publish/datasets/{id}/asset — mock flag', () => {
@@ -476,24 +428,9 @@ describe('POST /api/v1/publish/datasets/{id}/asset — mock flag', () => {
     expect(body.mock).toBe(true)
   })
 
-  it('stamps mock=true on Stream uploads when MOCK_STREAM is set', async () => {
-    const { env, datasetId } = setupEnv()
-    const res = await assetInit(
-      ctx({
-        env,
-        datasetId,
-        body: {
-          kind: 'data',
-          mime: 'video/mp4',
-          size: 50_000,
-          content_digest: HAPPY_DIGEST,
-        },
-      }),
-    )
-    expect(res.status).toBe(201)
-    const body = await readJson<{ mock: boolean }>(res)
-    expect(body.mock).toBe(true)
-  })
+  // "Stamps mock=true on Stream uploads" deleted in 3pd/A — Stream
+  // is no longer a target. Video uploads now exercise the
+  // MOCK_R2-stamps-mock=true path covered above.
 
   it('refuses MOCK_R2=true on a non-loopback hostname', async () => {
     const { env, datasetId } = setupEnv()
@@ -528,67 +465,7 @@ describe('POST /api/v1/publish/datasets/{id}/asset — mock flag', () => {
     expect((await readJson<{ error: string }>(res)).error).toBe('mock_r2_unsafe')
   })
 
-  it('refuses MOCK_STREAM=true on a non-loopback hostname', async () => {
-    const { env, datasetId } = setupEnv()
-    const prodCtx = {
-      ...ctx({ env, datasetId, body: {} }),
-      request: new Request(
-        `https://terraviz.example.com/api/v1/publish/datasets/${datasetId}/asset`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kind: 'data',
-            mime: 'video/mp4',
-            size: 50_000,
-            content_digest: HAPPY_DIGEST,
-          }),
-        },
-      ),
-    } as Parameters<typeof assetInit>[0]
-    const res = await assetInit(prodCtx)
-    expect(res.status).toBe(500)
-    expect((await readJson<{ error: string }>(res)).error).toBe('mock_stream_unsafe')
-  })
-
-  it('stamps mock=false when only one half of the pair is mocked', async () => {
-    // R2 mock, Stream not mocked — Stream upload reports mock=false.
-    const { env, datasetId } = setupEnv({ MOCK_STREAM: undefined })
-    delete (env as Record<string, unknown>).MOCK_STREAM
-    // Provide real-ish Stream credentials so the helper doesn't 503.
-    Object.assign(env, {
-      STREAM_ACCOUNT_ID: 'acct',
-      STREAM_API_TOKEN: 'tok',
-      STREAM_CUSTOMER_SUBDOMAIN: 'customer-real.cloudflarestream.com',
-    })
-    // Patch global fetch — mintDirectUploadUrl will reach for it.
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          result: { uploadURL: 'https://upload.cloudflarestream.com/abc', uid: 'abc' },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )) as unknown as typeof fetch
-    try {
-      const res = await assetInit(
-        ctx({
-          env,
-          datasetId,
-          body: {
-            kind: 'data',
-            mime: 'video/mp4',
-            size: 50_000,
-            content_digest: HAPPY_DIGEST,
-          },
-        }),
-      )
-      expect(res.status).toBe(201)
-      const body = await readJson<{ mock: boolean }>(res)
-      expect(body.mock).toBe(false)
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
+  // "Refuses MOCK_STREAM=true on non-loopback" + "stamps mock=false
+  // when only one half of the pair is mocked" deleted in 3pd/A
+  // along with the rest of the Stream-routing test coverage.
 })
