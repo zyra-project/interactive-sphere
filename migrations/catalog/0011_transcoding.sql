@@ -5,8 +5,11 @@
 -- repository_dispatch that runs ffmpeg in a GitHub Actions runner.
 -- Once the workflow finishes encoding the 4K / 1080p / 720p 2:1
 -- spherical HLS ladder + writes it back to R2 under
--- `videos/{dataset_id}/`, the workflow PATCHes the dataset row to
--- flip `data_ref` and clear this column.
+-- `videos/{dataset_id}/{upload_id}/`, the workflow POSTs
+-- `POST /api/v1/publish/datasets/{id}/transcode-complete` on the
+-- publisher API. That route constructs the bundle's `data_ref`
+-- server-side from the route id + the workflow's `upload_id`,
+-- flips it on the row, and clears this column.
 --
 -- Why a dedicated column rather than reusing asset_uploads.status
 -- or a derived check on `data_ref`:

@@ -74,10 +74,11 @@ Five hops from publisher click to playable row:
 1. **Presigned PUT.** The publisher selects an MP4 in the portal's
    uploader. The form requests
    `POST /api/v1/publish/datasets/{id}/asset` with
-   `{ kind: 'data', content_type: 'video/mp4' }`. The handler
-   mints an R2 presigned PUT URL pointing at
-   `uploads/{dataset_id}/source.mp4`, valid for ~15 minutes.
-   The handler returns `{ upload_url, headers, expires_at }`.
+   `{ kind: 'data', mime: 'video/mp4', size, content_digest }`.
+   The handler validates the shape, mints an R2 presigned PUT URL
+   pointing at `uploads/{dataset_id}/source.mp4`, valid for
+   ~15 minutes, and returns
+   `{ upload_id, target: 'r2', r2: { method, url, headers, key }, expires_at, mock }`.
 
 2. **Direct upload.** The browser PUTs the MP4 straight to R2 over
    the presigned URL. No proxy through a Worker — that would mean
@@ -85,16 +86,22 @@ Five hops from publisher click to playable row:
    limit, which kills any video larger than a phone clip.
 
 3. **Repository dispatch.** Once the PUT resolves 200, the portal
-   POSTs `POST /api/v1/publish/datasets/{id}/asset/finalize` with
-   `{ kind: 'data', upload_id }`. The Worker:
+   POSTs `POST /api/v1/publish/datasets/{id}/asset/{upload_id}/complete`
+   (no body). The Worker:
 
-   - Verifies the source exists in R2 (HEAD request).
-   - Stamps the row as `transcoding=true` (a new column added in
-     migration 0011).
-   - Calls `POST https://api.github.com/repos/zyra-project/terraviz/dispatches`
+   - Looks up the asset_uploads row, verifies it belongs to
+     this dataset, and verifies the publisher's claimed SHA-256
+     digest against the bytes now in R2.
+   - Stamps the row as `transcoding=1` (a new column added in
+     migration 0011). For drafts also clears `data_ref` to
+     empty string; for published rows leaves `data_ref` pointing
+     at the existing HLS bundle so public playback continues
+     uninterrupted while the new bundle transcodes.
+   - Calls `POST https://api.github.com/repos/{owner}/{repo}/dispatches`
      with `event_type: 'transcode-hls'` and
-     `client_payload: { dataset_id, source_key }`, using a PAT
-     stored as the `GITHUB_DISPATCH_TOKEN` Cloudflare secret.
+     `client_payload: { dataset_id, upload_id, source_key, source_digest }`,
+     using a PAT stored as the `GITHUB_DISPATCH_TOKEN`
+     Cloudflare secret.
 
    The repo `git log` stays untouched — `repository_dispatch` is a
    pure event API, no push, no PR, no branch.
@@ -103,19 +110,25 @@ Five hops from publisher click to playable row:
    `.github/workflows/transcode-hls.yml` listens on
    `on: repository_dispatch: types: [transcode-hls]`. It:
 
-   - Checks out the repo (so it can reuse `cli/lib/encode-hls.ts`
-     and `cli/lib/upload-hls.ts`).
+   - Checks out the repo (so it can reuse `cli/lib/ffmpeg-hls.ts`
+     and `cli/lib/r2-upload.ts`).
    - Installs ffmpeg from the GHA runner's package manager.
    - Reads the source MP4 from R2 using S3-compatible credentials
      (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` as GitHub Actions
      repo secrets).
    - Runs the existing `encodeHls` helper.
-   - Uploads the bundle via `uploadHlsBundle` to
-     `videos/{dataset_id}/`.
-   - PATCHes the dataset row via the publisher API
-     (`R2_TRANSCODE_SERVICE_TOKEN` GHA secret authenticating as a
-     `role=service` publisher) to flip `data_ref` and clear
-     `transcoding`.
+   - Uploads the bundle via `uploadHlsBundle` to a per-upload
+     prefix: `videos/{dataset_id}/{upload_id}/`. Versioning by
+     upload_id keeps a re-upload to an already-published row
+     from overwriting bytes a public client is mid-playback
+     against; the swap below is atomic.
+   - POSTs `/api/v1/publish/datasets/{id}/transcode-complete`
+     with `{ upload_id, source_digest }`, authenticated by the
+     Cloudflare Access service token
+     (`CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` GHA
+     secrets, provisioned as a `role=service` publisher). The
+     route constructs `data_ref` server-side from the route id
+     + upload id, flips it, and clears `transcoding`.
 
 5. **Portal picks up the change.** The detail page polls
    `GET /api/v1/publish/datasets/{id}` every 5 s while

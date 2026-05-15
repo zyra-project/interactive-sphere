@@ -22,12 +22,13 @@
  * exposed in a disclosure for the operator-debugging cases the
  * 3pc error-card pattern established.
  *
- * The component takes a `dataRef` initial value (from the
- * existing row in edit mode) and renders it as a read-only
+ * The component takes a `currentDataRef` initial value (from
+ * the existing row in edit mode) and renders it as a read-only
  * monospace display above the picker — the publisher sees what
  * the row currently points at without losing the picker. Once
- * an upload lands, the new ref is what gets surfaced + handed
- * to the parent form via `onChange`.
+ * an upload lands, the new ref (image case) or the
+ * transcoding state (video case) is handed to the parent form
+ * via `onUploaded`.
  */
 
 import { t, type MessageKey } from '../../../i18n'

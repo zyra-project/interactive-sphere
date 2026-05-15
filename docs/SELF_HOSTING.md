@@ -571,7 +571,7 @@ Actions → Repository secrets):
 | `R2_ACCESS_KEY_ID` | R2 S3 access-key id with read+write on the assets bucket. Same key the publisher API uses for digest verification is fine. |
 | `R2_SECRET_ACCESS_KEY` | The matching secret. |
 | `CATALOG_R2_BUCKET` | Optional bucket-name override. Defaults to `terraviz-assets`. |
-| `TERRAVIZ_SERVER` | Base URL of the Pages deploy (e.g. `https://terraviz.app`). The workflow PATCHes this URL with the HLS bundle's `data_ref` at the end of the run. |
+| `TERRAVIZ_SERVER` | Base URL of the Pages deploy (e.g. `https://terraviz.app`). The workflow POSTs `<server>/api/v1/publish/datasets/{id}/transcode-complete` at the end of the run; the route constructs `data_ref` server-side from the route id + the workflow-supplied `upload_id` and clears `transcoding`. |
 | `CF_ACCESS_CLIENT_ID` | Cloudflare Access **service token** id. The token is provisioned via Zero Trust → Access → Service Auth. The publisher API JIT-provisions it as `role='service'` on first use; the `/transcode-complete` route accepts that role explicitly. |
 | `CF_ACCESS_CLIENT_SECRET` | The matching secret. |
 

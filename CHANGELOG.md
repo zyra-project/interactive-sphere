@@ -30,7 +30,9 @@ CLI-driven R2 + ffmpeg replacement (`cli/migrate-r2-hls.ts`). 3pd
 exposes the same pipeline through the portal: a publisher uploads
 an MP4 in the browser, a GitHub Actions workflow runs ffmpeg
 against the 4K / 1080p / 720p 2:1 spherical ladder, writes the
-HLS bundle to R2, and PATCHes the row.
+HLS bundle to R2, and POSTs the new
+`/api/v1/publish/datasets/{id}/transcode-complete` route on the
+publisher API to flip `data_ref` and clear `transcoding`.
 
 **3pd-pre — Doc refresh.** Banner at the top of
 `CATALOG_ASSETS_PIPELINE.md` flagging Stream removal. Rewrites
@@ -78,7 +80,7 @@ gains the 3pd sub-phase breakdown table; `CATALOG_BACKEND_PLAN.md`
   into `CatalogEnv`.
 
 **3pd/A-fix — `POST /api/v1/publish/datasets/{id}/transcode-complete`.**
-The endpoint the workflow PATCHes back through to clear
+The endpoint the workflow POSTs back through to clear
 `transcoding=1` and set `data_ref`. Restricted to `role='service'`
 + admin staff because the column is server-managed.
 Belt-and-suspenders `source_digest` re-verify so a misrouted
