@@ -927,6 +927,16 @@ function renderForm(
   // off to the asset uploader (3pd/C); the manual ref input stays
   // available for the non-upload paths (legacy / external).
   if (ctx.mode === 'edit' && ctx.datasetId) {
+    // Edit mode mounts BOTH the guided uploader and the manual
+    // text input. The uploader covers the "I have an MP4 / PNG
+    // on my disk" case; the manual input covers the
+    // "swap to a `vimeo:` legacy URL or paste an existing
+    // `r2:videos/...` ref" case, which the uploader can't
+    // express (its flow always uploads bytes). Fix for PR #112
+    // Copilot #5 — the prior single-uploader layout left
+    // editors no way to change a `vimeo:` / `url:` /
+    // already-transcoded `r2:` ref short of round-tripping
+    // through the API.
     const uploaderWrap = document.createElement('div')
     uploaderWrap.className = 'publisher-field'
     const label = document.createElement('span')
@@ -950,13 +960,36 @@ function renderForm(
           // detail page picks up the row + starts polling in 3pd/D.
           if (outcome.mode === 'direct') {
             state.dataRef = outcome.dataRef
+            // Reflect the new ref in the manual input below so
+            // the publisher sees what the row now points at.
+            const manual = content.querySelector<HTMLInputElement>('#dataset-data-ref')
+            if (manual) manual.value = outcome.dataRef
           } else {
             state.dataRef = ''
+            const manual = content.querySelector<HTMLInputElement>('#dataset-data-ref')
+            if (manual) manual.value = ''
           }
         },
       }),
     )
     identityCard.appendChild(uploaderWrap)
+    // Manual ref input — for editors who want to swap to a
+    // legacy `vimeo:` / `url:` ref or paste an already-encoded
+    // `r2:videos/...` value without re-uploading bytes.
+    identityCard.appendChild(
+      inputField({
+        id: 'dataset-data-ref',
+        labelKey: 'publisher.datasetForm.field.dataRefManual',
+        required: false,
+        value: state.dataRef,
+        placeholder: t('publisher.datasetForm.placeholder.dataRef'),
+        helpKey: 'publisher.datasetForm.help.dataRefManual',
+        error: findError(state.errors, 'data_ref'),
+        onChange: v => {
+          state.dataRef = v
+        },
+      }),
+    )
   } else {
     // Create-mode fallback — the publisher can still paste a
     // `vimeo:` ref or an external URL by hand. Once the draft

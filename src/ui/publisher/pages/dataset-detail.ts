@@ -742,7 +742,20 @@ async function dispatchPreview(
     })
     if (fresh.ok) {
       paint(content, id, fresh.data, options, errorMessage)
+      return
     }
+    // If the refetch itself fails too, fall back to the static
+    // error card so the publisher sees *something* rather than
+    // the button silently doing nothing. Fix for PR #112
+    // Copilot #7. (Parallels the `dispatchAction` fallback for
+    // the same case.)
+    if (fresh.kind === 'session') {
+      if (handleSessionError({ navigate: options.navigate }) === 'show-error') {
+        renderError(content, 'session')
+      }
+      return
+    }
+    renderError(content, fresh.kind)
     return
   }
   // Build the SPA-side URL. `result.data.url` is the API path the
@@ -829,14 +842,21 @@ function openPreviewModal(
   copyBtn.className = 'publisher-button publisher-button-primary'
   copyBtn.textContent = t('publisher.datasetDetail.preview.copy')
   copyBtn.addEventListener('click', () => {
+    // `navigator.clipboard?.writeText()` with `?.then().catch()`
+    // chains short-circuits silently when clipboard is undefined
+    // (older Firefox, HTTP origins, locked-down browsers). Check
+    // explicitly so the keep-selected fallback always runs.
+    // Fix for PR #112 Copilot #6.
+    if (!navigator.clipboard) {
+      urlInput.select()
+      return
+    }
     void navigator.clipboard
-      ?.writeText(urlInput.value)
+      .writeText(urlInput.value)
       .then(() => {
         copyBtn.textContent = t('publisher.datasetDetail.preview.copied')
       })
       .catch(() => {
-        // Clipboard API not available — select the field so the
-        // publisher can Ctrl-C manually.
         urlInput.select()
       })
   })
@@ -854,6 +874,43 @@ function openPreviewModal(
   content.appendChild(backdrop)
   urlInput.focus()
   urlInput.select()
+
+  // Focus trap — claim `aria-modal=true` honestly by keeping
+  // keyboard focus inside the dialog while it's open. Without
+  // this a Tab from the last button drops the user into
+  // page-behind-the-modal controls. Fix for PR #112 Copilot #8.
+  // Also restore focus to the previously-focused element on
+  // close (typically the Preview button that opened the modal).
+  const previouslyFocused = document.activeElement as HTMLElement | null
+  const focusables: HTMLElement[] = [urlInput, copyBtn, closeBtn]
+  const trapListener = (event: KeyboardEvent): void => {
+    if (event.key !== 'Tab') return
+    const current = document.activeElement
+    const idx = focusables.findIndex(el => el === current)
+    if (event.shiftKey) {
+      // Shift-Tab from the first → wrap to last.
+      if (idx <= 0) {
+        event.preventDefault()
+        focusables[focusables.length - 1].focus()
+      }
+    } else {
+      // Tab from the last → wrap to first.
+      if (idx === focusables.length - 1) {
+        event.preventDefault()
+        focusables[0].focus()
+      }
+    }
+  }
+  modal.addEventListener('keydown', trapListener)
+  // Restore focus on close. Same MutationObserver as the
+  // escape-listener cleanup above; piggy-back on it.
+  const restoreObserver = new MutationObserver(() => {
+    if (!document.contains(backdrop)) {
+      previouslyFocused?.focus?.()
+      restoreObserver.disconnect()
+    }
+  })
+  restoreObserver.observe(document.body, { childList: true, subtree: true })
 }
 
 async function dispatchAction(

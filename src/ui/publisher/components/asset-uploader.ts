@@ -209,13 +209,23 @@ export function renderAssetUploader(options: AssetUploaderOptions): HTMLElement 
       frag.appendChild(current)
     }
 
-    // File picker.
+    // File picker. The label is mounted alongside the input
+    // (and explicitly bound via `for` / `id`) so screen readers
+    // announce "Pick a file, file picker" rather than leaving
+    // the input unlabeled. Fix for PR #112 Copilot #4.
     const inputRow = document.createElement('div')
     inputRow.className = 'publisher-asset-uploader-input-row'
 
+    const inputId = 'dataset-asset-file'
+    const label = document.createElement('label')
+    label.className = 'publisher-asset-uploader-label'
+    label.setAttribute('for', inputId)
+    label.textContent = t('publisher.assetUploader.pickFile')
+    inputRow.appendChild(label)
+
     const input = document.createElement('input')
     input.type = 'file'
-    input.id = 'dataset-asset-file'
+    input.id = inputId
     input.className = 'publisher-asset-uploader-input'
     input.accept = acceptForFormat(options.format)
     input.disabled = s.stage !== 'idle' && s.stage !== 'error' && !s.stage.startsWith('done-')
@@ -263,13 +273,20 @@ export function renderAssetUploader(options: AssetUploaderOptions): HTMLElement 
       options.onMissingDataset?.()
       return
     }
-    if (!mimeAcceptedForFormat(file.type, options.format)) {
+    // Browsers sometimes report `File.type === ''` for files
+    // dragged from certain OS file managers, or for ext-only
+    // matches. Fall back to deriving the MIME from the filename
+    // extension before checking — otherwise valid uploads
+    // fail at the client gate before the server can speak.
+    // Fix for PR #112 Copilot #3.
+    const effectiveMime = file.type || mimeFromFilename(file.name)
+    if (!mimeAcceptedForFormat(effectiveMime, options.format)) {
       state = {
         ...INITIAL,
         stage: 'error',
         statusKey: 'publisher.assetUploader.status.error',
         errorDetail: t('publisher.assetUploader.mimeMismatch', {
-          actual: file.type || 'unknown',
+          actual: effectiveMime || 'unknown',
           expected: options.format,
         }),
       }
@@ -290,7 +307,7 @@ export function renderAssetUploader(options: AssetUploaderOptions): HTMLElement 
         `/api/v1/publish/datasets/${encodeURIComponent(options.datasetId)}/asset`,
         {
           kind: 'data',
-          mime: file.type,
+          mime: effectiveMime,
           size: file.size,
           content_digest: digest,
         },
@@ -421,6 +438,23 @@ function mimeAcceptedForFormat(mime: string, format: string): boolean {
   // Some browsers report `image/jpeg` as `image/jpg` historically.
   if (format === 'image/jpeg' && mime === 'image/jpg') return true
   return false
+}
+
+/**
+ * Derive a MIME type from a filename when `File.type` is empty
+ * (some browsers report empty MIME for files dragged from
+ * certain OS-side file pickers). Conservative: only the four
+ * shapes the publisher form accepts. Anything unknown returns
+ * empty string so the mime-mismatch gate catches it cleanly.
+ */
+function mimeFromFilename(name: string): string {
+  const lower = name.toLowerCase()
+  if (lower.endsWith('.mp4')) return 'video/mp4'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.json')) return 'application/json'
+  return ''
 }
 
 /**

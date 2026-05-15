@@ -89,20 +89,24 @@ describe('renderDatasetEditPage', () => {
     )
   })
 
-  it('surfaces the existing data_ref via the asset uploader’s "current" line', async () => {
+  it('surfaces the existing data_ref via the asset uploader’s "current" line + the manual override input', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       detailResponse(dataset({ data_ref: 'r2:videos/01XYZ/master.m3u8' })),
     )
     await renderDatasetEditPage(mount, '01EDIT0000000000000000000', {
       fetchFn: fetchFn as unknown as typeof fetch,
     })
-    // The manual text input from 3pc/F-fix2 was replaced in 3pd/C
-    // by the asset-uploader component, which surfaces the row's
-    // existing ref through a "Current reference:" read-only line
-    // above the file picker.
-    expect(mount.querySelector('#dataset-data-ref')).toBeNull()
+    // The asset-uploader component surfaces the row's existing
+    // ref through a "Current reference:" read-only line above
+    // the file picker.
     const currentValue = mount.querySelector('.publisher-asset-uploader-current-value')
     expect(currentValue?.textContent).toBe('r2:videos/01XYZ/master.m3u8')
+    // The manual override input (3pd-review2/D fix #5) is also
+    // mounted in edit mode so editors can swap to a legacy
+    // `vimeo:` / `url:` ref without re-uploading bytes.
+    const manualInput = mount.querySelector<HTMLInputElement>('#dataset-data-ref')
+    expect(manualInput).not.toBeNull()
+    expect(manualInput?.value).toBe('r2:videos/01XYZ/master.m3u8')
   })
 
   it('prefills keyword chips from the decoration arrays', async () => {
