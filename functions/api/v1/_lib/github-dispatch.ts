@@ -50,7 +50,10 @@ export interface TranscodeDispatchPayload {
    *  `data_ref` from the route id + this upload id so a misrouted
    *  workflow can't point the row at the wrong bundle. */
   upload_id: string
-  /** R2 key of the source MP4 (typically `uploads/{id}/source.mp4`). */
+  /** R2 key of the source MP4
+   *  (`uploads/{dataset_id}/{upload_id}/source.mp4`; built by
+   *  `buildVideoSourceKey` in `r2-store.ts`). The runner pins
+   *  it against `--dataset-id` / `--upload-id` before fetching. */
   source_key: string
   /** SHA-256 of the source bytes — workflow re-verifies before encoding. */
   source_digest: string

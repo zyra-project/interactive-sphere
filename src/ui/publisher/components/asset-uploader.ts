@@ -233,10 +233,10 @@ export function renderAssetUploader(options: AssetUploaderOptions): HTMLElement 
     // direct (non-transcode) finalisation. `done-transcoding`
     // keeps the picker disabled — starting a second upload
     // while the first transcode is still in flight would fire
-    // an overlapping dispatch, and the server-side
-    // `transcoding_in_progress` gate (3pd-review2/A) would
-    // refuse it anyway. Cleaner to disable here. Fix for
-    // PR #112 Copilot #2.
+    // an overlapping dispatch, and the /asset/.../complete
+    // route's `transcoding_in_progress` guard (migration 0012,
+    // 3pd-followup/C) would refuse it anyway. Cleaner to
+    // disable here.
     input.disabled =
       s.stage !== 'idle' &&
       s.stage !== 'error' &&

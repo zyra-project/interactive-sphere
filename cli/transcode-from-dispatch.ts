@@ -11,7 +11,8 @@
  *      `client_payload`).
  *   2. Pull the source MP4 from R2 via the S3-compatible API into a
  *      per-run workdir. The publisher's portal upload already
- *      landed at `uploads/{id}/source.mp4`; we read it back here.
+ *      landed at `uploads/{dataset_id}/{upload_id}/source.mp4`;
+ *      we read it back here.
  *   3. Re-verify the source digest. Mismatch → fail fast; the
  *      caller's claim was wrong or the R2 object was tampered.
  *   4. `encodeHls` against the 4K + 1080p + 720p 2:1 spherical

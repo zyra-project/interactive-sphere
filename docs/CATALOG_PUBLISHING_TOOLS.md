@@ -297,7 +297,10 @@ Behavior:
   Optional client-side downsample preview before upload so the
   publisher sees roughly what the 2048-wide variant will look like.
 - **Video** (`video/mp4`): the presigned PUT lands the MP4 at
-  `r2:uploads/{id}/source.mp4`. The finalize step fires a
+  `r2:uploads/{id}/{upload_id}/source.mp4` (per-upload prefix
+  so a re-upload to a still-transcoding row doesn't overwrite
+  the source bytes the prior workflow may still be reading).
+  The finalize step fires a
   GitHub `repository_dispatch` and stamps the row
   `transcoding=true`. The form returns control to the publisher
   immediately; the detail page polls every 5 s until `transcoding`
@@ -316,7 +319,7 @@ something demoable on its own.
 |---|---|---|
 | **3pd/A** — Presigned PUT + finalize endpoints | `POST /api/v1/publish/datasets/{id}/asset` (mint presigned URL) and `POST /api/v1/publish/datasets/{id}/asset/{upload_id}/complete` (verify + dispatch). The complete handler also stamps `transcoding=1` on the row and fires the GitHub `repository_dispatch`. A separate `POST /api/v1/publish/datasets/{id}/transcode-complete` route is what the GHA workflow calls back to clear `transcoding` and set `data_ref` to the new HLS bundle. Migration 0011 adds the `transcoding` boolean. No portal UI yet. | Worker side complete; tested via `curl` + a manual repository_dispatch. |
 | **3pd/B** — GHA workflow | `.github/workflows/transcode-hls.yml` listens on `repository_dispatch: types: [transcode-hls]`, runs the existing `cli/lib/ffmpeg-hls.ts` + `cli/lib/r2-upload.ts` via `cli/transcode-from-dispatch.ts`, then POSTs `/transcode-complete` on the publisher API with the workflow's Access service-token headers. | Reuses the proven Phase 3 transcoder code path. New GHA repo secrets: `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `TERRAVIZ_SERVER`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`. New Pages bindings: `GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_DISPATCH_TOKEN`. |
-| **3pd/C** — Portal uploader | Click-to-browse file picker in the dataset form, mounted alongside the 3pc/F-fix2 manual `data_ref` input. XHR upload-progress events drive an inline `<progress>` bar; stage-specific errors (mint / upload / finalize) surface in a status line + a `<details>` disclosure. Failed uploads keep the file picker enabled so the publisher can retry by re-picking the file. No automatic retry-on-5xx today — that's a follow-up. | The manual ref input stays so legacy `vimeo:` / `url:` references can still be set without re-uploading bytes. Same FormState slot, two parallel input surfaces. |
+| **3pd/C** — Portal uploader | Click-to-browse file picker in the dataset form, mounted alongside the 3pc/F-fix2 manual `data_ref` input. XHR upload-progress events drive an inline `<progress>` bar; stage-specific errors (mint / upload / finalize) surface in a status line + a `<details>` disclosure. Failed uploads keep the file picker enabled so the publisher can retry by re-picking the file. No transparent retry — every failure surfaces in the status line and the publisher has to re-pick the file to retry. | The manual ref input stays so legacy `vimeo:` / `url:` references can still be set without re-uploading bytes. Same FormState slot, two parallel input surfaces. |
 | **3pd/D** — Transcoding status | "Transcoding…" badge on the detail page when `transcoding=true`, with the elapsed time. Detail-page polling every 5 s, stops when `transcoding=false`. | Stops automatically when the row reaches a terminal state. Reuses the existing detail-page render loop. |
 | **3pd/E** — Preview button | "Preview" button on the detail page mints a token via `POST .../preview` and opens the SPA at `/?preview={token}`. The preview endpoint already exists from Phase 1b; 3pd just wires the UI. | Closes the read → upload → preview → publish loop for the publisher portal. |
 | **3pd/F** — CHANGELOG + SELF_HOSTING walkthrough | Operator-facing summary of the new bindings, the GHA secrets, and the migration order. | Same pattern 3pc/G followed. |

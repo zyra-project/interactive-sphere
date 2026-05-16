@@ -381,8 +381,9 @@ export async function applyAssetAndMarkCompleted(
 
 /**
  * Video-source variant: the upload bytes have landed in R2 at
- * `uploads/{id}/source.mp4` and we've verified the publisher's
- * digest. We stamp `transcoding=1` so the portal renders a
+ * `uploads/{dataset_id}/{upload_id}/source.mp4` and we've
+ * verified the publisher's digest. We stamp `transcoding=1` so
+ * the portal renders a
  * "Transcoding…" badge + gates the publish button, mark the
  * asset_upload row `completed` (the upload step itself
  * succeeded; the transcode is async + lives in GHA), and store

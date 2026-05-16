@@ -79,11 +79,15 @@ export const MOCK_R2_HOST = 'https://mock-r2.localhost'
  * R2 key prefix the GHA transcode workflow watches for source
  * MP4 uploads (Phase 3pd). Lives outside the content-addressed
  * `datasets/{id}/by-digest/...` scheme because the workflow
- * doesn't know the digest in advance — it only knows the
- * dataset id from the `repository_dispatch` payload. The single
- * `source.mp4` filename means re-uploading the same dataset's
- * video overwrites the prior source rather than accumulating
- * stale variants.
+ * doesn't know the digest in advance — only the dataset id and
+ * upload id, both of which travel through the
+ * `repository_dispatch` payload (see
+ * `TranscodeDispatchPayload` in `github-dispatch.ts`). Scoping
+ * by upload_id (not just dataset_id) means a re-upload to a
+ * row that's already published lands at a fresh prefix instead
+ * of overwriting the source bytes the prior workflow may still
+ * be reading. See `buildVideoSourceKey` below for the full
+ * `uploads/{dataset_id}/{upload_id}/source.mp4` shape.
  */
 export const VIDEO_SOURCE_KEY_PREFIX = 'uploads'
 

@@ -84,8 +84,11 @@ Five hops from publisher click to playable row:
    `POST /api/v1/publish/datasets/{id}/asset` with
    `{ kind: 'data', mime: 'video/mp4', size, content_digest }`.
    The handler validates the shape, mints an R2 presigned PUT URL
-   pointing at `uploads/{dataset_id}/source.mp4`, valid for
-   ~15 minutes, and returns
+   pointing at `uploads/{dataset_id}/{upload_id}/source.mp4`
+   (per-upload prefix so a re-upload to a row that's already
+   transcoding doesn't overwrite the source bytes the prior
+   workflow may still be reading), valid for ~15 minutes, and
+   returns
    `{ upload_id, target: 'r2', r2: { method, url, headers, key }, expires_at, mock }`.
 
 2. **Direct upload.** The browser PUTs the MP4 straight to R2 over

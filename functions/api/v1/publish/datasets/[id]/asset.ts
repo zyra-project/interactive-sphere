@@ -228,12 +228,16 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
       }
     } else {
       // Video data uploads land at the predictable
-      // `uploads/{id}/source.mp4` key so the GHA transcode workflow
-      // can find them via the `client_payload.source_key` passed in
-      // the repository_dispatch fired at /complete time. Every
-      // other asset kind keeps the content-addressed
-      // `datasets/{id}/by-digest/...` scheme that lets revisions
-      // land at a new path without invalidating any existing cache.
+      // `uploads/{dataset_id}/{upload_id}/source.mp4` key so the
+      // GHA transcode workflow can find them via the
+      // `client_payload.source_key` passed in the
+      // repository_dispatch fired at /complete time. Per-upload
+      // prefix keeps a re-upload to a still-transcoding row from
+      // overwriting the source bytes the prior workflow may still
+      // be reading. Every other asset kind keeps the content-
+      // addressed `datasets/{id}/by-digest/...` scheme that lets
+      // revisions land at a new path without invalidating any
+      // existing cache.
       const ext = extForMime(mime)
       const hex = content_digest.slice('sha256:'.length)
       const key = isVideoSourceUpload(kind, mime)

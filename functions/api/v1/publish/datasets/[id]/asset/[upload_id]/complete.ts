@@ -321,9 +321,9 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
   const now = new Date().toISOString()
 
   // Phase 3pd video-source branch: the upload bytes are an MP4 at
-  // `uploads/{id}/source.mp4`, not the final asset the catalog
-  // serves. The workflow does the encoding asynchronously and
-  // PATCHes data_ref via `/transcode-complete` when done.
+  // `uploads/{dataset_id}/{upload_id}/source.mp4`, not the final
+  // asset the catalog serves. The workflow does the encoding
+  // asynchronously and POSTs `/transcode-complete` when done.
   //
   // Ordering matters: we **persist transcoding=1 BEFORE firing
   // the dispatch**, then **mark the upload completed AFTER the

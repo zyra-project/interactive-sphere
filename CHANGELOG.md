@@ -59,12 +59,14 @@ gains the 3pd sub-phase breakdown table; `CATALOG_BACKEND_PLAN.md`
   Stream branch is now dead code waiting for a follow-up cleanup
   PR; the type union stays `'r2' | 'stream'` so the deletion can
   land incrementally.
-- `r2-store.ts` gains `buildVideoSourceKey(datasetId)` →
-  `uploads/{id}/source.mp4`. The GHA workflow finds the bytes
-  at a predictable key via the `client_payload.source_key`
-  carried in the dispatch. Every other asset kind keeps the
-  content-addressed `datasets/{id}/by-digest/sha256/{hex}/...`
-  scheme.
+- `r2-store.ts` gains `buildVideoSourceKey(datasetId, uploadId)` →
+  `uploads/{dataset_id}/{upload_id}/source.mp4`. Per-upload
+  prefix so a re-upload to a row that's already transcoding
+  doesn't overwrite the source bytes the prior workflow may
+  still be reading. The GHA workflow finds the bytes via the
+  `client_payload.source_key` carried in the dispatch. Every
+  other asset kind keeps the content-addressed
+  `datasets/{id}/by-digest/sha256/{hex}/...` scheme.
 - New `_lib/github-dispatch.ts` POSTs to
   `https://api.github.com/repos/{owner}/{repo}/dispatches` with
   `event_type: 'transcode-hls'` + a typed `client_payload`.
