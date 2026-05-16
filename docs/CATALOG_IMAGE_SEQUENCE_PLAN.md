@@ -119,23 +119,38 @@ choice — "Upload MP4" vs. "Upload frames". The frame picker shows:
 - A "Frame order" select: **Lexicographic by filename** (default) or
   **Manual** (a textarea where the publisher pastes a newline-
   separated filename list in encode order).
-- A **"Filename mask"** text input — optional. Strftime-style
-  pattern that describes how to construct each frame's display
-  name from its index + the dataset's `start_time` / `period`.
-  Examples:
-  - `sst_anomaly_%Y%m%d.png` — daily, date-stamped
-  - `precip_%Y-%m-%dT%H:%MZ.png` — hourly, datetime-stamped
-  - `model_run20260101_step_%i.png` — pure sequence, no time component (`%i` is the zero-padded index)
-  - (blank) — fall back to `frame_%05d.{ext}` for display
-
-  The mask is for **discovery** and **display** — the actual R2
-  bytes always live at the sequential `frames/{NNNNN}.{ext}` key.
-  The publisher form auto-suggests a mask by inspecting the first
-  picked filename for `\d{8}` / `\d{4}-\d{2}-\d{2}` patterns and
-  asking "does this date format describe every frame?"
 - The existing per-file progress / status line surface, scaled to a
   single aggregate progress bar that ticks as each frame finishes
   PUT-ing.
+
+Display-name handling is deliberately **derived, not publisher-
+specified**:
+
+- For time-series datasets (where the publisher has set
+  `period` on the row), the display name is
+  `{slug}_{YYYYMMDDTHHMMSSZ}.{ext}` with the timestamp computed
+  from `start_time + period × index` in ISO 8601 basic format
+  (no colons — filesystem-safe everywhere).
+- For pure-sequence datasets (no `period` set — model step
+  indexes, rotation angles, slice depths), the display name
+  falls back to `{slug}_frame_{NNNNN}.{ext}`.
+
+The publisher's original filenames are still preserved on the
+`frame_source_filenames_ref` JSON blob and surfaced as
+`originalFilename` on every `/frames` response, so tooling that
+needs to map back to the publisher's on-disk convention
+(downstream pipelines, federated mirrors) can. Display naming is
+purely for consumer-facing surfaces (Orbit, browse, the wire
+manifest). Reasoning:
+
+- The publisher already provides `slug` (required) and `period`
+  (optional but conventional for time-series rows). Re-asking
+  for a mask duplicates that information.
+- Every frame in the catalog becomes addressable by
+  `{slug}@{timestamp}` or `{slug}#{index}` — a uniform Orbit /
+  CLI affordance that mask-customization would have fragmented.
+- No strftime token sanitization, no rendered-length caps, no
+  mask-token vocabulary debates.
 
 ### Browser-side flow
 
@@ -216,12 +231,12 @@ Mostly the same shape as the MP4 flow, just batched:
 | File | Change |
 |---|---|
 | `migrations/catalog/0013_asset_uploads_frame_count.sql` | New migration. `ALTER TABLE asset_uploads ADD COLUMN frame_count INTEGER`. NULL for non-sequence uploads. |
-| `migrations/catalog/0014_datasets_frame_metadata.sql` | New migration. Adds `frame_count INTEGER` (mirror of asset_uploads.frame_count, persisted on the dataset row so the manifest serializer doesn't have to join), `file_name_mask TEXT` (the publisher-supplied strftime pattern), and `frame_source_filenames_ref TEXT` (R2 key of an auxiliary JSON blob listing the original picked filenames in encode order, for the audit trail and the "what was this frame called on disk?" debug case). NULL on every non-sequence row. |
-| `functions/api/v1/_lib/asset-uploads.ts` | `validateAssetInit` learns the `image-sequence/*` mime family; new helper `validateImageSequenceInit` returns `{ frames: ValidatedFrame[], frame_rate, frame_count, file_name_mask }`. New `insertAssetUploadWithFrames` persists `frame_count` alongside the existing row. The mask validator rejects unsafe substitution tokens (no `%n`, no shell metacharacters) and caps the rendered length at 255 chars. |
-| `functions/api/v1/_lib/r2-store.ts` | `buildFrameKey(datasetId, uploadId, index)` → `uploads/{ULID}/{ULID}/frames/{NNNNN}.{ext}`. `isFrameSequencePrefix(key)` tells the `/complete` handler "this upload is a sequence, HEAD every frame, fire the `frames` dispatch shape". `buildFrameSourceFilenamesKey(datasetId, uploadId)` → `uploads/{ULID}/{ULID}/source_filenames.json`. |
-| `functions/api/v1/_lib/github-dispatch.ts` | `TranscodeDispatchPayload` becomes a union: `{ kind: 'video', source_key, source_digest }` or `{ kind: 'frames', frame_count, frame_rate, source_digest, file_name_mask }`. The runner branches on `kind`. |
+| `migrations/catalog/0014_datasets_frame_metadata.sql` | New migration. Adds `frame_count INTEGER` (mirror of asset_uploads.frame_count, persisted on the dataset row so the manifest serializer doesn't have to join), `frame_source_filenames_ref TEXT` (R2 key of an auxiliary JSON blob listing the original picked filenames in encode order, surfaced as `originalFilename` on `/frames` responses + kept for the audit trail), and `frame_extension TEXT` (`png` / `jpeg` / `webp`; lets the manifest serializer build the per-frame `urlTemplate` without joining to asset_uploads). NULL on every non-sequence row. |
+| `functions/api/v1/_lib/asset-uploads.ts` | `validateAssetInit` learns the `image-sequence/*` mime family; new helper `validateImageSequenceInit` returns `{ frames: ValidatedFrame[], frame_rate, frame_count, extension }`. New `insertAssetUploadWithFrames` persists `frame_count` alongside the existing row. |
+| `functions/api/v1/_lib/r2-store.ts` | `buildFrameKey(datasetId, uploadId, index, ext)` → `uploads/{ULID}/{ULID}/frames/{NNNNN}.{ext}`. `isFrameSequencePrefix(key)` tells the `/complete` handler "this upload is a sequence, HEAD every frame, fire the `frames` dispatch shape". `buildFrameSourceFilenamesKey(datasetId, uploadId)` → `uploads/{ULID}/{ULID}/source_filenames.json`. |
+| `functions/api/v1/_lib/github-dispatch.ts` | `TranscodeDispatchPayload` becomes a union: `{ kind: 'video', source_key, source_digest }` or `{ kind: 'frames', frame_count, frame_rate, source_digest, extension }`. The runner branches on `kind`. |
 | `functions/api/v1/publish/datasets/[id]/asset.ts` | Returns the `frames: [...]` array of presigned URLs when the body declares an image-sequence mime. Also returns a presigned PUT for the source-filenames JSON blob. |
-| `functions/api/v1/publish/datasets/[id]/asset/[upload_id]/complete.ts` | Branches on the upload's `frame_count` column: video-source uses the existing HEAD-on-`source.mp4` path; frame-sequence parallel-HEADs every frame key, then writes `datasets.frame_count` + `datasets.file_name_mask` + `datasets.frame_source_filenames_ref` in the same batch as `transcoding=1`. Same `transcoding_in_progress` 409 from migration 0012 covers overlapping dispatches; same compensating revert on dispatch failure. |
+| `functions/api/v1/publish/datasets/[id]/asset/[upload_id]/complete.ts` | Branches on the upload's `frame_count` column: video-source uses the existing HEAD-on-`source.mp4` path; frame-sequence parallel-HEADs every frame key, then writes `datasets.frame_count` + `datasets.frame_extension` + `datasets.frame_source_filenames_ref` in the same batch as `transcoding=1`. Same `transcoding_in_progress` 409 from migration 0012 covers overlapping dispatches; same compensating revert on dispatch failure. |
 | `functions/api/v1/publish/datasets/[id]/transcode-complete.ts` | Unchanged. The callback contract is "the workflow finished writing the HLS bundle"; the runner branch decides how the bytes got there. The frame-metadata columns are already on the row by the time the callback fires. |
 
 ### GHA runner changes
@@ -279,10 +294,10 @@ phase letters consume the next free slot under Phase 3.
 
 | Sub-phase | Demoable result | Notes |
 |---|---|---|
-| **3pe/A** — Migrations 0013 + 0014 + asset-uploads helpers | `frame_count` column lands on asset_uploads; `frame_count`, `file_name_mask`, `frame_source_filenames_ref` land on datasets. `validateImageSequenceInit` rejects malformed manifests + unsafe masks. `buildFrameKey` / `isFrameSequencePrefix` / `buildFrameSourceFilenamesKey` exported and unit-tested. No portal UI yet; exercised via `curl` + manual presigned-PUT. | Worker-side scaffolding; nothing user-visible yet. |
+| **3pe/A** — Migrations 0013 + 0014 + asset-uploads helpers | `frame_count` column lands on asset_uploads; `frame_count`, `frame_extension`, `frame_source_filenames_ref` land on datasets. `validateImageSequenceInit` rejects malformed manifests. `buildFrameKey` / `isFrameSequencePrefix` / `buildFrameSourceFilenamesKey` exported and unit-tested. No portal UI yet; exercised via `curl` + manual presigned-PUT. | Worker-side scaffolding; nothing user-visible yet. |
 | **3pe/B** — `/asset` + `/complete` image-sequence branches | Multi-frame mint + HEAD-all + dispatch. Writes the dataset-row frame-metadata columns in the same batch as `transcoding=1`. Reuses 0012's `transcoding_in_progress` guard automatically. Tested wire-level with the same fixture style 3pd used. | Server-side complete; tested against a synthetic 5-frame fixture. |
 | **3pe/C** — GHA runner branch + new dispatch payload union | `transcode-from-dispatch.ts` learns `--source-kind=frames`, downloads + verifies frames, runs the image-sequence ffmpeg command, posts the unchanged `/transcode-complete`. Stage-specific exit codes extend to 6. | Runs end-to-end against a real R2 + GHA. The integration test that 3pd deferred to the GHA runner stays GHA-only. |
-| **3pe/D** — Portal multi-file uploader | Tabbed picker in `asset-uploader.ts`, parallel-bounded XHR queue, aggregate progress, frame-rate + ordering controls, **filename-mask input with auto-suggest**. Lexicographic sort by default; "Manual order" textarea fallback. | Bulk of the UX work. New locale keys under `publisher.assetUploader.frames.*`. |
+| **3pe/D** — Portal multi-file uploader | Tabbed picker in `asset-uploader.ts`, parallel-bounded XHR queue, aggregate progress, frame-rate + ordering controls. Lexicographic sort by default; "Manual order" textarea fallback. A small "Display naming preview" panel renders what the consumer will see for frame 0 / frame N (computed from slug + start_time + period, or slug + index for non-time-series rows) so the publisher can sanity-check before submit. | Bulk of the UX work. New locale keys under `publisher.assetUploader.frames.*`. |
 | **3pe/E** — Operator docs | CHANGELOG entry, `SELF_HOSTING.md` walkthrough for the new locale strings + the `image-sequence/*` mime allow-list, `CATALOG_ASSETS_PIPELINE.md` + `CATALOG_PUBLISHING_TOOLS.md` cross-references promoted from this plan doc into the canonical surface. | Pattern from 3pd/F — operator-facing doc sweep at the end of the chain. |
 
 3pe/A–E close out the upload half. The frame-as-data half lives in
@@ -326,11 +341,12 @@ Three consumer surfaces:
    anomaly for May 16" by computing the frame index from the
    dataset's `start_time` + `period` and emitting a load marker
    the chat UI renders as an inline button.
-3. **Search** — the textual `file_name_mask` joins the search
-   corpus so a phrase like "daily SST anomaly" surfaces the
-   dataset; a structured `?time_range=` filter walks the
-   timeline so "datasets with frames in May 2026" works without
-   indexing every single frame.
+3. **Search** — a structured `?time_range=ISO/ISO` filter walks
+   the timeline so "datasets with frames in May 2026" works
+   without indexing every individual frame. Textual relevance
+   (the "daily SST anomaly" case) is already covered by the
+   existing slug + title + abstract corpus — no per-frame
+   indexing needed.
 
 The marginal storage cost is zero (frames already permanent), the
 marginal R2 egress cost is consumer-driven (Restricted-visibility
@@ -348,10 +364,6 @@ field on the wire dataset, populated only when
 interface WireDatasetFrames {
   /** Total frame count after the most recent transcode. */
   count: number
-  /** Strftime-style display pattern. Optional — when absent,
-   *  consumers should display `frame_{index:05d}` as the
-   *  fallback filename. */
-  fileNameMask?: string
   /** Resolver pattern. Substitute `{index}` for the zero-padded
    *  frame number (5 digits today; widen later if frame_count
    *  caps grow past 99999). Pre-resolved to the bucket's public
@@ -359,27 +371,38 @@ interface WireDatasetFrames {
    *  bytes directly without going through a Worker. For
    *  Restricted rows the manifest endpoint returns a signed
    *  prefix instead and the consumer rebuilds per-frame URLs
-   *  by index substitution. */
+   *  by index substitution. The file extension (`.png` /
+   *  `.jpeg` / `.webp`) is baked into the template so the
+   *  consumer doesn't need a separate field. */
   urlTemplate: string
-  /** ISO8601 timestamp of frame 0. Mirrors the existing
-   *  `startTime` field but always present for sequence rows
-   *  (the existing field is optional). */
-  startTime: string
-  /** ISO8601 duration between frames. Mirrors the existing
-   *  `period` field but always present for sequence rows. */
-  period: string
   /** Hash of the canonical frame list (the source_filenames
    *  JSON blob). Lets a consumer cache the frame enumeration
-   *  and noticed when a re-upload has changed it. */
+   *  and notice when a re-upload has changed it. The
+   *  per-upload `urlTemplate` also changes on re-upload, so
+   *  consumers that only need a cache invalidation signal can
+   *  compare templates instead. */
   framesDigest?: string
 }
 ```
 
-`startTime` + `period` are deliberately reused from the existing
-dataset metadata: every catalog dataset already has them and the
-publisher form already collects them. A sequence row is just a row
-where both are required (the existing free-form values become
-canonical).
+The envelope is deliberately minimal. The time origin (`startTime`)
+and step (`period`) stay on the parent `WireDataset` where they
+already live; consumers compute frame N's timestamp as
+`startTime + period × index`. The dataset's `slug` (also on the
+parent) drives display naming.
+
+**Display naming convention** — consumers render filenames as:
+
+| Row kind | Display name template |
+|---|---|
+| Time-series (`period` set on the parent) | `{slug}_{YYYYMMDDTHHMMSSZ}.{ext}` where the timestamp is computed from `startTime + period × index` and rendered in ISO 8601 basic format (no colons). |
+| Pure-sequence (no `period`) | `{slug}_frame_{NNNNN}.{ext}` |
+
+`{ext}` is parsed from the trailing extension of `urlTemplate`.
+This convention is server-implemented for the `/frames` response's
+`displayName` field; client renderers (Orbit, browse, the CLI) can
+apply the same rule locally or just read `displayName` off the
+wire.
 
 ### New endpoints
 
@@ -388,7 +411,7 @@ visibility rule the manifest already enforces.
 
 | Method + path | Returns | Notes |
 |---|---|---|
-| `GET /api/v1/datasets/{id}/frames` | JSON: `{ count, fileNameMask, frames: [{index, displayName, timestamp, contentDigest, url}, ...], cursor }` | Paginated; default 100 per page. `?from=ISO&to=ISO` filters by time window. `?at=ISO` returns the single closest frame (computed from `start_time + period × index`). |
+| `GET /api/v1/datasets/{id}/frames` | JSON: `{ count, frames: [{index, displayName, originalFilename, timestamp, contentDigest, url}, ...], cursor }` | Paginated; default 100 per page. `displayName` is server-rendered using the slug + timestamp convention (or slug + index for pure-sequence rows); `originalFilename` carries the publisher's on-disk name from the source-filenames blob, so tooling that needs the original mapping has it. `?from=ISO&to=ISO` filters by time window. `?at=ISO` returns the single closest frame (computed from `start_time + period × index`). |
 | `GET /api/v1/datasets/{id}/frames/{index}` | 302 to the per-frame R2 URL | Stable consumer-facing URL even if the bucket layout changes later. Restricted rows mint a short-lived presigned GET in the 302 response. |
 | `HEAD /api/v1/datasets/{id}/frames/{index}` | Last-Modified + Content-Length + Content-Digest | Cheap exists-check for tooling that doesn't want to follow the redirect. |
 
@@ -402,12 +425,13 @@ since timestamp X" all reduce to it.
 Two pieces:
 
 1. **Inline load marker.** `docentContext.buildSystemPromptForTurn`
-   describes sequence datasets with their mask + `startTime` +
-   `period` + `frameCount` so the LLM understands what a frame
-   request means. The existing `<<LOAD:DATASET_ID>>` marker is
-   joined by a new `<<LOAD_FRAME:DATASET_ID:{at|index}>>` marker
-   the chat parser turns into an inline-button stream chunk.
-   Examples the LLM should emit:
+   describes sequence datasets with their `startTime` + `period`
+   + `frameCount` so the LLM understands what a frame request
+   means and can pick reasonable timestamps from a conversation.
+   The existing `<<LOAD:DATASET_ID>>` marker is joined by a new
+   `<<LOAD_FRAME:DATASET_ID:{at|index}>>` marker the chat parser
+   turns into an inline-button stream chunk. Examples the LLM
+   should emit:
    - `<<LOAD_FRAME:01HX...:2026-05-16T12:00Z>>`
    - `<<LOAD_FRAME:01HX...:index=47>>`
    - `<<LOAD_FRAME:01HX...:latest>>` (resolved server-side to
@@ -418,24 +442,20 @@ Two pieces:
    `{ at: ISO } | { index: number } | { relative: 'latest' | 'first' }`.
 
 The SPA's stream-chunk handler in `chatUI.ts` renders frame loads
-as buttons labelled with the *mask-rendered display name* (not
-the raw index), so the publisher's choice of mask shows up in
-the chat surface. Clicking the button calls into
-`datasetLoader.ts`'s new `loadFrameAt(datasetId, query)` path,
-which resolves to a single-image render against the globe (same
-underlying renderer the existing image-dataset path uses).
+as buttons labelled with the *derived display name* — the same
+`{slug}_{timestamp}.{ext}` form documented in the wire-shape
+table above — so frame buttons read uniformly across the catalog
+without depending on per-publisher naming choices. Clicking the
+button calls into `datasetLoader.ts`'s new
+`loadFrameAt(datasetId, query)` path, which resolves to a
+single-image render against the globe (same underlying renderer
+the existing image-dataset path uses).
 
 ### Search integration
 
-Two pieces of search work, both incremental:
+One new piece of search work:
 
-1. **Textual corpus.** `file_name_mask` joins the per-dataset
-   text the Vectorize index already embeds (alongside title,
-   abstract, organization, tags). No new index; the dataset
-   re-embed pass happens whenever the row is updated. Phrase
-   queries like "daily precipitation" or "hourly model output"
-   start matching mask-bearing datasets for free.
-2. **Structured time-range filter.** A new
+1. **Structured time-range filter.** A new
    `?time_range=ISO/ISO` query parameter on the search
    endpoint filters to datasets whose
    `[start_time, start_time + period × frame_count]` window
@@ -443,6 +463,14 @@ Two pieces of search work, both incremental:
    single SQL `WHERE` on the snapshot table, no new index for
    the dataset counts we're at). For non-sequence rows it
    degrades to the existing `[start_time, end_time]` rectangle.
+
+The existing textual corpus (title + abstract + organization +
+tags + slug) covers semantic discovery — phrases like "daily SST
+anomaly" or "hourly precipitation" match through the abstract and
+slug without needing per-frame indexing. Publishers describing a
+sequence dataset already cover the "daily" / "hourly" framing in
+the abstract; the timeline filter handles the structured "in
+May 2026" case.
 
 The browse UI gains a date scrubber on sequence-row results — a
 narrow horizontal track showing the frame timeline with the
@@ -480,7 +508,7 @@ done by 3pe/A; the rest is API + LLM + search.
 |---|---|---|
 | **3pf/A** — Manifest exposure | `serializeDataset` returns the new `frames` envelope for sequence rows; tests pin the wire shape; `dataService.ts` on the SPA side reads it. No UI changes yet. | Smallest piece; backwards-compatible — existing consumers ignore the new field. |
 | **3pf/B** — `/api/v1/datasets/{id}/frames` + `/frames/{index}` routes | Paginated list, time-window filter, single-frame 302 (with presigned URL for restricted rows). HEAD support for tooling exists-checks. | Two new files under `functions/api/v1/datasets/{id}/`. Reuses the existing visibility middleware. |
-| **3pf/C** — Orbit load-frame marker + tool | `<<LOAD_FRAME:...>>` parsed in `docentService.extractActionsFromText`; system prompt describes sequence datasets; chat-UI renders frame buttons with mask-rendered display names. | Mirrors the existing `<<LOAD:DATASET_ID>>` work. New `load_frame` function tool for providers that prefer tool calls. |
+| **3pf/C** — Orbit load-frame marker + tool | `<<LOAD_FRAME:...>>` parsed in `docentService.extractActionsFromText`; system prompt describes sequence datasets with their startTime/period/frameCount; chat-UI renders frame buttons with derived display names (`{slug}_{timestamp}.{ext}`). | Mirrors the existing `<<LOAD:DATASET_ID>>` work. New `load_frame` function tool for providers that prefer tool calls. |
 | **3pf/D** — Time-range search filter | `?time_range=ISO/ISO` on the public search endpoint; SQL `WHERE` on the snapshot. Browse UI date-scrubber renders the timeline + "closest to now" marker for sequence-row results. | The SQL piece is small; the date-scrubber is the UX work. |
 | **3pf/E** — `terraviz` CLI commands | `terraviz frames list <dataset> [--from ... --to ...]` and `terraviz frames get <dataset> <index>` for operator + federated-peer workflows. Streams a manifest JSON the caller can pipe into `xargs curl` for bulk fetch. | Mirrors the existing `terraviz dataset <id>` shape; reuses the new `/frames` endpoints. |
 | **3pf/F** — Operator docs | Wire-shape additions documented in `CATALOG_DATA_MODEL.md` and `CATALOG_FEDERATION_PROTOCOL.md` (federation peers consume the same frames endpoints). CHANGELOG entry. | The federation doc is the one that catches the most readers; the frames endpoint is what federated mirrors will fetch. |
@@ -502,9 +530,10 @@ The split keeps each PR scope-bounded (~6–8 commits each), lets
 3pe ship as soon as it's ready without blocking on the LLM /
 search work, and gives a release cycle of real publisher upload
 traffic to inform any 3pf design adjustments. The schema work
-in 3pe/A includes the `file_name_mask` column so the data is
-captured from day one even though no public surface reads it
-yet — back-fill-free when 3pf lands.
+in 3pe/A includes the `frame_extension` + `frame_count` +
+`frame_source_filenames_ref` columns so the data is captured
+from day one even though no public surface reads it yet —
+back-fill-free when 3pf lands.
 
 Single-PR sequencing would also work — same total commit count,
 no schema migration ordering surprises — but the ingest /
@@ -576,32 +605,32 @@ a growing-MP4-as-they-go.
    strip is memory-heavy. Lazy-render via `IntersectionObserver` or
    cap at the first 20 + "240 frames total"? **Tentative decision:**
    first 20 + a count label.
-6. **Mask token vocabulary.** Strftime covers time-stamped frames
-   well (`%Y%m%d`, `%H%M`, etc.) but not the "ensemble member N"
-   or "model run index" patterns some publishers use
-   (`run20260101_ens03_step_%i.png`). The plan punts on a richer
-   token set — `%i` for sequence index + strftime is enough for
-   v1, and the original filenames are stored in
-   `frame_source_filenames_ref` so consumers that need the
-   non-strftime detail can fetch the source-filenames JSON.
-   **Tentative decision:** strftime + `%i` only in v1; revisit
-   when a real publisher use case shows up.
-7. **Frame count growth via re-upload.** A publisher who appends a
+6. **Frame count growth via re-upload.** A publisher who appends a
    frame today re-uploads the entire sequence. The new upload
    gets a new `upload_id`, so the per-frame URLs in the previous
    manifest become 404 the moment `/transcode-complete` swaps
    `data_ref` and the frame-count column. Consumers caching
-   frame URLs should refresh on `framesDigest` change.
-   **Tentative decision:** document the staleness as a known
-   property; a Phase 2 append flow (deferred) would address it
-   structurally.
-8. **Bulk-download UX.** The `/frames` JSON-list endpoint is
+   frame URLs should refresh when the parent dataset's `urlTemplate`
+   (or `framesDigest`) changes. **Tentative decision:** document
+   the staleness as a known property; a Phase 2 append flow
+   (deferred) would address it structurally.
+7. **Bulk-download UX.** The `/frames` JSON-list endpoint is
    discoverable; an explicit "download all" affordance is not.
    Reasonable for v1 — the publisher already has the local
    copies, and a federated peer would use the `terraviz frames`
    CLI. **Tentative decision:** skip the UI button; the JSON
    manifest is sufficient for the tooling cases that actually
    need bulk fetch.
+8. **Display-name timestamp precision for sub-second periods.**
+   The basic-ISO render (`YYYYMMDDTHHMMSSZ`) tops out at one-second
+   resolution. A publisher with a 30 fps animation has frames
+   ~33 ms apart, so frames 0, 1, 2 would all stringify to the
+   same display name. Workable for v1 because animation-rate
+   sequences typically don't need per-frame "load by timestamp"
+   addressing — they get played back as HLS, not seeked
+   individually. **Tentative decision:** ship the second-precision
+   form; if a publisher needs sub-second addressing, the
+   `index=N` query form still works.
 
 ---
 
@@ -617,8 +646,10 @@ for free.
 The exposure half (3pf/A–F — manifest envelope, `/frames` endpoints,
 Orbit tool, search filter, CLI) ships after 3pe has baked for a
 release cycle. The schema work in 3pe/A includes the
-`file_name_mask` and `frame_count` columns so 3pf doesn't need a
-back-fill.
+`frame_count`, `frame_extension`, and `frame_source_filenames_ref`
+columns so 3pf doesn't need a back-fill — every sequence row
+captured during 3pe already carries everything 3pf's consumers
+read.
 
 After both: the broader Phase 3 portal work (tour creator, bulk
 import, webhook + verify-deploy) continues from where 3pd left off.
