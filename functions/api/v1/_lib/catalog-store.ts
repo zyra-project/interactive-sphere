@@ -110,6 +110,14 @@ export interface DatasetRow {
    * renders a "Transcoding…" badge and gates the publish button
    * while this is set. NULL on every other row. Migration 0011. */
   transcoding: number | null
+  /** ULID of the asset_uploads row whose GHA workflow currently
+   * owns the row's transcoding stamp. Set in lockstep with
+   * `transcoding=1` by the /asset/.../complete handler; verified
+   * by /transcode-complete before applying the workflow's callback
+   * so two overlapping uploads can't race their PATCHes against
+   * each other (see migration 0012). NULL when `transcoding` is
+   * NULL. Migration 0012. */
+  active_transcode_upload_id: string | null
   /** SHA-256 of the asset's *delivered bytes* — for an HLS bundle
    * this is the hash of the master.m3u8 + variant manifests +
    * segments concatenated in canonical order. NULL when the row

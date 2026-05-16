@@ -160,6 +160,27 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     )
   }
 
+  // Primary stale-callback guard: the row's `active_transcode_upload_id`
+  // (set in lockstep with `transcoding=1` by /asset/.../complete) must
+  // match the workflow's `upload_id`. Two re-uploads of an identical
+  // MP4 produce identical `source_digest`s, so the per-upload binding
+  // is the only check that disambiguates them. Migration 0012.
+  if (existing.active_transcode_upload_id !== validated.upload_id) {
+    return jsonError(
+      409,
+      'transcode_upload_mismatch',
+      `Dataset ${id}'s active transcode is bound to upload ` +
+        `${existing.active_transcode_upload_id ?? '(none)'}; got upload ` +
+        `${validated.upload_id}. Refusing to apply — a newer upload has ` +
+        'taken over, or the row was reset out of band.',
+    )
+  }
+
+  // Defense-in-depth: source_digest still has to match. The active-
+  // upload-id check above is the primary guard, but if a row's
+  // `active_transcode_upload_id` and `source_digest` ever drift
+  // (e.g. partial migration, manual D1 edit), this catches it
+  // before we flip data_ref.
   if (existing.source_digest !== validated.source_digest) {
     return jsonError(
       409,

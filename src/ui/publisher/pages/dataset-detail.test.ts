@@ -579,6 +579,68 @@ describe('renderDatasetDetailPage', () => {
     expect(publish?.disabled).toBe(false)
   })
 
+  it('aborts the transcode poller when the router fires a routechange away from this page', async () => {
+    // The router replaces the children of `content` rather than
+    // swapping the element itself, so without a routechange
+    // listener the poll loop would keep ticking after the user
+    // navigated away and stomp on whatever page replaced it.
+    // Migration 0012 / PR #112 Copilot.
+    const transcodingRow = dataset({ published_at: null, transcoding: 1 })
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(transcodingRow))
+    const sleepResolvers: Array<() => void> = []
+    const sleep = (): Promise<void> =>
+      new Promise<void>(resolve => {
+        sleepResolvers.push(resolve)
+      })
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      sleep,
+      transcodePollIntervalMs: 1,
+    })
+    // Initial GET ran; the loop is now sleeping inside our
+    // controllable promise. Fire a routechange to a different
+    // path — the listener should abort the controller.
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(
+      new CustomEvent('publisher:routechange', { detail: { path: '/publish/datasets' } }),
+    )
+    // Resolve the in-flight sleep so the loop wakes up. After
+    // resuming it should observe the aborted signal and exit
+    // without firing the poll fetch.
+    sleepResolvers[0]?.()
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the transcode poller running across a routechange that lands on the same path', async () => {
+    // The listener should only abort on a path mismatch — a
+    // popstate that re-fires the same path (e.g. user clicks
+    // a same-page anchor) shouldn't kill the poll loop.
+    const transcodingRow = dataset({ published_at: null, transcoding: 1 })
+    const finishedRow = dataset({ published_at: null, transcoding: null })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(detailResponse(transcodingRow))
+      .mockResolvedValueOnce(detailResponse(finishedRow))
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      sleep: () => Promise.resolve(),
+      transcodePollIntervalMs: 0,
+    })
+    // Routechange that says "we're still here" — listener should
+    // be a no-op.
+    window.dispatchEvent(
+      new CustomEvent('publisher:routechange', {
+        detail: { path: '/publish/datasets/01ABC' },
+      }),
+    )
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    // Initial GET + at least one poll — the poller continued past
+    // the same-path routechange and hit the finishedRow on the
+    // next tick.
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
   it('renders the retracted-state badge for a retracted row', async () => {
     const fetchFn = vi
       .fn()

@@ -420,12 +420,13 @@ export async function markVideoSourceUploadedAndStampTranscoding(
       .prepare(
         `UPDATE datasets
            SET transcoding = 1,
+               active_transcode_upload_id = ?,
                data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
                source_digest = ?,
                updated_at = ?
          WHERE id = ?`,
       )
-      .bind(upload.claimed_digest, now, datasetId),
+      .bind(upload.id, upload.claimed_digest, now, datasetId),
     db
       .prepare(
         `UPDATE asset_uploads
@@ -456,12 +457,13 @@ export async function stampTranscodingForVideoSource(
     .prepare(
       `UPDATE datasets
          SET transcoding = 1,
+             active_transcode_upload_id = ?,
              data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
              source_digest = ?,
              updated_at = ?
        WHERE id = ?`,
     )
-    .bind(upload.claimed_digest, now, datasetId)
+    .bind(upload.id, upload.claimed_digest, now, datasetId)
     .run()
 }
 
@@ -512,6 +514,7 @@ export async function revertTranscodingStamp(
     .prepare(
       `UPDATE datasets
          SET transcoding = NULL,
+             active_transcode_upload_id = NULL,
              data_ref = ?,
              source_digest = NULL,
              updated_at = ?
@@ -550,6 +553,7 @@ export async function clearTranscoding(
     .prepare(
       `UPDATE datasets
          SET transcoding = NULL,
+             active_transcode_upload_id = NULL,
              data_ref = ?,
              updated_at = ?
        WHERE id = ?`,

@@ -72,6 +72,13 @@ export interface PublisherDatasetDetail extends PublisherDataset {
    *  otherwise. The detail page polls every 5 s while this is
    *  set and stops once it clears. */
   transcoding?: number | null
+  /** ULID of the asset_uploads row whose GHA workflow currently
+   *  owns the row's transcoding stamp. Used server-side to
+   *  reject overlapping dispatches and to verify /transcode-
+   *  complete callbacks; the UI doesn't render it but receives
+   *  it so debugging from devtools is straightforward.
+   *  Migration 0012. */
+  active_transcode_upload_id?: string | null
 }
 
 export interface ListDatasetsResponse {

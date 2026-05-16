@@ -798,6 +798,14 @@ interface RenderContext {
   /** Existing dataset id (edit mode). Used to build the PUT URL
    *  and the post-save back-navigation target. */
   datasetId: string | null
+  /** True when the row is currently mid-transcode (the parent
+   *  detail page is also polling). The form swaps the asset
+   *  uploader + manual ref input for a read-only notice — the
+   *  server-side `transcoding_in_progress` guard would refuse a
+   *  second /asset/.../complete dispatch anyway, but disabling
+   *  the affordance here gives the publisher a clearer signal
+   *  than "submit-then-error". */
+  isTranscoding: boolean
   fetchFn: typeof fetch
   sleep: (ms: number) => Promise<void>
   navigate: (url: string) => void
@@ -926,7 +934,35 @@ function renderForm(
   // a fallback for `vimeo:` / external URLs. In edit mode we hand
   // off to the asset uploader (3pd/C); the manual ref input stays
   // available for the non-upload paths (legacy / external).
-  if (ctx.mode === 'edit' && ctx.datasetId) {
+  if (ctx.mode === 'edit' && ctx.datasetId && ctx.isTranscoding) {
+    // Row is currently mid-transcode — the parent detail page is
+    // polling and will navigate the publisher back here once the
+    // workflow finishes. Replace both the uploader and the
+    // manual ref input with a read-only notice so the publisher
+    // doesn't try to start a second upload (which the server-side
+    // `transcoding_in_progress` guard would 409 anyway) or paste
+    // a manual ref into a row whose data_ref is about to be
+    // overwritten by /transcode-complete. Mirrors the publish-
+    // button gate on the detail page.
+    const refDisplay = document.createElement('div')
+    refDisplay.className = 'publisher-field'
+    const refLabel = document.createElement('span')
+    refLabel.className = 'publisher-field-label'
+    refLabel.textContent = t('publisher.datasetForm.field.dataRef')
+    refDisplay.appendChild(refLabel)
+    const notice = document.createElement('p')
+    notice.className = 'publisher-form-notice'
+    notice.setAttribute('role', 'status')
+    notice.textContent = t('publisher.datasetForm.transcoding.notice')
+    refDisplay.appendChild(notice)
+    if (state.dataRef) {
+      const current = document.createElement('p')
+      current.className = 'publisher-asset-uploader-current'
+      current.textContent = state.dataRef
+      refDisplay.appendChild(current)
+    }
+    identityCard.appendChild(refDisplay)
+  } else if (ctx.mode === 'edit' && ctx.datasetId) {
     // Edit mode mounts BOTH the guided uploader and the manual
     // text input. The uploader covers the "I have an MP4 / PNG
     // on my disk" case; the manual input covers the
@@ -1276,6 +1312,7 @@ export function renderDatasetForm(
   renderForm(content, state, {
     mode: options.mode,
     datasetId: options.initial?.id ?? null,
+    isTranscoding: !!options.initial?.transcoding,
     fetchFn: options.fetchFn ?? globalThis.fetch,
     sleep: options.sleep ?? (ms => new Promise(r => setTimeout(r, ms))),
     navigate:

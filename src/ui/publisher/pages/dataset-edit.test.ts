@@ -122,6 +122,38 @@ describe('renderDatasetEditPage', () => {
     expect(chipTexts).toEqual(expect.arrayContaining(['sst', 'anomaly', 'demo']))
   })
 
+  it('replaces the asset uploader with a transcoding notice when the row is mid-transcode', async () => {
+    // Migration 0012 — the form's UI gate is the publisher-facing
+    // counterpart to the server-side `transcoding_in_progress`
+    // refusal in /asset/.../complete. Mounting the active uploader
+    // would let an editor start a second upload that the server
+    // would 409 anyway; the notice is a clearer signal.
+    const fetchFn = vi.fn().mockResolvedValue(
+      detailResponse(
+        dataset({
+          transcoding: 1,
+          data_ref: 'r2:videos/01XYZ/PRIOR-UPLOAD/master.m3u8',
+        }),
+      ),
+    )
+    await renderDatasetEditPage(mount, '01EDIT0000000000000000000', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    })
+    // No file picker mounted while transcoding.
+    expect(mount.querySelector('input[type="file"]')).toBeNull()
+    // Manual-ref input is also hidden — pasting a ref into a
+    // soon-to-be-overwritten data_ref would just cause a race.
+    expect(mount.querySelector('#dataset-data-ref')).toBeNull()
+    // Notice + the current ref both rendered so the editor sees
+    // what's about to change.
+    expect(mount.querySelector('.publisher-form-notice')?.textContent).toContain(
+      'video transcode is in progress',
+    )
+    expect(
+      mount.querySelector('.publisher-asset-uploader-current')?.textContent,
+    ).toBe('r2:videos/01XYZ/PRIOR-UPLOAD/master.m3u8')
+  })
+
   it('renders the not-found card on a 404 response', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: 'not_found' }), {

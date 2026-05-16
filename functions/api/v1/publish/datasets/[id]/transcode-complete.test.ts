@@ -68,6 +68,10 @@ function setupEnv(opts: {
   uploadTargetRef?: string
   /** Override the seeded upload's `kind`. */
   uploadKind?: 'data' | 'thumbnail'
+  /** Override the seeded `datasets.active_transcode_upload_id`.
+   *  Defaults to UPLOAD_ID. Pass another ULID to simulate a
+   *  superseding upload, or `null` to simulate a pre-0012 row. */
+  activeUploadId?: string | null
 } = {}) {
   const sqlite = seedFixtures({ count: 1 })
   for (const p of [STAFF_ADMIN, SERVICE, COMMUNITY]) {
@@ -79,12 +83,27 @@ function setupEnv(opts: {
       .run(p.id, p.email, p.display_name, p.role, p.is_admin, p.status, p.created_at)
   }
   const sourceDigest = opts.sourceDigest ?? DEFAULT_SOURCE_DIGEST
+  // The active-upload-id binding (migration 0012) defaults to the
+  // canonical UPLOAD_ID so the happy-path tests below don't have to
+  // pass it explicitly. Tests that exercise the mismatch branch
+  // override `activeUploadId` (to a different id) or pass the
+  // sentinel `null` to clear it (simulating a row that was
+  // transcoding before the migration shipped).
+  const activeUploadId =
+    opts.activeUploadId === null
+      ? null
+      : opts.activeUploadId ?? UPLOAD_ID
   if (opts.transcoding ?? true) {
     sqlite
       .prepare(
-        `UPDATE datasets SET transcoding = 1, data_ref = '', source_digest = ? WHERE id = ?`,
+        `UPDATE datasets
+           SET transcoding = 1,
+               active_transcode_upload_id = ?,
+               data_ref = '',
+               source_digest = ?
+         WHERE id = ?`,
       )
-      .run(sourceDigest, DATASET_ID)
+      .run(activeUploadId, sourceDigest, DATASET_ID)
   }
   if (opts.seedUpload ?? true) {
     sqlite
@@ -331,6 +350,48 @@ describe('POST .../transcode-complete — refusals', () => {
     )
     expect(res.status).toBe(409)
     expect((await readJson<{ error: string }>(res)).error).toBe('not_transcoding')
+  })
+
+  it('returns 409 transcode_upload_mismatch when the callback’s upload_id is stale', async () => {
+    // Migration 0012 — two uploads with identical bytes (same
+    // source_digest) need a per-upload binding to disambiguate
+    // their callbacks. The newer upload's /complete handler set
+    // active_transcode_upload_id to its own id; an older
+    // workflow's callback (carrying the previous upload_id) must
+    // 409 here instead of clearing transcoding against the wrong
+    // upload's bundle.
+    const newerUploadId = 'KP000' + 'B'.repeat(21)
+    const { datasetId, uploadId, env } = setupEnv({ activeUploadId: newerUploadId })
+    const res = await transcodeComplete(
+      ctx({
+        env,
+        datasetId,
+        body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST },
+      }),
+    )
+    expect(res.status).toBe(409)
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('transcode_upload_mismatch')
+    expect(body.message).toContain(newerUploadId)
+  })
+
+  it('returns 409 transcode_upload_mismatch when active_transcode_upload_id is NULL (pre-0012 row)', async () => {
+    // A row that was transcoding before migration 0012 shipped
+    // has the column NULL. Such rows are stuck and need operator
+    // cleanup rather than a workflow callback flipping data_ref
+    // against an unverified binding.
+    const { datasetId, uploadId, env } = setupEnv({ activeUploadId: null })
+    const res = await transcodeComplete(
+      ctx({
+        env,
+        datasetId,
+        body: { upload_id: uploadId, source_digest: DEFAULT_SOURCE_DIGEST },
+      }),
+    )
+    expect(res.status).toBe(409)
+    expect((await readJson<{ error: string }>(res)).error).toBe(
+      'transcode_upload_mismatch',
+    )
   })
 
   it('returns 409 source_digest_mismatch on a digest mismatch', async () => {

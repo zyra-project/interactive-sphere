@@ -1156,6 +1156,91 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
     expect(upload.status).toBe('pending')
   })
 
+  it('returns 409 transcoding_in_progress when the row already owns a different active upload', async () => {
+    // Migration 0012 — refusing the second dispatch is the
+    // server-side counterpart to the dataset-form edit-mode
+    // gate. Without it, two overlapping /complete calls would
+    // both stamp transcoding=1 and fire two parallel GHA
+    // workflows that race their /transcode-complete callbacks.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    // Pre-stamp the row as if a prior upload (UP-PRIOR) already
+    // dispatched its workflow.
+    sqlite
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = 1,
+               active_transcode_upload_id = 'UP-PRIOR',
+               source_digest = ?
+         WHERE id = ?`,
+      )
+      .run(HELLO_DIGEST, datasetId)
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      MOCK_R2: 'true',
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-OVERLAP',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-OVERLAP' }))
+    expect(res.status).toBe(409)
+    const body = await readJson<{ error: string; message: string }>(res)
+    expect(body.error).toBe('transcoding_in_progress')
+    expect(body.message).toContain('UP-PRIOR')
+    // The blocking row's binding is unchanged — the second
+    // upload's /complete call doesn't get to overwrite it.
+    const row = sqlite
+      .prepare(`SELECT active_transcode_upload_id FROM datasets WHERE id = ?`)
+      .get(datasetId) as { active_transcode_upload_id: string }
+    expect(row.active_transcode_upload_id).toBe('UP-PRIOR')
+    // The newer upload row stays pending so a retry (after the
+    // prior workflow finishes or an operator clears the row)
+    // can complete cleanly.
+    const upload = sqlite
+      .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+      .get('UP-OVERLAP') as { status: string }
+    expect(upload.status).toBe('pending')
+  })
+
+  it('binds active_transcode_upload_id to the upload id when stamping transcoding', async () => {
+    // The /transcode-complete handler verifies the callback's
+    // upload_id matches `datasets.active_transcode_upload_id`,
+    // so this stamp is what makes the per-upload guard work.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      MOCK_R2: 'true',
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-BIND',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-BIND' }))
+    expect(res.status).toBe(202)
+    const row = sqlite
+      .prepare(`SELECT transcoding, active_transcode_upload_id FROM datasets WHERE id = ?`)
+      .get(datasetId) as {
+      transcoding: number
+      active_transcode_upload_id: string
+    }
+    expect(row.transcoding).toBe(1)
+    expect(row.active_transcode_upload_id).toBe('UP-BIND')
+  })
+
   it('refuses MOCK_GITHUB_DISPATCH=true on a non-loopback hostname', async () => {
     const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
     // Don't enable MOCK_R2 — it has its own non-loopback refusal

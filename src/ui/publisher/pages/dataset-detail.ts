@@ -25,6 +25,7 @@ import {
   type PublisherValidationError,
 } from '../api'
 import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
+import { ROUTE_CHANGE_EVENT, type RouteChangeDetail } from '../router'
 import type {
   DatasetDetailResponse,
   PublisherDatasetDetail,
@@ -630,10 +631,30 @@ function paint(
  *  AbortController in memory. */
 const activeTranscodePolls = new WeakMap<HTMLElement, AbortController>()
 
+/** Tracks the routechange listener bound to each mount so it can
+ *  be detached when the loop ends (or another mount supersedes
+ *  this one). The router replaces the page-shell DOM under
+ *  `content` rather than swapping the element itself, so the
+ *  WeakMap-keyed AbortController above doesn't naturally
+ *  invalidate on navigation; this listener is the bridge. */
+const activeTranscodeRouteListeners = new WeakMap<
+  HTMLElement,
+  (event: Event) => void
+>()
+
 /** Default polling cadence — matches what the asset-pipeline doc
  *  promises the publisher ("Whole loop takes 1–10 minutes ... the
  *  detail page polls every 5 s"). */
 const TRANSCODE_POLL_INTERVAL_MS = 5000
+
+/** The path the poller is "watching." Any routechange event whose
+ *  detail.path differs from this aborts the loop. Compared by
+ *  equality after `decodeURIComponent`-ing both sides — the
+ *  router stores the raw `location.pathname`, but ids in
+ *  Crockford base32 are URL-safe so the round-trip is a no-op. */
+function detailPathFor(id: string): string {
+  return `/publish/datasets/${encodeURIComponent(id)}`
+}
 
 function startTranscodePolling(
   content: HTMLElement,
@@ -643,15 +664,35 @@ function startTranscodePolling(
   // Cancel any prior loop on this mount — paint() re-runs on every
   // poll tick and we'd otherwise stack one new AbortController per
   // tick.
-  activeTranscodePolls.get(content)?.abort()
+  stopTranscodePolling(content)
   const controller = new AbortController()
   activeTranscodePolls.set(content, controller)
+
+  // Cancel the loop if the router navigates away from our path.
+  // The poll loop also calls paint() on each tick, which would
+  // otherwise stomp on whatever page the router just mounted into
+  // the same `content` element.
+  const watchedPath = detailPathFor(id)
+  const onRouteChange = (event: Event): void => {
+    const detail = (event as CustomEvent<RouteChangeDetail>).detail
+    if (!detail || detail.path !== watchedPath) {
+      stopTranscodePolling(content)
+    }
+  }
+  window.addEventListener(ROUTE_CHANGE_EVENT, onRouteChange)
+  activeTranscodeRouteListeners.set(content, onRouteChange)
+
   void runTranscodePollLoop(content, id, options, controller.signal)
 }
 
 function stopTranscodePolling(content: HTMLElement): void {
   activeTranscodePolls.get(content)?.abort()
   activeTranscodePolls.delete(content)
+  const listener = activeTranscodeRouteListeners.get(content)
+  if (listener) {
+    window.removeEventListener(ROUTE_CHANGE_EVENT, listener)
+    activeTranscodeRouteListeners.delete(content)
+  }
 }
 
 async function runTranscodePollLoop(

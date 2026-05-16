@@ -370,6 +370,29 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
       }
     }
 
+    // Concurrency guard: refuse to start a second video transcode
+    // on a row whose previous upload is still in flight. The
+    // earlier upload may not have called /complete (this same
+    // upload retried) or may belong to a different upload entirely
+    // — only the latter is the race we want to block. Idempotent
+    // retries on the same upload fall through to the existing
+    // dispatch path; the upload-row status check above already
+    // short-circuits a true repeat (status='completed') before
+    // we get here. Server-side counterpart to the dataset-form
+    // edit-mode gate; see migration 0012.
+    if (
+      dataset.transcoding &&
+      dataset.active_transcode_upload_id &&
+      dataset.active_transcode_upload_id !== uploadId
+    ) {
+      return jsonError(
+        409,
+        'transcoding_in_progress',
+        `Dataset ${datasetId} is already transcoding upload ${dataset.active_transcode_upload_id}. ` +
+          'Wait for that workflow to finish (or have an operator clear the row) before starting another.',
+      )
+    }
+
     // 1. Persist the dataset-row half (transcoding=1, +
     //    conditional data_ref clear, + source_digest). The
     //    asset_uploads row stays `pending` for now — that's
