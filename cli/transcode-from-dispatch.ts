@@ -82,9 +82,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
-  readFileSync,
   rmSync,
-  statSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { AwsClient } from 'aws4fetch'
@@ -404,9 +402,3 @@ const invokedDirectly =
 if (invokedDirectly) {
   void main().then(code => process.exit(code))
 }
-
-// `readFileSync` + `statSync` are imported for the side-effect of
-// keeping the `fs` import line valid when future maintenance trims
-// unused helpers; the digest path uses streaming reads, not these.
-void readFileSync
-void statSync
