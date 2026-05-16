@@ -589,6 +589,49 @@ Both halves are required. A misconfigured deploy fails closed:
   badge in the portal stays visible — that's the operator's
   signal something needs attention.
 
+**WAF skip rule for the transcode-complete callback.** Cloudflare
+Access service tokens (`CF-Access-Client-Id` /
+`CF-Access-Client-Secret`) bypass Access but **not** Bot Fight
+Mode, the Cloudflare Managed Ruleset, or any custom WAF rule. If
+your zone has either of those active — Bot Fight Mode is on by
+default on the Pro plan and up — the GHA runner's final POST to
+`/api/v1/publish/datasets/{id}/transcode-complete` gets served a
+`Just a moment...` JS-challenge interstitial at the edge and
+never reaches the publisher Worker. ffmpeg finishes, the HLS
+bundle lands in R2, and then the runner exits non-zero at stage
+5 (PATCH failure) with the challenge HTML in the body. The
+dataset row stays flagged `transcoding=1`.
+
+Fix: add a WAF Skip custom rule scoped to the transcode-complete
+endpoint, gated on the Access service-token header so the skip
+only fires for legitimate service-token traffic. In the Cloudflare
+dashboard for the zone the Pages deploy serves from:
+
+1. Security → WAF → Custom rules → Create rule.
+2. Name it something like `transcode-complete service token skip`.
+3. Field expression (use the Edit expression view):
+   ```
+   (starts_with(http.request.uri.path, "/api/v1/publish/")
+     and ends_with(http.request.uri.path, "/transcode-complete")
+     and len(http.request.headers["cf-access-client-id"][0]) > 0)
+   ```
+4. Action: **Skip**. Tick Bot Fight Mode, the Cloudflare Managed
+   Ruleset, the OWASP Managed Ruleset (if enabled), and "All
+   remaining custom rules."
+5. Deploy.
+
+Safe because (a) the header gate means only requests carrying
+a service-token id can skip, (b) Cloudflare Access still
+validates the service token after the skip — a forged header
+can't actually authenticate, and (c) the `/transcode-complete`
+route handler enforces `role='service'` independently before
+mutating the row.
+
+The CLI emits a specific operator-actionable error when it
+detects the challenge response, so a future occurrence of this
+failure surfaces in the GHA log as a one-line pointer at this
+section rather than as a 30-KB blob of obfuscated HTML.
+
 **Mock mode for local development.** Set `MOCK_GITHUB_DISPATCH=true`
 in `.dev.vars` to skip the dispatch call entirely; the dataset
 row still gets stamped `transcoding=1` so you can exercise the
