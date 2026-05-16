@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { parseArgs, loadServerEnv } from './transcode-from-dispatch'
+import { parseArgs, loadServerEnv, isCloudflareChallenge } from './transcode-from-dispatch'
 
 const GOOD_DS = '01HXAAAAAAAAAAAAAAAAAAAAAA'
 const GOOD_UP = '01HYAAAAAAAAAAAAAAAAAAAAAA'
@@ -121,5 +121,43 @@ describe('loadServerEnv', () => {
         expect(r.error).toContain(key)
       }
     }
+  })
+})
+
+describe('isCloudflareChallenge', () => {
+  // Trimmed-but-recognisable shape of the managed-challenge HTML
+  // Cloudflare actually served when the WAF intercepted a real
+  // GHA run (PR #112). Keeps both markers so either-marker
+  // detection round-trips.
+  const CHALLENGE_BODY = `<!DOCTYPE html><html><head><title>Just a moment...</title></head>` +
+    `<body><script>window._cf_chl_opt = {cType: 'managed', cZone: 'terraviz.example.com'};` +
+    `var a = document.createElement('script');a.src = '/cdn-cgi/challenge-platform/h/b/orchestrate/...';` +
+    `</script></body></html>`
+
+  it('detects the managed-challenge body', () => {
+    expect(isCloudflareChallenge('text/html; charset=UTF-8', CHALLENGE_BODY)).toBe(true)
+  })
+
+  it('detects on the _cf_chl_opt marker alone', () => {
+    const body = '<html>window._cf_chl_opt = {};</html>'
+    expect(isCloudflareChallenge('text/html', body)).toBe(true)
+  })
+
+  it('detects on the challenge-platform marker alone', () => {
+    const body = '<html>a.src = "/cdn-cgi/challenge-platform/...";</html>'
+    expect(isCloudflareChallenge('text/html', body)).toBe(true)
+  })
+
+  it('returns false for JSON error envelopes from the publisher API', () => {
+    const body = JSON.stringify({ error: 'not_transcoding', message: 'Row is not transcoding.' })
+    expect(isCloudflareChallenge('application/json; charset=utf-8', body)).toBe(false)
+  })
+
+  it('returns false when content-type is missing', () => {
+    expect(isCloudflareChallenge(null, CHALLENGE_BODY)).toBe(false)
+  })
+
+  it('returns false for plain HTML without challenge markers', () => {
+    expect(isCloudflareChallenge('text/html', '<html><body>Hello</body></html>')).toBe(false)
   })
 })

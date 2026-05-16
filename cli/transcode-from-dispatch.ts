@@ -206,6 +206,26 @@ async function downloadFromR2(
   return { digest: `sha256:${hash.digest('hex')}`, bytes }
 }
 
+/**
+ * Detect Cloudflare's WAF managed-challenge interstitial in a
+ * response we got back from `transcode-complete`. Access service
+ * tokens bypass Cloudflare Access but NOT Bot Fight Mode / WAF
+ * managed rules — when the WAF challenges a runner request, the
+ * response is a `Just a moment...` HTML page with a `_cf_chl_opt`
+ * JS blob, served at the edge before the request ever reaches the
+ * publisher Worker. Without this detection the failure dumps ~30
+ * KB of obfuscated challenge HTML into the GHA log; with it the
+ * operator sees a one-line pointer at the SELF_HOSTING WAF rule.
+ */
+export function isCloudflareChallenge(contentType: string | null, body: string): boolean {
+  if (!contentType || !contentType.toLowerCase().includes('text/html')) return false
+  // Both markers appear in every Cloudflare challenge variant
+  // (managed / interactive / JS). The publisher API only ever
+  // returns application/json, so any HTML body carrying either
+  // marker is definitionally an edge intercept.
+  return body.includes('_cf_chl_opt') || body.includes('challenge-platform')
+}
+
 async function postTranscodeComplete(
   server: ServerEnv,
   datasetId: string,
@@ -230,6 +250,23 @@ async function postTranscodeComplete(
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
+    if (isCloudflareChallenge(res.headers.get('content-type'), body)) {
+      let zone = 'unknown'
+      try {
+        zone = new URL(url).hostname
+      } catch {
+        /* keep the fallback */
+      }
+      throw new Error(
+        `transcode-complete blocked by Cloudflare's WAF managed challenge ` +
+          `(status ${res.status}, zone ${zone}). Access service tokens bypass ` +
+          `Access but not Bot Fight Mode / WAF managed rules, so the request ` +
+          `never reached the publisher Worker. Fix: add a WAF Skip custom rule ` +
+          `for /api/v1/publish/* requests carrying the cf-access-client-id ` +
+          `header — see docs/SELF_HOSTING.md §8e "WAF skip rule for the ` +
+          `transcode-complete callback" for the exact rule.`,
+      )
+    }
     throw new Error(`transcode-complete returned ${res.status}: ${body}`)
   }
 }
