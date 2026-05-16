@@ -40,6 +40,17 @@ operator-driven via `cli/migrate-r2-hls.ts`), and the **trigger**
 (3pd's contribution — letting a publisher kick off the same
 transcode from the portal instead of running the CLI by hand).
 
+> **Future work — image-sequence input.** The publisher portal
+> currently accepts a single MP4 as the video source. Many
+> catalog datasets originate as numbered frames (one PNG per
+> simulation step / model output / animation frame), and
+> ffmpeg accepts image sequences as readily as MP4 files —
+> the pipeline change is bounded. Design sketched in
+> [`CATALOG_IMAGE_SEQUENCE_PLAN.md`](CATALOG_IMAGE_SEQUENCE_PLAN.md);
+> tracking issue
+> [zyra-project/terraviz#114](https://github.com/zyra-project/terraviz/issues/114).
+> Lands as Phase 3pe; depends on 3pd merging first.
+
 ### What ffmpeg actually produces
 
 Three renditions at the 2:1 spherical aspect the SPA's globe

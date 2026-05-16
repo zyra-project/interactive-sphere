@@ -279,6 +279,15 @@ to a pure R2 + GitHub Actions pipeline; the full design lives in
 [`CATALOG_ASSETS_PIPELINE.md`](CATALOG_ASSETS_PIPELINE.md) §"Video
 pipeline (R2 + GitHub Actions — current)".
 
+> **Future work — image-sequence input.** A planned sub-phase
+> (3pe) extends this uploader to accept a stack of individual
+> frames (PNG / JPEG / WebP) as the source for a video dataset,
+> for the many cases where publishers have numbered frames on
+> disk but no MP4. Design in
+> [`CATALOG_IMAGE_SEQUENCE_PLAN.md`](CATALOG_IMAGE_SEQUENCE_PLAN.md);
+> tracking issue
+> [zyra-project/terraviz#114](https://github.com/zyra-project/terraviz/issues/114).
+
 Behavior:
 
 - Drag-drop or click-to-browse.
