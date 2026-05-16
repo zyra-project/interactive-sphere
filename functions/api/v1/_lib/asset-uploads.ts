@@ -380,65 +380,6 @@ export async function applyAssetAndMarkCompleted(
 }
 
 /**
- * Video-source variant: the upload bytes have landed in R2 at
- * `uploads/{dataset_id}/{upload_id}/source.mp4` and we've
- * verified the publisher's digest. We stamp `transcoding=1` so
- * the portal renders a
- * "Transcoding…" badge + gates the publish button, mark the
- * asset_upload row `completed` (the upload step itself
- * succeeded; the transcode is async + lives in GHA), and store
- * the publisher's claimed digest as `source_digest`.
- *
- * **`data_ref` handling:** for a draft row (`published_at IS NULL`)
- * we clear `data_ref` to empty string — there's nothing to
- * preserve, and an empty ref keeps the publish-readiness validator
- * honest. For a *published* row we leave `data_ref` pointing at
- * its existing HLS bundle, because public clients are still
- * actively reading it. The new bundle lands at a versioned R2
- * path (`videos/{id}/{upload_id}/...`) the GHA workflow uploads
- * to, and `/transcode-complete` swaps `data_ref` atomically when
- * the new bundle is fully written. Until that swap, the old
- * bundle continues to serve cleanly. The orphan-bundle cleanup
- * (deleting the old prefix after a published-row re-upload) is
- * a Phase 4 R2 lifecycle concern.
- *
- * Atomic via `db.batch` so the upload-row state and the dataset
- * row never end up in disagreement.
- */
-export async function markVideoSourceUploadedAndStampTranscoding(
-  db: D1Database,
-  datasetId: string,
-  upload: AssetUploadRow,
-  now: string,
-): Promise<void> {
-  // Conditional clear: empty string only for drafts. The
-  // `data_ref = CASE WHEN published_at IS NULL THEN '' ELSE
-  // data_ref END` keeps the column value frozen for published
-  // rows during the transcode window so the public manifest
-  // endpoint keeps resolving cleanly.
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE datasets
-           SET transcoding = 1,
-               active_transcode_upload_id = ?,
-               data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
-               source_digest = ?,
-               updated_at = ?
-         WHERE id = ?`,
-      )
-      .bind(upload.id, upload.claimed_digest, now, datasetId),
-    db
-      .prepare(
-        `UPDATE asset_uploads
-           SET status = 'completed', completed_at = ?, failure_reason = NULL
-         WHERE id = ? AND status = 'pending'`,
-      )
-      .bind(now, upload.id),
-  ])
-}
-
-/**
  * Just the dataset-row half of the video-source finalisation —
  * stamp `transcoding=1`, record the publisher's `source_digest`,
  * and conditionally clear `data_ref` for drafts. Used by the
