@@ -663,6 +663,108 @@ describe('POST .../asset/{upload_id}/complete — refusals', () => {
     expect(body.dataset.sphere_thumbnail_ref).toBe('r2:datasets/x/sphere-thumbnail.jpg')
   })
 
+  it('idempotent retry reports transcoding state for a still-transcoding video upload', async () => {
+    // PR #112 Copilot followup: when /complete is retried for a
+    // video upload whose row already says status='completed' but
+    // the GHA workflow hasn't fired /transcode-complete yet, the
+    // idempotent branch must report `transcoding: true` so the
+    // asset-uploader UI routes through the 'done-transcoding'
+    // stage instead of 'done-direct'. Without this the form
+    // would mis-paint as a finished direct upload and clear the
+    // "Transcoding…" badge prematurely.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+    }
+    const uploadId = `UP-VID-${'X'.repeat(20)}`
+    insertPending(sqlite, {
+      uploadId,
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/${uploadId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    // Mirror the steady state the first /complete leaves behind:
+    // upload row completed + dataset row stamped transcoding.
+    sqlite
+      .prepare(`UPDATE asset_uploads SET status = 'completed', completed_at = ? WHERE id = ?`)
+      .run('2026-04-29T12:00:00.000Z', uploadId)
+    sqlite
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = 1, active_transcode_upload_id = ?, source_digest = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(uploadId, HELLO_DIGEST, '2026-04-29T12:00:00.000Z', datasetId)
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId }))
+    expect(res.status).toBe(200)
+    const body = await readJson<{
+      idempotent: boolean
+      transcoding: boolean
+      dataset: { transcoding: number | null }
+    }>(res)
+    expect(body.idempotent).toBe(true)
+    expect(body.transcoding).toBe(true)
+    expect(body.dataset.transcoding).toBe(1)
+  })
+
+  it('idempotent retry reports transcoding=false once the workflow has cleared the row', async () => {
+    // Companion to the test above: after /transcode-complete
+    // runs, the dataset row's transcoding column is NULL/0 and
+    // data_ref points at the master.m3u8. A /complete retry now
+    // should report `transcoding: false` so the uploader knows
+    // the bundle is live and routes to the 'done-direct' stage
+    // (or whatever the parent treats as "finished"). The strict
+    // boolean — not `undefined` — keeps the client's
+    // `=== true` check consistent across response shapes.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+    }
+    const uploadId = `UP-VID-${'Y'.repeat(20)}`
+    insertPending(sqlite, {
+      uploadId,
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/${uploadId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    sqlite
+      .prepare(`UPDATE asset_uploads SET status = 'completed', completed_at = ? WHERE id = ?`)
+      .run('2026-04-29T12:00:00.000Z', uploadId)
+    // Workflow already completed: transcoding cleared, data_ref
+    // updated to point at the HLS bundle.
+    sqlite
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = NULL,
+               active_transcode_upload_id = NULL,
+               data_ref = ?,
+               updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        `r2:videos/${datasetId}/${uploadId}/master.m3u8`,
+        '2026-04-29T12:30:00.000Z',
+        datasetId,
+      )
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId }))
+    expect(res.status).toBe(200)
+    const body = await readJson<{ idempotent: boolean; transcoding: boolean }>(res)
+    expect(body.idempotent).toBe(true)
+    expect(body.transcoding).toBe(false)
+  })
+
   it('fails closed with 500 unknown_target when upload.target is corrupted', async () => {
     const { sqlite, datasetId, kv } = setupEnv()
     const env = {

@@ -120,13 +120,34 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     // dataset so the caller sees the latest persisted state — the
     // initial load happens before the upload-status check, so it
     // misses any background mutations (e.g. sphere-thumbnail
-    // generation against the just-applied asset) that landed since.
+    // generation against the just-applied asset, or the workflow's
+    // /transcode-complete callback flipping data_ref) that landed
+    // since.
+    //
+    // The `transcoding` boolean mirrors the success-path response
+    // shape so a client that retries /complete inside the
+    // transcoding window (the upload row is `completed` but the
+    // workflow hasn't fired /transcode-complete yet) still gets
+    // routed to the "transcoding" branch of the uploader UI rather
+    // than the "direct upload done" branch. Without this the
+    // asset-uploader would set `stage = 'done-direct'` and notify
+    // the parent with `mode: 'direct'`, which mis-paints the form
+    // state for a row that's actually still waiting on the GHA
+    // workflow.
     const currentDataset =
       (await getDatasetForPublisher(context.env.CATALOG_DB!, publisher, datasetId)) ?? dataset
-    return new Response(JSON.stringify({ dataset: currentDataset, upload, idempotent: true }), {
-      status: 200,
-      headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
-    })
+    return new Response(
+      JSON.stringify({
+        dataset: currentDataset,
+        upload,
+        idempotent: true,
+        transcoding: currentDataset.transcoding === 1,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
+      },
+    )
   }
   if (upload.status === 'failed') {
     return jsonError(
