@@ -14,7 +14,11 @@ import { parseArgs, loadServerEnv, isCloudflareChallenge } from './transcode-fro
 
 const GOOD_DS = '01HXAAAAAAAAAAAAAAAAAAAAAA'
 const GOOD_UP = '01HYAAAAAAAAAAAAAAAAAAAAAA'
-const GOOD_KEY = `uploads/${GOOD_DS}/source.mp4`
+// Source key embeds BOTH ids (PR #112 Copilot 3pd-followup —
+// the prior one-level layout would let a workflow encode the
+// wrong upload's bytes for a given dataset, since the key
+// didn't carry the upload id).
+const GOOD_KEY = `uploads/${GOOD_DS}/${GOOD_UP}/source.mp4`
 const GOOD_DIGEST = 'sha256:' + 'a'.repeat(64)
 
 describe('parseArgs', () => {
@@ -71,6 +75,55 @@ describe('parseArgs', () => {
     expect('error' in r).toBe(true)
     if ('error' in r) {
       expect(r.error).toMatch(/source-key/)
+    }
+  })
+
+  it('rejects a source key in the obsolete one-level layout', () => {
+    // Pre-3pd-review3/A wrote `uploads/{dataset}/source.mp4` —
+    // accepting that here would let a re-upload race against
+    // itself (no per-upload prefix). The shape changed but a
+    // misconfigured workflow could still try to call the runner
+    // with the old layout. PR #112 Copilot 3pd-followup.
+    const r = parseArgs([
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
+      `--source-key=uploads/${GOOD_DS}/source.mp4`,
+      `--source-digest=${GOOD_DIGEST}`,
+    ])
+    expect('error' in r).toBe(true)
+    if ('error' in r) {
+      expect(r.error).toMatch(/source-key/)
+    }
+  })
+
+  it('rejects a source key whose dataset id segment doesn’t match --dataset-id', () => {
+    // A misrouted dispatch could carry a key that's well-formed
+    // but for a different dataset; without this check the runner
+    // would happily encode the wrong bytes.
+    const otherDs = '01HZAAAAAAAAAAAAAAAAAAAAAA'
+    const r = parseArgs([
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
+      `--source-key=uploads/${otherDs}/${GOOD_UP}/source.mp4`,
+      `--source-digest=${GOOD_DIGEST}`,
+    ])
+    expect('error' in r).toBe(true)
+    if ('error' in r) {
+      expect(r.error).toContain(GOOD_DS)
+    }
+  })
+
+  it('rejects a source key whose upload id segment doesn’t match --upload-id', () => {
+    const otherUp = '01HZAAAAAAAAAAAAAAAAAAAAAA'
+    const r = parseArgs([
+      `--dataset-id=${GOOD_DS}`,
+      `--upload-id=${GOOD_UP}`,
+      `--source-key=uploads/${GOOD_DS}/${otherUp}/source.mp4`,
+      `--source-digest=${GOOD_DIGEST}`,
+    ])
+    expect('error' in r).toBe(true)
+    if ('error' in r) {
+      expect(r.error).toContain(GOOD_UP)
     }
   })
 

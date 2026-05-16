@@ -929,7 +929,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -993,7 +993,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1014,7 +1014,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1044,7 +1044,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1086,7 +1086,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1132,7 +1132,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1185,7 +1185,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1225,7 +1225,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })
@@ -1258,7 +1258,7 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       datasetId,
       kind: 'data',
       target: 'r2',
-      target_ref: `r2:uploads/${datasetId}/source.mp4`,
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
     })

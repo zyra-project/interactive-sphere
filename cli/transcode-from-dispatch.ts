@@ -123,9 +123,16 @@ export function parseArgs(argv: readonly string[]): Args | { error: string } {
     return { error: `--upload-id must be a ULID (26 base32 chars); got ${uploadId ?? '(missing)'}` }
   }
   const sourceKey = get('source-key')
-  if (!sourceKey || !sourceKey.startsWith('uploads/') || !sourceKey.endsWith('/source.mp4')) {
+  // Match the full shape and pin the embedded ids to the route
+  // arguments. The prior prefix/suffix-only check accepted
+  // arbitrary middle segments (e.g. the obsolete one-level
+  // `uploads/{dataset_id}/source.mp4`) and didn't notice when
+  // a misrouted dispatch carried a key for a different dataset
+  // or upload. PR #112 Copilot 3pd-followup.
+  const expectedSourceKey = `uploads/${datasetId}/${uploadId}/source.mp4`
+  if (!sourceKey || sourceKey !== expectedSourceKey) {
     return {
-      error: `--source-key must look like uploads/{dataset_id}/{upload_id}/source.mp4; got ${sourceKey ?? '(missing)'}`,
+      error: `--source-key must equal ${expectedSourceKey}; got ${sourceKey ?? '(missing)'}`,
     }
   }
   const sourceDigest = get('source-digest')

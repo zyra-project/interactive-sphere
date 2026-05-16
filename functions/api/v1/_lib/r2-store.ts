@@ -121,12 +121,21 @@ export function buildVideoSourceKey(datasetId: string, uploadId: string): string
  * transcode workflow? The /complete handler uses this to branch
  * between "write data_ref and finish" and "fire dispatch + stamp
  * transcoding=1". Matches the
- * `uploads/{dataset_id}/{upload_id}/source.mp4` shape — the
- * `uploads/` namespace is reserved for this one purpose, so the
- * prefix + filename check is sufficient.
+ * `uploads/{dataset_id}/{upload_id}/source.mp4` shape exactly —
+ * both ids must be ULIDs, the filename must be source.mp4, and
+ * there must be nothing else between. PR #112 Copilot
+ * 3pd-followup — the prior prefix-and-suffix-only check would
+ * accept any `uploads/<anything>/source.mp4`, including the
+ * obsolete one-level layout (`uploads/{dataset_id}/source.mp4`)
+ * that pre-3pd-review3/A wrote, plus arbitrary deeper paths a
+ * malformed asset_uploads row could surface.
  */
+const VIDEO_SOURCE_KEY_PATTERN = new RegExp(
+  `^${VIDEO_SOURCE_KEY_PREFIX}/[0-9A-HJKMNP-TV-Z]{26}/[0-9A-HJKMNP-TV-Z]{26}/source\\.mp4$`,
+)
+
 export function isVideoSourceKey(key: string): boolean {
-  return key.startsWith(`${VIDEO_SOURCE_KEY_PREFIX}/`) && key.endsWith('/source.mp4')
+  return VIDEO_SOURCE_KEY_PATTERN.test(key)
 }
 
 /**
