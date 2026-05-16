@@ -439,14 +439,28 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
       // row is stuck `transcoding=1` and an operator has to
       // clear it by hand; log via console.error so wrangler
       // tail surfaces it.
+      //
+      // The UPDATE is scoped to `AND active_transcode_upload_id = ?`
+      // so a concurrent /complete that re-stamped the row to a
+      // different upload's id (in the gap between our stamp and
+      // this dispatch failure) won't be clobbered — changes will
+      // be 0 and we log it as "lost the race" rather than wiping
+      // the newer upload's in-flight state.
       try {
-        await revertTranscodingStamp(
+        const reverted = await revertTranscodingStamp(
           context.env.CATALOG_DB!,
           datasetId,
           upload,
           previousDataRef,
           new Date().toISOString(),
         )
+        if (reverted === 0) {
+          console.warn(
+            `[asset/complete] revert of transcoding stamp on ${datasetId} was a ` +
+              `no-op — another upload took over the active binding before the ` +
+              `dispatch-failure handler ran (upload ${uploadId} lost the race).`,
+          )
+        }
       } catch (revertErr) {
         console.error(
           `[asset/complete] failed to revert transcoding stamp on ${datasetId}:`,

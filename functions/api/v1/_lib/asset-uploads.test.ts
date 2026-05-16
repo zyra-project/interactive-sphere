@@ -432,3 +432,172 @@ describe('applyAssetToDataset — atomic json_set merge', () => {
     expect(aux.sphere_thumbnail).toBe(HAPPY_DIGEST)
   })
 })
+
+describe('transcoding lifecycle UPDATEs are scoped to active_transcode_upload_id', () => {
+  // PR #112 followup — Copilot flagged that both `clearTranscoding`
+  // and `revertTranscodingStamp` previously matched on dataset id
+  // alone. That opened a TOCTOU race: between the route's SELECT
+  // (which reads `active_transcode_upload_id`) and the UPDATE, a
+  // *different* /asset/.../complete could re-stamp the row to a
+  // newer upload, and our clear/revert would clobber it. The fix
+  // is an `AND active_transcode_upload_id = ?` clause on each
+  // UPDATE, with the rows-affected count surfaced to the caller
+  // so a lost race is observable as 0 (not a silent no-op).
+
+  const DATASET_ID = 'DS001AAAAAAAAAAAAAAAAAAAAA'
+  const UPLOAD_A = 'UPA0000000000000000000000A'
+  const UPLOAD_B = 'UPB0000000000000000000000B'
+
+  function seedTranscodingRow(
+    sqlite: ReturnType<typeof freshMigratedDb>,
+    activeUploadId: string,
+  ) {
+    sqlite
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = 1,
+               active_transcode_upload_id = ?,
+               source_digest = ?,
+               data_ref = '',
+               updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(activeUploadId, `sha256:${'a'.repeat(64)}`, '2026-04-29T12:00:00.000Z', DATASET_ID)
+  }
+
+  function uploadStub(id: string) {
+    return {
+      id,
+      dataset_id: DATASET_ID,
+      publisher_id: 'PUB001',
+      kind: 'data' as const,
+      target: 'r2' as const,
+      target_ref: `r2:uploads/${DATASET_ID}/${id}/source.mp4`,
+      mime: 'video/mp4',
+      declared_size: 1234,
+      claimed_digest: HAPPY_DIGEST,
+      status: 'pending' as const,
+      failure_reason: null,
+      created_at: '2026-04-29T12:00:00.000Z',
+      completed_at: null,
+    }
+  }
+
+  it('clearTranscoding applies (changes=1) when active_transcode_upload_id matches', async () => {
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_A)
+    const { clearTranscoding } = await import('./asset-uploads')
+    const changes = await clearTranscoding(
+      d1,
+      DATASET_ID,
+      UPLOAD_A,
+      `r2:videos/${DATASET_ID}/${UPLOAD_A}/master.m3u8`,
+      '2026-04-29T12:30:00.000Z',
+    )
+    expect(changes).toBe(1)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, data_ref
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      data_ref: string
+    }
+    expect(row.transcoding).toBeNull()
+    expect(row.active_transcode_upload_id).toBeNull()
+    expect(row.data_ref).toBe(`r2:videos/${DATASET_ID}/${UPLOAD_A}/master.m3u8`)
+  })
+
+  it('clearTranscoding is a no-op (changes=0) when active_transcode_upload_id has been swapped', async () => {
+    // Simulates the TOCTOU race: the route checked the row, found
+    // UPLOAD_A bound, but by the time clearTranscoding runs the
+    // row has been re-stamped to UPLOAD_B. The UPDATE must not
+    // wipe UPLOAD_B's in-flight state.
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_B)
+    const { clearTranscoding } = await import('./asset-uploads')
+    const changes = await clearTranscoding(
+      d1,
+      DATASET_ID,
+      UPLOAD_A,
+      `r2:videos/${DATASET_ID}/${UPLOAD_A}/master.m3u8`,
+      '2026-04-29T12:30:00.000Z',
+    )
+    expect(changes).toBe(0)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, data_ref
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      data_ref: string
+    }
+    expect(row.transcoding).toBe(1)
+    expect(row.active_transcode_upload_id).toBe(UPLOAD_B)
+    expect(row.data_ref).toBe('')
+  })
+
+  it('revertTranscodingStamp applies (changes=1) when the upload still owns the row', async () => {
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_A)
+    const { revertTranscodingStamp } = await import('./asset-uploads')
+    const changes = await revertTranscodingStamp(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      'r2:videos/old/master.m3u8',
+      '2026-04-29T12:05:00.000Z',
+    )
+    expect(changes).toBe(1)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, source_digest, data_ref
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      source_digest: string | null
+      data_ref: string
+    }
+    expect(row.transcoding).toBeNull()
+    expect(row.active_transcode_upload_id).toBeNull()
+    expect(row.source_digest).toBeNull()
+    expect(row.data_ref).toBe('r2:videos/old/master.m3u8')
+  })
+
+  it('revertTranscodingStamp is a no-op (changes=0) when another upload has taken over', async () => {
+    // Race window: we stamped UPLOAD_A, dispatch failed, but
+    // meanwhile UPLOAD_B's /complete swapped the binding. The
+    // revert must not clobber UPLOAD_B's stamp — that would
+    // wipe a newer in-flight transcode.
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_B)
+    const { revertTranscodingStamp } = await import('./asset-uploads')
+    const changes = await revertTranscodingStamp(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      'r2:videos/old/master.m3u8',
+      '2026-04-29T12:05:00.000Z',
+    )
+    expect(changes).toBe(0)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, source_digest
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      source_digest: string | null
+    }
+    expect(row.transcoding).toBe(1)
+    expect(row.active_transcode_upload_id).toBe(UPLOAD_B)
+    expect(row.source_digest).toBe(`sha256:${'a'.repeat(64)}`)
+  })
+})

@@ -196,7 +196,24 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
   const dataRef = `r2:${buildVideoBundleMasterKey(id, validated.upload_id)}`
 
   const now = new Date().toISOString()
-  await clearTranscoding(db, id, dataRef, now)
+  // The UPDATE itself has `AND active_transcode_upload_id = ?`,
+  // so it's atomic with the JS-level check above — if a
+  // different /asset/.../complete swapped the binding in the
+  // gap between the SELECT and this call (TOCTOU window),
+  // changes will be 0 and we refuse to apply. The 409 envelope
+  // mirrors the explicit check's `transcode_upload_mismatch`
+  // shape so the workflow's retry logic treats them the same
+  // way: "another upload took over; this run is stale."
+  const changes = await clearTranscoding(db, id, validated.upload_id, dataRef, now)
+  if (changes === 0) {
+    return jsonError(
+      409,
+      'transcode_upload_mismatch',
+      `Dataset ${id}'s active transcode binding changed between the freshness check and ` +
+        `the apply step (upload ${validated.upload_id} was no longer active when we tried ` +
+        'to clear it). Refusing to apply — a newer upload has taken over.',
+    )
+  }
 
   // Refresh the row so the response carries the latest state.
   const updated = await db

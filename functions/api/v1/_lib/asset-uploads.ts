@@ -444,6 +444,16 @@ export async function markVideoUploadCompleted(
  * row stays stuck `transcoding=1` and an operator has to clear
  * it by hand. Failed compensation is logged at the call site so
  * `wrangler tail` shows it.
+ *
+ * Scoped to `AND active_transcode_upload_id = ?` so the revert
+ * is a no-op when another upload has already re-stamped the row
+ * in the gap between our stamp and our dispatch-failure handler.
+ * Without that clause the revert would wipe the newer upload's
+ * in-flight state (PR #112 followup — race window Copilot
+ * flagged on complete.ts:405). Returns the number of rows
+ * affected; a 0 means we lost the race and should log it (the
+ * other upload now owns the row and our retry on the original
+ * upload is a stale operation).
  */
 export async function revertTranscodingStamp(
   db: D1Database,
@@ -451,8 +461,8 @@ export async function revertTranscodingStamp(
   upload: AssetUploadRow,
   previousDataRef: string,
   now: string,
-): Promise<void> {
-  await db
+): Promise<number> {
+  const result = await db
     .prepare(
       `UPDATE datasets
          SET transcoding = NULL,
@@ -460,13 +470,13 @@ export async function revertTranscodingStamp(
              data_ref = ?,
              source_digest = NULL,
              updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND active_transcode_upload_id = ?`,
     )
-    .bind(previousDataRef, now, datasetId)
+    .bind(previousDataRef, now, datasetId, upload.id)
     .run()
   // upload row may still be pending (we hadn't marked it yet);
   // leave the status alone so a retry works.
-  void upload
+  return result.meta?.changes ?? 0
 }
 
 /**
@@ -484,24 +494,36 @@ export async function revertTranscodingStamp(
  * route constructs `data_ref` server-side from the route id +
  * upload_id so the workflow can't accidentally point the row
  * at another dataset's bundle.
+ *
+ * Scoped to `AND active_transcode_upload_id = ?` so the route's
+ * explicit upload-id check at the top of the handler is matched
+ * by an atomic guard at the UPDATE itself — closes the TOCTOU
+ * window where a *different* /asset/{...}/complete could swap
+ * `active_transcode_upload_id` to a newer upload between the
+ * route's SELECT and this UPDATE (PR #112 followup —
+ * transcode-complete.ts:178). Returns rows-affected; the caller
+ * uses 0 as a "lost the race, refuse to apply" signal and
+ * surfaces it as 409 stale.
  */
 export async function clearTranscoding(
   db: D1Database,
   datasetId: string,
+  uploadId: string,
   dataRef: string,
   now: string,
-): Promise<void> {
-  await db
+): Promise<number> {
+  const result = await db
     .prepare(
       `UPDATE datasets
          SET transcoding = NULL,
              active_transcode_upload_id = NULL,
              data_ref = ?,
              updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND active_transcode_upload_id = ?`,
     )
-    .bind(dataRef, now, datasetId)
+    .bind(dataRef, now, datasetId, uploadId)
     .run()
+  return result.meta?.changes ?? 0
 }
 
 /**
