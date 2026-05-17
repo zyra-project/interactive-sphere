@@ -309,8 +309,10 @@ Behavior:
   `content_digest` carries on the dataset row, so two publishers
   uploading byte-identical images share the same R2 object).
   The finalize step writes `data_ref` directly — no transcode.
-  Optional client-side downsample preview before upload so the
-  publisher sees roughly what the 2048-wide variant will look like.
+  (A client-side downsample preview before upload — so the
+  publisher sees roughly what the 2048-wide variant will look
+  like — was an early sketch but isn't in the shipped uploader;
+  candidate follow-up if publishers ask for it.)
 - **Video** (`video/mp4`): the presigned PUT lands the MP4 at
   `r2:uploads/{id}/{upload_id}/source.mp4` (per-upload prefix
   so a re-upload to a still-transcoding row doesn't overwrite

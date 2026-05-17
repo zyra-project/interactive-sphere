@@ -98,8 +98,11 @@ Five hops from publisher click to playable row:
    pointing at `uploads/{dataset_id}/{upload_id}/source.mp4`
    (per-upload prefix so a re-upload to a row that's already
    transcoding doesn't overwrite the source bytes the prior
-   workflow may still be reading), valid for ~15 minutes, and
-   returns
+   workflow may still be reading), valid for the kind-specific
+   TTL (`R2_PUT_TTL_VIDEO_SECONDS = 2 h` for video sources,
+   `R2_PUT_TTL_SECONDS = 15 min` for images and aux assets —
+   the 2 h ceiling covers the `MAX_BYTES_DATA = 10 GB` cap on a
+   typical residential uplink), and returns
    `{ upload_id, target: 'r2', r2: { method, url, headers, key }, expires_at, mock }`.
 
 2. **Direct upload.** The browser PUTs the MP4 straight to R2 over
