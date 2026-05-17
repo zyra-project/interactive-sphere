@@ -168,14 +168,17 @@ The polling loop:
 POST `.../preview` endpoint has shipped since Phase 1b but no
 portal surface called it. 3pd/E wires a Preview button next to
 Edit on the detail page that mints the 15-minute token and
-surfaces the resulting `/?preview=<token>&dataset=<id>` URL in
-a lightweight modal. The publisher can copy the link to share
-a draft for review without publishing.
+surfaces the resulting URL in a lightweight modal — the
+backend-returned `/api/v1/datasets/{id}/preview/{token}` shape,
+which is the signed-asset endpoint that serves the HLS manifest
+(video) or image bytes (image) directly. The publisher can copy
+the link to share a draft for review without publishing.
 
 Hidden while transcoding (data_ref is empty, nothing to
-preview yet). The SPA-side consumer for `?preview=<token>` is
-a follow-up piece of work — 3pd/E proves out the token-mint
-half + lets the publisher inspect the TTL today.
+preview yet). The richer SPA-side `/?preview=<token>&dataset=<id>`
+consumer (full globe context + playback controls) is a Phase
+3pe deliverable; 3pd/E proves out the token-mint half + gives
+the publisher a working signed-asset URL today.
 
 **3pd/F — Operator-facing docs.** This CHANGELOG entry + the
 SELF_HOSTING walkthrough for the new GHA secrets the workflow

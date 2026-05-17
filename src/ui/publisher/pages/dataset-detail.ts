@@ -751,14 +751,16 @@ function defaultSleep(ms: number): Promise<void> {
  * underlying endpoint (POST .../preview) has shipped since Phase
  * 1b; 3pd/E just wires the UI.
  *
- * The minted URL points at `/?preview=<token>&dataset=<id>`. The
- * SPA-side consumer that reads those params and fetches via the
- * anonymous preview route is a follow-up piece of work in
- * `dataService.ts`; until it lands, the URL is mostly useful as
- * something a publisher can paste to a reviewer who manually
- * exercises the API. Surfacing the URL still has value now — the
- * portal proves out the token-mint half of the flow + lets the
- * publisher inspect / shorten the TTL without changing the form.
+ * The modal surfaces the backend-returned
+ * `/api/v1/datasets/{id}/preview/{token}` URL — the
+ * signed-asset endpoint that serves the HLS manifest (video)
+ * or image bytes (image) directly. The richer SPA-side
+ * `/?preview=<token>&dataset=<id>` consumer (full globe context
+ * + playback controls) is a Phase 3pe deliverable; the swap
+ * back to the SPA shape should land in the same commit that
+ * wires up the receiver so the link is never simultaneously
+ * visible-and-broken. PR #112 followup —
+ * dataset-detail.ts:807.
  */
 async function dispatchPreview(
   content: HTMLElement,
