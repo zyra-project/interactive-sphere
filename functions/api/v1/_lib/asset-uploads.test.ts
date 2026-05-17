@@ -600,4 +600,87 @@ describe('transcoding lifecycle UPDATEs are scoped to active_transcode_upload_id
     expect(row.active_transcode_upload_id).toBe(UPLOAD_B)
     expect(row.source_digest).toBe(`sha256:${'a'.repeat(64)}`)
   })
+
+  it('stampTranscodingForVideoSource applies (changes=1) on a non-transcoding row', async () => {
+    const { d1, sqlite } = makeDb()
+    // Row starts non-transcoding (the makeDb default) and carries
+    // a pre-existing content_digest from an earlier image upload —
+    // the stamp must NULL it because the row's asset is being
+    // replaced by a video.
+    sqlite
+      .prepare(`UPDATE datasets SET content_digest = ? WHERE id = ?`)
+      .run(`sha256:${'b'.repeat(64)}`, DATASET_ID)
+    const { stampTranscodingForVideoSource } = await import('./asset-uploads')
+    const changes = await stampTranscodingForVideoSource(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      '2026-04-29T12:00:00.000Z',
+    )
+    expect(changes).toBe(1)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, source_digest, content_digest
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      source_digest: string | null
+      content_digest: string | null
+    }
+    expect(row.transcoding).toBe(1)
+    expect(row.active_transcode_upload_id).toBe(UPLOAD_A)
+    expect(row.source_digest).toBe(HAPPY_DIGEST)
+    // Stale content_digest from the previous asset is cleared so
+    // it doesn't outlive the transcode window (PR #112 followup —
+    // asset-uploads.ts:404).
+    expect(row.content_digest).toBeNull()
+  })
+
+  it('stampTranscodingForVideoSource is idempotent (changes=1) when the same upload is already stamped', async () => {
+    // Retry-safety: a second /complete call for the SAME upload
+    // re-stamps the same values, which the WHERE clause permits
+    // because `active_transcode_upload_id = UPLOAD_A` matches.
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_A)
+    const { stampTranscodingForVideoSource } = await import('./asset-uploads')
+    const changes = await stampTranscodingForVideoSource(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      '2026-04-29T12:05:00.000Z',
+    )
+    expect(changes).toBe(1)
+  })
+
+  it('stampTranscodingForVideoSource is a no-op (changes=0) when a different upload owns the row', async () => {
+    // The race scenario Copilot flagged: two concurrent /complete
+    // calls both pass the route's JS-level overlap check (each
+    // sees a non-transcoding snapshot), then both UPDATE. With
+    // the SQL guard `active_transcode_upload_id IS NULL OR = ?`,
+    // only the first stamp wins — the second sees changes=0 and
+    // its caller surfaces 409 rather than launching a stale
+    // workflow.
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_B)
+    const { stampTranscodingForVideoSource } = await import('./asset-uploads')
+    const changes = await stampTranscodingForVideoSource(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      '2026-04-29T12:05:00.000Z',
+    )
+    expect(changes).toBe(0)
+    // The UPLOAD_B stamp is untouched.
+    const row = sqlite
+      .prepare(
+        `SELECT active_transcode_upload_id, source_digest FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      active_transcode_upload_id: string | null
+      source_digest: string | null
+    }
+    expect(row.active_transcode_upload_id).toBe(UPLOAD_B)
+  })
 })

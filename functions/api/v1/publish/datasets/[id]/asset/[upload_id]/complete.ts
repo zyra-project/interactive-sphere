@@ -415,16 +415,35 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     }
 
     // 1. Persist the dataset-row half (transcoding=1, +
-    //    conditional data_ref clear, + source_digest). The
-    //    asset_uploads row stays `pending` for now — that's
-    //    the cursor we'll flip after the dispatch confirms.
+    //    conditional data_ref clear, + source_digest, +
+    //    content_digest=NULL). The asset_uploads row stays
+    //    `pending` for now — that's the cursor we'll flip
+    //    after the dispatch confirms.
+    //
+    //    The stamp is conditional in SQL on
+    //    `active_transcode_upload_id IS NULL OR = uploadId`,
+    //    so it's atomic with the JS-level overlap check above:
+    //    if a concurrent /complete swapped the binding to a
+    //    different upload in the gap between our SELECT and
+    //    this UPDATE, changes=0 and we surface 409 instead of
+    //    launching a stale workflow (PR #112 followup —
+    //    asset-uploads.ts:407).
     const previousDataRef = dataset.data_ref
-    await stampTranscodingForVideoSource(
+    const stamped = await stampTranscodingForVideoSource(
       context.env.CATALOG_DB!,
       datasetId,
       upload,
       now,
     )
+    if (stamped === 0) {
+      return jsonError(
+        409,
+        'transcoding_in_progress',
+        `Dataset ${datasetId}'s active transcode binding changed between the freshness check ` +
+          `and the stamp step — a concurrent upload took over. Wait for that workflow to ` +
+          'finish (or have an operator clear the row) before starting another.',
+      )
+    }
 
     // 2. Fire the external side effect.
     try {

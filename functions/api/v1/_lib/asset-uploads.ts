@@ -388,25 +388,49 @@ export async function applyAssetAndMarkCompleted(
  * the workflow expects. The asset_uploads row stays `pending`
  * and gets flipped to `completed` only after the dispatch is
  * confirmed (see `markVideoUploadCompleted` below).
+ *
+ * Conditional WHERE clause is the atomic counterpart to the
+ * route's JS-level overlap check: stamp only if the row isn't
+ * already bound to a *different* upload's transcode. Without
+ * the SQL guard, two concurrent /complete calls could both
+ * pass the JS check (each reading a transcoding=NULL row),
+ * both UPDATE, and both dispatch — the later UPDATE wins
+ * `active_transcode_upload_id` but the earlier workflow has
+ * already been launched and becomes a stale/orphan run
+ * (PR #112 followup — asset-uploads.ts:407). Returns
+ * rows-affected; 0 means a concurrent upload won the race and
+ * the caller should surface 409 `transcoding_in_progress`.
+ *
+ * `content_digest = NULL` is part of the stamp — the row's
+ * previous asset is logically retired the moment we enter the
+ * transcoding window. Without the clear, a row that previously
+ * carried an R2 image's `content_digest` keeps that stale value
+ * during transcoding and after `clearTranscoding` runs, which
+ * would falsely advertise the new HLS bundle's bytes as having
+ * the old image's hash (PR #112 followup —
+ * asset-uploads.ts:404).
  */
 export async function stampTranscodingForVideoSource(
   db: D1Database,
   datasetId: string,
   upload: AssetUploadRow,
   now: string,
-): Promise<void> {
-  await db
+): Promise<number> {
+  const result = await db
     .prepare(
       `UPDATE datasets
          SET transcoding = 1,
              active_transcode_upload_id = ?,
              data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
              source_digest = ?,
+             content_digest = NULL,
              updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ?
+         AND (active_transcode_upload_id IS NULL OR active_transcode_upload_id = ?)`,
     )
-    .bind(upload.id, upload.claimed_digest, now, datasetId)
+    .bind(upload.id, upload.claimed_digest, now, datasetId, upload.id)
     .run()
+  return result.meta?.changes ?? 0
 }
 
 /**
