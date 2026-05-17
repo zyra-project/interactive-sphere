@@ -129,7 +129,11 @@ Five hops from publisher click to playable row:
      caption caps stay comfortable for `arrayBuffer()`) and
      409s on `digest_mismatch`.
    - Stamps the row as `transcoding=1` (a new column added in
-     migration 0011). For drafts also clears `data_ref` to
+     migration 0011) and binds it to the specific upload via
+     `active_transcode_upload_id` (added in migration 0012 — the
+     overlap-rejection and stale-callback guards in
+     `/asset/.../complete` and `/transcode-complete` both key
+     off this column). For drafts also clears `data_ref` to
      empty string; for published rows leaves `data_ref` pointing
      at the existing HLS bundle so public playback continues
      uninterrupted while the new bundle transcodes.

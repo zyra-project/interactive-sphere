@@ -584,10 +584,23 @@ Both halves are required. A misconfigured deploy fails closed:
 - Missing R2 / Access secrets on GitHub → the workflow's
   pipeline step exits non-zero with a stage-specific code (2
   download, 3 encode, 4 upload, 5 PATCH). The dataset row
-  stays flagged `transcoding=1` until you either manually clear
-  it or re-upload to trigger a fresh dispatch. The "Transcoding…"
-  badge in the portal stays visible — that's the operator's
-  signal something needs attention.
+  stays flagged `transcoding=1` and bound to the original upload
+  via `active_transcode_upload_id`. The "Transcoding…" badge
+  in the portal stays visible — that's the operator's signal
+  something needs attention.
+
+  **Recovery is operator-only:** the `/asset/.../complete`
+  route refuses a *different* upload while `transcoding=1` and
+  the active-upload binding is still set (the
+  `transcoding_in_progress` guard added in 3pd-followup/C), so
+  the publisher cannot recover by re-uploading. Clear the row
+  first via D1 — `UPDATE datasets SET transcoding = NULL,
+  active_transcode_upload_id = NULL WHERE id = '…'` — and *then*
+  the publisher can mint a fresh upload. Same operator
+  intervention applies to the WAF-challenge case below: the
+  bundle exists in R2 but the row is stuck, so either re-issue
+  the transcode-complete POST by hand (with the right Access
+  service-token headers) or clear the row and re-upload.
 
 **WAF skip rule for the transcode-complete callback.** Cloudflare
 Access service tokens (`CF-Access-Client-Id` /

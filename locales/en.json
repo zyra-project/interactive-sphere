@@ -351,6 +351,7 @@
   "publisher.datasetDetail.preview.copied": "Copied!",
   "publisher.datasetDetail.preview.copy": "Copy link",
   "publisher.datasetDetail.preview.heading": "Preview link ready",
+  "publisher.datasetDetail.preview.urlAriaLabel": "Preview URL",
   "publisher.datasetDetail.section.abstract": "Abstract",
   "publisher.datasetDetail.section.assets": "Assets",
   "publisher.datasetDetail.section.categorization": "Keywords & tags",

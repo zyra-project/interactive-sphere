@@ -178,13 +178,13 @@ function renderHeader(d: PublisherDatasetDetail, hooks: HeaderHooks): HTMLElemen
   titleRow.appendChild(editLink)
 
   // Preview button — mints a 15-minute signed token and surfaces
-  // the consumer URL so the publisher can share an unpublished
-  // draft for review. Hidden while transcoding (data_ref is empty
-  // so there'd be nothing to preview). The SPA consumer for
-  // `?preview=...` is a follow-up piece of work in dataService.ts
-  // — until it lands, the publisher's preview URL is mostly
-  // useful as something they can paste to a reviewer who manually
-  // hits the API.
+  // the backend-returned signed-asset URL
+  // (`/api/v1/datasets/{id}/preview/{token}`) so the publisher
+  // can share an unpublished draft for review. Hidden while
+  // transcoding (data_ref is empty so there'd be nothing to
+  // preview). The richer SPA-side `?preview=<token>&dataset=<id>`
+  // consumer is a Phase 3pe deliverable — see `dispatchPreview`
+  // below for the rationale.
   if (!d.transcoding) {
     const previewBtn = document.createElement('button')
     previewBtn.type = 'button'
@@ -738,14 +738,6 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 /**
- * Run a publish or retract action: ask for confirmation, POST to
- * the lifecycle endpoint, and re-render the page (with a fresh row
- * on success, or with an inline error banner on failure). The
- * heavy lifting — the audit row, the snapshot invalidation, the
- * embed enqueue — happens server-side. The portal's job here is
- * to surface the result.
- */
-/**
  * Mint a preview token + surface the resulting consumer URL in a
  * lightweight modal so the publisher can copy/share it. The
  * underlying endpoint (POST .../preview) has shipped since Phase
@@ -887,11 +879,16 @@ function openPreviewModal(
 
   // Read-only input so the publisher can select + copy by hand
   // even on browsers without a working `navigator.clipboard`.
+  // The aria-label is essential — screen-reader users entering
+  // the dialog would otherwise encounter an unlabeled text box,
+  // even though it's the primary content to copy. PR #112
+  // followup — dataset-detail.ts:urlInput a11y.
   const urlInput = document.createElement('input')
   urlInput.type = 'text'
   urlInput.className = 'publisher-modal-url'
   urlInput.readOnly = true
   urlInput.value = new URL(url, window.location.origin).toString()
+  urlInput.setAttribute('aria-label', t('publisher.datasetDetail.preview.urlAriaLabel'))
   modal.appendChild(urlInput)
 
   const actions = document.createElement('div')
@@ -973,6 +970,14 @@ function openPreviewModal(
   restoreObserver.observe(document.body, { childList: true, subtree: true })
 }
 
+/**
+ * Run a publish or retract action: ask for confirmation, POST to
+ * the lifecycle endpoint, and re-render the page (with a fresh row
+ * on success, or with an inline error banner on failure). The
+ * heavy lifting — the audit row, the snapshot invalidation, the
+ * embed enqueue — happens server-side. The portal's job here is
+ * to surface the result.
+ */
 async function dispatchAction(
   content: HTMLElement,
   id: string,

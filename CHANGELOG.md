@@ -49,12 +49,26 @@ data_ref prefix marked Deprecated. `CATALOG_PUBLISHING_TOOLS.md`
 gains the 3pd sub-phase breakdown table; `CATALOG_BACKEND_PLAN.md`
 3pd row rewritten.
 
-**3pd/A — Server-side wiring + migration 0011.** The substantial
-"already-shipped infrastructure now points at R2" sub-phase.
+**3pd/A — Server-side wiring + migrations 0011 and 0012.** The
+substantial "already-shipped infrastructure now points at R2"
+sub-phase. **Both migrations are required** for the pipeline —
+0011 introduces the transcoding flag, 0012 introduces the
+per-upload binding the overlap and stale-callback guards key
+off. Apply them in order before deploying the publisher API.
 
 - Migration 0011 adds `transcoding INTEGER` to `datasets`. Starts
   NULL, flipped to 1 while a transcode is in flight, cleared
   back to NULL by the workflow's PATCH.
+- Migration 0012 adds `active_transcode_upload_id TEXT` to
+  `datasets`. Set in lockstep with `transcoding=1` by the
+  `/asset/.../complete` stamp; cleared in lockstep by
+  `/transcode-complete` (or `revertTranscodingStamp` on
+  dispatch failure). The `/asset/.../complete` overlap check
+  and the `/transcode-complete` stale-callback check both
+  refuse to apply when this column doesn't match the caller's
+  `upload_id`, so a concurrent re-upload or a workflow run
+  dispatched against a stale binding fails closed with a
+  clear 409 instead of clobbering in-flight state.
 - `chooseTarget()` in `asset.ts` collapses to "always R2." The
   Stream branch is now dead code waiting for a follow-up cleanup
   PR; the type union stays `'r2' | 'stream'` so the deletion can
