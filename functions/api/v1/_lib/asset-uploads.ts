@@ -465,6 +465,18 @@ export async function markVideoUploadCompleted(
     .run()
 }
 
+/** Snapshot of the digest columns we capture before stamping
+ *  a transcode, so a dispatch failure can restore the row's
+ *  prior integrity metadata losslessly. Per-column null is
+ *  the same value SQLite would write — a row that genuinely
+ *  had no `content_digest` before the stamp gets that NULL
+ *  preserved through the revert. */
+export interface TranscodingStampSnapshot {
+  data_ref: string
+  content_digest: string | null
+  source_digest: string | null
+}
+
 /**
  * Compensating update for the dispatch-failure path: revert the
  * transcoding stamp set by `stampTranscodingForVideoSource` so
@@ -483,12 +495,21 @@ export async function markVideoUploadCompleted(
  * affected; a 0 means we lost the race and should log it (the
  * other upload now owns the row and our retry on the original
  * upload is a stale operation).
+ *
+ * Restores all three columns the stamp mutated: `data_ref`,
+ * `content_digest`, and `source_digest`. The earlier shape
+ * (data_ref restored, source_digest unconditionally cleared,
+ * content_digest untouched) was lossy on draft rows whose
+ * prior asset carried integrity metadata — the stamp cleared
+ * content_digest (drafts wipe the digest along with data_ref),
+ * and the revert had no way to bring it back. PR #112
+ * followup — asset-uploads.ts:revertTranscodingStamp scope.
  */
 export async function revertTranscodingStamp(
   db: D1Database,
   datasetId: string,
   upload: AssetUploadRow,
-  previousDataRef: string,
+  prior: TranscodingStampSnapshot,
   now: string,
 ): Promise<number> {
   const result = await db
@@ -497,11 +518,19 @@ export async function revertTranscodingStamp(
          SET transcoding = NULL,
              active_transcode_upload_id = NULL,
              data_ref = ?,
-             source_digest = NULL,
+             content_digest = ?,
+             source_digest = ?,
              updated_at = ?
        WHERE id = ? AND active_transcode_upload_id = ?`,
     )
-    .bind(previousDataRef, now, datasetId, upload.id)
+    .bind(
+      prior.data_ref,
+      prior.content_digest,
+      prior.source_digest,
+      now,
+      datasetId,
+      upload.id,
+    )
     .run()
   // upload row may still be pending (we hadn't marked it yet);
   // leave the status alone so a retry works.

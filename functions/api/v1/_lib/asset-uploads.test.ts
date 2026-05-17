@@ -541,7 +541,55 @@ describe('transcoding lifecycle UPDATEs are scoped to active_transcode_upload_id
     expect(row.data_ref).toBe('')
   })
 
-  it('revertTranscodingStamp applies (changes=1) when the upload still owns the row', async () => {
+  it('revertTranscodingStamp restores prior digest state losslessly (changes=1)', async () => {
+    // PR #112 followup — the prior signature only restored
+    // data_ref and unconditionally cleared source_digest, which
+    // was lossy on a draft row whose pre-stamp asset had
+    // integrity metadata. The new shape passes a snapshot of
+    // all three columns the stamp mutated.
+    const { d1, sqlite } = makeDb()
+    seedTranscodingRow(sqlite, UPLOAD_A)
+    const { revertTranscodingStamp } = await import('./asset-uploads')
+    const priorContentDigest = `sha256:${'c'.repeat(64)}`
+    const priorSourceDigest = `sha256:${'s'.repeat(64)}`
+    const changes = await revertTranscodingStamp(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      {
+        data_ref: 'r2:datasets/old/asset.png',
+        content_digest: priorContentDigest,
+        source_digest: priorSourceDigest,
+      },
+      '2026-04-29T12:05:00.000Z',
+    )
+    expect(changes).toBe(1)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, source_digest,
+                content_digest, data_ref
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      source_digest: string | null
+      content_digest: string | null
+      data_ref: string
+    }
+    expect(row.transcoding).toBeNull()
+    expect(row.active_transcode_upload_id).toBeNull()
+    // All three pre-stamp values are now restored to exactly
+    // what we passed in — the revert is genuinely lossless.
+    expect(row.data_ref).toBe('r2:datasets/old/asset.png')
+    expect(row.content_digest).toBe(priorContentDigest)
+    expect(row.source_digest).toBe(priorSourceDigest)
+  })
+
+  it('revertTranscodingStamp preserves NULL digests when the prior row had none', async () => {
+    // A fresh draft with no prior asset legitimately has both
+    // digests as NULL. The revert must round-trip NULL → NULL
+    // rather than e.g. coalescing them to the stamp's claim.
     const { d1, sqlite } = makeDb()
     seedTranscodingRow(sqlite, UPLOAD_A)
     const { revertTranscodingStamp } = await import('./asset-uploads')
@@ -549,25 +597,22 @@ describe('transcoding lifecycle UPDATEs are scoped to active_transcode_upload_id
       d1,
       DATASET_ID,
       uploadStub(UPLOAD_A),
-      'r2:videos/old/master.m3u8',
+      { data_ref: '', content_digest: null, source_digest: null },
       '2026-04-29T12:05:00.000Z',
     )
     expect(changes).toBe(1)
     const row = sqlite
       .prepare(
-        `SELECT transcoding, active_transcode_upload_id, source_digest, data_ref
-         FROM datasets WHERE id = ?`,
+        `SELECT data_ref, content_digest, source_digest FROM datasets WHERE id = ?`,
       )
       .get(DATASET_ID) as {
-      transcoding: number | null
-      active_transcode_upload_id: string | null
-      source_digest: string | null
       data_ref: string
+      content_digest: string | null
+      source_digest: string | null
     }
-    expect(row.transcoding).toBeNull()
-    expect(row.active_transcode_upload_id).toBeNull()
+    expect(row.data_ref).toBe('')
+    expect(row.content_digest).toBeNull()
     expect(row.source_digest).toBeNull()
-    expect(row.data_ref).toBe('r2:videos/old/master.m3u8')
   })
 
   it('revertTranscodingStamp is a no-op (changes=0) when another upload has taken over', async () => {
@@ -582,7 +627,7 @@ describe('transcoding lifecycle UPDATEs are scoped to active_transcode_upload_id
       d1,
       DATASET_ID,
       uploadStub(UPLOAD_A),
-      'r2:videos/old/master.m3u8',
+      { data_ref: 'r2:videos/old/master.m3u8', content_digest: null, source_digest: null },
       '2026-04-29T12:05:00.000Z',
     )
     expect(changes).toBe(0)

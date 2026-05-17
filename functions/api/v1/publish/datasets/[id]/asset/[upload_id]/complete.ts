@@ -525,7 +525,18 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     //    this UPDATE, changes=0 and we surface 409 instead of
     //    launching a stale workflow (PR #112 followup —
     //    asset-uploads.ts:407).
-    const previousDataRef = dataset.data_ref
+    // Capture the pre-stamp integrity snapshot. The stamp
+    // clears (drafts) or preserves (published) content_digest
+    // and overwrites source_digest with the new claim — without
+    // capturing the prior values here, a dispatch-failure
+    // revert can only restore data_ref and leaves the row in
+    // an inconsistent "asset present, no integrity hash" shape.
+    // PR #112 followup — asset-uploads.ts:revertTranscodingStamp.
+    const priorStampState = {
+      data_ref: dataset.data_ref,
+      content_digest: dataset.content_digest,
+      source_digest: dataset.source_digest,
+    }
     const stamped = await stampTranscodingForVideoSource(
       context.env.CATALOG_DB!,
       datasetId,
@@ -567,7 +578,7 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
           context.env.CATALOG_DB!,
           datasetId,
           upload,
-          previousDataRef,
+          priorStampState,
           new Date().toISOString(),
         )
         if (reverted === 0) {
