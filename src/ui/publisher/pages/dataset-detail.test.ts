@@ -608,7 +608,7 @@ describe('renderDatasetDetailPage', () => {
     // path — the listener should abort the controller.
     expect(fetchFn).toHaveBeenCalledTimes(1)
     window.dispatchEvent(
-      new CustomEvent('publisher:routechange', { detail: { path: '/publish/datasets' } }),
+      new CustomEvent('publisher:routechange:start', { detail: { path: '/publish/datasets' } }),
     )
     // Resolve the in-flight sleep so the loop wakes up. After
     // resuming it should observe the aborted signal and exit
@@ -616,6 +616,55 @@ describe('renderDatasetDetailPage', () => {
     sleepResolvers[0]?.()
     for (let i = 0; i < 20; i++) await Promise.resolve()
     expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts the transcode poller on routechange:start (before the destination handler renders)', async () => {
+    // Regression test for the race the previous test couldn't
+    // catch: the router fires `publisher:routechange:start`
+    // *before* the destination route handler runs, so the loop
+    // tears down before the new page can mount into `content`.
+    // Without this, a poll tick scheduled between the new page
+    // rendering and the (post-handler) `routechange` end event
+    // would `paint(content, ...)` over the freshly-mounted DOM.
+    // PR #112 followup — dataset-detail.ts:682.
+    //
+    // The check: dispatch routechange:start, paint() a sentinel
+    // marker into content (simulating the destination page
+    // rendering into the same mount), resolve the in-flight
+    // sleep so the loop wakes up — it must NOT replace our
+    // sentinel.
+    const transcodingRow = dataset({ published_at: null, transcoding: 1 })
+    const fetchFn = vi.fn().mockResolvedValue(detailResponse(transcodingRow))
+    const sleepResolvers: Array<() => void> = []
+    const sleep = (): Promise<void> =>
+      new Promise<void>(resolve => {
+        sleepResolvers.push(resolve)
+      })
+    await renderDatasetDetailPage(mount, '01ABC', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      sleep,
+      transcodePollIntervalMs: 1,
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    // Step 1: fire routechange:start as the router would.
+    window.dispatchEvent(
+      new CustomEvent('publisher:routechange:start', {
+        detail: { path: '/publish/datasets' },
+      }),
+    )
+    // Step 2: the new page renders into the same content mount.
+    mount.replaceChildren(Object.assign(document.createElement('div'), {
+      className: 'sentinel-new-page',
+      textContent: 'new page content',
+    }))
+    // Step 3: resolve the in-flight sleep so the loop wakes up.
+    // The aborted controller should make it exit without
+    // refetching or repainting.
+    sleepResolvers[0]?.()
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    // The sentinel is still there — the loop did NOT paint over it.
+    expect(mount.querySelector('.sentinel-new-page')).not.toBeNull()
   })
 
   it('keeps the transcode poller running across a routechange that lands on the same path', async () => {
@@ -636,7 +685,7 @@ describe('renderDatasetDetailPage', () => {
     // Routechange that says "we're still here" — listener should
     // be a no-op.
     window.dispatchEvent(
-      new CustomEvent('publisher:routechange', {
+      new CustomEvent('publisher:routechange:start', {
         detail: { path: '/publish/datasets/01ABC' },
       }),
     )

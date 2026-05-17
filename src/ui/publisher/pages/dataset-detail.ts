@@ -25,7 +25,7 @@ import {
   type PublisherValidationError,
 } from '../api'
 import { buildErrorCard, type ErrorCardDetails } from '../components/error-card'
-import { ROUTE_CHANGE_EVENT, type RouteChangeDetail } from '../router'
+import { ROUTE_CHANGE_START_EVENT, type RouteChangeDetail } from '../router'
 import type {
   DatasetDetailResponse,
   PublisherDatasetDetail,
@@ -669,9 +669,13 @@ function startTranscodePolling(
   activeTranscodePolls.set(content, controller)
 
   // Cancel the loop if the router navigates away from our path.
-  // The poll loop also calls paint() on each tick, which would
-  // otherwise stomp on whatever page the router just mounted into
-  // the same `content` element.
+  // Listen on the *start* event (fired before the destination
+  // handler runs) — listening on ROUTE_CHANGE_EVENT (fired after
+  // the handler resolves) leaves a race window where a poll tick
+  // can land between the new page rendering and the listener
+  // tearing the loop down, and the tick's `paint(content, ...)`
+  // clobbers the freshly-mounted DOM. PR #112 followup —
+  // dataset-detail.ts:682.
   const watchedPath = detailPathFor(id)
   const onRouteChange = (event: Event): void => {
     const detail = (event as CustomEvent<RouteChangeDetail>).detail
@@ -679,7 +683,7 @@ function startTranscodePolling(
       stopTranscodePolling(content)
     }
   }
-  window.addEventListener(ROUTE_CHANGE_EVENT, onRouteChange)
+  window.addEventListener(ROUTE_CHANGE_START_EVENT, onRouteChange)
   activeTranscodeRouteListeners.set(content, onRouteChange)
 
   void runTranscodePollLoop(content, id, options, controller.signal)
@@ -690,7 +694,7 @@ function stopTranscodePolling(content: HTMLElement): void {
   activeTranscodePolls.delete(content)
   const listener = activeTranscodeRouteListeners.get(content)
   if (listener) {
-    window.removeEventListener(ROUTE_CHANGE_EVENT, listener)
+    window.removeEventListener(ROUTE_CHANGE_START_EVENT, listener)
     activeTranscodeRouteListeners.delete(content)
   }
 }
