@@ -799,12 +799,17 @@ async function dispatchPreview(
     renderError(content, fresh.kind)
     return
   }
-  // Build the SPA-side URL. `result.data.url` is the API path the
-  // SPA's preview consumer fetches; the publisher's tab opens the
-  // SPA at `?preview=<token>&dataset=<id>` so the consumer
-  // (3pd-followup or 3pe) can pick it up.
-  const previewUrl = `/?preview=${encodeURIComponent(result.data.token)}&dataset=${encodeURIComponent(id)}`
-  openPreviewModal(content, previewUrl, result.data.expires_in)
+  // Use the API URL the backend hands us — that returns the raw
+  // signed asset (HLS master.m3u8, image bytes, etc.) and works
+  // today. The earlier `/?preview=<token>&dataset=<id>` shape
+  // assumed an SPA-side consumer that hasn't shipped yet (slated
+  // for Phase 3pe), so publishers were copying a link that
+  // silently dropped its query string on the floor.
+  // PR #112 followup — dataset-detail.ts:807. When the SPA
+  // consumer lands, swap back to the SPA-style URL in the same
+  // commit that wires up the receiver so the link is never
+  // simultaneously visible-and-broken.
+  openPreviewModal(content, result.data.url, result.data.expires_in)
 }
 
 /**
