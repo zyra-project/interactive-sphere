@@ -29,6 +29,7 @@ import {
 import { buildErrorCard, type ErrorCardDetails } from './error-card'
 import { attachToolbar, renderMarkdownToolbar } from './markdown-toolbar'
 import { renderChipInput } from './chip-input'
+import { renderAssetUploader } from './asset-uploader'
 import { renderMarkdown } from '../../../services/markdownRenderer'
 import type { PublisherDatasetDetail } from '../types'
 
@@ -373,6 +374,12 @@ function radioGroup(opts: {
   required: boolean
   error: PublisherValidationError | null
   onChange: (v: string) => void
+  /** Renders the fieldset with `disabled` set on every input so
+   *  the user can't change the selection. Used by the format
+   *  field while a transcode is in flight — the server-side
+   *  guard would 409 the change anyway, and disabling here is a
+   *  clearer signal than "submit-then-error". PR #112 followup. */
+  disabled?: boolean
 }): HTMLElement {
   const fieldset = document.createElement('fieldset')
   fieldset.className = 'publisher-form-fieldset'
@@ -403,6 +410,7 @@ function radioGroup(opts: {
     radio.name = opts.name
     radio.value = o.value
     radio.checked = o.value === opts.value
+    if (opts.disabled) radio.disabled = true
     radio.addEventListener('change', () => opts.onChange(o.value))
     wrap.appendChild(radio)
 
@@ -797,6 +805,14 @@ interface RenderContext {
   /** Existing dataset id (edit mode). Used to build the PUT URL
    *  and the post-save back-navigation target. */
   datasetId: string | null
+  /** True when the row is currently mid-transcode (the parent
+   *  detail page is also polling). The form swaps the asset
+   *  uploader + manual ref input for a read-only notice — the
+   *  server-side `transcoding_in_progress` guard would refuse a
+   *  second /asset/.../complete dispatch anyway, but disabling
+   *  the affordance here gives the publisher a clearer signal
+   *  than "submit-then-error". */
+  isTranscoding: boolean
   fetchFn: typeof fetch
   sleep: (ms: number) => Promise<void>
   navigate: (url: string) => void
@@ -896,6 +912,13 @@ function renderForm(
       value: state.format,
       required: true,
       error: findError(state.errors, 'format'),
+      // Format is asset-coupled: changing it mid-transcode would
+      // leave the row's declared format contradicting the HLS
+      // data_ref the workflow is about to write. The server
+      // rejects the change with 409 `transcoding_in_progress`;
+      // disabling here is the publisher-friendly counterpart.
+      // PR #112 followup — dataset-form.ts:937.
+      disabled: ctx.mode === 'edit' && ctx.datasetId !== null && ctx.isTranscoding,
       onChange: v => {
         state.format = v
         update()
@@ -918,24 +941,131 @@ function renderForm(
     }),
   )
 
-  // data_ref is required by `validateForPublish` server-side
-  // but draft-saveable empty. Interim manual input until the
-  // 3pd asset uploader replaces it. Placeholder shows the four
-  // accepted shapes so the publisher doesn't have to guess.
-  identityCard.appendChild(
-    inputField({
-      id: 'dataset-data-ref',
-      labelKey: 'publisher.datasetForm.field.dataRef',
-      required: false,
-      value: state.dataRef,
-      placeholder: t('publisher.datasetForm.placeholder.dataRef'),
-      helpKey: 'publisher.datasetForm.help.dataRef',
-      error: findError(state.errors, 'data_ref'),
-      onChange: v => {
-        state.dataRef = v
-      },
-    }),
-  )
+  // data_ref is required by `validateForPublish` server-side but
+  // draft-saveable empty. In create mode the dataset id doesn't
+  // exist yet — the uploader needs an id to scope its
+  // /asset endpoint against — so we keep the manual ref input as
+  // a fallback for `vimeo:` / external URLs. In edit mode we hand
+  // off to the asset uploader (3pd/C); the manual ref input stays
+  // available for the non-upload paths (legacy / external).
+  if (ctx.mode === 'edit' && ctx.datasetId && ctx.isTranscoding) {
+    // Row is currently mid-transcode — the parent detail page is
+    // polling and will navigate the publisher back here once the
+    // workflow finishes. Replace both the uploader and the
+    // manual ref input with a read-only notice so the publisher
+    // doesn't try to start a second upload (which the server-side
+    // `transcoding_in_progress` guard would 409 anyway) or paste
+    // a manual ref into a row whose data_ref is about to be
+    // overwritten by /transcode-complete. Mirrors the publish-
+    // button gate on the detail page.
+    const refDisplay = document.createElement('div')
+    refDisplay.className = 'publisher-field'
+    const refLabel = document.createElement('span')
+    refLabel.className = 'publisher-field-label'
+    refLabel.textContent = t('publisher.datasetForm.field.dataRef')
+    refDisplay.appendChild(refLabel)
+    const notice = document.createElement('p')
+    notice.className = 'publisher-form-notice'
+    notice.setAttribute('role', 'status')
+    notice.textContent = t('publisher.datasetForm.transcoding.notice')
+    refDisplay.appendChild(notice)
+    if (state.dataRef) {
+      const current = document.createElement('p')
+      current.className = 'publisher-asset-uploader-current'
+      current.textContent = state.dataRef
+      refDisplay.appendChild(current)
+    }
+    identityCard.appendChild(refDisplay)
+  } else if (ctx.mode === 'edit' && ctx.datasetId) {
+    // Edit mode mounts BOTH the guided uploader and the manual
+    // text input. The uploader covers the "I have an MP4 / PNG
+    // on my disk" case; the manual input covers the
+    // "swap to a `vimeo:` legacy URL or paste an existing
+    // `r2:videos/...` ref" case, which the uploader can't
+    // express (its flow always uploads bytes). Fix for PR #112
+    // Copilot #5 — the prior single-uploader layout left
+    // editors no way to change a `vimeo:` / `url:` /
+    // already-transcoded `r2:` ref short of round-tripping
+    // through the API.
+    const uploaderWrap = document.createElement('div')
+    uploaderWrap.className = 'publisher-field'
+    const label = document.createElement('span')
+    label.className = 'publisher-field-label'
+    label.textContent = t('publisher.datasetForm.field.dataRef')
+    uploaderWrap.appendChild(label)
+    uploaderWrap.appendChild(
+      renderAssetUploader({
+        datasetId: ctx.datasetId,
+        format: state.format,
+        currentDataRef: state.dataRef || null,
+        navigate: ctx.navigate,
+        fetchFn: ctx.fetchFn,
+        sleep: ctx.sleep,
+        onUploaded: outcome => {
+          // On a direct upload (image), the server already wrote
+          // `data_ref` to the row. Mirror the field-state so a
+          // subsequent form save doesn't clobber it with an empty
+          // string. On a video upload the server stamped
+          // `transcoding=1` and cleared data_ref — flip
+          // `ctx.isTranscoding` and rerender so the manual ref
+          // input + Save button are replaced with the read-only
+          // transcoding notice. Without the rerender the publisher
+          // could type a fresh data_ref into the still-mounted
+          // manual input and Save would clobber the in-flight
+          // transcode's eventual master.m3u8 — PR #112 followup
+          // (dataset-form.ts:1007).
+          if (outcome.mode === 'direct') {
+            state.dataRef = outcome.dataRef
+            // Reflect the new ref in the manual input below so
+            // the publisher sees what the row now points at.
+            const manual = content.querySelector<HTMLInputElement>('#dataset-data-ref')
+            if (manual) manual.value = outcome.dataRef
+          } else {
+            state.dataRef = ''
+            ctx.isTranscoding = true
+            update()
+          }
+        },
+      }),
+    )
+    identityCard.appendChild(uploaderWrap)
+    // Manual ref input — for editors who want to swap to a
+    // legacy `vimeo:` / `url:` ref or paste an already-encoded
+    // `r2:videos/...` value without re-uploading bytes.
+    identityCard.appendChild(
+      inputField({
+        id: 'dataset-data-ref',
+        labelKey: 'publisher.datasetForm.field.dataRefManual',
+        required: false,
+        value: state.dataRef,
+        placeholder: t('publisher.datasetForm.placeholder.dataRef'),
+        helpKey: 'publisher.datasetForm.help.dataRefManual',
+        error: findError(state.errors, 'data_ref'),
+        onChange: v => {
+          state.dataRef = v
+        },
+      }),
+    )
+  } else {
+    // Create-mode fallback — the publisher can still paste a
+    // `vimeo:` ref or an external URL by hand. Once the draft
+    // saves and they navigate to the edit page, the uploader
+    // shows up.
+    identityCard.appendChild(
+      inputField({
+        id: 'dataset-data-ref',
+        labelKey: 'publisher.datasetForm.field.dataRef',
+        required: false,
+        value: state.dataRef,
+        placeholder: t('publisher.datasetForm.placeholder.dataRef'),
+        helpKey: 'publisher.datasetForm.help.dataRef',
+        error: findError(state.errors, 'data_ref'),
+        onChange: v => {
+          state.dataRef = v
+        },
+      }),
+    )
+  }
 
   identityCard.appendChild(
     inputField({
@@ -1202,6 +1332,7 @@ export function renderDatasetForm(
   renderForm(content, state, {
     mode: options.mode,
     datasetId: options.initial?.id ?? null,
+    isTranscoding: !!options.initial?.transcoding,
     fetchFn: options.fetchFn ?? globalThis.fetch,
     sleep: options.sleep ?? (ms => new Promise(r => setTimeout(r, ms))),
     navigate:

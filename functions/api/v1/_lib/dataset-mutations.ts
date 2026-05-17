@@ -466,6 +466,70 @@ export async function updateDataset(
 
   const db = env.CATALOG_DB!
 
+  // Asset-coupled field guard: refuse `format` or `data_ref`
+  // mutations while the row is mid-transcode. Without these an
+  // editor could
+  //   • swap `video/mp4` → `image/png` and end up with the
+  //     workflow's eventual HLS data_ref contradicting the new
+  //     format, or
+  //   • paste a manual `vimeo:` / `url:` / `r2:videos/...`
+  //     value into data_ref that the workflow's
+  //     /transcode-complete callback will overwrite as soon as
+  //     it finishes (and which any /publish or /preview hit
+  //     between the manual edit and the callback would
+  //     transiently surface).
+  // The dataset form's UI gate already prevents both through
+  // the supported path (the format radio is disabled in /W,
+  // the data_ref input is replaced by a read-only notice in /Q),
+  // but the server is the authoritative check — a direct API
+  // call could otherwise bypass the UI. Both rejections share
+  // the same 409 envelope so the client treats them uniformly.
+  // PR #112 followup — dataset-form.ts:937 (server-side
+  // companion) + dataset-mutations.ts (data_ref extension).
+  if (body.format !== undefined || body.data_ref !== undefined) {
+    const current = await db
+      .prepare('SELECT format, data_ref, transcoding FROM datasets WHERE id = ?')
+      .bind(id)
+      .first<{ format: string; data_ref: string; transcoding: number | null }>()
+    if (current?.transcoding === 1) {
+      if (body.format !== undefined && body.format !== current.format) {
+        return {
+          ok: false,
+          status: 409,
+          errors: [
+            {
+              field: 'format',
+              code: 'transcoding_in_progress',
+              message:
+                'Cannot change format while a video transcode is in flight — ' +
+                'the workflow will write a video data_ref into this row when it ' +
+                'finishes, which would contradict the new format. Wait for the ' +
+                '"Transcoding…" badge to clear, then update format.',
+            },
+          ],
+        }
+      }
+      if (body.data_ref !== undefined && body.data_ref !== current.data_ref) {
+        return {
+          ok: false,
+          status: 409,
+          errors: [
+            {
+              field: 'data_ref',
+              code: 'transcoding_in_progress',
+              message:
+                'Cannot change data_ref while a video transcode is in flight — ' +
+                'the workflow will overwrite it with the new HLS bundle path ' +
+                'when it finishes, and a /publish or /preview hit before that ' +
+                'callback would transiently surface the manual value. Wait for ' +
+                'the "Transcoding…" badge to clear, then update data_ref.',
+            },
+          ],
+        }
+      }
+    }
+  }
+
   const sets: string[] = []
   const binds: unknown[] = []
   function set(col: string, v: unknown): void {
@@ -602,6 +666,33 @@ export async function publishDataset(
       ok: false,
       status: 404,
       errors: [{ field: 'id', code: 'not_found', message: `Dataset ${id} not found.` }],
+    }
+  }
+
+  // Refuse to publish a row whose video source is still being
+  // transcoded. The detail page's UI gate already disables the
+  // Publish button while `transcoding=1`, but a direct API
+  // POST or a CLI call could bypass that — this server-side
+  // check is the authoritative gate. For a row whose
+  // `data_ref` is already pointing at a playable bundle (the
+  // re-upload case on a published / retracted row), publishing
+  // mid-transcode would also point public clients at the OLD
+  // bundle even though the row's metadata is mid-flip; cleaner
+  // to require the transcode to finish first.
+  if (row.transcoding) {
+    return {
+      ok: false,
+      status: 409,
+      errors: [
+        {
+          field: 'transcoding',
+          code: 'transcoding_in_progress',
+          message:
+            'Cannot publish while a video transcode is in flight. ' +
+            'Wait for the workflow to finish and the "Transcoding…" ' +
+            'badge to clear, then publish.',
+        },
+      ],
     }
   }
 
