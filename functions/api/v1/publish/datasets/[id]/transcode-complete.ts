@@ -230,8 +230,17 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
     await invalidateSnapshot(context.env)
   }
 
+  // Audit lists every column `clearTranscoding` mutates so the
+  // operator-facing history captures the full server-managed
+  // state change, not just the publisher-visible columns. The
+  // earlier list (`data_ref`, `transcoding`) omitted the two
+  // companions: `active_transcode_upload_id` (cleared in
+  // lockstep with `transcoding`) and `content_digest` (cleared
+  // atomically with the data_ref swap — HLS bundles don't
+  // carry a single digest). PR #112 followup —
+  // transcode-complete.ts audit completeness.
   await writeDatasetAudit(db, publisher, 'dataset.update', id, {
-    fields: ['data_ref', 'transcoding'],
+    fields: ['data_ref', 'transcoding', 'active_transcode_upload_id', 'content_digest'],
     reason: 'transcode_complete',
     upload_id: validated.upload_id,
   })

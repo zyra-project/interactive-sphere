@@ -197,7 +197,15 @@ describe('POST .../transcode-complete — happy path', () => {
       upload_id: string
     }
     expect(meta.reason).toBe('transcode_complete')
-    expect(meta.fields).toEqual(['data_ref', 'transcoding'])
+    // Audit metadata lists every server-managed column
+    // clearTranscoding mutates — PR #112 followup
+    // (transcode-complete.ts audit completeness).
+    expect(meta.fields).toEqual([
+      'data_ref',
+      'transcoding',
+      'active_transcode_upload_id',
+      'content_digest',
+    ])
     expect(meta.upload_id).toBe(uploadId)
   })
 
