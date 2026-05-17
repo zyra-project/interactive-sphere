@@ -765,6 +765,138 @@ describe('POST .../asset/{upload_id}/complete — refusals', () => {
     expect(body.transcoding).toBe(false)
   })
 
+  it('recovers a stuck-pending upload mid-transcode without re-dispatching', async () => {
+    // PR #112 Copilot followup (complete.ts:486): the original
+    // ordering "stamp → dispatch → mark" leaves the asset_uploads
+    // row `pending` if the final mark step fails after the
+    // dispatch fired. A naive retry would skip the top-of-handler
+    // idempotent branch (which keys on status='completed') and
+    // re-enter the stamp+dispatch flow — launching a duplicate
+    // workflow. The recovery branch detects "this upload already
+    // owns the active binding" and just marks + returns
+    // `transcoding: true, recovered: true` without firing
+    // another dispatch.
+    //
+    // The test omits GITHUB_TOKEN/REPO so a fall-through to the
+    // dispatch path WOULD fail with 503 github_dispatch_unconfigured.
+    // A 202 with `recovered: true` proves we short-circuited
+    // before reaching dispatch — duplicate-workflow guard.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+      // No GITHUB_TOKEN / GITHUB_DISPATCH_REPO — dispatch would
+      // throw `github_dispatch_unconfigured` if we ever reached it.
+    }
+    const uploadId = 'Z'.repeat(26)
+    insertPending(sqlite, {
+      uploadId,
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/${uploadId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    // Simulate the "stamp + dispatch succeeded; mark failed" state:
+    // upload row stays pending, dataset row is stamped for THIS upload.
+    sqlite
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = 1, active_transcode_upload_id = ?, source_digest = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(uploadId, HELLO_DIGEST, '2026-04-29T12:00:00.000Z', datasetId)
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId }))
+    expect(res.status).toBe(202)
+    const body = await readJson<{
+      recovered: boolean
+      transcoding: boolean
+      upload: { status: string }
+    }>(res)
+    expect(body.recovered).toBe(true)
+    expect(body.transcoding).toBe(true)
+    expect(body.upload.status).toBe('completed')
+    // Asset_uploads row is now correctly marked completed.
+    const row = sqlite
+      .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+      .get(uploadId) as { status: string }
+    expect(row.status).toBe('completed')
+    // Dataset row is unchanged — still transcoding under THIS upload.
+    const dsRow = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id FROM datasets WHERE id = ?`,
+      )
+      .get(datasetId) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+    }
+    expect(dsRow.transcoding).toBe(1)
+    expect(dsRow.active_transcode_upload_id).toBe(uploadId)
+  })
+
+  it('recovers a stuck-pending upload after /transcode-complete already ran', async () => {
+    // Companion to the test above: the mark step can fail
+    // arbitrarily late. If the workflow has already finished
+    // and /transcode-complete cleared the row in the meantime,
+    // the retry should still recover — just mark the upload
+    // completed and report `transcoding: false`. The match is
+    // keyed on `data_ref` pointing at THIS upload's master.m3u8;
+    // a different upload's bundle would fall through and
+    // attempt to re-stamp (which would then be caught by the
+    // existing overlap check or atomic-stamp guard).
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+    }
+    const uploadId = 'W'.repeat(26)
+    insertPending(sqlite, {
+      uploadId,
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/${uploadId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    // Post-/transcode-complete state: transcoding cleared,
+    // data_ref points at THIS upload's master.m3u8. Upload row
+    // somehow stuck pending (mark step died).
+    sqlite
+      .prepare(
+        `UPDATE datasets
+           SET transcoding = NULL,
+               active_transcode_upload_id = NULL,
+               data_ref = ?,
+               updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        `r2:videos/${datasetId}/${uploadId}/master.m3u8`,
+        '2026-04-29T12:30:00.000Z',
+        datasetId,
+      )
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId }))
+    expect(res.status).toBe(200)
+    const body = await readJson<{
+      recovered: boolean
+      transcoding: boolean
+      upload: { status: string }
+    }>(res)
+    expect(body.recovered).toBe(true)
+    expect(body.transcoding).toBe(false)
+    expect(body.upload.status).toBe('completed')
+    const row = sqlite
+      .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+      .get(uploadId) as { status: string }
+    expect(row.status).toBe('completed')
+  })
+
   it('fails closed with 500 unknown_target when upload.target is corrupted', async () => {
     const { sqlite, datasetId, kv } = setupEnv()
     const env = {

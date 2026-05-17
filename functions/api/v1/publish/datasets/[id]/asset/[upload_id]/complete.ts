@@ -414,6 +414,71 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
       )
     }
 
+    // Post-dispatch recovery: if a prior /complete for THIS
+    // upload already stamped + dispatched but failed at the
+    // markVideoUploadCompleted step (network blip, transient
+    // D1 error), the asset_uploads row stays `pending` and the
+    // top-of-handler idempotent branch (which keys on
+    // status='completed') doesn't fire. Without the recovery
+    // check below, the retry would re-stamp (a no-op) and
+    // **re-dispatch the workflow** — duplicate runs that the
+    // /transcode-complete handler can only reject after the
+    // fact via the active-upload-id mismatch guard. PR #112
+    // followup — complete.ts:486.
+    //
+    // Two states reach this branch:
+    //
+    //   1. transcoding=1 + active=uploadId — the dispatch fired
+    //      and the workflow is still running. Just complete the
+    //      mark step and return `transcoding: true`.
+    //
+    //   2. transcoding=NULL + data_ref points at this upload's
+    //      master.m3u8 — the workflow already finished and
+    //      /transcode-complete cleared the row. We're cleaning
+    //      up after a mark step that died mid-flight. Return
+    //      `transcoding: false` so the client knows the bundle
+    //      is live.
+    //
+    // Both branches just mark + return; neither re-fires the
+    // dispatch. The rare double-failure case (stamp succeeded,
+    // dispatch failed, revert also failed) leaves the row in
+    // state #1 with no workflow running and requires operator
+    // intervention to clear via /transcode-complete or a manual
+    // D1 update — that's an operator alert, not a retry hazard.
+    // Suffix-match `/${uploadId}/master.m3u8` rather than
+    // constructing the full key — `buildVideoBundleMasterKey`
+    // strict-validates uploadId as a ULID, but this state check
+    // shouldn't reject a row just because the recovery codepath
+    // doesn't recognise the id shape. The suffix is unique
+    // because the route is keyed by datasetId (so a data_ref on
+    // a different dataset can't appear here) and upload IDs are
+    // full ULIDs in production (substring collisions astronomical).
+    const completedSuffix = `/${uploadId}/master.m3u8`
+    const alreadyStamped =
+      dataset.transcoding === 1 && dataset.active_transcode_upload_id === uploadId
+    const alreadyCompleted =
+      !dataset.transcoding && (dataset.data_ref ?? '').endsWith(completedSuffix)
+    if (alreadyStamped || alreadyCompleted) {
+      await markVideoUploadCompleted(context.env.CATALOG_DB!, uploadId, now)
+      const refreshed = await context.env.CATALOG_DB!
+        .prepare(`SELECT * FROM datasets WHERE id = ?`)
+        .bind(datasetId)
+        .first<DatasetRow>()
+      return new Response(
+        JSON.stringify({
+          dataset: refreshed ?? dataset,
+          upload: { ...upload, status: 'completed', completed_at: now },
+          verified_digest: verifiedDigest,
+          transcoding: alreadyStamped,
+          recovered: true,
+        }),
+        {
+          status: alreadyStamped ? 202 : 200,
+          headers: { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'private, no-store' },
+        },
+      )
+    }
+
     // 1. Persist the dataset-row half (transcoding=1, +
     //    conditional data_ref clear, + source_digest, +
     //    content_digest=NULL). The asset_uploads row stays
