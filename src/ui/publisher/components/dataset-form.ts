@@ -374,6 +374,12 @@ function radioGroup(opts: {
   required: boolean
   error: PublisherValidationError | null
   onChange: (v: string) => void
+  /** Renders the fieldset with `disabled` set on every input so
+   *  the user can't change the selection. Used by the format
+   *  field while a transcode is in flight — the server-side
+   *  guard would 409 the change anyway, and disabling here is a
+   *  clearer signal than "submit-then-error". PR #112 followup. */
+  disabled?: boolean
 }): HTMLElement {
   const fieldset = document.createElement('fieldset')
   fieldset.className = 'publisher-form-fieldset'
@@ -404,6 +410,7 @@ function radioGroup(opts: {
     radio.name = opts.name
     radio.value = o.value
     radio.checked = o.value === opts.value
+    if (opts.disabled) radio.disabled = true
     radio.addEventListener('change', () => opts.onChange(o.value))
     wrap.appendChild(radio)
 
@@ -905,6 +912,13 @@ function renderForm(
       value: state.format,
       required: true,
       error: findError(state.errors, 'format'),
+      // Format is asset-coupled: changing it mid-transcode would
+      // leave the row's declared format contradicting the HLS
+      // data_ref the workflow is about to write. The server
+      // rejects the change with 409 `transcoding_in_progress`;
+      // disabling here is the publisher-friendly counterpart.
+      // PR #112 followup — dataset-form.ts:937.
+      disabled: ctx.mode === 'edit' && ctx.datasetId !== null && ctx.isTranscoding,
       onChange: v => {
         state.format = v
         update()

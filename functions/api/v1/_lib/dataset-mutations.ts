@@ -466,6 +466,41 @@ export async function updateDataset(
 
   const db = env.CATALOG_DB!
 
+  // Asset-coupled field guard: refuse a `format` mutation while
+  // the row is mid-transcode. Without it an editor could swap
+  // `video/mp4` → `image/png` while the GHA workflow is still
+  // running, and the eventual /transcode-complete callback would
+  // write an HLS `data_ref` into a row that now declares an
+  // image format. The dataset form's UI gate (the read-only
+  // notice when ctx.isTranscoding is true) already prevents this
+  // through the supported path, but the server is the
+  // authoritative check — a direct API call could otherwise
+  // bypass the UI. PR #112 followup — dataset-form.ts:937
+  // (server-side companion to the UI lock added in /Q).
+  if (body.format !== undefined) {
+    const current = await db
+      .prepare('SELECT format, transcoding FROM datasets WHERE id = ?')
+      .bind(id)
+      .first<{ format: string; transcoding: number | null }>()
+    if (current?.transcoding === 1 && body.format !== current.format) {
+      return {
+        ok: false,
+        status: 409,
+        errors: [
+          {
+            field: 'format',
+            code: 'transcoding_in_progress',
+            message:
+              'Cannot change format while a video transcode is in flight — ' +
+              'the workflow will write a video data_ref into this row when it ' +
+              'finishes, which would contradict the new format. Wait for the ' +
+              '"Transcoding…" badge to clear, then update format.',
+          },
+        ],
+      }
+    }
+  }
+
   const sets: string[] = []
   const binds: unknown[] = []
   function set(col: string, v: unknown): void {
