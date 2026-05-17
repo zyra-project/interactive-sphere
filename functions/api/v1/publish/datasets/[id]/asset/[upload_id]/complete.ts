@@ -466,19 +466,30 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
     // state #1 with no workflow running and requires operator
     // intervention to clear via /transcode-complete or a manual
     // D1 update — that's an operator alert, not a retry hazard.
-    // Suffix-match `/${uploadId}/master.m3u8` rather than
-    // constructing the full key — `buildVideoBundleMasterKey`
-    // strict-validates uploadId as a ULID, but this state check
-    // shouldn't reject a row just because the recovery codepath
-    // doesn't recognise the id shape. The suffix is unique
-    // because the route is keyed by datasetId (so a data_ref on
-    // a different dataset can't appear here) and upload IDs are
-    // full ULIDs in production (substring collisions astronomical).
-    const completedSuffix = `/${uploadId}/master.m3u8`
+    // Exact equality against the constructed expected ref —
+    // matches both dataset id AND upload id, so a manually-edited
+    // data_ref pointing at a different dataset's bundle (the
+    // generic dataset PUT path doesn't forbid raw `r2:videos/...`
+    // values, only the `transcoding` column) can't accidentally
+    // pass the recovery check. The earlier suffix-only match
+    // (`/${uploadId}/master.m3u8`) would have done so, which
+    // Copilot flagged as a "mark upload completed without ever
+    // dispatching the transcode" hazard. PR #112 followup —
+    // complete.ts (suffix → strict-equality).
+    //
+    // Built via string concatenation rather than
+    // `buildVideoBundleMasterKey()` because that helper
+    // strict-validates uploadId as a 26-char ULID and would throw
+    // on the legacy short-id test fixtures elsewhere in this
+    // suite. The state check shouldn't reject a row purely on id
+    // shape; production upload ids are full ULIDs, the test
+    // fixtures for *this* branch use full ULIDs too, and any other
+    // upload-id shape simply won't match a real `data_ref` value.
+    const expectedCompletedRef = `r2:videos/${datasetId}/${uploadId}/master.m3u8`
     const alreadyStamped =
       dataset.transcoding === 1 && dataset.active_transcode_upload_id === uploadId
     const alreadyCompleted =
-      !dataset.transcoding && (dataset.data_ref ?? '').endsWith(completedSuffix)
+      !dataset.transcoding && dataset.data_ref === expectedCompletedRef
     if (alreadyStamped || alreadyCompleted) {
       await markVideoUploadCompleted(context.env.CATALOG_DB!, uploadId, now)
       const refreshed = await context.env.CATALOG_DB!

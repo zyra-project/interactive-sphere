@@ -902,6 +902,65 @@ describe('POST .../asset/{upload_id}/complete — refusals', () => {
     expect(row.status).toBe('completed')
   })
 
+  it('alreadyCompleted recovery does NOT match a data_ref pointing at a different dataset', async () => {
+    // PR #112 followup — closes the suffix-match attack vector
+    // Copilot flagged. The earlier check matched any data_ref
+    // ending in `/${uploadId}/master.m3u8`, including a manually-
+    // edited value pointing at a *different* dataset's bundle
+    // (the generic dataset PUT path doesn't forbid raw
+    // `r2:videos/...` data_refs). Such a match would have let
+    // /complete mark the upload completed without ever dispatching
+    // the transcode. The fix uses strict equality against the
+    // ref constructed from this route's datasetId + uploadId.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      CATALOG_R2: makeBucket(HELLO_BYTES.buffer as ArrayBuffer),
+      // No GITHUB_TOKEN: a fall-through to the dispatch path
+      // would 503. We want the route to fall through to the
+      // normal stamp + dispatch flow (not the recovery branch),
+      // and then 503 on the missing GitHub config — that proves
+      // the recovery check rejected the impostor data_ref.
+    }
+    const uploadId = 'V'.repeat(26)
+    insertPending(sqlite, {
+      uploadId,
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/${uploadId}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+    })
+    // Plant a data_ref that suffix-matches but points at a
+    // DIFFERENT dataset's master.m3u8. Old code would have
+    // recovered + marked completed without dispatching; new
+    // code falls through.
+    const otherDatasetId = 'DS999' + 'A'.repeat(21)
+    sqlite
+      .prepare(`UPDATE datasets SET data_ref = ?, transcoding = NULL WHERE id = ?`)
+      .run(
+        `r2:videos/${otherDatasetId}/${uploadId}/master.m3u8`,
+        datasetId,
+      )
+
+    const res = await completeHandler(ctx({ env, datasetId, uploadId }))
+    // Not 200 with recovered:true — instead the route falls
+    // through to the normal video stamp + dispatch flow, which
+    // 503s on the absent GitHub config. That's the proof point:
+    // the impostor data_ref did NOT trip the recovery branch.
+    expect(res.status).toBe(503)
+    const body = await readJson<{ error: string }>(res)
+    expect(body.error).toBe('github_dispatch_unconfigured')
+    // The upload row stayed pending — we did not mark it
+    // completed on the strength of a forged data_ref.
+    const row = sqlite
+      .prepare(`SELECT status FROM asset_uploads WHERE id = ?`)
+      .get(uploadId) as { status: string }
+    expect(row.status).toBe('pending')
+  })
+
   it('fails closed with 500 unknown_target when upload.target is corrupted', async () => {
     const { sqlite, datasetId, kv } = setupEnv()
     const env = {
