@@ -992,8 +992,14 @@ function renderForm(
           // `data_ref` to the row. Mirror the field-state so a
           // subsequent form save doesn't clobber it with an empty
           // string. On a video upload the server stamped
-          // `transcoding=1` and cleared data_ref — the parent
-          // detail page picks up the row + starts polling in 3pd/D.
+          // `transcoding=1` and cleared data_ref — flip
+          // `ctx.isTranscoding` and rerender so the manual ref
+          // input + Save button are replaced with the read-only
+          // transcoding notice. Without the rerender the publisher
+          // could type a fresh data_ref into the still-mounted
+          // manual input and Save would clobber the in-flight
+          // transcode's eventual master.m3u8 — PR #112 followup
+          // (dataset-form.ts:1007).
           if (outcome.mode === 'direct') {
             state.dataRef = outcome.dataRef
             // Reflect the new ref in the manual input below so
@@ -1002,8 +1008,8 @@ function renderForm(
             if (manual) manual.value = outcome.dataRef
           } else {
             state.dataRef = ''
-            const manual = content.querySelector<HTMLInputElement>('#dataset-data-ref')
-            if (manual) manual.value = ''
+            ctx.isTranscoding = true
+            update()
           }
         },
       }),
