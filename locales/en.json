@@ -294,6 +294,7 @@
   "publisher.assetUploader.errorDetails": "Show details",
   "publisher.assetUploader.mimeMismatch": "Picked file type ({actual}) doesn't match the dataset's declared format ({expected}). Change the dataset's format first, or pick a matching file.",
   "publisher.assetUploader.pickFile": "Pick a file:",
+  "publisher.assetUploader.sessionExpired": "Session expired.",
   "publisher.assetUploader.status.completing": "Verifying upload…",
   "publisher.assetUploader.status.doneDirect": "Upload complete.",
   "publisher.assetUploader.status.doneTranscoding": "Upload complete. Transcoding the video — this can take a few minutes.",

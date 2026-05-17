@@ -398,7 +398,7 @@ export function renderAssetUploader(options: AssetUploaderOptions): HTMLElement 
           ...state,
           stage: 'error',
           statusKey: STAGE_STATUS_KEY.error,
-          errorDetail: 'Session expired.',
+          errorDetail: t('publisher.assetUploader.sessionExpired'),
         }
         paint()
       }
