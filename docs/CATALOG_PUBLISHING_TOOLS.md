@@ -290,7 +290,9 @@ pipeline (R2 + GitHub Actions — current)".
 
 Behavior:
 
-- Drag-drop or click-to-browse.
+- Click-to-browse file input (no drag-drop wire-up shipped —
+  the input is a standard `<input type="file">`; adding HTML5
+  drag-drop listeners is a small follow-up tracked separately).
 - Detects MIME type and picks the right target — **everything goes
   to R2**; the only thing the kind decides is what happens *after*
   the PUT.
@@ -301,7 +303,11 @@ Behavior:
   the publisher can retry by re-picking the file (no automatic
   retry loop today — that's a follow-up).
 - **Image** (`image/png` / `image/jpeg` / `image/webp`): the
-  presigned PUT lands the image at `r2:datasets/{id}/{filename}`.
+  presigned PUT lands the image at
+  `r2:datasets/{id}/by-digest/sha256/{hex}/asset.{ext}`
+  (content-addressed; the digest in the path is the same value
+  `content_digest` carries on the dataset row, so two publishers
+  uploading byte-identical images share the same R2 object).
   The finalize step writes `data_ref` directly — no transcode.
   Optional client-side downsample preview before upload so the
   publisher sees roughly what the 2048-wide variant will look like.
@@ -400,8 +406,9 @@ visibility:  public
 asset:
   # Local file (uploads to R2 + triggers the HLS transcode)…
   file:       ./renders/sst-anomaly-2026-04.mp4
-  # …or an existing data_ref the catalog should point at:
-  # ref:      r2:videos/01HX.../master.m3u8
+  # …or an existing data_ref the catalog should point at
+  # (per-upload path: r2:videos/{dataset_id}/{upload_id}/master.m3u8):
+  # ref:      r2:videos/01HX.../01YH.../master.m3u8
 
 categories:  [Ocean, Climate]
 keywords:    [sst, anomaly, monthly]

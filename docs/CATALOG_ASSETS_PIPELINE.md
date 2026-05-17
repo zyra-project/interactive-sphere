@@ -22,7 +22,7 @@ of:
 
 | Scheme | Example | Resolved by `/manifest` to | Status |
 |---|---|---|---|
-| `r2:` | `r2:videos/01HX.../master.m3u8` or `r2:datasets/01HX.../map.png` | Public R2 URL (signed for restricted visibility) | **Current.** Everything new lands here. |
+| `r2:` | `r2:videos/01HX.../01YH.../master.m3u8` or `r2:datasets/01HX.../by-digest/sha256/{hex}/asset.png` | Public R2 URL (signed for restricted visibility) | **Current.** Everything new lands here. |
 | `vimeo:` | `vimeo:123456789` | Existing video-proxy.zyra-project.org URL | Legacy. Phase 3's `migrate-r2-hls` converts rows to `r2:` as they're re-encoded. |
 | `url:` | `url:https://noaa.example/...` | Pass-through to external URL | Legacy NOAA imagery only. |
 | `peer:` | `peer:01HW.../01HX...` | Federated — resolves via the peer's `/api/v1/federation/feed/manifest/{id}` | Phase 4. |

@@ -76,11 +76,19 @@ gains the 3pd sub-phase breakdown table; `CATALOG_BACKEND_PLAN.md`
   the storage helpers use.
 - `complete.ts` branches on `isVideoSourceKey()` after digest
   verification. Video-source uploads fire the dispatch, stamp
-  `transcoding=1` + clear `data_ref`, mark the asset_upload
-  completed, and return 202. Non-video uploads keep the existing
-  `applyAssetAndMarkCompleted` path. On dispatch failure the
-  dataset row is NOT modified and the upload stays `pending` so
-  the publisher can retry after the operator fixes config.
+  `transcoding=1`, and mark the asset_upload completed.
+  `data_ref` handling is **conditional**: cleared to empty
+  string on draft rows (no public consumer to break), preserved
+  verbatim on published rows so the public manifest endpoint
+  keeps serving the prior HLS bundle while the new one
+  transcodes. The eventual `/transcode-complete` callback
+  atomically swaps `data_ref` to the new master.m3u8.
+  Non-video uploads keep the existing `applyAssetAndMarkCompleted`
+  path. On dispatch failure the dataset row is reverted via
+  `revertTranscodingStamp` (no-op if a concurrent upload has
+  already taken over the binding) and the upload stays
+  `pending` so the publisher can retry after the operator
+  fixes config.
 - Six new env vars (`GITHUB_OWNER`, `GITHUB_REPO`,
   `GITHUB_DISPATCH_TOKEN`, plus three `MOCK_*` variants) wired
   into `CatalogEnv`.
