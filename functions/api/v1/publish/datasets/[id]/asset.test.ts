@@ -148,6 +148,47 @@ describe('POST /api/v1/publish/datasets/{id}/asset — happy paths', () => {
     )
   })
 
+  it('issues a longer presigned-PUT TTL for video sources than for aux assets', async () => {
+    // PR #112 followup — the default 15-min TTL would expire
+    // multi-GB MP4 uploads mid-transfer on a typical residential
+    // uplink. Video sources get R2_PUT_TTL_VIDEO_SECONDS (2 h);
+    // every other kind keeps R2_PUT_TTL_SECONDS (15 min).
+    const { env, datasetId } = setupEnv()
+    const videoRes = await assetInit(
+      ctx({
+        env,
+        datasetId,
+        body: {
+          kind: 'data',
+          mime: 'video/mp4',
+          size: 50 * 1024 * 1024,
+          content_digest: HAPPY_DIGEST,
+        },
+      }),
+    )
+    const videoBody = await readJson<{ expires_at: string }>(videoRes)
+    const thumbRes = await assetInit(
+      ctx({
+        env,
+        datasetId,
+        body: {
+          kind: 'thumbnail',
+          mime: 'image/png',
+          size: 1234,
+          content_digest: HAPPY_DIGEST,
+        },
+      }),
+    )
+    const thumbBody = await readJson<{ expires_at: string }>(thumbRes)
+
+    const videoExpiresAt = new Date(videoBody.expires_at).getTime()
+    const thumbExpiresAt = new Date(thumbBody.expires_at).getTime()
+    // Video TTL is meaningfully longer than thumb — at least
+    // an hour gap, ruling out any near-coincidence from
+    // request-clock skew during the test.
+    expect(videoExpiresAt - thumbExpiresAt).toBeGreaterThanOrEqual(60 * 60 * 1000)
+  })
+
   it('routes a thumbnail to R2 with a content-addressed key', async () => {
     const { env, sqlite, datasetId } = setupEnv()
     const res = await assetInit(

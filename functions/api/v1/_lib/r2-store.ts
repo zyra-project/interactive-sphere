@@ -69,8 +69,21 @@ export type AssetKind =
   | 'caption'
   | 'sphere_thumbnail'
 
-/** Default presigned-PUT TTL — matches the publisher portal upload window. */
+/** Default presigned-PUT TTL — matches the publisher portal
+ *  upload window for image / aux uploads (≤ ~256 MB, finish in
+ *  seconds to a few minutes on a typical residential uplink). */
 export const R2_PUT_TTL_SECONDS = 15 * 60
+
+/** Extended presigned-PUT TTL for video sources. Source MP4s
+ *  can be up to `MAX_BYTES_DATA` (10 GB); on a typical
+ *  residential uplink (~25 Mbps) a 10 GB upload takes ~55
+ *  minutes, plus headroom for slower links + retries. Two hours
+ *  matches R2's maximum presigned-URL TTL (S3 v4 signatures cap
+ *  at one week, but R2's binding wraps a shorter ceiling) and
+ *  is what the asset-uploader budgets for. PR #112 followup —
+ *  asset.ts:presigned-TTL (the prior 15-min default expired
+ *  multi-GB uploads mid-transfer on slower links). */
+export const R2_PUT_TTL_VIDEO_SECONDS = 2 * 60 * 60
 
 /** Mock-mode host. Tests assert URLs against this constant. */
 export const MOCK_R2_HOST = 'https://mock-r2.localhost'

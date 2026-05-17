@@ -49,6 +49,7 @@ import {
   buildVideoSourceKey,
   presignPut,
   R2_PUT_TTL_SECONDS,
+  R2_PUT_TTL_VIDEO_SECONDS,
   type AssetKind,
 } from '../../../_lib/r2-store'
 import {
@@ -240,10 +241,19 @@ export const onRequestPost: PagesFunction<CatalogEnv, 'id'> = async context => {
       // existing cache.
       const ext = extForMime(mime)
       const hex = content_digest.slice('sha256:'.length)
-      const key = isVideoSourceUpload(kind, mime)
+      const isVideo = isVideoSourceUpload(kind, mime)
+      const key = isVideo
         ? buildVideoSourceKey(id, uploadId)
         : buildAssetKey(id, kind, hex, ext)
-      const presigned = await presignPut(context.env, key, { contentType: mime })
+      // Video sources get the extended TTL — `R2_PUT_TTL_SECONDS`
+      // (15 min) is fine for image / aux uploads but too short
+      // for the 10 GB MAX_BYTES_DATA ceiling on residential
+      // uplinks. PR #112 followup — the prior default expired
+      // multi-GB uploads mid-transfer.
+      const presigned = await presignPut(context.env, key, {
+        contentType: mime,
+        ttlSeconds: isVideo ? R2_PUT_TTL_VIDEO_SECONDS : undefined,
+      })
       const targetRef = `r2:${key}`
       await insertAssetUpload(context.env.CATALOG_DB!, {
         id: uploadId,
@@ -313,5 +323,6 @@ interface AssetInitResponse {
 /** Re-export for symmetry with the rest of the routes — keeps import sites tidy. */
 export const TTLS = {
   R2_PUT_TTL_SECONDS,
+  R2_PUT_TTL_VIDEO_SECONDS,
   STREAM_DIRECT_UPLOAD_TTL_SECONDS,
 }
