@@ -683,4 +683,108 @@ describe('transcoding lifecycle UPDATEs are scoped to active_transcode_upload_id
     }
     expect(row.active_transcode_upload_id).toBe(UPLOAD_B)
   })
+
+  it('stampTranscodingForVideoSource preserves content_digest on a PUBLISHED row', async () => {
+    // PR #112 followup (asset-uploads.ts:404): published rows
+    // keep `data_ref` pointing at the prior HLS bundle while
+    // the new one transcodes, so the public manifest endpoint
+    // keeps serving it. The integrity metadata (content_digest)
+    // should follow the same shape — preserved during the
+    // transcode window, swapped atomically by `clearTranscoding`
+    // when /transcode-complete lands. Clearing it during stamp
+    // would leave a 1–10 minute window where the row points at
+    // a valid bundle but advertises no digest.
+    const { d1, sqlite } = makeDb()
+    const previousDigest = `sha256:${'p'.repeat(64)}`
+    sqlite
+      .prepare(
+        `UPDATE datasets
+            SET published_at = ?, data_ref = 'r2:videos/old/master.m3u8',
+                content_digest = ?
+          WHERE id = ?`,
+      )
+      .run('2026-04-01T00:00:00.000Z', previousDigest, DATASET_ID)
+    const { stampTranscodingForVideoSource } = await import('./asset-uploads')
+    const changes = await stampTranscodingForVideoSource(
+      d1,
+      DATASET_ID,
+      uploadStub(UPLOAD_A),
+      '2026-04-29T12:00:00.000Z',
+    )
+    expect(changes).toBe(1)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, data_ref, source_digest, content_digest
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      data_ref: string
+      source_digest: string | null
+      content_digest: string | null
+    }
+    // Transcoding is stamped, source_digest carries the new
+    // claim, but data_ref AND content_digest both stay frozen
+    // for the duration of the workflow.
+    expect(row.transcoding).toBe(1)
+    expect(row.data_ref).toBe('r2:videos/old/master.m3u8')
+    expect(row.source_digest).toBe(HAPPY_DIGEST)
+    expect(row.content_digest).toBe(previousDigest)
+  })
+
+  it('clearTranscoding clears content_digest atomically with the data_ref swap', async () => {
+    // PR #112 followup (asset-uploads.ts:491): the atomic
+    // counterpart to the published-row preservation above —
+    // when /transcode-complete lands, the new HLS bundle is
+    // live and the old digest no longer describes it. HLS
+    // bundles don't carry a single content_digest (the bundle
+    // is many segment files; integrity is per-segment via the
+    // master manifest), so NULL is the correct steady state.
+    const { d1, sqlite } = makeDb()
+    const previousDigest = `sha256:${'p'.repeat(64)}`
+    sqlite
+      .prepare(
+        `UPDATE datasets
+            SET published_at = ?, transcoding = 1,
+                active_transcode_upload_id = ?,
+                data_ref = 'r2:videos/old/master.m3u8',
+                content_digest = ?,
+                source_digest = ?
+          WHERE id = ?`,
+      )
+      .run(
+        '2026-04-01T00:00:00.000Z',
+        UPLOAD_A,
+        previousDigest,
+        HAPPY_DIGEST,
+        DATASET_ID,
+      )
+    const { clearTranscoding } = await import('./asset-uploads')
+    const newDataRef = `r2:videos/${DATASET_ID}/${UPLOAD_A}/master.m3u8`
+    const changes = await clearTranscoding(
+      d1,
+      DATASET_ID,
+      UPLOAD_A,
+      newDataRef,
+      '2026-04-29T12:30:00.000Z',
+    )
+    expect(changes).toBe(1)
+    const row = sqlite
+      .prepare(
+        `SELECT transcoding, active_transcode_upload_id, data_ref, content_digest
+         FROM datasets WHERE id = ?`,
+      )
+      .get(DATASET_ID) as {
+      transcoding: number | null
+      active_transcode_upload_id: string | null
+      data_ref: string
+      content_digest: string | null
+    }
+    expect(row.transcoding).toBeNull()
+    expect(row.active_transcode_upload_id).toBeNull()
+    expect(row.data_ref).toBe(newDataRef)
+    // The previously-preserved digest is now NULL — the new
+    // bundle is an HLS package without a single hash.
+    expect(row.content_digest).toBeNull()
+  })
 })

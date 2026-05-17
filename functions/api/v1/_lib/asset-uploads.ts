@@ -401,14 +401,19 @@ export async function applyAssetAndMarkCompleted(
  * rows-affected; 0 means a concurrent upload won the race and
  * the caller should surface 409 `transcoding_in_progress`.
  *
- * `content_digest = NULL` is part of the stamp — the row's
- * previous asset is logically retired the moment we enter the
- * transcoding window. Without the clear, a row that previously
- * carried an R2 image's `content_digest` keeps that stale value
- * during transcoding and after `clearTranscoding` runs, which
- * would falsely advertise the new HLS bundle's bytes as having
- * the old image's hash (PR #112 followup —
- * asset-uploads.ts:404).
+ * `content_digest` clearing mirrors `data_ref`'s conditional
+ * shape: drafts clear immediately (no public consumer reading
+ * the old digest); published rows preserve the existing
+ * digest *during* the transcode window so the row's integrity
+ * metadata still describes the bundle public clients are
+ * actively serving. `clearTranscoding` does the atomic
+ * data_ref-swap-plus-digest-clear when /transcode-complete
+ * lands — at that point the new HLS bundle is live and the
+ * old digest no longer applies. PR #112 followup —
+ * asset-uploads.ts:404 (the prior unconditional clear left
+ * published rows without integrity metadata during a 1–10
+ * minute window where public clients were still reading the
+ * old bundle).
  */
 export async function stampTranscodingForVideoSource(
   db: D1Database,
@@ -423,7 +428,7 @@ export async function stampTranscodingForVideoSource(
              active_transcode_upload_id = ?,
              data_ref = CASE WHEN published_at IS NULL THEN '' ELSE data_ref END,
              source_digest = ?,
-             content_digest = NULL,
+             content_digest = CASE WHEN published_at IS NULL THEN NULL ELSE content_digest END,
              updated_at = ?
        WHERE id = ?
          AND (active_transcode_upload_id IS NULL OR active_transcode_upload_id = ?)`,
@@ -536,12 +541,24 @@ export async function clearTranscoding(
   dataRef: string,
   now: string,
 ): Promise<number> {
+  // `content_digest = NULL` here is the atomic counterpart to
+  // the *conditional* clear in `stampTranscodingForVideoSource`:
+  // we hold the published-row's old digest during the
+  // transcode window so its integrity metadata still describes
+  // the in-flight bundle, then drop it in the same UPDATE that
+  // swaps data_ref to the new HLS master.m3u8. HLS bundles
+  // don't carry a single content_digest (the bundle is many
+  // segment files; integrity is per-segment via the master
+  // manifest), so the cleared column is the correct steady
+  // state for a post-/transcode-complete row. PR #112
+  // followup — asset-uploads.ts:491.
   const result = await db
     .prepare(
       `UPDATE datasets
          SET transcoding = NULL,
              active_transcode_upload_id = NULL,
              data_ref = ?,
+             content_digest = NULL,
              updated_at = ?
        WHERE id = ? AND active_transcode_upload_id = ?`,
     )
