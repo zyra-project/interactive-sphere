@@ -213,6 +213,27 @@ export const onRequestPost: PagesFunction<CatalogEnv, keyof RouteParams> = async
             `Object at ${key} is not present in R2. The publisher likely never uploaded the bytes; mint a fresh upload to retry.`,
           )
         }
+        // Truncation guard: confirm R2's recorded size matches the
+        // publisher's declared_size. Without this, a connection-
+        // dropped PUT that landed a partial object would pass the
+        // existence check, stamp the row as transcoding, fire the
+        // dispatch, and only fail in the GHA runner's streaming
+        // digest recompute — leaving the row stuck `transcoding=1`
+        // until operator cleanup. The existence helper already
+        // reads `head.size`; comparing it here is a cheap cut.
+        // PR #112 followup — complete.ts:216.
+        if (existence.size !== upload.declared_size) {
+          const now = new Date().toISOString()
+          await markAssetUploadFailed(context.env.CATALOG_DB!, uploadId, 'size_mismatch', now)
+          return jsonError(
+            409,
+            'size_mismatch',
+            `Object at ${key} is ${existence.size} bytes; the publisher declared ` +
+              `${upload.declared_size}. The PUT was likely truncated mid-upload — ` +
+              'mint a fresh upload and re-PUT the full file.',
+            { declared: upload.declared_size, actual: existence.size },
+          )
+        }
         verifiedDigest = upload.claimed_digest
       } else {
         const verification = await verifyContentDigest(context.env, key, upload.claimed_digest)

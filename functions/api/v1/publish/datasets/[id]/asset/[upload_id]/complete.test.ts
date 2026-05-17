@@ -81,6 +81,11 @@ interface PendingUploadOptions {
   mime: string
   claimed_digest: string
   publisherId?: string
+  /** Optional. Defaults to `HELLO_BYTES.byteLength` so the
+   *  size-check (added in 3pd-followup/O for video sources)
+   *  agrees with the canonical R2 fixture content. Tests that
+   *  exercise the size-mismatch failure path override this. */
+  declared_size?: number
 }
 
 function insertPending(sqlite: ReturnType<typeof seedFixtures>, opts: PendingUploadOptions) {
@@ -100,7 +105,7 @@ function insertPending(sqlite: ReturnType<typeof seedFixtures>, opts: PendingUpl
       opts.target,
       opts.target_ref,
       opts.mime,
-      1234,
+      opts.declared_size ?? HELLO_BYTES.byteLength,
       opts.claimed_digest,
       '2026-04-29T12:00:00.000Z',
     )
@@ -1230,9 +1235,67 @@ describe('POST .../asset/{upload_id}/complete — video transcode dispatch (3pd)
       target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
       mime: 'video/mp4',
       claimed_digest: HELLO_DIGEST,
+      // Bucket fixture is an 8-byte ArrayBuffer — match
+      // declared_size so the truncation guard
+      // (3pd-followup/O) doesn't reject this case.
+      declared_size: 8,
     })
     const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO-HEAD' }))
     expect(res.status).toBe(202)
+  })
+
+  it('returns 409 size_mismatch when the HEAD size differs from declared_size', async () => {
+    // PR #112 Copilot followup (complete.ts:216): a connection-
+    // dropped PUT that lands a partial source.mp4 in R2 would
+    // previously pass the existence check, stamp the row as
+    // transcoding, fire the GHA dispatch, and only fail in the
+    // runner's streaming digest recompute — leaving the row
+    // stuck `transcoding=1` until operator cleanup. The
+    // truncation guard catches the mismatch up front and the
+    // upload row is marked `failed` with `size_mismatch` so the
+    // publisher can mint a fresh upload.
+    const { sqlite, datasetId, kv } = setupEnv({ datasetPublished: false })
+    const env = {
+      CATALOG_DB: asD1(sqlite),
+      CATALOG_KV: kv,
+      // Bucket holds 8 bytes; declared_size below is 100. The
+      // size check should surface that as 409 size_mismatch.
+      CATALOG_R2: makeBucket(new ArrayBuffer(8)),
+      MOCK_GITHUB_DISPATCH: 'true',
+    }
+    insertPending(sqlite, {
+      uploadId: 'UP-VIDEO-TRUNC',
+      datasetId,
+      kind: 'data',
+      target: 'r2',
+      target_ref: `r2:uploads/${datasetId}/${'X'.repeat(26)}/source.mp4`,
+      mime: 'video/mp4',
+      claimed_digest: HELLO_DIGEST,
+      declared_size: 100,
+    })
+    const res = await completeHandler(ctx({ env, datasetId, uploadId: 'UP-VIDEO-TRUNC' }))
+    expect(res.status).toBe(409)
+    const body = await readJson<{
+      error: string
+      declared: number
+      actual: number
+    }>(res)
+    expect(body.error).toBe('size_mismatch')
+    expect(body.declared).toBe(100)
+    expect(body.actual).toBe(8)
+    // The upload row is marked failed so a retry can't paper
+    // over a truncated PUT.
+    const row = sqlite
+      .prepare(`SELECT status, failure_reason FROM asset_uploads WHERE id = ?`)
+      .get('UP-VIDEO-TRUNC') as { status: string; failure_reason: string }
+    expect(row.status).toBe('failed')
+    expect(row.failure_reason).toBe('size_mismatch')
+    // The dataset row was NOT stamped — we caught the truncation
+    // before reaching the stamp/dispatch step.
+    const dsRow = sqlite
+      .prepare(`SELECT transcoding FROM datasets WHERE id = ?`)
+      .get(datasetId) as { transcoding: number | null }
+    expect(dsRow.transcoding).toBeNull()
   })
 
   it('returns 409 asset_missing when the source object is absent from R2', async () => {
