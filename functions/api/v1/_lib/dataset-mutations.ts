@@ -466,37 +466,66 @@ export async function updateDataset(
 
   const db = env.CATALOG_DB!
 
-  // Asset-coupled field guard: refuse a `format` mutation while
-  // the row is mid-transcode. Without it an editor could swap
-  // `video/mp4` → `image/png` while the GHA workflow is still
-  // running, and the eventual /transcode-complete callback would
-  // write an HLS `data_ref` into a row that now declares an
-  // image format. The dataset form's UI gate (the read-only
-  // notice when ctx.isTranscoding is true) already prevents this
-  // through the supported path, but the server is the
-  // authoritative check — a direct API call could otherwise
-  // bypass the UI. PR #112 followup — dataset-form.ts:937
-  // (server-side companion to the UI lock added in /Q).
-  if (body.format !== undefined) {
+  // Asset-coupled field guard: refuse `format` or `data_ref`
+  // mutations while the row is mid-transcode. Without these an
+  // editor could
+  //   • swap `video/mp4` → `image/png` and end up with the
+  //     workflow's eventual HLS data_ref contradicting the new
+  //     format, or
+  //   • paste a manual `vimeo:` / `url:` / `r2:videos/...`
+  //     value into data_ref that the workflow's
+  //     /transcode-complete callback will overwrite as soon as
+  //     it finishes (and which any /publish or /preview hit
+  //     between the manual edit and the callback would
+  //     transiently surface).
+  // The dataset form's UI gate already prevents both through
+  // the supported path (the format radio is disabled in /W,
+  // the data_ref input is replaced by a read-only notice in /Q),
+  // but the server is the authoritative check — a direct API
+  // call could otherwise bypass the UI. Both rejections share
+  // the same 409 envelope so the client treats them uniformly.
+  // PR #112 followup — dataset-form.ts:937 (server-side
+  // companion) + dataset-mutations.ts (data_ref extension).
+  if (body.format !== undefined || body.data_ref !== undefined) {
     const current = await db
-      .prepare('SELECT format, transcoding FROM datasets WHERE id = ?')
+      .prepare('SELECT format, data_ref, transcoding FROM datasets WHERE id = ?')
       .bind(id)
-      .first<{ format: string; transcoding: number | null }>()
-    if (current?.transcoding === 1 && body.format !== current.format) {
-      return {
-        ok: false,
-        status: 409,
-        errors: [
-          {
-            field: 'format',
-            code: 'transcoding_in_progress',
-            message:
-              'Cannot change format while a video transcode is in flight — ' +
-              'the workflow will write a video data_ref into this row when it ' +
-              'finishes, which would contradict the new format. Wait for the ' +
-              '"Transcoding…" badge to clear, then update format.',
-          },
-        ],
+      .first<{ format: string; data_ref: string; transcoding: number | null }>()
+    if (current?.transcoding === 1) {
+      if (body.format !== undefined && body.format !== current.format) {
+        return {
+          ok: false,
+          status: 409,
+          errors: [
+            {
+              field: 'format',
+              code: 'transcoding_in_progress',
+              message:
+                'Cannot change format while a video transcode is in flight — ' +
+                'the workflow will write a video data_ref into this row when it ' +
+                'finishes, which would contradict the new format. Wait for the ' +
+                '"Transcoding…" badge to clear, then update format.',
+            },
+          ],
+        }
+      }
+      if (body.data_ref !== undefined && body.data_ref !== current.data_ref) {
+        return {
+          ok: false,
+          status: 409,
+          errors: [
+            {
+              field: 'data_ref',
+              code: 'transcoding_in_progress',
+              message:
+                'Cannot change data_ref while a video transcode is in flight — ' +
+                'the workflow will overwrite it with the new HLS bundle path ' +
+                'when it finishes, and a /publish or /preview hit before that ' +
+                'callback would transiently surface the manual value. Wait for ' +
+                'the "Transcoding…" badge to clear, then update data_ref.',
+            },
+          ],
+        }
       }
     }
   }

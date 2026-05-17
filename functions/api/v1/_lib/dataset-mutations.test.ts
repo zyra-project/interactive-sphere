@@ -403,6 +403,60 @@ describe('updateDataset', () => {
     expect(result.dataset.format).toBe('image/png')
   })
 
+  it('rejects data_ref mutation while the row is mid-transcode', async () => {
+    // PR #112 followup — companion to the format guard. The
+    // workflow's /transcode-complete callback will overwrite
+    // data_ref with the new HLS bundle path; letting a manual
+    // edit through in the meantime opens the same race the UI
+    // avoids by hiding the manual data_ref input during
+    // transcoding (3pd-followup/Q).
+    const { env } = setupEnv()
+    const created = await createDataset(env, STAFF, {
+      title: 'Transcoding row',
+      format: 'video/mp4',
+      data_ref: 'r2:videos/old/master.m3u8',
+    })
+    if (!created.ok) throw new Error('seed')
+    env.CATALOG_DB!
+      .prepare(`UPDATE datasets SET transcoding = 1 WHERE id = ?`)
+      .bind(created.dataset.id)
+      .run()
+    const result = await updateDataset(env, STAFF, created.dataset.id, {
+      data_ref: 'vimeo:9999',
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.errors?.[0]).toMatchObject({
+      field: 'data_ref',
+      code: 'transcoding_in_progress',
+    })
+  })
+
+  it('treats a same-value data_ref submission as a no-op even while transcoding', async () => {
+    // Edge case parallel to the same-value format case: the
+    // form re-submits data_ref on every save. While transcoding,
+    // the row's data_ref might be the preserved published-row
+    // value or an empty draft value; either way a submission
+    // matching the stored value should fall through cleanly.
+    const { env } = setupEnv()
+    const created = await createDataset(env, STAFF, {
+      title: 'Transcoding row',
+      format: 'video/mp4',
+      data_ref: 'r2:videos/old/master.m3u8',
+    })
+    if (!created.ok) throw new Error('seed')
+    env.CATALOG_DB!
+      .prepare(`UPDATE datasets SET transcoding = 1 WHERE id = ?`)
+      .bind(created.dataset.id)
+      .run()
+    const result = await updateDataset(env, STAFF, created.dataset.id, {
+      title: 'Renamed',
+      data_ref: 'r2:videos/old/master.m3u8', // same as current
+    })
+    expect(result.ok).toBe(true)
+  })
+
   it('treats a same-value format submission as a no-op even while transcoding', async () => {
     // Important edge case: the form re-submits the current
     // value of every field on save, including format. While
